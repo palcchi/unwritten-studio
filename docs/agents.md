@@ -59,7 +59,7 @@ The server speaks JSON-RPC 2.0 over stdio, one message per line, and supports MC
 | `add_keyframe {layer, path, time+value \| keys:[...], interpolation?, comp?}` | Adds keys, then optionally applies linear/bezier/hold/easyEase. |
 | `list_effects {filter?}` | Effect ids, names, categories, GPU / 32-bpc support and parameters. |
 | `list_fonts {query?, rescan?}` | Font families text layers can use, bundled and installed, with their styles, origin and own-language name; `rescan` picks up fonts installed since launch. |
-| `add_effect {layer, effect, values?, comp?}` | Apply an effect and set its parameters in one call; returns the instance path (`effects/#n`) and its parameter paths. |
+| `add_effect {layer, effect, values?, comp?}` | Apply an effect and set its parameters in one call and one undo step (a failing value leaves nothing applied); returns the instance path (`effects/#n`) and its parameter paths. |
 | `render_frame {comp?, time?, max_side?, path?, inline?, transparent?}` | Returns a PNG image of a frame; `transparent: true` keeps the alpha (as an RGB + Alpha render writes it) instead of compositing over the comp background. |
 | `open_project {path \| demo \| new}` / `save_project {path?}` | Open and save files. |
 | `undo {steps?}` / `redo {steps?}` | History. |
@@ -136,7 +136,8 @@ build real projects through these interfaces; they are worked examples of everyt
 * **One call, one undo step**: `batch {"steps":[{"command":"layer.newShape","params":{"kind":"ellipse","name":"Ring"}},{"command":"layer.addShapeItem","params":{"layer":"$1.layer","kind":"trim"}},{"command":"prop.addKey","params":{"layer":"$1.layer","path":"transform/opacity","time":0,"value":0}}]}`
   (a string param that is exactly `"$N"` or `"$N.key"` is replaced; `$2.path` is the trim's path).
 * **Expressions**: `set_property`/`get_property` replies carry `evaluated` (what renders) next to
-  `value` (the keyframed value) and `expressionError` when the expression fails.
+  `value` (the keyframed value) and `expressionError` when the expression fails. An expression with
+  a syntax error is kept but disabled, so it renders `value` and reports the syntax error.
 * **Keyframes like a person**: `keys.select {keys, toggle: true}` (Shift+click), `keys.selectEqual`
   / `selectPrevious` / `selectFollowing`, `keys.move {delta, merge}` (steps sharing a merge key are
   one drag: each applies to the keys as they were before it, so a key passed over survives) and
@@ -430,7 +431,8 @@ that closes the dialog). File ▸ Scripts: `file.scripts.list`, `file.runScript 
 
 Each invocation runs a headless engine with no window. It opens the demo project unless you pass
 `--project F.ecproj`, a positional `*.ecproj` or `--empty`. Add `--json` for one compact JSON document
-on stdout. Errors print `{"error": ...}` and exit with status 1; usage errors exit with status 2.
+on stdout. Errors print `{"error": ...}` and exit with status 1; usage errors, such as an unknown
+option, exit with status 2 before anything runs.
 
 ```sh
 effectcraft-cli info --json

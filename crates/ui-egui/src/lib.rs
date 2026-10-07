@@ -386,8 +386,14 @@ impl EffectcraftApp {
     /// Built-in workspaces followed by the saved ones (Window ▸ Workspace ▸ Save as New Workspace).
     pub fn workspace_names(&self) -> Vec<String> {
         let mut v: Vec<String> = dock::WORKSPACES.iter().map(|s| s.to_string()).collect();
-        v.extend(self.ui.saved_workspaces.keys().filter(|k| !dock::WORKSPACES.contains(&k.as_str())).cloned());
+        v.extend(self.saved_workspace_names());
         v
+    }
+
+    /// The workspaces the user saved under a new name (built-ins whose changes were saved are
+    /// not repeated), in name order.
+    pub fn saved_workspace_names(&self) -> Vec<String> {
+        self.ui.saved_workspaces.keys().filter(|k| !dock::WORKSPACES.contains(&k.as_str())).cloned().collect()
     }
 
     /// Show panel `p` (opening it in its usual place if it is closed), bring it to the front and

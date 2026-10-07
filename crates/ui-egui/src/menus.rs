@@ -1500,9 +1500,11 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
                 ui.separator();
             }
             MenuNode::Dynamic { name } => {
-                // Recent projects / footage / presets, undo history, shortcut slots, viewers.
+                // Recent projects / footage / presets, undo history, shortcut slots, viewers,
+                // saved workspaces.
                 let ws = app.ui.workspace.clone();
-                let (entries, empty) = effectcraft_engine::menus::dynamic(&app.session, name, &dyn_ctx(&ws));
+                let saved = app.saved_workspace_names();
+                let (entries, empty) = effectcraft_engine::menus::dynamic(&app.session, name, &dyn_ctx(&ws, &saved));
                 if entries.is_empty()
                     && let Some(e) = empty
                 {
@@ -1515,7 +1517,7 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
                         "recentPresets" => app.session.prefs.recent_presets.get(i).cloned(),
                         _ => None,
                     };
-                    let r = ui.add_enabled(entry_enabled(app, e), egui::Button::new((gutter(false), e.label.as_str())));
+                    let r = ui.add_enabled(entry_enabled(app, e), egui::Button::new((gutter(entry_checked(app, e) == Some(true)), e.label.as_str())));
                     let r = match &tip {
                         Some(t) => r.on_hover_text(t),
                         None => r,
@@ -1529,13 +1531,15 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
             }
             MenuNode::Submenu { label, children } => {
                 let ws = app.ui.workspace.clone();
-                let shown = crate::i18n::submenu(app, label, effectcraft_engine::menus::submenu_label(&app.session, label, &dyn_ctx(&ws)));
+                let shown = crate::i18n::submenu(app, label, effectcraft_engine::menus::submenu_label(&app.session, label, &dyn_ctx(&ws, &[])));
                 ui.menu_button((gutter(false), shown.as_str()), |ui| {
                     ui.set_min_width(if children.len() > 30 { 200.0 } else { 240.0 });
                     // Long submenus (Blending Mode, effect categories) scroll instead of running
-                    // off the screen.
+                    // off the screen. Others show whole: egui sizes a new submenu from a default
+                    // 400 pt area, so without a minimum a longer one (Window ▸ Workspace) got
+                    // stuck at that height with its last entries scrolled out of view (#191).
                     let max_h = ui.ctx().content_rect().height() - 40.0;
-                    egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| menu_nodes(app, ui, children, clicked));
+                    egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, |ui| menu_nodes(app, ui, children, clicked));
                 });
             }
             MenuNode::Item(e) => {
@@ -1548,9 +1552,9 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
     }
 }
 
-/// Frontend state for dynamic menus (the current workspace).
-pub(crate) fn dyn_ctx(workspace: &str) -> effectcraft_engine::menus::DynCtx<'_> {
-    effectcraft_engine::menus::DynCtx { workspace: Some(workspace) }
+/// Frontend state for dynamic menus (the current workspace and the saved ones).
+pub(crate) fn dyn_ctx<'a>(workspace: &'a str, saved_workspaces: &'a [String]) -> effectcraft_engine::menus::DynCtx<'a> {
+    effectcraft_engine::menus::DynCtx { workspace: Some(workspace), saved_workspaces }
 }
 
 /// The check-mark column every menu row reserves (like macOS / After Effects menus).

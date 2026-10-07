@@ -283,10 +283,20 @@ pub fn popup_menu(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, options: &[String]
     if !open {
         return None;
     }
+    // As tall as the window allows (a shape layer's Add menu has 20 entries), scrolling beyond,
+    // and moved up when it would run past the bottom of the window (the Timeline's menus).
+    let screen = ui.ctx().content_rect();
+    let max_h = (screen.height() - 24.0).max(120.0);
+    let sp = ui.spacing();
+    let seps = options.iter().filter(|o| *o == "-").count() as f32;
+    let rows = options.len() as f32 - seps;
+    let est = (rows * (sp.interact_size.y + sp.item_spacing.y + 4.0) + seps * (2.0 * sp.item_spacing.y + 2.0) + 16.0).min(max_h + 12.0);
+    let pos = egui::pos2(pos.x, pos.y.min(screen.bottom() - est).max(screen.top()));
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.set_min_width(160.0);
-            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+            // (An area's content is laid out in last frame's size: ask for the estimate.)
+            egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height((est - 16.0).min(max_h)).show(ui, |ui| {
                 for (i, o) in options.iter().enumerate() {
                     if o == "-" {
                         ui.separator();

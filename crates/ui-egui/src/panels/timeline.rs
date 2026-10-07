@@ -47,6 +47,16 @@ enum RowKind {
 /// Synthetic group uid for a layer's Audio > Waveform twirl (never a real property uid).
 const WAVE_BIT: u64 = 1 << 60;
 
+/// Synthetic group uid for the Geometry Options row of a 3D text or shape layer in a Classic 3D
+/// comp, which only offers "Change Renderer…" (never a real property uid).
+const GEOM_BIT: u64 = 1 << 59;
+
+/// Classic 3D comps don't extrude: a 3D text or shape layer's Geometry Options row offers to
+/// change the renderer instead, as in After Effects.
+fn classic_geometry_row(comp: &Comp, l: &Layer) -> bool {
+    comp.renderer == effectcraft_engine::project::Renderer::Classic3D && l.is_3d() && matches!(l.source, LayerSource::Text | LayerSource::Shape)
+}
+
 /// Time navigator's visible-span bar and the work area bar.
 const NAV_BAR: Color32 = Color32::from_rgb(0x55, 0x55, 0x55);
 const WORK_AREA_BAR: Color32 = Color32::from_rgb(0x5c, 0x5c, 0x5c);
@@ -597,8 +607,11 @@ fn build_rows(app: &EffectcraftApp, comp: &Comp) -> Vec<Row> {
             reveal_rows(app, l, kinds, &mut rows);
             continue;
         }
+        let classic_geometry = classic_geometry_row(comp, l);
         for c in &l.props.children {
             match c {
+                // The Change Renderer row (after Transform) stands in for the extrusion options.
+                Node::Group(g) if classic_geometry && g.match_id == "geometryOptions" => {}
                 Node::Group(g) if group_visible(g, l) => {
                     let open = tl.open_groups.contains(&g.uid);
                     rows.push(Row {
@@ -630,6 +643,20 @@ fn build_rows(app: &EffectcraftApp, comp: &Comp) -> Vec<Row> {
                                 rows.push(Row { layer: l.id, depth: 3, kind: RowKind::Waveform { item: item.0 } });
                             }
                         }
+                    }
+                    if classic_geometry && g.match_id == "transform" {
+                        rows.push(Row {
+                            layer: l.id,
+                            depth: 1,
+                            kind: RowKind::Group {
+                                uid: GEOM_BIT | l.id.0,
+                                name: "Geometry Options".into(),
+                                open: false,
+                                has_children: false,
+                                fx: None,
+                                eye: None,
+                            },
+                        });
                     }
                 }
                 Node::Prop(p) if prop_visible(p, l) => rows.push(Row { layer: l.id, depth: 1, kind: RowKind::Prop { uid: p.uid } }),
@@ -1704,6 +1731,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 lp.text(pos2(indent + 10.0, cy), Align2::LEFT_CENTER, name, Tokens::ui(12.0), t.text);
                 text_anim_popups(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
+                shape_add_popup(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
+                if *uid == GEOM_BIT | layer.id.0 {
+                    let lr = lp.text(pos2(cw.switches + 6.0, cy), Align2::LEFT_CENTER, "Change Renderer…", Tokens::ui(11.5), t.accent);
+                    let resp =
+                        ui.interact(lr, egui::Id::new(("tl-change-renderer", layer.id.0)), Sense::click()).on_hover_text("Composition Settings ▸ 3D Renderer");
+                    if resp.hovered() {
+                        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
+                    app.auto.add(&format!("timeline.layer.{}.changeRenderer", layer.id.0), lr, "Change Renderer…");
+                    if resp.clicked() {
+                        ui_actions.push(UiAct::ChangeRenderer);
+                    }
+                }
                 dash_buttons(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
                 // Mask mode + inverted inline.
                 if let Some(g) = layer.props.find_group(*uid)
@@ -1727,7 +1767,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let gr_rect = Rect::from_min_max(pos2(indent + 8.0, r.min.y), pos2(cw.switches, r.max.y));
                 let gr = ui.interact(gr_rect, egui::Id::new(("grow", uid)), Sense::click());
                 app.auto.add(&format!("timeline.group.{uid}.name"), gr_rect, name);
-                if gr.clicked() && uid & WAVE_BIT == 0 {
+                if gr.clicked() && uid & (WAVE_BIT | GEOM_BIT) == 0 {
                     actions.push(("prop.select".into(), json!({"layer": layer.id.0, "prop": uid, "selectKeys": false})));
                 }
                 if gr.double_clicked() {
@@ -2444,6 +2484,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
             UiAct::SetTime(tt) => app.session.set_time(tt),
             UiAct::EndMerge => app.session.history.merge_key = None,
+            UiAct::ChangeRenderer => {
+                if super::dialogs::open_comp_settings(app).is_ok() {
+                    app.dialog_state.comp.tab = super::comp_settings::Tab::Renderer;
+                }
+            }
         }
     }
     if ui.input(|i| i.pointer.primary_down()) && actions.iter().any(|(id, _)| id == "prop.set") {
@@ -2561,6 +2606,8 @@ enum UiAct {
     ToggleGroup(u64),
     SetTime(Tick),
     EndMerge,
+    /// Composition Settings on its 3D Renderer tab.
+    ChangeRenderer,
 }
 
 fn walk_groups(g: &PropGroup, out: &mut Vec<u64>) {
@@ -2598,6 +2645,75 @@ fn dash_buttons(
         if resp.clicked() {
             actions.push((id.into(), json!({"layer": layer.id.0, "prop": stroke})));
         }
+    }
+}
+
+/// The shape items the Contents row's "Add:" menu offers, as `layer.addShapeItem` kinds ("-" is
+/// a separator), in After Effects' order.
+const SHAPE_ADD_ITEMS: &[(&str, &str)] = &[
+    ("group", "Group (empty)"),
+    ("-", ""),
+    ("rect", "Rectangle"),
+    ("ellipse", "Ellipse"),
+    ("star", "Polystar"),
+    ("path", "Path"),
+    ("-", ""),
+    ("fill", "Fill"),
+    ("stroke", "Stroke"),
+    ("gfill", "Gradient Fill"),
+    ("gstroke", "Gradient Stroke"),
+    ("-", ""),
+    ("merge", "Merge Paths"),
+    ("offset", "Offset Paths"),
+    ("pucker", "Pucker & Bloat"),
+    ("repeater", "Repeater"),
+    ("round", "Round Corners"),
+    ("trim", "Trim Paths"),
+    ("twist", "Twist"),
+    ("wiggle", "Wiggle Paths"),
+    ("zigzag", "Zig Zag"),
+];
+
+/// A shape layer's Contents "Add:" pop-up menu: adds a shape, paint or path operation to the
+/// selected shape group, else to the layer's contents.
+#[allow(clippy::too_many_arguments)]
+fn shape_add_popup(
+    app: &mut EffectcraftApp,
+    ui: &mut egui::Ui,
+    p: &egui::Painter,
+    layer: &Layer,
+    uid: u64,
+    x: f32,
+    cy: f32,
+    actions: &mut Vec<(String, serde_json::Value)>,
+) {
+    if !matches!(layer.source, LayerSource::Shape) || layer.props.sub("contents").is_none_or(|c| c.uid != uid) {
+        return;
+    }
+    let t = app.tokens;
+    p.text(pos2(x + 6.0, cy), Align2::LEFT_CENTER, "Add:", Tokens::ui(11.5), t.text_dim);
+    let br = Rect::from_center_size(pos2(x + 40.0, cy), vec2(16.0, 16.0));
+    let resp = ui.interact(br, egui::Id::new(("tl-shapeadd", uid)), Sense::click()).on_hover_text("Add a shape, fill, stroke or path operation");
+    icons::paint(p, br.shrink(3.0), Icon::ChevronRight, if resp.hovered() { t.text } else { t.text_dim });
+    app.auto.add(&format!("timeline.group.{uid}.add"), br, "Add:");
+    let pop = egui::Id::new(("tl-shapeadd-pop", uid));
+    if resp.clicked() {
+        widgets::open_popup(ui, pop);
+    }
+    let opts: Vec<String> = SHAPE_ADD_ITEMS.iter().map(|(k, l)| if *k == "-" { "-".to_string() } else { l.to_string() }).collect();
+    if let Some(i) = widgets::popup_menu(ui, pop, br.left_bottom(), &opts, None)
+        && let Some((kind, _)) = SHAPE_ADD_ITEMS.get(i).filter(|(k, _)| *k != "-")
+    {
+        let mut params = json!({"layer": layer.id.0, "kind": kind});
+        // Into the selected shape group, as After Effects does.
+        let group = app.session.state.selected_props.iter().filter(|(l, _)| *l == layer.id).find_map(|(_, u)| {
+            let g = layer.props.find_group(*u)?;
+            (g.match_id == "group" && g.sub("contents").is_some()).then_some(g.uid)
+        });
+        if let Some(g) = group {
+            params["group"] = json!(g);
+        }
+        actions.push(("layer.addShapeItem".into(), params));
     }
 }
 

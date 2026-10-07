@@ -130,6 +130,34 @@ fn errors_are_json() {
     assert_eq!(out.status.code(), Some(2));
 }
 
+/// An unknown option is a usage error (exit 2) naming it, before anything runs: the command
+/// doesn't run with defaults, and a misspelt option's value isn't opened as the project (#168).
+#[test]
+fn unknown_options_are_usage_errors() {
+    let png = tmp("bogus.png");
+    let o = png.to_str().unwrap();
+    for (args, named) in [
+        (&["exec", "comp.new", "--bogus", "--empty", "--json"][..], "`--bogus`"),
+        (&["render-frame", "--bogusflag", "--out", o, "--json"], "`--bogusflag`"),
+        (&["exec", "comp.new", "--empty", "--saveas", "z.ecproj", "--json"], "`--saveas`"),
+    ] {
+        let out = bin().args(args).output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {err}");
+        assert!(err.contains(&format!("unknown option {named}")), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}: nothing ran");
+    }
+    assert!(!png.exists(), "render-frame didn't render");
+    // `--transparent` (silently ignored before) keeps the frame's alpha.
+    let proj = tmp("transparent.ecproj");
+    let p = proj.to_str().unwrap();
+    ok_json(&["run", "comp.new", r#"{"name":"T","width":32,"height":32}"#, "layer.newSolid", r#"{"width":8,"height":8}"#, "--empty", "--save-as", p]);
+    for (flag, alpha) in [(None, 255), (Some("--transparent"), 0)] {
+        ok_json(&[&["render-frame", p, "--out", o][..], flag.as_slice()].concat());
+        assert_eq!(image::open(&png).unwrap().to_rgba8().get_pixel(0, 0)[3], alpha, "{flag:?}");
+    }
+}
+
 /// A reader that closes stdout before the CLI writes (`| head`) is not a crash: the command
 /// still does its work and exits 0, without a panic (#167).
 #[test]

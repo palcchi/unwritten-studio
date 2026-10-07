@@ -9,7 +9,7 @@
 //! effectcraft-cli props <comp> <layer> [--flat] [--time S]    a layer's property tree (with paths)
 //! effectcraft-cli get <comp> <layer> <path> [--time S]        read a property
 //! effectcraft-cli set <comp> <layer> <path> <value> [--time S] [--expression E]
-//! effectcraft-cli render-frame [--comp C] [--time S|--frame N] [--max-side PX|--scale K] [--out F.png]
+//! effectcraft-cli render-frame [--comp C] [--time S|--frame N] [--max-side PX|--scale K] [--out F.png] [--transparent]
 //! effectcraft-cli render [--comp C] --out FILE [--format h264|hevc|av1|prores|webm|png|jpeg|tiff|exr|gif|wav|aiff] [--start S] [--end S]
 //!     [--work-area] [--fps N] [--resolution full|half|third|quarter|K] [--quality best|draft] [--channels rgb|rgba]
 //!     [--jpeg-quality N] [--bitrate KBPS] [--prores proxy|lt|standard|hq|4444|4444xq] [--audio auto|on|off]
@@ -92,7 +92,7 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
   props <comp> <layer> [--flat] [--time S] a layer's property tree with paths
   get <comp> <layer> <path> [--time S]     read a property
   set <comp> <layer> <path> <value> [--time S] [--expression E]
-  render-frame [--comp C] [--time S | --frame N] [--max-side PX | --scale K] [--out F.png]
+  render-frame [--comp C] [--time S | --frame N] [--max-side PX | --scale K] [--out F.png] [--transparent]
   render [--comp C] --out FILE [--format F] [--start S] [--end S] [--work-area] [--fps N]
          [--resolution full|half|third|quarter|K] [--quality best|draft] [--channels rgb|rgba]
          [--jpeg-quality N] [--bitrate KBPS] [--prores PROFILE] [--audio auto|on|off]
@@ -156,6 +156,25 @@ const VALUED: &[&str] = &[
     "--opus-app",
 ];
 
+/// Options without a value. Any other `--option` is a usage error.
+const FLAGS: &[&str] = &[
+    "--json",
+    "--save",
+    "--demo",
+    "--empty",
+    "--gpu",
+    "--list",
+    "--schemas",
+    "--enabled",
+    "--flat",
+    "--transparent",
+    "--work-area",
+    "--queue",
+    "--ops",
+    "--small",
+    "--adv3d",
+];
+
 struct Args {
     pos: Vec<String>,
     opts: Vec<(String, Option<String>)>,
@@ -165,7 +184,7 @@ struct Args {
 
 impl Args {
     fn parse(raw: Vec<String>) -> Result<Args, String> {
-        let (mut pos, mut opts) = (vec![], vec![]);
+        let (mut pos, mut opts, mut unknown) = (vec![], vec![], vec![]);
         let mut it = raw.into_iter();
         while let Some(a) = it.next() {
             if a.starts_with("--") && a.len() > 2 {
@@ -176,12 +195,22 @@ impl Args {
                 if VALUED.contains(&k.as_str()) {
                     let v = inline.or_else(|| it.next()).ok_or_else(|| format!("{k} needs a value"))?;
                     opts.push((k, Some(v)));
+                } else if !FLAGS.contains(&k.as_str()) {
+                    unknown.push(format!("`{k}`"));
+                } else if inline.is_some() {
+                    return Err(format!("{k} takes no value"));
                 } else {
                     opts.push((k, None));
                 }
             } else {
                 pos.push(a);
             }
+        }
+        // Before anything runs: a misspelt option must not run the command with defaults, or
+        // leave its value behind as a positional (`--saveas x.ecproj` opening x.ecproj).
+        if !unknown.is_empty() {
+            let s = if unknown.len() == 1 { "" } else { "s" };
+            return Err(format!("unknown option{s} {}", unknown.join(", ")));
         }
         let mut a = Args { pos, opts, project: None };
         a.project = match a.opt("--project") {
@@ -519,7 +548,7 @@ fn run(cmd: &str, args: &Args, json_out: bool) -> Result<(), Failure> {
             }
             let out = args.opt("--out").unwrap_or("frame.png").to_string();
             let t0 = std::time::Instant::now();
-            let f = b.render(comp.as_ref(), time, max_side)?;
+            let f = b.render_with(comp.as_ref(), time, max_side, args.flag("--transparent"))?;
             let ms = t0.elapsed().as_secs_f64() * 1000.0;
             std::fs::write(&out, &f.png).map_err(|e| format!("cannot write {out}: {e}"))?;
             let info = json!({"path": out, "comp": f.comp, "time": f.time, "width": f.width, "height": f.height, "ms": (ms * 10.0).round() / 10.0});
@@ -1144,4 +1173,40 @@ fn bench_gpu(s: &Session, args: &Args) -> Result<(), Failure> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        Args::parse(args.iter().map(|a| a.to_string()).collect())
+    }
+
+    /// Unknown options are usage errors naming them, not ignored (#168).
+    #[test]
+    fn unknown_options_are_refused() {
+        let err = |args: &[&str]| parse(args).err().unwrap();
+        assert_eq!(err(&["exec", "comp.new", "--bogus", "--empty", "--saveas", "z.ecproj"]), "unknown options `--bogus`, `--saveas`");
+        assert_eq!(err(&["render", "--bogus=1"]), "unknown option `--bogus`");
+        assert_eq!(err(&["info", "--json=yes"]), "--json takes no value");
+        let a = parse(&["render", "t.ecproj", "--comp=Main", "--work-area", "--out", "x.mp4", "--json"]).unwrap();
+        assert_eq!((a.project.as_deref(), a.opt("--comp"), a.opt("--out")), (Some("t.ecproj"), Some("Main"), Some("x.mp4")));
+        assert!(a.flag("--work-area") && a.flag("--json"));
+    }
+
+    /// Every `--option` the CLI reads is declared in VALUED or FLAGS, so none is refused.
+    #[test]
+    fn every_option_read_is_declared() {
+        let code = include_str!("main.rs").split("#[cfg(test)]").next().unwrap();
+        for rest in code.split("\"--").skip(1) {
+            let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
+            let opt = format!("--{name}");
+            // `--help` and `--version` are handled before parsing.
+            if name.is_empty() || !rest[name.len()..].starts_with('"') || ["--help", "--version"].contains(&opt.as_str()) {
+                continue;
+            }
+            assert!(VALUED.contains(&opt.as_str()) || FLAGS.contains(&opt.as_str()), "{opt} is read but not declared");
+        }
+    }
 }

@@ -384,7 +384,7 @@ with the method's `result`, errors reject with the message.
 | `effectcraft.saveToBrowser(path?)` | save the project to browser storage without downloading it (default: its path, or `/<name>.ecproj`); resolves with `{path, bytes}` |
 | `effectcraft.listStored()` | `{backend, usage, quota, persisted, pending, files: [{path, size, modified}], config: [name]}` |
 | `effectcraft.removeStored(path)` | delete a stored file |
-| `effectcraft.flush()` | resolves once every change is written to browser storage |
+| `effectcraft.flush()` | resolves once every change is written to browser storage; rejects when a write failed (quota exceeded…: the change stays pending and is retried) |
 | `effectcraft.info()` | graphics backend, `gpu`, `storage`, `audio` (`{state, sampleRate, backend, posted, played, underruns}`), `workers`, `frameWorkers`, `diskCache`, `restored`, `webgpu`, `serviceWorker`, version, `crossOriginIsolated`, load timings |
 | `effectcraft.workerFrameCheck(params)` | a frame rendered in a frame worker (its GPU by default) against the page's CPU render: `{width, height, maxDiff, meanDiff, over4, workerMs}` |
 

@@ -98,6 +98,11 @@ impl Mirror {
         self.version
     }
 
+    /// A write of `key` that failed: the next flush writes the key's latest state again (#215).
+    pub fn retry(&mut self, key: &str) {
+        self.touch(key);
+    }
+
     fn touch(&mut self, key: &str) {
         if !self.dirty.iter().any(|k| k == key) {
             self.dirty.push(key.to_string());
@@ -441,6 +446,24 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(&data[..], b"blue");
         assert_eq!(s.file_versioned("/collision.png").map(|f| f.1), Some(b), "reading doesn't change it");
+    }
+
+    /// A write that failed is flushed again with the key's latest state (#215).
+    #[test]
+    fn failed_writes_retry() {
+        let s = store();
+        s.put_file("/collision.png", Arc::from(&b"blue"[..]), true);
+        let mut m = s.lock();
+        let p = m.take_pending();
+        assert_eq!(p.len(), 1);
+        assert!(!m.has_pending());
+        m.retry(&p[0].key);
+        assert_eq!(m.take_pending(), p, "the same write again");
+        // A newer change wins over the failed one.
+        m.retry("files/collision.png");
+        m.put("files/collision.png", Arc::from(&b"gold"[..]), 2.0, true);
+        let again = m.take_pending();
+        assert_eq!((again.len(), again[0].data.as_deref()), (1, Some(&b"gold"[..])));
     }
 
     #[test]

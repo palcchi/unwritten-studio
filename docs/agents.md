@@ -136,7 +136,8 @@ build real projects through these interfaces; they are worked examples of everyt
 * **One call, one undo step**: `batch {"steps":[{"command":"layer.newShape","params":{"kind":"ellipse","name":"Ring"}},{"command":"layer.addShapeItem","params":{"layer":"$1.layer","kind":"trim"}},{"command":"prop.addKey","params":{"layer":"$1.layer","path":"transform/opacity","time":0,"value":0}}]}`
   (a string param that is exactly `"$N"` or `"$N.key"` is replaced; `$2.path` is the trim's path).
 * **Expressions**: `set_property`/`get_property` replies carry `evaluated` (what renders) next to
-  `value` (the keyframed value) and `expressionError` when the expression fails.
+  `value` (the keyframed value) and `expressionError` when the expression fails. An expression with
+  a syntax error is kept but disabled, so it renders `value` and reports the syntax error.
 * **Keyframes like a person**: `keys.select {keys, toggle: true}` (Shift+click), `keys.selectEqual`
   / `selectPrevious` / `selectFollowing`, `keys.move {delta, merge}` (steps sharing a merge key are
   one drag: each applies to the keys as they were before it, so a key passed over survives) and

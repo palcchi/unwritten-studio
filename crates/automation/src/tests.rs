@@ -177,6 +177,28 @@ fn headless_workflow() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// An expression with a syntax error is kept but disabled; set_property and get_property report
+/// its error, and `evaluated` is the static value that renders (#163).
+#[test]
+fn expression_syntax_errors_reach_the_reply() {
+    let mut s = McpServer::new(Backend::headless(effectcraft_host::session()));
+    call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "A", "width": 64, "height": 64}}));
+    call_json(&mut s, "execute_command", json!({"command": "layer.newSolid", "params": {"name": "S", "color": "#ff0000", "width": 32, "height": 8}}));
+    let at = |expr: &str| json!({"layer": "S", "path": "transform/rotation", "expression": expr});
+    call_json(&mut s, "set_property", json!({"layer": "S", "path": "transform/rotation", "value": 30}));
+    let set = call_json(&mut s, "set_property", at("thisIsBroken("));
+    let got = call_json(&mut s, "get_property", json!({"layer": "S", "path": "transform/rotation"}));
+    for r in [&set, &got] {
+        assert_eq!((&r["expression"], &r["evaluated"]), (&json!("thisIsBroken("), &json!(30.0)), "{r}");
+        assert!(r["expressionError"].as_str().unwrap().contains("SyntaxError"), "{r}");
+    }
+    // A runtime error and a valid expression report as before.
+    let r = call_json(&mut s, "set_property", at("nope*2"));
+    assert!(r["expressionError"].as_str().unwrap().contains("nope is not defined"), "{r}");
+    let r = call_json(&mut s, "set_property", at("60"));
+    assert_eq!((&r["evaluated"], r.get("expressionError")), (&json!(60.0), None), "{r}");
+}
+
 #[test]
 fn stdio_loop() {
     let mut s = server();

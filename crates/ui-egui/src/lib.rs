@@ -102,7 +102,8 @@ pub struct Hooks {
     pub audio_devices: Option<Box<dyn Fn() -> Vec<String>>>,
     /// Picks a folder (Settings paths).
     pub pick_folder: Option<Box<dyn Fn() -> Option<String>>>,
-    /// Save dialog for other file kinds: (default name, extension).
+    /// Save dialog for other file kinds: (default name or path, extension). A default path opens
+    /// the dialog in its folder.
     pub pick_save_file: Option<Box<dyn Fn(&str, &str) -> Option<String>>>,
     /// The system clipboard's text (native menu Edit ▸ Paste into a text field).
     pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,

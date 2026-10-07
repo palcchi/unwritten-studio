@@ -2215,9 +2215,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if graph_on {
         super::graph::show(app, ui, &gp, &comp, &ectx, tm, Rect::from_min_max(pos2(graph_x0, rows_rect.min.y), rows_rect.max), &mut actions);
     }
-    // Empty-area click in the graph: deselect keys; drag: box-select keys.
+    // Empty-area click in the graph: deselect keys (below the last row, the layers too, as in
+    // After Effects); drag: box-select keys.
     if empty.clicked() {
         actions.push(("keys.select".into(), json!({"keys": []})));
+        let below = empty.interact_pointer_pos().is_some_and(|p| hit_rows.iter().all(|(r, _)| p.y > r.max.y));
+        if below && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
+            actions.push(("layer.select".into(), json!({"layers": []})));
+        }
     }
     if let (true, Some(origin), Some(cur)) =
         (empty.dragged(), empty.interact_pointer_pos().and_then(|_| ctx.input(|i| i.pointer.press_origin())), empty.interact_pointer_pos())

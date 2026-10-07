@@ -1,10 +1,11 @@
-//! Timeline rows for shape layers: the Contents "Add:" menu and the Classic 3D "Change
-//! Renderer…" row (#206).
+//! Timeline rows for shape layers and keyframing: the Contents "Add:" menu and the Classic 3D
+//! "Change Renderer…" row (#206), Alt+Shift+P revealing the key it adds, clicks below the layers
+//! deselecting them and the toolbar's Stroke on a selected shape layer (#205).
 
 use effectcraft_engine::Session;
 use effectcraft_engine::project::LayerId;
 use effectcraft_ui_egui::{Dialog, EffectcraftApp};
-use egui::{Event, Modifiers, PointerButton, Pos2, pos2};
+use egui::{Event, Key, Modifiers, PointerButton, Pos2, pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use serde_json::json;
@@ -78,3 +79,46 @@ fn classic_3d_shape_layers_offer_change_renderer() {
     assert!(h.state().auto.find(&format!("timeline.layer.{l}.changeRenderer")).is_none());
 }
 
+#[test]
+fn add_position_key_reveals_position() {
+    let mut s = session();
+    let l = s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = harness(s);
+    let ctx = h.ctx.clone();
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.keyAt.position", json!({})).unwrap();
+    h.run_steps(2);
+    let app = h.state();
+    let position = app.session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.prop("transform/position").unwrap().clone();
+    assert_eq!(position.keys.len(), 1);
+    assert_eq!(app.ui.timeline.layer_reveal.get(&l), Some(&vec!["position".to_string()]));
+    assert!(app.auto.find(&format!("timeline.prop.{}.value.0", position.uid)).is_some(), "the Position row shows");
+}
+
+#[test]
+fn clicking_below_the_layers_deselects_them() {
+    let mut s = session();
+    let l = s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = harness(s);
+    assert_eq!(h.state().session.state.selected_layers, vec![LayerId(l)]);
+    // In the time graph, below the only layer.
+    let bar = center(&h, &format!("timeline.layer.{l}.bar"));
+    click_at(&mut h, bar + egui::vec2(0.0, 80.0));
+    assert!(h.state().session.state.selected_layers.is_empty());
+}
+
+#[test]
+fn toolbar_stroke_edits_the_selected_shape_layer() {
+    let mut s = session();
+    let l = s.execute("layer.newShape", json!({"kind": "rect", "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = harness(s);
+    // The Selection tool is active: the options show for the selected shape layer.
+    click(&mut h, "header.strokeWidth");
+    h.input_mut().events.push(Event::Text("4".into()));
+    h.step();
+    h.input_mut().events.push(Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+    h.run_steps(3);
+    let layer = h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().clone();
+    let width = layer.props.prop("contents/group/contents/stroke/width").map(|p| p.value.as_f64());
+    assert_eq!(width, Some(4.0), "a stroke was added with the toolbar's width");
+    assert_eq!(h.state().ui.stroke_width, 4.0);
+}

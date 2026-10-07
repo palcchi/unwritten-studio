@@ -183,6 +183,40 @@ fn text_shape_mask_matte_parent() {
     assert_eq!(info["layers"].as_array().unwrap().len(), 2);
 }
 
+/// The toolbar's Fill / Stroke change a selected shape layer's paint (#205): a shape drawn
+/// without a stroke gets one, later edits change it, and the Contents "Add:" items (#206) include
+/// an empty Path and a Gradient Stroke that render.
+#[test]
+fn toolbar_fill_and_stroke_paint_selected_shape_layers() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"width": 400, "height": 300, "duration": 2})).unwrap();
+    let sh = s.execute("layer.newShape", json!({"kind": "rect", "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+    let paint = |s: &mut Session| s.execute("shape.fillStroke", json!({})).unwrap();
+    assert_eq!(paint(&mut s)["stroke"], serde_json::Value::Null, "drawn without a stroke");
+    s.execute("shape.fillStroke", json!({"stroke": "#00ff00", "strokeWidth": 6})).unwrap();
+    let p = paint(&mut s);
+    assert_eq!((p["stroke"][1].as_f64(), p["strokeWidth"].as_f64()), (Some(1.0), Some(6.0)), "{p}");
+    s.execute("shape.fillStroke", json!({"fill": "#0000ff", "strokeWidth": 3})).unwrap();
+    let p = paint(&mut s);
+    assert_eq!((p["fill"][2].as_f64(), p["strokeWidth"].as_f64()), (Some(1.0), Some(3.0)), "{p}");
+    // One stroke, before the fill (paths, stroke, fill), and each change is one undo step.
+    let l = s.active_comp().unwrap().layer(effectcraft_project::LayerId(sh)).unwrap().clone();
+    let group = l.props.group("contents/group").unwrap();
+    let order: Vec<&str> = group.sub("contents").unwrap().groups().map(|g| g.match_id.as_str()).collect();
+    assert_eq!(order, ["rect", "stroke", "fill"]);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(paint(&mut s)["strokeWidth"].as_f64(), Some(6.0));
+    // Only shape layers.
+    s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap();
+    assert!(s.execute("shape.fillStroke", json!({"fill": "#ffffff"})).is_err());
+    for kind in ["path", "gstroke"] {
+        let r = s.execute("layer.addShapeItem", json!({"layer": sh, "kind": kind})).unwrap();
+        assert!(r["path"].as_str().is_some_and(|p| p.starts_with("contents/")), "{r}");
+    }
+    let cid = s.active_comp_id().unwrap();
+    let _ = s.render(cid, s.time(), Default::default());
+}
+
 #[test]
 fn save_and_open_roundtrip() {
     let mut s = demo();

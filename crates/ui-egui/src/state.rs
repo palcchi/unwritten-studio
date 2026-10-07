@@ -413,6 +413,10 @@ pub struct TimelineState {
     /// Properties whose inline expression editor is collapsed.
     #[serde(default)]
     pub expr_closed: BTreeSet<u64>,
+    /// Scale and Mask Feather properties whose chain link (Constrain Proportions, on by default)
+    /// was turned off.
+    #[serde(default)]
+    pub unlinked: BTreeSet<u64>,
     /// Visible optional columns (column header right-click ▸ Columns): `av`, `keys`, `label`,
     /// `num`, `comment`, `switches`, `parent`, `in`, `out`, `duration`, `stretch`. The name
     /// column is always shown; Modes follows `show_modes` (F4).
@@ -458,6 +462,7 @@ impl Default for TimelineState {
             graph_reference: false,
             graph_transform_box: true,
             expr_closed: BTreeSet::new(),
+            unlinked: BTreeSet::new(),
             columns: default_tl_columns(),
             source_name: false,
         }

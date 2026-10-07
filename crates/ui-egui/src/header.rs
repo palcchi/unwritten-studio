@@ -9,6 +9,7 @@ use crate::state::Tool;
 use crate::theme::Tokens;
 use crate::widgets;
 use crate::{Dialog, EffectcraftApp};
+use effectcraft_engine::project::{LayerId, LayerSource};
 
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
@@ -91,7 +92,40 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
 
     // Tool options.
     x += 10.0;
-    if app.ui.tool.is_shape() || app.ui.tool == Tool::Pen {
+    // Selected shape layers: the options show their paint and edit it (as in After Effects).
+    let shape_layers: Vec<u64> = app
+        .session
+        .active_comp()
+        .map(|c| {
+            app.session.state.selected_layers.iter().filter(|id| c.layer(**id).is_some_and(|l| matches!(l.source, LayerSource::Shape))).map(|id| id.0).collect()
+        })
+        .unwrap_or_default();
+    if let Some(l) = shape_layers.first().and_then(|id| app.session.active_comp()?.layer(LayerId(*id))) {
+        let (fill, stroke, width) = effectcraft_engine::commands::shape_stroke::first_paint(l, l.layer_time(app.session.time()));
+        let rgb = |c: [f64; 4]| [c[0] as f32, c[1] as f32, c[2] as f32];
+        if let Some(c) = fill {
+            app.ui.fill_color = rgb(c);
+        }
+        if let Some(c) = stroke {
+            app.ui.stroke_color = rgb(c);
+        }
+        app.ui.stroke_width = width.unwrap_or(0.0) as f32;
+    }
+    // One undo step per picker session or width drag: end the merge once both are done.
+    let picking = ["tool-fill-pop", "tool-stroke-pop"].iter().any(|k| ui.data(|d| d.get_temp::<bool>(egui::Id::new(*k).with("open")).unwrap_or(false)));
+    if !picking && !ui.input(|i| i.pointer.any_down()) && app.session.history.merge_key.as_deref().is_some_and(|k| k.starts_with("tool-")) {
+        app.session.history.merge_key = None;
+    }
+    if app.ui.tool.is_shape() || app.ui.tool == Tool::Pen || !shape_layers.is_empty() {
+        let paint = |app: &mut EffectcraftApp, key: &str, v: serde_json::Value| {
+            if shape_layers.is_empty() {
+                return;
+            }
+            let merge = format!("tool-{key}");
+            if let Err(e) = app.session.execute("shape.fillStroke", serde_json::json!({"layers": shape_layers, key: v, "merge": merge})) {
+                app.ui.status = e.to_string();
+            }
+        };
         p.text(pos2(x, cy), Align2::LEFT_CENTER, "Fill:", Tokens::ui(12.0), t.text_dim);
         x += 28.0;
         let fr = Rect::from_center_size(pos2(x + 10.0, cy), vec2(20.0, 16.0));
@@ -99,7 +133,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if widgets::swatch(ui, fr, [c[0], c[1], c[2], 1.0], egui::Id::new("tool-fill"), &t).clicked() {
             widgets::open_popup(ui, egui::Id::new("tool-fill-pop"));
         }
-        color_popup(ui, egui::Id::new("tool-fill-pop"), fr.left_bottom(), &mut app.ui.fill_color);
+        if color_popup(ui, egui::Id::new("tool-fill-pop"), fr.left_bottom(), &mut app.ui.fill_color) {
+            let c = app.ui.fill_color;
+            paint(app, "fill", serde_json::json!(c));
+        }
+        app.auto.add("header.fill", fr, "Fill Color");
         x += 32.0;
         p.text(pos2(x, cy), Align2::LEFT_CENTER, "Stroke:", Tokens::ui(12.0), t.text_dim);
         x += 44.0;
@@ -108,13 +146,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if widgets::swatch(ui, sr, [c[0], c[1], c[2], 1.0], egui::Id::new("tool-stroke"), &t).clicked() {
             widgets::open_popup(ui, egui::Id::new("tool-stroke-pop"));
         }
-        color_popup(ui, egui::Id::new("tool-stroke-pop"), sr.left_bottom(), &mut app.ui.stroke_color);
+        if color_popup(ui, egui::Id::new("tool-stroke-pop"), sr.left_bottom(), &mut app.ui.stroke_color) {
+            let c = app.ui.stroke_color;
+            paint(app, "stroke", serde_json::json!(c));
+        }
+        app.auto.add("header.stroke", sr, "Stroke Color");
         x += 26.0;
         let (r, v, _) =
             widgets::hot_number_at(ui, pos2(x, cy - 9.0), egui::Id::new("tool-stroke-w"), app.ui.stroke_width as f64, 0.2, (0.0, 1000.0), 0, " px", &t);
         if let Some(v) = v {
             app.ui.stroke_width = v as f32;
+            paint(app, "strokeWidth", serde_json::json!(v));
         }
+        app.auto.add("header.strokeWidth", r, "Stroke Width");
         x = r.max.x + 14.0;
     }
     if app.ui.tool.puppet_kind().is_some() {

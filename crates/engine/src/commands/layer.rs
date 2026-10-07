@@ -1075,7 +1075,9 @@ fn add_shape_item(s: &mut Session, p: &Value) -> Result<Value> {
             "polygon" => build::shape_star(&mut ids, false, 5.0, [0.0, 0.0], 100.0, 0.0),
             "fill" => build::shape_fill(&mut ids, [1.0, 0.0, 0.0, 1.0]),
             "stroke" => build::shape_stroke(&mut ids, [1.0, 1.0, 1.0, 1.0], 2.0),
+            "path" => build::shape_path(&mut ids, Default::default()),
             "gfill" | "gradientFill" => build::shape_gradient_fill(&mut ids, false, [-100.0, 0.0], [100.0, 0.0], Default::default()),
+            "gstroke" | "gradientStroke" => build::shape_gradient_stroke(&mut ids, false, [-100.0, 0.0], [100.0, 0.0], Default::default(), 2.0),
             "trim" | "trimPaths" => build::shape_trim(&mut ids, 0.0, 100.0, 0.0),
             "repeater" => build::shape_repeater(&mut ids, 3.0, [100.0, 0.0]),
             k => build::shape_simple_op(&mut ids, k).ok_or_else(|| bad("layer.addShapeItem", format!("unknown kind `{k}`")))?,
@@ -1404,7 +1406,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add (Shape)",
             [],
             None,
-            "{layer?, kind: group|rect|ellipse|star|polygon|fill|stroke|gfill|trim|repeater|round|offset|pucker|twist|zigzag|wiggle|merge, group?: uid|path} → {uid, path}",
+            "{layer?, kind: group|rect|ellipse|star|polygon|path|fill|stroke|gfill|gstroke|trim|repeater|round|offset|pucker|twist|zigzag|wiggle|merge, group?: uid|path} → {uid, path}",
             has_layers,
             add_shape_item
         ),

@@ -145,7 +145,14 @@ fn main() -> eframe::Result {
             app.hooks.audio_devices = Some(Box::new(audio_out::devices));
             app.hooks.pick_folder = Some(Box::new(|| rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().to_string())));
             app.hooks.pick_save_file = Some(Box::new(|name: &str, ext: &str| {
-                rfd::FileDialog::new().add_filter(ext, &[ext]).set_file_name(name).save_file().map(|p| p.to_string_lossy().to_string())
+                // A default with a folder that exists opens the dialog there.
+                let path = std::path::Path::new(name);
+                let mut d = rfd::FileDialog::new().add_filter(ext, &[ext]);
+                if let Some(dir) = path.parent().filter(|d| d.is_dir()) {
+                    d = d.set_directory(dir);
+                }
+                let file = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                d.set_file_name(file).save_file().map(|p| p.to_string_lossy().to_string())
             }));
             #[cfg(target_os = "macos")]
             {

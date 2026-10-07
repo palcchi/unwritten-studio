@@ -110,6 +110,25 @@ fn output_to_keeps_a_format_that_writes_the_extension() {
     assert_eq!((&r["output"]["format"], &r["outputModuleSummary"]), (&json!("Hevc"), &a["outputModuleSummary"]), "{r}");
 }
 
+/// An explicit RGB + Alpha request with the AV1 WebM codec (which has no alpha) is refused, not
+/// silently rendered opaque (#166). Without `channels`, AV1 WebM renders RGB as before.
+#[test]
+fn av1_webm_refuses_requested_alpha() {
+    let mut s = session();
+    let n = s.project.render_queue.len();
+    let e = s.execute("renderQueue.add", json!({"format": "webm", "webmCodec": "av1", "channels": "rgba"})).unwrap_err().to_string();
+    assert!(e.contains("AV1 WebM has no alpha channel"), "{e}");
+    assert_eq!(s.project.render_queue.len(), n, "nothing queued");
+    let a = s.execute("renderQueue.add", json!({"format": "webm", "channels": "rgba"})).unwrap();
+    let e = s.execute("renderQueue.setOutputModule", json!({"item": a["item"], "webmCodec": "av1", "channels": "rgba"})).unwrap_err().to_string();
+    assert!(e.contains("AV1 WebM has no alpha channel"), "{e}");
+    let om = &s.project.render_queue.last().unwrap().output;
+    assert_eq!((om.webm_codec, om.channels), (WebmVideoCodec::Vp9, Channels::Rgba), "unchanged");
+    s.execute("renderQueue.add", json!({"format": "webm", "webmCodec": "av1"})).unwrap();
+    let om = &s.project.render_queue.last().unwrap().output;
+    assert_eq!((om.webm_codec, om.channels), (WebmVideoCodec::Av1, Channels::Rgb));
+}
+
 /// A `comp` that names no composition says so, rather than "no active composition" (#155).
 #[test]
 fn an_unknown_comp_is_named_in_the_error() {

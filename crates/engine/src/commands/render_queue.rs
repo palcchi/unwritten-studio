@@ -219,6 +219,9 @@ fn apply_output(om: &mut OutputModule, templates: &RenderTemplates, roi: Option<
         let f = OutputFormat::from_name(f).ok_or_else(|| bad(cmd, FORMATS))?;
         om.set_format(f);
     }
+    // Before Channels: the WebM codec decides whether alpha can be written, so an explicit
+    // `channels: rgba` with `webmCodec: av1` is refused rather than dropped (#166).
+    any |= apply_codec_options(om, p, cmd)?;
     if let Some(c) = str_p(p, "channels") {
         om.channels = match c.to_ascii_lowercase().replace([' ', '+'], "").as_str() {
             "rgb" => Channels::Rgb,
@@ -227,7 +230,11 @@ fn apply_output(om: &mut OutputModule, templates: &RenderTemplates, roi: Option<
             _ => return Err(bad(cmd, "channels: rgb|rgba|alpha")),
         };
         if om.channels == Channels::Rgba && !om.supports_alpha() {
-            return Err(bad(cmd, format!("{} has no alpha channel", om.format.label())));
+            let what = match om.format {
+                OutputFormat::WebM => format!("{} WebM has no alpha channel (VP9 WebM has)", om.webm_codec.label()),
+                f => format!("{} has no alpha channel", f.label()),
+            };
+            return Err(bad(cmd, what));
         }
     }
     if let Some(c) = str_p(p, "color").or(str_p(p, "alphaMode")) {
@@ -237,7 +244,6 @@ fn apply_output(om: &mut OutputModule, templates: &RenderTemplates, roi: Option<
             _ => return Err(bad(cmd, "color: straight|premultiplied")),
         };
     }
-    any |= apply_codec_options(om, p, cmd)?;
     if let Some(q) = f_p(p, "quality") {
         om.quality = q.clamp(1.0, 100.0) as u8;
     }

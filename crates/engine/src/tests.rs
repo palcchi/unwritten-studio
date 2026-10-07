@@ -371,6 +371,27 @@ fn comp_settings_anchor_start_timecode_renderer() {
     assert_eq!(c.renderer, crate::project::Renderer::Advanced3D);
 }
 
+/// `advanced3D` is a value of `renderer`, not a key: comp.new / comp.settings don't advertise it
+/// in their schemas and reject it as unknown instead of ignoring it (#177).
+#[test]
+fn renderer_values_are_not_parameter_keys() {
+    let mut s = Session::default();
+    for (id, p) in [("comp.new", json!({"name": "A"})), ("comp.settings", json!({}))] {
+        let spec = crate::command_specs().iter().find(|c| c.id == id).unwrap();
+        let keys = crate::commands::accepted_params(spec.params).unwrap();
+        assert!(keys.contains(&"renderer".to_string()) && !keys.contains(&"advanced3D".to_string()), "{id}: {keys:?}");
+        let mut bad = p.clone();
+        bad["advanced3D"] = json!(true);
+        let e = s.execute_checked(id, bad).unwrap_err().to_string();
+        assert!(e.contains("unknown parameter(s) `advanced3D`"), "{id}: {e}");
+        let mut good = p;
+        good["renderer"] = json!("advanced3D");
+        s.execute_checked(id, good).unwrap();
+        assert_eq!(s.active_comp().unwrap().renderer, crate::project::Renderer::Advanced3D, "{id}");
+        s.execute("comp.renderer", json!({"renderer": "classic3d"})).unwrap();
+    }
+}
+
 #[test]
 fn comp_rejects_zero_and_negative_frame_rates() {
     let mut s = Session::default();

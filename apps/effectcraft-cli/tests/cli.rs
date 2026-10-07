@@ -130,6 +130,32 @@ fn errors_are_json() {
     assert_eq!(out.status.code(), Some(2));
 }
 
+/// A reader that closes stdout before the CLI writes (`| head`) is not a crash: the command
+/// still does its work and exits 0, without a panic (#167).
+#[test]
+fn a_closed_stdout_is_not_a_crash() {
+    let proj = tmp("closed-stdout.ecproj");
+    let p = proj.to_str().unwrap();
+    for args in [&["info", "--json"][..], &["exec", "--list"], &["run", "comp.new", r#"{"name":"Piped"}"#, "project.summary", "--empty", "--save-as", p]] {
+        let mut child = bin().args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        drop(child.stdout.take());
+        let out = child.wait_with_output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {err}");
+        assert!(!err.contains("panicked"), "{args:?}: {err}");
+    }
+    assert!(std::fs::read_to_string(&proj).unwrap().contains("Piped"), "the sequence ran to the end and saved");
+    // The MCP server ends quietly when its client closes stdout.
+    let mut child = bin().arg("mcp").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    drop(child.stdout.take());
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        let _ = writeln!(stdin, "{}", json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}));
+    }
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
 #[test]
 fn mcp_over_stdio() {
     let mut child = bin().args(["mcp", "--demo"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();

@@ -278,8 +278,8 @@ export function audioStop() {
 
 // ------------------------------------------------------------------ workers
 
-// Idle workers are reused; each keeps the files it was sent (path → size) so a file goes to a
-// worker once.
+// Idle workers are reused; each keeps the files it was sent (path → version) so a file goes to a
+// worker once, and again when it was replaced (even by one of the same size, #218).
 const idle = [];
 const running = new Map(); // job id → {worker, done}
 // Job workers open a WebGPU device of their own (unless `?nogpuworkers`): their jobs' frames
@@ -310,7 +310,8 @@ function spawn(base) {
   return w;
 }
 
-/// Run a job in a worker. `files`: [[path, Uint8Array]] the job reads; `onMessage(type, json,
+/// Run a job in a worker. `files`: [[path, Uint8Array, version]] the job reads (`version`
+/// changes with every write of the file); `onMessage(type, json,
 /// path, bytes)` receives "reply" (json), "file" (path, bytes: a rendered file to download),
 /// "store" (path, bytes: a file to keep in browser storage) and "error" (json = message).
 export function workerRun(id, json, files, base, onMessage) {
@@ -339,9 +340,10 @@ export function workerRun(id, json, files, base, onMessage) {
       onMessage("error", String(e.message || "worker error"), null, null);
       w.worker.terminate();
     };
-    for (const [path, bytes] of files) {
-      if (w.files.get(path) === bytes.length) continue;
-      w.files.set(path, bytes.length);
+    for (const [path, bytes, version] of files) {
+      const tag = version ?? bytes.length;
+      if (w.files.get(path) === tag) continue;
+      w.files.set(path, tag);
       w.worker.postMessage({ type: "file", path, bytes });
     }
     w.worker.postMessage({ type: "job", json });

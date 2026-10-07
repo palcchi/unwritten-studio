@@ -2,6 +2,9 @@
 //!
 //! Usage: `effectcraft [--control <port>] [--demo|--empty|--home] [project.ecproj | media files…]`
 //!
+//! Without a project the app starts with an empty Untitled Project, as After Effects does;
+//! `--demo` opens the demo project instead (also Help ▸ Open Demo Project).
+//!
 //! `--control <port>` (or `EFFECTCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server;
 //! see `effectcraft_ui_egui::control` for the methods.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
@@ -32,28 +35,43 @@ fn app_icon() -> egui::IconData {
     eframe::icon_data::from_png_bytes(png).unwrap_or_default()
 }
 
+/// The command line.
+#[derive(Debug, Default, PartialEq)]
+struct Args {
+    control_port: Option<u16>,
+    files: Vec<String>,
+    /// Open the demo project when no project is given (`--demo`).
+    demo: bool,
+    /// Show or skip the Home screen (`--home`), else the Startup preference decides.
+    home: Option<bool>,
+}
+
+/// Parse the arguments after the program name; `None` for `--version`. `env_port` is
+/// `EFFECTCRAFT_CONTROL_PORT`.
+fn parse_args(args: impl IntoIterator<Item = String>, env_port: Option<String>) -> Option<Args> {
+    let mut out = Args { control_port: env_port.and_then(|p| p.parse().ok()), ..Default::default() };
+    let mut args = args.into_iter();
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--control" => out.control_port = args.next().and_then(|p| p.parse().ok()),
+            "--demo" => out.demo = true,
+            "--empty" => out.demo = false,
+            "--home" => out.home = Some(true),
+            "--version" => return None,
+            _ => out.files.push(a),
+        }
+    }
+    Some(out)
+}
+
 fn main() -> eframe::Result {
     // Help ▸ Enable Logging writes through this logger; warnings feed the compatibility report.
     effectcraft_engine::logging::install();
     effectcraft_engine::logging::install_panic_hook();
-    let mut control_port: Option<u16> = std::env::var("EFFECTCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
-    let mut files = Vec::new();
-    let mut demo = true;
-    let mut home: Option<bool> = None;
-    let mut args = std::env::args().skip(1);
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
-            "--demo" => demo = true,
-            "--empty" => demo = false,
-            "--home" => home = Some(true),
-            "--version" => {
-                println!("effectcraft {}", env!("CARGO_PKG_VERSION"));
-                return Ok(());
-            }
-            _ => files.push(a),
-        }
-    }
+    let Some(Args { control_port, files, demo, home }) = parse_args(std::env::args().skip(1), std::env::var("EFFECTCRAFT_CONTROL_PORT").ok()) else {
+        println!("effectcraft {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    };
     // The font menus list the installed fonts: read their names while the window opens.
     effectcraft_engine::text::fonts::scan_system_in_background();
     // Wayland shows the window's icon from its desktop entry: an AppImage brings its own.
@@ -225,5 +243,26 @@ fn disable_app_nap() {
         let opts = NSActivityOptions::UserInitiatedAllowingIdleSystemSleep | NSActivityOptions::LatencyCritical;
         // Leaked on purpose: the activity lasts for the life of the process.
         std::mem::forget(info.beginActivityWithOptions_reason(opts, &reason));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Args, parse_args};
+
+    fn parse(args: &[&str]) -> Option<Args> {
+        parse_args(args.iter().map(|a| a.to_string()), None)
+    }
+
+    /// Launching without a project opens an empty project, not the demo (#204).
+    #[test]
+    fn no_arguments_start_an_empty_project() {
+        assert_eq!(parse(&[]), Some(Args::default()));
+        assert!(parse(&["--demo"]).is_some_and(|a| a.demo));
+        assert!(parse(&["--demo", "--empty"]).is_some_and(|a| !a.demo));
+        let a = parse(&["--control", "9877", "--home", "a.ecproj"]).unwrap_or_default();
+        assert_eq!((a.control_port, a.home, a.files), (Some(9877), Some(true), vec!["a.ecproj".to_string()]));
+        assert_eq!(parse(&["--version"]), None);
+        assert_eq!(parse_args(Vec::new(), Some("9000".into())).map(|a| a.control_port), Some(Some(9000)));
     }
 }

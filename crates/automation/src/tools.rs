@@ -154,7 +154,8 @@ fn list_fonts(b: &mut Backend, a: &Value) -> Result<Reply> {
     json_reply(b.exec("text.fonts", obj(&[("query", get(a, "query")), ("rescan", get(a, "rescan"))]))?)
 }
 
-/// `effect.apply` on one layer, then set parameters on the new instance by param id.
+/// `effect.apply` on one layer, then set parameters on the new instance by param id: one batch,
+/// so one undo step, and a failing value leaves nothing applied.
 fn add_effect(b: &mut Backend, a: &Value) -> Result<Reply> {
     let (layer, effect, comp) = (need(a, "layer")?, need(a, "effect")?, get(a, "comp"));
     let count = |t: &Value| effects_group(t).and_then(|g| g.get("children")).and_then(Value::as_array).map_or(0, Vec::len);
@@ -162,16 +163,22 @@ fn add_effect(b: &mut Backend, a: &Value) -> Result<Reply> {
     let index = count(&before) + 1;
     let mut p = obj(&[("effect", Some(effect)), ("comp", comp)]);
     p["layers"] = json!([layer]);
-    b.exec("effect.apply", p)?;
+    let mut steps = vec![json!({"command": "effect.apply", "params": p})];
     let prefix = format!("effects/#{index}");
     let mut set = vec![];
     if let Some(vals) = get(a, "values").and_then(Value::as_object) {
         for (k, v) in vals {
             let path = format!("{prefix}/{k}");
-            b.exec("prop.set", obj(&[("layer", Some(layer)), ("comp", comp), ("path", Some(&json!(path))), ("value", Some(v))]))?;
+            steps.push(
+                json!({"command": "prop.set", "params": obj(&[("layer", Some(layer)), ("comp", comp), ("path", Some(&json!(path))), ("value", Some(v))])}),
+            );
             set.push(path);
         }
     }
+    // The undo step is named like effect.apply's own ("Apply Gaussian Blur").
+    let name = effect.as_str().map(|e| effectcraft_engine::effects::lookup(e).map_or(e, |s| s.name));
+    let label = name.map(|n| json!(format!("Apply {n}")));
+    b.exec("engine.batch", obj(&[("steps", Some(&json!(steps))), ("label", label.as_ref())]))?;
     let tree = b.exec("layer.tree", obj(&[("layer", Some(layer)), ("comp", comp)]))?;
     let inst = effects_group(&tree).and_then(|g| g.get("children")).and_then(Value::as_array).and_then(|c| c.get(index - 1)).cloned();
     let mut params = vec![];
@@ -590,7 +597,7 @@ static TOOLS: &[ToolDef] = &[
     },
     ToolDef {
         name: "add_effect",
-        description: "Apply an effect to a layer and optionally set its parameters in one undoable call. `effect` is an id (`ec.blur.gaussian`) or After Effects name (`Gaussian Blur`; see list_effects); `values` maps parameter ids to values, e.g. {\"blurriness\": 12}. Returns the instance `path` (`effects/#n`, for set_property / add_keyframe) and its parameters with their paths and current values.",
+        description: "Apply an effect to a layer and optionally set its parameters in one undoable call. `effect` is an id (`ec.blur.gaussian`) or After Effects name (`Gaussian Blur`; see list_effects); `values` maps parameter ids to values, e.g. {\"blurriness\": 12}. One undo step; if a value fails, nothing is applied. Returns the instance `path` (`effects/#n`, for set_property / add_keyframe) and its parameters with their paths and current values.",
         bridge_only: false,
         schema: || {
             schema(

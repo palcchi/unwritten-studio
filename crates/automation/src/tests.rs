@@ -416,6 +416,32 @@ fn high_level_tools_add_effect_and_report_state() {
     assert!(err && c[0]["text"].as_str().unwrap().contains("unknown effect"), "{c:?}");
 }
 
+/// add_effect is one undo step, and a call that fails leaves the layer and the history as they
+/// were (#175).
+#[test]
+fn add_effect_is_one_undo_step_and_all_or_nothing() {
+    let mut s = server();
+    call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "A", "width": 64, "height": 64}}));
+    call_json(&mut s, "execute_command", json!({"command": "layer.newSolid", "params": {"name": "S", "color": "#ff0000"}}));
+    let undo = |s: &mut McpServer| call_json(s, "get_project", json!({}))["undo"].as_array().unwrap().clone();
+    let effects = |s: &mut McpServer| {
+        let l = call_json(s, "get_layer", json!({"layer": "S", "flat": true}));
+        l["properties"].as_array().unwrap().iter().filter(|p| p["path"].as_str().unwrap().starts_with("effects/")).count()
+    };
+    let before = undo(&mut s);
+    let (c, err) = call(&mut s, "add_effect", json!({"layer": "S", "effect": "Gaussian Blur", "values": {"blurriness": 8, "repeatEdgePixels": true}}));
+    assert!(err && c[0]["text"].as_str().unwrap().contains("effects/#1/repeatEdgePixels"), "{c:?}");
+    assert_eq!((undo(&mut s), effects(&mut s)), (before.clone(), 0), "nothing applied");
+    // The corrected retry lands at #1, in one undo step named like effect.apply's.
+    let r = call_json(&mut s, "add_effect", json!({"layer": "S", "effect": "Gaussian Blur", "values": {"blurriness": 8, "repeatEdge": true}}));
+    assert_eq!((&r["path"], &r["set"]), (&json!("effects/#1"), &json!(["effects/#1/blurriness", "effects/#1/repeatEdge"])), "{r}");
+    let after = undo(&mut s);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    assert_eq!(after.last(), Some(&json!("Apply Gaussian Blur")));
+    call_json(&mut s, "undo", json!({}));
+    assert_eq!((undo(&mut s), effects(&mut s)), (before, 0), "one undo removes the effect and its values");
+}
+
 #[test]
 fn list_fonts_lists_families_with_styles() {
     let mut s = server();

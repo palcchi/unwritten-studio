@@ -89,9 +89,10 @@ fn main() -> eframe::Result {
             // Wayland matches the window to `ai.storyteller.effectcraft.desktop` by this ID.
             .with_app_id(appimage::APP_ID),
         event_loop_builder: agent_event_loop(control_port.is_some()),
+        wgpu_options: wgpu_options(),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "EffectCraft",
         options,
         Box::new(move |cc| {
@@ -188,7 +189,50 @@ fn main() -> eframe::Result {
                 app,
             }))
         }),
-    )
+    );
+    if let Err(e) = &result {
+        startup_failed(e);
+    }
+    result
+}
+
+/// The window's wgpu device asks for the adapter's own limits (textures up to 16384 px)
+/// instead of eframe's fixed set: an older GPU that can't meet those (Intel HD Graphics 5500,
+/// #198) still opens the app, and the compositor then checks what it needs and falls back to
+/// the CPU when the device can't run it.
+fn wgpu_options() -> eframe::WgpuConfiguration {
+    use eframe::egui_wgpu::WgpuSetup;
+    let mut config = eframe::WgpuConfiguration::default();
+    if let WgpuSetup::CreateNew(setup) = &mut config.wgpu_setup {
+        setup.device_descriptor = std::sync::Arc::new(|adapter| eframe::wgpu::DeviceDescriptor {
+            label: Some("EffectCraft device"),
+            required_limits: device_limits(adapter.limits()),
+            ..Default::default()
+        });
+    }
+    config
+}
+
+/// The limits to request from an adapter that offers `adapter`: all of them, with textures
+/// capped at 16384 px like the headless renderer's device.
+fn device_limits(adapter: eframe::wgpu::Limits) -> eframe::wgpu::Limits {
+    eframe::wgpu::Limits { max_texture_dimension_2d: adapter.max_texture_dimension_2d.min(16384), ..adapter }
+}
+
+/// The window couldn't open (no usable graphics adapter or device): say so instead of quitting
+/// silently, since release builds on Windows have no console.
+fn startup_failed(e: &eframe::Error) {
+    let message = format!(
+        "EffectCraft couldn't start its window: {e}\n\nUpdating the graphics driver often helps. If it keeps happening, please report it at https://github.com/storytold/effectcraft/issues with this message."
+    );
+    log::error!("{message}");
+    eprintln!("effectcraft: {message}");
+    let _ = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("EffectCraft")
+        .set_description(message)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
 }
 
 /// The desktop app: the egui app plus, on macOS, the system menu bar.
@@ -252,6 +296,19 @@ mod tests {
 
     fn parse(args: &[&str]) -> Option<Args> {
         parse_args(args.iter().map(|a| a.to_string()), None)
+    }
+
+    /// The window's device never asks for more than the adapter offers (#198).
+    #[test]
+    fn device_limits_fit_the_adapter() {
+        use eframe::wgpu::Limits;
+        for adapter in [Limits::downlevel_defaults(), Limits::downlevel_webgl2_defaults(), Limits::default()] {
+            let l = super::device_limits(adapter.clone());
+            assert!(l.check_limits(&adapter), "{l:?}");
+            assert_eq!(l.max_storage_buffers_per_shader_stage, adapter.max_storage_buffers_per_shader_stage);
+        }
+        let big = Limits { max_texture_dimension_2d: 32768, ..Limits::default() };
+        assert_eq!(super::device_limits(big).max_texture_dimension_2d, 16384);
     }
 
     /// Launching without a project opens an empty project, not the demo (#204).

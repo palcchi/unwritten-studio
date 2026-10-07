@@ -239,4 +239,11 @@ fn script_file_and_eval() {
     let (code, v) = run_json(&["script", "--eval", "\nnope()"]);
     assert_eq!(code, 1);
     assert_eq!(v["error"]["line"], json!(2));
+    // A compiled .jsxbin script is reported as unsupported, not as a SyntaxError (#176).
+    let bin_script = tmp("compiled.jsxbin");
+    std::fs::write(&bin_script, "@JSXBIN@ES@2.0@MyBbyBn0ABJAnAEjzFjBjMjFjSjUBfRBFeFjIjFjMjMjPff0DzACByB\n").unwrap();
+    let out = bin().args(["script", bin_script.to_str().unwrap()]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains(".jsxbin scripts are not supported: run the .jsx source") && !err.contains("SyntaxError"), "{err}");
 }

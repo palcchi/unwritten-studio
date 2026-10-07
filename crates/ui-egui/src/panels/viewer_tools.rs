@@ -382,7 +382,7 @@ pub(crate) fn draw_frame(app: &mut EffectcraftApp, ctx: &egui::Context, painter:
             _ => {
                 let img = crate::frames::to_color_image(&s.image);
                 let img = if plain { img } else { transformed(&img, opts.channel, opts.colorized, opts.exposure, dc) };
-                let tex = ctx.load_texture("viewer-snapshot", img, egui::TextureOptions::LINEAR);
+                let tex = crate::frames::load_fitted(ctx, "viewer-snapshot", img, egui::TextureOptions::LINEAR);
                 ctx.data_mut(|d| d.insert_temp(id, (key, tex.clone())));
                 tex
             }
@@ -432,7 +432,7 @@ pub(crate) fn draw_frame(app: &mut EffectcraftApp, ctx: &egui::Context, painter:
     let tex = match ctx.data(|d| d.get_temp::<(u64, egui::TextureHandle)>(id)) {
         Some((k, tex)) if k == key => tex,
         _ => {
-            let tex = ctx.load_texture("viewer-display", transformed(&src, opts.channel, opts.colorized, opts.exposure, dc), zoom_opts);
+            let tex = crate::frames::load_fitted(ctx, "viewer-display", transformed(&src, opts.channel, opts.colorized, opts.exposure, dc), zoom_opts);
             ctx.data_mut(|d| d.insert_temp(id, (key, tex.clone())));
             tex
         }

@@ -1019,3 +1019,26 @@ fn handle_drags_scale_about_the_anchor_and_follow_the_pointer() {
     drag_path(&mut h, &path, egui::Modifiers::SHIFT);
     assert!(close(scale(&h), [162.5, 162.5]), "{:?}", scale(&h));
 }
+
+/// A comp wider than the GPU's texture limit at Full resolution shows its frame (averaged down
+/// into a texture the renderer accepts) instead of failing the upload (#201: 11000×2200).
+#[test]
+fn full_resolution_frames_wider_than_the_texture_limit_fit() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Wide", "width": 2400, "height": 400, "duration": 1})).unwrap();
+    s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    // (egui's font atlas needs 1024.)
+    h.input_mut().max_texture_side = Some(1024);
+    h.state_mut().ui.viewer.res = effectcraft_ui_egui::state::Resolution::Full;
+    let full = |h: &mut Harness<'_, EffectcraftApp>| h.state_mut().viewer_pixels().is_some_and(|px| px.size == [2400, 400]);
+    for _ in 0..400 {
+        h.step();
+        if full(&mut h) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(full(&mut h), "the full-size frame is shown (and stays readable): {:?}", h.state().ui.viewer.res);
+    assert_eq!(h.state().viewer_texture_size(), Some([800, 134]), "2400×400 averaged by 3");
+}

@@ -494,6 +494,10 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     assert_eq!(s.prefs.general.language, "en");
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     assert_eq!(s.execute("prefs.get", json!({"key": "general.language"})).unwrap(), json!("ja"));
+    // pt-br is registered alongside en and ja, and round-trips through the file like any other.
+    s.execute("prefs.set", json!({"key": "general.language", "value": "pt-br"})).unwrap();
+    assert_eq!(s.execute("prefs.get", json!({"key": "general.language"})).unwrap(), json!("pt-br"));
+    s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let saved = store.read(PREFS_FILE).unwrap();
     for bad in [json!("fr"), json!(""), json!(17), json!(null)] {
         assert!(s.execute("prefs.set", json!({"key": "general.language", "value": bad})).is_err());

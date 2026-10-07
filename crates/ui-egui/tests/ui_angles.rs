@@ -156,6 +156,22 @@ fn valid_angles_commit_on_click_away_with_undo() {
     commit_edits(true);
 }
 
+/// Clicking a value selects all of it: typing replaces it without selecting it first (#170).
+#[test]
+fn typing_replaces_the_clicked_value() {
+    for panel in [Panel::EffectControls, Panel::Timeline, Panel::Properties] {
+        for (revolutions, text, expected) in [(true, "3", 1110.5), (false, "45.5", 405.5)] {
+            let (mut h, layer, uid) = harness(panel, 390.5);
+            let p = component(&h, panel, uid, revolutions);
+            click(&mut h, p);
+            h.input_mut().events.push(Event::Text(text.into()));
+            h.step();
+            key(&mut h, Key::Enter, Modifiers::NONE);
+            assert_eq!(angle(&h, layer, uid), expected, "{panel:?}");
+        }
+    }
+}
+
 fn commit_edits(click_away: bool) {
     for panel in [Panel::EffectControls, Panel::Timeline, Panel::Properties] {
         for (revolutions, text, expected) in [(true, "3", 1110.5), (false, "45.5", 405.5)] {

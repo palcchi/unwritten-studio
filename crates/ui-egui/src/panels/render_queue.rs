@@ -715,7 +715,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     editing = None;
                 } else {
-                    resp.request_focus();
+                    widgets::keep_focus(ui.ctx(), &resp, &buf);
                     editing = Some((it.id, buf));
                 }
             } else {

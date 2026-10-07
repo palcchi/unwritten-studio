@@ -915,11 +915,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if let Some(mut buf) = ctx.data(|d| d.get_temp::<String>(egui::Id::new("tl-tc-edit"))) {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(tc_rect));
         let r = child.add(egui::TextEdit::singleline(&mut buf).font(Tokens::semibold(16.0)).desired_width(150.0));
-        r.request_focus();
         if r.lost_focus() {
-            let _ = app.session.execute("time.set", json!({"timecode": buf}));
+            if !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                let _ = app.session.execute("time.set", json!({"timecode": buf}));
+            }
             ctx.data_mut(|d| d.remove::<String>(egui::Id::new("tl-tc-edit")));
         } else {
+            widgets::keep_focus(&ctx, &r, &buf);
             ctx.data_mut(|d| d.insert_temp(egui::Id::new("tl-tc-edit"), buf));
         }
     }
@@ -1357,15 +1359,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let renaming: Option<(u64, String)> = ctx.data(|d| d.get_temp(rename_id));
                 if let Some((rl, mut buf)) = renaming.filter(|(rl, _)| *rl == layer.id.0) {
                     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(name_rect.shrink2(vec2(0.0, 2.0))));
-                    let out = egui::TextEdit::singleline(&mut buf).font(Tokens::ui(12.0)).desired_width(name_rect.width()).show(&mut child);
-                    let er = out.response;
+                    let er = child.add(egui::TextEdit::singleline(&mut buf).font(Tokens::ui(12.0)).desired_width(name_rect.width()));
                     if ctx.data_mut(|d| d.remove_temp::<bool>(rename_focus_id())).unwrap_or(false) {
                         // Just started: focus the field with the whole name selected.
                         er.request_focus();
-                        let mut state = out.state;
-                        let all = egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(buf.chars().count()));
-                        state.cursor.set_char_range(Some(all));
-                        state.store(&ctx, er.id);
+                        widgets::select_all(&ctx, er.id, &buf);
                     }
                     if er.lost_focus() {
                         if !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -2488,13 +2486,13 @@ fn layer_cells(
         if let Some((el, mut buf)) = editing.filter(|(el, _)| *el == lid) {
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr));
             let er = child.add(egui::TextEdit::singleline(&mut buf).font(Tokens::ui(11.5)).desired_width(cr.width()));
-            er.request_focus();
             if er.lost_focus() {
                 if !ui.input(|i| i.key_pressed(egui::Key::Escape)) && buf != layer.comment {
                     actions.push(("layer.setComment".into(), json!({"layers": [el], "comment": buf})));
                 }
                 ctx.data_mut(|d| d.remove::<(u64, String)>(edit_id));
             } else {
+                widgets::keep_focus(&ctx, &er, &buf);
                 ctx.data_mut(|d| d.insert_temp(edit_id, (el, buf)));
             }
         } else {

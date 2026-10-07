@@ -576,6 +576,11 @@ impl EffectcraftApp {
         self.gpu.as_ref().map(effectcraft_engine::render::Accelerator::name)
     }
 
+    /// The size of the viewer frame's texture (CPU frames; fitted to the GPU's texture limit).
+    pub fn viewer_texture_size(&self) -> Option<[usize; 2]> {
+        self.viewer_tex.as_ref().map(|(t, _)| t.size())
+    }
+
     /// The viewer's current pixels as 8-bit premultiplied RGBA, reading a GPU frame back the
     /// first time something asks for it.
     ///

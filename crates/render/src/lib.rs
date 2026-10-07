@@ -667,18 +667,21 @@ impl<'a> Renderer<'a> {
         Region::Full
     }
 
-    /// Rasterisation scale of a layer's source: the output scale, or — for Continuously
-    /// Rasterize text and shape layers — the output scale times the layer's on-screen scale
-    /// (quarter-octave steps, rounded up, so vector content is drawn at its final size and
-    /// stays sharp when scaled up).
+    /// Rasterisation scale of a layer's source: the output scale, or — for text layers, which are
+    /// always continuously rasterised, and Continuously Rasterize shape layers and vector footage —
+    /// the output scale times the layer's on-screen scale (quarter-octave steps, rounded up, so
+    /// vector content is drawn at its final size and stays sharp when scaled up).
     pub fn raster_scale(&self, ctx: &EvalCtx, layer: &Layer) -> f64 {
         let s = self.opts.scale;
-        let vector = match layer.source {
-            LayerSource::Text | LayerSource::Shape => true,
-            LayerSource::Footage { item } => matches!(self.project.item(item).map(|i| &i.kind), Some(ItemKind::Footage(f)) if is_vector_footage(f)),
+        let continuous = match layer.source {
+            LayerSource::Text => true,
+            LayerSource::Shape => layer.switches.collapse,
+            LayerSource::Footage { item } => {
+                layer.switches.collapse && matches!(self.project.item(item).map(|i| &i.kind), Some(ItemKind::Footage(f)) if is_vector_footage(f))
+            }
             _ => false,
         };
-        if !layer.switches.collapse || !vector {
+        if !continuous {
             return s;
         }
         let (l2c, _) = ctx.layer_to_comp(layer);

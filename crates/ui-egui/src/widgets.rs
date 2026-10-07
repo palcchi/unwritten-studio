@@ -38,8 +38,8 @@ pub fn hot_number_at(
             }
             ui.data_mut(|d| d.remove::<String>(editing_id));
         } else {
+            keep_focus(ui.ctx(), &r, &buf);
             ui.data_mut(|d| d.insert_temp(editing_id, buf));
-            r.request_focus();
         }
         return (er, out, out.is_some());
     }
@@ -92,6 +92,23 @@ pub fn hot_int_at(ui: &mut Ui, rect_min: egui::Pos2, id: egui::Id, value: i64, s
         ui.data_mut(|d| d.remove::<f64>(acc_id));
     }
     (rect, (step != 0.0).then(|| value.saturating_add(step as i64)), done)
+}
+
+/// Keep the keyboard on an inline editor that is open until it loses the focus. The frame it
+/// opens (it has no focus yet) its whole `text` is selected, so typing replaces the value.
+pub fn keep_focus(ctx: &egui::Context, field: &Response, text: &str) {
+    if !ctx.memory(|m| m.has_focus(field.id)) {
+        select_all(ctx, field.id, text);
+    }
+    field.request_focus();
+}
+
+/// Select all of the text field `id`'s `text`, so typing replaces it.
+pub fn select_all(ctx: &egui::Context, id: egui::Id, text: &str) {
+    let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+    let all = egui::text::CCursorRange::two(egui::text::CCursor::default(), egui::text::CCursor::new(text.chars().count()));
+    state.cursor.set_char_range(Some(all));
+    state.store(ctx, id);
 }
 
 /// A colour swatch; returns the response (click opens the picker in the caller).

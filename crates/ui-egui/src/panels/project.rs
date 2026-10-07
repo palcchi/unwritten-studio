@@ -480,7 +480,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     actions.push((cmd.into(), params));
                 }
             } else {
-                resp.request_focus();
+                widgets::keep_focus(&ctx, &resp, &buf);
                 ctx.data_mut(|d| d.insert_temp::<Editing>(edit_id(), (eid, ef, buf)));
             }
             true

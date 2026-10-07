@@ -413,6 +413,11 @@ cargo xtask web --serve 8765 &
 node apps/effectcraft-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --out target/web/smoke
 ```
 
+`apps/effectcraft-web/tests/workers.mjs` checks the job-worker plumbing (`js/host.js`,
+`web/worker.js`) under Node with a fake `Worker`, without a build: a replaced file is sent to a
+reused worker again even at the same size, and a worker that fails to start fails its job and is
+terminated (`node apps/effectcraft-web/tests/workers.mjs`).
+
 It also checks the M13.10 paths: viewer frames rendered in frame workers while scrubbing with the
 CPU renderer (project synced as diffs, event-loop gaps under 400 ms), a `wait: true` render that
 replies when done while the page keeps running, and the Media Browser over browser storage; and

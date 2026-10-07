@@ -348,7 +348,9 @@ export function workerRun(id, json, files, base, onMessage) {
     }
     w.worker.postMessage({ type: "job", json });
   }, (e) => {
+    // The worker didn't start (#216): the job fails and the worker goes.
     running.delete(id);
+    w.worker.terminate();
     onMessage("error", String(e.message || e), null, null);
   });
 }

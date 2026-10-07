@@ -95,3 +95,27 @@ fn label_swatch_opens_the_label_menu() {
     assert_eq!(h.state().session.history.undo.len(), undo + 1);
     assert!(h.query_by_label(&green).is_none(), "the menu closed after the choice");
 }
+
+/// Dragging from the Project panel's empty area draws a selection box that selects the rows it
+/// touches; a click there deselects (#203).
+#[test]
+fn dragging_in_the_empty_area_box_selects_items() {
+    let (mut h, folder, _, solid) = harness();
+    let list = h.state().auto.find("project.empty").unwrap().rect;
+    let from = pos2(list[0] + 40.0, list[1] + list[3] - 6.0);
+    let to = center(&h, &format!("project.item.{}.name", folder.0));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.step();
+    button(&mut h, from, true);
+    h.step();
+    for k in 1..=6 {
+        h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (k as f32 / 6.0)));
+        h.step();
+    }
+    button(&mut h, to, false);
+    h.run_steps(2);
+    let sel = h.state().session.state.project_selection.clone();
+    assert!(sel.contains(&folder) && sel.contains(&solid), "{sel:?}");
+    click_at(&mut h, from);
+    assert!(h.state().session.state.project_selection.is_empty());
+}

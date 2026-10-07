@@ -2882,6 +2882,26 @@ fn fmt_num(v: f64, d: usize) -> String {
     format!("{v:.d$}")
 }
 
+/// Linked values after component `d` of `c` became `v`: the others scale by the same ratio
+/// (Constrain Proportions); from 0 the others that are 0 too follow the value.
+fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
+    let Some(&old) = c.get(d) else { return c.to_vec() };
+    c.iter()
+        .enumerate()
+        .map(|(e, &x)| {
+            if e == d {
+                v
+            } else if old.abs() > 1e-9 {
+                x * v / old
+            } else if x.abs() <= 1e-9 {
+                v
+            } else {
+                x
+            }
+        })
+        .collect()
+}
+
 /// Inline value editor for a property row; pushes `prop.set` actions.
 fn value_editor(
     app: &mut EffectcraftApp,
@@ -2929,21 +2949,35 @@ fn value_editor(
             let c = value.components();
             let n = if prop.shown_dims > 0 && !(is_3d && c.len() == 3) { prop.shown_dims as usize } else { c.len() };
             let pct = matches!(prop.ui, ParamUi::Percent);
+            // Mask Feather: two linked values, never negative (as in After Effects, #203).
+            let feather = prop.match_id == "feather" && layer.props.parent_of(uid).is_some_and(|g| matches!(g.kind, GroupKind::Mask { .. }));
+            let range = if feather { (0.0, 1e9) } else { (-1e9, 1e9) };
+            // Scale and Mask Feather: the chain link (Constrain Proportions, on by default).
+            let linkable = feather || (pct && prop.match_id == "scale");
+            let linked = linkable && !app.ui.timeline.unlinked.contains(&uid);
+            if linkable {
+                let lr = Rect::from_center_size(pos2(x + 7.0, at.y), vec2(14.0, 14.0));
+                let resp = ui.interact(lr, egui::Id::new(("tl-link", uid)), Sense::click()).on_hover_text("Constrain Proportions");
+                icons::paint(p, lr, Icon::Link, if linked { t.accent } else { t.text_faint });
+                app.auto.add(&format!("timeline.prop.{uid}.link"), lr, "Constrain Proportions");
+                if resp.clicked() && !app.ui.timeline.unlinked.remove(&uid) {
+                    app.ui.timeline.unlinked.insert(uid);
+                }
+                x += 18.0;
+            }
             for d in 0..n.min(c.len()) {
                 let suffix = if pct && d + 1 == n { "%" } else { "" };
-                let (r, nv, _) =
-                    widgets::hot_number_at(ui, pos2(x, y), egui::Id::new(("v", uid, d)), c[d], if pct { 0.5 } else { 1.0 }, (-1e9, 1e9), 1, suffix, &t);
+                let (r, nv, _) = widgets::hot_number_at(ui, pos2(x, y), egui::Id::new(("v", uid, d)), c[d], if pct { 0.5 } else { 1.0 }, range, 1, suffix, &t);
                 app.auto.add(&format!("timeline.prop.{uid}.value.{d}"), r, &prop.name);
                 if let Some(nv) = nv {
                     let mut nc = c.clone();
-                    if pct && prop.match_id == "scale" && !ui.input(|i| i.modifiers.alt) {
-                        // Constrain proportions (AE's chain link, on by default).
-                        let k = if c[d].abs() > 1e-9 { nv / c[d] } else { 1.0 };
-                        for e in 0..n {
-                            nc[e] = if e == d { nv } else { c[e] * k };
+                    // Alt edits one value of a linked pair.
+                    let shown = if linked && !ui.input(|i| i.modifiers.alt) { n.min(c.len()) } else { 1 };
+                    let from = if shown == 1 { d } else { 0 };
+                    for (e, v) in constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
+                        if let Some(slot) = nc.get_mut(from + e) {
+                            *slot = v;
                         }
-                    } else {
-                        nc[d] = nv;
                     }
                     set(actions, json!(nc));
                 }

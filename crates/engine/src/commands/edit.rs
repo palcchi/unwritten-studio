@@ -136,7 +136,12 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     if !s.state.selected_keys.is_empty() && p.get("layers").is_none() {
         return s.execute("keys.delete", json!({}));
     }
-    if !s.state.selected_vertices.is_empty() && p.get("layers").is_none() {
+    // (Points selected with their mask, which selecting a mask does: the mask goes, below.)
+    let comp = s.active_comp();
+    let loose = s.state.selected_vertices.iter().any(|v| {
+        !s.state.selected_props.contains(&(v.layer, v.mask)) && comp.and_then(|c| c.layer(v.layer)).is_some_and(|l| l.props.find_group(v.mask).is_some())
+    });
+    if loose && p.get("layers").is_none() {
         return s.execute("mask.deleteVertices", json!({}));
     }
     // Puppet pins selected → delete the pins (not their layer).

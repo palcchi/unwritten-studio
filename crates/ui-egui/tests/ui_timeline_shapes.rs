@@ -1,6 +1,6 @@
-//! Timeline rows for shape layers and keyframing: the Contents "Add:" menu and the Classic 3D
-//! "Change Renderer…" row (#206), Alt+Shift+P revealing the key it adds, clicks below the layers
-//! deselecting them and the toolbar's Stroke on a selected shape layer (#205).
+//! Timeline rows for shape layers, masks and keyframing: the Contents "Add:" menu and the Classic
+//! 3D "Change Renderer…" row (#206), Alt+Shift+P revealing the key it adds and clicks below the
+//! layers deselecting them (#205), and Mask Feather's linked values (#203).
 
 use effectcraft_engine::Session;
 use effectcraft_engine::project::LayerId;
@@ -104,6 +104,36 @@ fn clicking_below_the_layers_deselects_them() {
     let bar = center(&h, &format!("timeline.layer.{l}.bar"));
     click_at(&mut h, bar + egui::vec2(0.0, 80.0));
     assert!(h.state().session.state.selected_layers.is_empty());
+}
+
+#[test]
+fn mask_feather_values_are_linked_and_not_negative() {
+    let mut s = session();
+    let l = s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.addMask", json!({"layer": l, "shape": "rect"})).unwrap();
+    let feather = |h: &Harness<'_, EffectcraftApp>| {
+        let p = h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.prop("masks/#1/feather").unwrap().clone();
+        (p.uid, p.value.components())
+    };
+    let mut h = harness(s);
+    h.state_mut().ui.timeline.open_layers.insert(l);
+    h.state_mut().ui.timeline.layer_reveal.insert(l, vec!["feather".into()]);
+    h.run_steps(2);
+    let (uid, _) = feather(&h);
+    let type_value = |h: &mut Harness<'_, EffectcraftApp>, d: usize, v: &str| {
+        click(h, &format!("timeline.prop.{uid}.value.{d}"));
+        h.input_mut().events.push(Event::Text(v.into()));
+        h.step();
+        h.input_mut().events.push(Event::Key { key: Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    };
+    type_value(&mut h, 0, "12");
+    assert_eq!(feather(&h).1, vec![12.0, 12.0], "linked by default");
+    type_value(&mut h, 1, "-5");
+    assert_eq!(feather(&h).1, vec![0.0, 0.0], "never negative");
+    click(&mut h, &format!("timeline.prop.{uid}.link"));
+    type_value(&mut h, 1, "7");
+    assert_eq!(feather(&h).1, vec![0.0, 7.0], "unlinked");
 }
 
 #[test]

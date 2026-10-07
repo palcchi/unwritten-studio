@@ -360,7 +360,8 @@ fn apply_output(om: &mut OutputModule, templates: &RenderTemplates, roi: Option<
     }
     if let Some(o) = str_p(p, "output").or(str_p(p, "path")) {
         om.output = o.to_string();
-        if let Some(f) = OutputFormat::from_path(o).filter(|f| *f != om.format && !o.contains("[fileExtension]")) {
+        // Only an extension the format doesn't write changes it: `.mp4` is H.264's, HEVC's and AV1's.
+        if let Some(f) = OutputFormat::from_path(o).filter(|f| f.extension() != om.format.extension() && !o.contains("[fileExtension]")) {
             if p.get("format").is_some() {
                 // An explicit format wins and the extension follows it, as choosing a format in
                 // the Output Module renames Output To (#154: `--format hevc --out x.mp4`).

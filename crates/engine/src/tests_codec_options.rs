@@ -83,6 +83,33 @@ fn an_explicit_format_wins_over_the_output_extension() {
     assert_eq!((om.format, om.output.as_str()), (OutputFormat::PngSequence, "/out/still.png"));
 }
 
+/// Output To only changes the format when the format can't write the new extension: HEVC and AV1
+/// write `.mp4` too, so they stay (#179). Other extensions still pick a file type.
+#[test]
+fn output_to_keeps_a_format_that_writes_the_extension() {
+    let mut s = session();
+    let cases = [
+        ("hevc", "/out/x.mp4", OutputFormat::Hevc, "/out/x.mp4"),
+        ("av1", "/out/x.mp4", OutputFormat::Av1, "/out/x.mp4"),
+        ("h264", "/out/x.mov", OutputFormat::ProRes, "/out/x.mov"),
+        ("prores", "/out/x.mp4", OutputFormat::H264, "/out/x.mp4"),
+        ("h264", "/out/x.mp4", OutputFormat::H264, "/out/x.mp4"),
+    ];
+    for (format, out, want, path) in cases {
+        let a = s.execute("renderQueue.add", json!({"format": format})).unwrap();
+        let r = s.execute("renderQueue.setOutput", json!({"item": a["item"], "path": out})).unwrap();
+        let om = &s.project.render_queue.last().unwrap().output;
+        assert_eq!((om.format, om.output.as_str()), (want, path), "{format} → {out}");
+        if OutputFormat::from_name(format) == Some(want) {
+            assert_eq!(r["outputModuleSummary"], a["outputModuleSummary"], "{format} → {out}: the module is unchanged");
+        }
+    }
+    // The module's own default name (HEVC resolves to `Main.mp4`) changes nothing either.
+    let a = s.execute("renderQueue.add", json!({"format": "hevc"})).unwrap();
+    let r = s.execute("renderQueue.setOutput", json!({"item": a["item"], "path": a["outputPath"]})).unwrap();
+    assert_eq!((&r["output"]["format"], &r["outputModuleSummary"]), (&json!("Hevc"), &a["outputModuleSummary"]), "{r}");
+}
+
 /// A `comp` that names no composition says so, rather than "no active composition" (#155).
 #[test]
 fn an_unknown_comp_is_named_in_the_error() {

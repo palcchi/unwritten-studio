@@ -325,7 +325,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // The list's empty area (under the rows and the scroll bar, which take their own clicks):
     // a double-click imports, as in After Effects (File ▸ Import ▸ File...).
     let empty = ui.interact(list, egui::Id::new("proj-empty"), Sense::click());
-    app.auto.add("project.empty", list, "Double-click to import files");
+    app.auto.add("project.empty", list, "Double-click to import files; right-click for project actions");
     if overflow > 0.0 && ui.rect_contains_pointer(list) {
         let (dx, dy, shift) = ui.input(|i| (i.smooth_scroll_delta.x, i.smooth_scroll_delta.y, i.modifiers.shift));
         let d = if dx.abs() > 0.0 {
@@ -718,6 +718,18 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if empty.double_clicked() {
         actions.push(("file.import".into(), json!({})));
     }
+    empty.context_menu(|ui| {
+        for (key, label, command) in
+            [("newComp", "New Composition…", "comp.new"), ("newFolder", "New Folder", "project.newFolder"), ("import", "Import File…", "file.import")]
+        {
+            let response = ui.button(label);
+            app.auto.add(&format!("project.context.{key}"), response.rect, label);
+            if response.clicked() {
+                actions.push((command.into(), json!({})));
+                ui.close();
+            }
+        }
+    });
     for (id, params) in actions {
         if let Err(e) = crate::menus::invoke(app, &ctx, &id, params) {
             app.ui.status = e;

@@ -551,6 +551,28 @@ fn time_remap_enable_freeze_and_disable() {
     assert!(s.execute("layer.enableTimeRemap", json!({"layers": [r["layer"]]})).is_err());
 }
 
+/// Edit ▸ Clear with Time Remap selected (clicking its name selects all its keys) turns time
+/// remapping off instead of deleting the layer (#290); one selected key is still just a key.
+#[test]
+fn deleting_time_remap_turns_time_remapping_off() {
+    let (mut s, l) = precomp_setup();
+    s.execute("layer.enableTimeRemap", json!({})).unwrap();
+    let uid = prop(&s, l, "timeRemap").uid;
+    s.execute("keys.select", json!({"keys": [{"layer": l, "prop": uid, "time": 0.0}], "selectProperties": true})).unwrap();
+    s.execute("edit.clear", json!({})).unwrap();
+    assert_eq!(prop(&s, l, "timeRemap").keys.len(), 1, "only the selected key went");
+    s.execute("prop.select", json!({"layer": l, "prop": uid})).unwrap();
+    s.execute("edit.clear", json!({})).unwrap();
+    let comp = s.active_comp().unwrap();
+    assert_eq!(comp.layers.len(), 1, "the layer stays");
+    assert!(comp.layers[0].props.get("timeRemap").is_none(), "time remapping is off");
+    assert!(s.state.selected_keys.is_empty() && !s.state.selected_props.iter().any(|(_, u)| *u == uid));
+    assert!((square_x(&s, 1.0) - 30.0).abs() < 1.5);
+    // One undo step brings it back.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(prop(&s, l, "timeRemap").keys.len(), 1);
+}
+
 #[test]
 fn freeze_on_last_frame_extends_the_layer() {
     let (mut s, l) = precomp_setup();

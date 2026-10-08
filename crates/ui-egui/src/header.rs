@@ -12,6 +12,7 @@ use crate::{Dialog, EffectcraftApp};
 use effectcraft_color::BlendMode;
 use effectcraft_engine::commands::shape_tool::{PaintKind, ToolPaint};
 use effectcraft_engine::project::{LayerId, LayerSource};
+use effectcraft_engine::viewer as vw;
 
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
@@ -143,7 +144,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.ui.snapping = app.session.state.snapping;
     }
     app.auto.add("header.snapping", snap, "Snapping");
-    p.text(pos2(snap.max.x + 4.0, cy), Align2::LEFT_CENTER, "Snapping", Tokens::ui(12.0), t.text_dim);
+    let label = p.text(pos2(snap.max.x + 4.0, cy), Align2::LEFT_CENTER, "Snapping", Tokens::ui(12.0), t.text_dim);
+    snapping_options(app, ui, Rect::from_min_size(pos2(label.max.x + 2.0, cy - 9.0), vec2(18.0, 18.0)));
 
     // Right side: community buttons, workspaces.
     let mut rx = rect.max.x - 10.0;
@@ -219,6 +221,37 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.set_workspace(name);
         }
         rx = r.min.x - 2.0;
+    }
+}
+
+/// The Snapping options menu beside the checkbox: Snap Edges Extended and which layer features
+/// snap (`view.snappingOptions`).
+fn snapping_options(app: &mut EffectcraftApp, ui: &mut egui::Ui, r: Rect) {
+    let t = app.tokens;
+    let pop = egui::Id::new("snap-options");
+    if widgets::icon_button(ui, r, Icon::ChevronDown, false, &t, egui::Id::new("snap-options-button")).on_hover_text("Snapping options").clicked() {
+        widgets::open_popup(ui, pop);
+    }
+    app.auto.add("header.snappingOptions", r, "Snapping options");
+    if !widgets::popup_is_open(ui, pop) {
+        return;
+    }
+    // Snap Edges Extended, then the features ("" keys the separator).
+    let f = app.session.state.snap_features;
+    let mut keys = vec![];
+    let mut items = vec![];
+    for (i, (k, label)) in vw::SnapFeatures::OPTIONS.into_iter().enumerate() {
+        if i == 1 {
+            keys.push("");
+            items.push("-".to_string());
+        }
+        keys.push(k);
+        items.push(widgets::check_label(f.option(k), label));
+    }
+    if let Some(k) = widgets::popup_menu(ui, pop, r.left_bottom(), &items, None).and_then(|i| keys.get(i))
+        && let Err(e) = app.session.execute("view.snappingOptions", json!({"toggle": k}))
+    {
+        app.ui.status = e.to_string();
     }
 }
 

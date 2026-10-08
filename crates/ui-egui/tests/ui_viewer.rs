@@ -249,6 +249,59 @@ fn layer_drag_snaps_to_comp_centre_and_ctrl_disables() {
     assert!((p[0] - 320.0).abs() > 1.0, "{p:?}");
 }
 
+/// #253: a dragged layer's feature nearest the pointer snaps to other layers' edges; Cmd/Ctrl
+/// held during the drag turns snapping on while the Snapping checkbox is off (and off while it
+/// is on), and the Tools bar's Snapping options turn Snap Edges Extended off, so an edge only
+/// snaps along the layer.
+#[test]
+fn layer_drag_snaps_to_other_layers_edges_ctrl_toggles_and_options_apply() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id;
+    // A 100×100 target at x 450–550, y 50–150.
+    let target = h.state_mut().session.execute("layer.newSolid", json!({"name": "Target", "color": "#20e040", "width": 100, "height": 100})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    let place = |h: &mut Harness<'_, EffectcraftApp>| {
+        let s = &mut h.state_mut().session;
+        s.execute("prop.set", json!({"layer": target, "path": "transform/position", "value": [500, 100, 0]})).unwrap();
+        s.execute("prop.set", json!({"layer": box_id.0, "path": "transform/position", "value": [100, 250, 0]})).unwrap();
+        s.execute("edit.deselectAll", json!({})).unwrap();
+        h.run_steps(2);
+    };
+    let pos = |h: &Harness<'_, EffectcraftApp>| {
+        let l = h.state().session.active_comp().unwrap().layer(box_id).unwrap().clone();
+        l.props.prop("transform/position").unwrap().value.as_vec3()
+    };
+    // Grab the box by its top right corner (140, 210) and drop it 3 px left of the target's
+    // left edge, well below the target: the corner lands on the edge's line (x 450).
+    let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+    let drop = |h: &mut Harness<'_, EffectcraftApp>, mods: egui::Modifiers| {
+        place(h);
+        let (from, to) = (screen(h, [138.0, 212.0]), screen(h, [445.0, 232.0]));
+        hold_drag(h, from, to, mods);
+        pos(h)
+    };
+    let snapped = |p: [f64; 3]| (p[0] - 410.0).abs() < 0.01;
+    let p = drop(&mut h, Default::default());
+    assert!(snapped(p), "snapping on: {p:?}");
+    let p = drop(&mut h, ctrl);
+    assert!(!snapped(p), "Ctrl turns it off: {p:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    let p = drop(&mut h, Default::default());
+    assert!(!snapped(p), "snapping off: {p:?}");
+    let p = drop(&mut h, ctrl);
+    assert!(snapped(p), "Ctrl turns it on: {p:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": true})).unwrap();
+    // Snapping options ▸ Snap Edges Extended off: below the target its edge no longer snaps.
+    let menu = rect(&h, "header.snappingOptions").center();
+    click(&mut h, menu);
+    let item = h.query_by_label("✓ Snap Edges Extended").expect("the Snapping options menu").rect().center();
+    click(&mut h, item);
+    assert!(!h.state().session.state.snap_features.edges_extended);
+    let p = drop(&mut h, Default::default());
+    assert!(!snapped(p), "edges not extended: {p:?}");
+}
+
 /// With a shape layer selected the Rectangle tool draws a new group into its Contents (After
 /// Effects' behaviour); with nothing selected it draws a new shape layer (#227).
 #[test]

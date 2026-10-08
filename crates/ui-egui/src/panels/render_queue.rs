@@ -20,6 +20,7 @@ use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::Tokens;
+use crate::widgets::check_label as mark;
 use crate::{EffectcraftApp, widgets};
 
 const TOP_H: f32 = 74.0;
@@ -59,10 +60,6 @@ fn status_color(t: &Tokens, s: &RenderStatus) -> Color32 {
         RenderStatus::Unqueued => t.text_faint,
         RenderStatus::Queued => t.text,
     }
-}
-
-fn mark(on: bool, l: &str) -> String {
-    if on { format!("✓ {l}") } else { format!("   {l}") }
 }
 
 /// Render Settings menu: (label, params). `{"form": …}` entries open a form.

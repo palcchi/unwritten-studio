@@ -275,6 +275,11 @@ pub fn pressed_outside(ctx: &egui::Context, area: &Response) -> bool {
     ctx.input(|i| i.pointer.any_pressed() && !i.pointer.interact_pos().is_some_and(|p| area.rect.contains(p)))
 }
 
+/// A [`popup_menu`] option with a check mark when `on` (the labels line up either way).
+pub fn check_label(on: bool, label: &str) -> String {
+    if on { format!("✓ {label}") } else { format!("   {label}") }
+}
+
 /// Show a popup menu anchored at `pos` with string options; returns the chosen index.
 pub fn popup_menu(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, options: &[String], current: Option<usize>) -> Option<usize> {
     let mut chosen = None;

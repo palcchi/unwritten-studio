@@ -1069,7 +1069,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     start: map.to_comp(press),
                     inv: l2c.inverse().unwrap_or(Mat3::IDENTITY),
                     l2p,
-                    own: effectcraft_engine::viewer::layer_targets(&ectx, layer, false),
+                    own: effectcraft_engine::viewer::layer_targets(&ectx, layer, false, app.session.state.snap_features),
                     anchor_only: mods.alt,
                 })
             }),
@@ -1175,7 +1175,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         })
                         .collect();
                     // Snap the grabbed layer's feature nearest the pointer (AE's snap handle).
-                    let snap_src = comp.layer(l).map(|layer| effectcraft_engine::viewer::layer_features(&ectx, layer)).and_then(|f| {
+                    let features = app.session.state.snap_features;
+                    let snap_src = comp.layer(l).map(|layer| effectcraft_engine::viewer::layer_features(&ectx, layer, features)).and_then(|f| {
                         let c = map.to_comp(press);
                         f.into_iter().min_by(|a, b| {
                             let da = (a[0] - c[0]).powi(2) + (a[1] - c[1]).powi(2);
@@ -1217,6 +1218,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     let ids: Vec<LayerId> = layers.iter().map(|x| x.0).collect();
                     let c = vt::snap(app, &ctx, &ectx, &map, &ids, &[[src[0] + d[0], src[1] + d[1]]], mods);
                     d = [d[0] + c[0], d[1] + c[1]];
+                    if vt::snapping_on(app, mods) {
+                        vt::draw_handle(&painter, map.to_screen([src[0] + d[0], src[1] + d[1]]));
+                    }
                 }
                 for (lid, p0, ax, ay) in layers {
                     let v = json!([p0[0] + ax[0] * d[0] + ay[0] * d[1], p0[1] + ax[1] * d[0] + ay[1] * d[1], p0[2] + ax[2] * d[0] + ay[2] * d[1]]);

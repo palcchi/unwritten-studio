@@ -528,7 +528,7 @@ fn fxn_slice(ix: i32, iy: i32, iz: i32, tx: f32, ty: f32, seed: u32, nt: u32) ->
 // noise3::typed_noise.
 fn fxn_typed_noise(x: f32, y: f32, z: f32, seed: u32, nt: u32) -> f32 {
     if (nt == 2u) {
-        return value_noise(x, y, z, seed);
+        return soft_linear_noise(x, y, z, seed);
     }
     let x0 = floor(x);
     let y0 = floor(y);

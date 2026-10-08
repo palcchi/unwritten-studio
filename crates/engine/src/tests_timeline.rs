@@ -573,6 +573,22 @@ fn deleting_time_remap_turns_time_remapping_off() {
     assert_eq!(prop(&s, l, "timeRemap").keys.len(), 1);
 }
 
+/// Enable Time Remapping on a layer extended past its source's end (its last frame frozen) puts
+/// the end key at the source's end, not at the extended out point (#290).
+#[test]
+fn time_remap_on_an_extended_layer_ends_at_the_source_end() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Inner", "width": 100, "height": 100, "frameRate": 30, "duration": 2})).unwrap();
+    s.execute("comp.new", json!({"name": "Outer", "width": 100, "height": 100, "frameRate": 30, "duration": 4})).unwrap();
+    let l = s.execute("layer.addItem", json!({"item": "Inner"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.timing", json!({"layers": [l], "out": 4.0})).unwrap();
+    s.execute("layer.enableTimeRemap", json!({"layers": [l]})).unwrap();
+    let p = prop(&s, l, "timeRemap");
+    let keys: Vec<(f64, KV)> = p.keys.iter().map(|k| (k.time.seconds(), k.value.clone())).collect();
+    assert_eq!(keys, vec![(0.0, KV::Scalar(0.0)), (2.0, KV::Scalar(2.0))]);
+    assert_eq!(s.active_comp().unwrap().layers[0].out_point.seconds(), 4.0, "the layer stays extended");
+}
+
 #[test]
 fn freeze_on_last_frame_extends_the_layer() {
     let (mut s, l) = precomp_setup();

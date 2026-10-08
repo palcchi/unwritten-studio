@@ -73,6 +73,23 @@ pub(crate) fn bar_color(label: Color32, selected: bool) -> Color32 {
     Color32::from_rgb(mix(label.r()), mix(label.g()), mix(label.b()))
 }
 
+/// Darken part `r` of a layer bar and stripe it diagonally in its label colour (where the layer
+/// runs past its source). Only the visible part is drawn.
+fn stripes(p: &egui::Painter, r: Rect, label: Color32) {
+    let v = r.intersect(p.clip_rect());
+    if !v.is_positive() {
+        return;
+    }
+    let p = p.with_clip_rect(v);
+    p.rect_filled(v, 0.0, Color32::from_black_alpha(90));
+    let h = v.height();
+    let mut x = v.min.x - h;
+    while x < v.max.x {
+        p.line_segment([pos2(x, v.max.y), pos2(x + h, v.min.y)], Stroke::new(1.0, label.gamma_multiply(0.7)));
+        x += 6.0;
+    }
+}
+
 /// Row height (expression editors grow with their text).
 fn row_height(row: &Row, rh: f32) -> f32 {
     match row.kind {
@@ -1818,6 +1835,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         let xe = tm.x(layer.comp_time(d).seconds());
                         let ghost = Rect::from_min_max(pos2(xs.min(xe), r.min.y + 9.0), pos2(xs.max(xe), r.max.y - 9.0));
                         gp.rect_filled(ghost, 1.0, lc.gamma_multiply(0.18));
+                        // The bar past the source's end (its last frame held) or before its start
+                        // is striped, so the source's own span shows (#290). Time remapping
+                        // decides what shows there itself.
+                        if layer.props.get("timeRemap").is_none() {
+                            for (side, part) in [
+                                ("beforeSource", Rect::from_min_max(bar.min, pos2(ghost.min.x, bar.max.y))),
+                                ("afterSource", Rect::from_min_max(pos2(ghost.max.x, bar.min.y), bar.max)),
+                            ] {
+                                if part.width() >= 1.0 {
+                                    stripes(&gp, part, lc);
+                                    app.auto.add(&format!("timeline.layer.{}.bar.{side}", layer.id.0), part, "Past the source");
+                                }
+                            }
+                        }
                         // Dragging the source bar outside the in/out span slips the source.
                         for (side, gr) in [
                             ("l", Rect::from_min_max(ghost.min, pos2(bar.min.x, ghost.max.y))),

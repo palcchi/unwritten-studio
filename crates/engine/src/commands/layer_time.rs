@@ -86,6 +86,10 @@ fn enable_time_remap(s: &mut Session, p: &Value) -> Result<Value> {
     if !comp.layers.iter().filter(|l| ids.contains(&l.id)).any(remappable) {
         return Err(bad("layer.enableTimeRemap", "time remapping needs a footage or composition layer"));
     }
+    // Each layer's source duration (stills have none): a layer extended past it ends its remap
+    // at the source's end, where its last frame starts to hold (After Effects).
+    let src_end: Vec<(LayerId, Tick)> =
+        comp.layers.iter().filter(|l| ids.contains(&l.id)).filter_map(|l| Some((l.id, l.source.item().and_then(|i| s.project.item(i))?.duration()?))).collect();
     let on = s.edit("Enable Time Remapping", None, |proj, _| {
         let mut next = proj.next_id;
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
@@ -97,7 +101,13 @@ fn enable_time_remap(s: &mut Session, p: &Value) -> Result<Value> {
             if target && !has {
                 let mut pr = remap_prop(&mut Ids(&mut next));
                 let (lin, lout) = (l.layer_time(l.in_point), l.layer_time(l.out_point));
-                let (a, b) = (lin.min(lout), lin.max(lout));
+                let (a, mut b) = (lin.min(lout), lin.max(lout));
+                if let Some((_, end)) = src_end.iter().find(|(id, _)| *id == l.id)
+                    && lin <= lout
+                    && *end > a
+                {
+                    b = b.min(*end);
+                }
                 pr.value = KV::Scalar(source_secs(l, l.in_point));
                 pr.keys = vec![Keyframe::new(a, KV::Scalar(a.seconds())), Keyframe::new(b, KV::Scalar(b.seconds()))];
                 if lin > lout {

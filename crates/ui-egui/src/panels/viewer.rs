@@ -397,7 +397,7 @@ fn aux_views(
             _ => {
                 let opts = effectcraft_engine::render::RenderOpts { scale, view: comp.has_3d().then_some(cam), draft: true, ..Default::default() };
                 let img = app.session.render(cid, t, opts);
-                let tex = ctx.load_texture(format!("viewer-aux-{i}"), crate::frames::to_color_image(&img), egui::TextureOptions::LINEAR);
+                let tex = crate::frames::load_fitted(&ctx, format!("viewer-aux-{i}"), crate::frames::to_color_image(&img), egui::TextureOptions::LINEAR);
                 ctx.data_mut(|d| d.insert_temp(id, (key, tex.clone())));
                 tex
             }
@@ -459,7 +459,7 @@ fn locked_pane(app: &mut EffectcraftApp, ui: &mut egui::Ui, full: Rect, bg: Colo
                 dc.apply(&mut px);
                 ci = egui::ColorImage::new(ci.size, px.into_iter().map(|a| Color32::from_rgba_premultiplied(a[0], a[1], a[2], a[3])).collect());
             }
-            let tex = ctx.load_texture("viewer-locked", ci, egui::TextureOptions::LINEAR);
+            let tex = crate::frames::load_fitted(&ctx, "viewer-locked", ci, egui::TextureOptions::LINEAR);
             ctx.data_mut(|d| d.insert_temp(id, (key, tex.clone())));
             tex
         }
@@ -1912,12 +1912,15 @@ fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames:
     let opts = zoom_texture_options(smooth);
     match img {
         FrameImage::Cpu(img) => {
+            // Frames wider or taller than the GPU's texture limit go up averaged down (#201).
+            let max = crate::frames::max_texture_side(ctx);
+            let fitted = crate::frames::fit_texture((*img).clone(), max);
             match &mut app.viewer_tex {
-                Some((tex, k)) if tex.size() == img.size => {
-                    tex.set((*img).clone(), opts);
+                Some((tex, k)) if tex.size() == fitted.size => {
+                    tex.set(fitted, opts);
                     *k = key;
                 }
-                _ => app.viewer_tex = Some((ctx.load_texture("viewer-frame", (*img).clone(), opts), key)),
+                _ => app.viewer_tex = Some((ctx.load_texture("viewer-frame", fitted, opts), key)),
             }
             app.viewer_shown = app.viewer_tex.as_ref().map(|(t, k)| (t.id(), *k));
             app.viewer_image = Some(img);

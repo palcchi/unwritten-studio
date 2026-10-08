@@ -323,9 +323,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let list = Rect::from_min_max(pos2(rect.min.x, hdr.max.y), pos2(rect.max.x, rect.max.y - footer_h));
     let lp = p.with_clip_rect(list);
     // The list's empty area (under the rows and the scroll bar, which take their own clicks):
-    // a double-click imports, as in After Effects (File ▸ Import ▸ File...).
-    let empty = ui.interact(list, egui::Id::new("proj-empty"), Sense::click());
-    app.auto.add("project.empty", list, "Double-click to import files; right-click for project actions");
+    // a click deselects, a drag draws a selection box, a double-click imports, as in After
+    // Effects (File ▸ Import ▸ File...).
+    let empty = ui.interact(list, egui::Id::new("proj-empty"), Sense::click_and_drag());
+    app.auto.add("project.empty", list, "Double-click to import files; drag to select items; right-click for project actions");
     if overflow > 0.0 && ui.rect_contains_pointer(list) {
         let (dx, dy, shift) = ui.input(|i| (i.smooth_scroll_delta.x, i.smooth_scroll_delta.y, i.modifiers.shift));
         let d = if dx.abs() > 0.0 {
@@ -730,6 +731,41 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
     });
+    // Selection box over the rows it touches (#203); Shift or Cmd/Ctrl adds to the selection.
+    let adding = ui.input(|i| i.modifiers.shift || i.modifiers.command);
+    if empty.clicked() && !adding {
+        app.session.state.project_selection.clear();
+    }
+    let box_id = egui::Id::new("proj-marquee");
+    if let (Some(start), Some(end)) = (ctx.input(|i| i.pointer.press_origin()), empty.interact_pointer_pos())
+        && empty.dragged()
+    {
+        let b = Rect::from_two_pos(start, end).intersect(list);
+        lp.rect_filled(b, 0.0, t.accent.gamma_multiply(0.12));
+        lp.rect_stroke(b, 0.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+        ctx.data_mut(|d| d.insert_temp(box_id, b));
+    }
+    if empty.drag_stopped()
+        && let Some(b) = ctx.data(|d| d.get_temp::<Rect>(box_id))
+    {
+        ctx.data_mut(|d| d.remove::<Rect>(box_id));
+        // Rows sit at fixed heights from the top of the scrolled list.
+        let top = list.min.y - app.ui.project_scroll;
+        let picked = rows.iter().enumerate().filter(|(i, _)| {
+            let y = top + *i as f32 * ROW_H;
+            y < b.max.y && y + ROW_H > b.min.y
+        });
+        let picked: Vec<ItemId> = picked.map(|(_, (id, _))| *id).collect();
+        let sel = &mut app.session.state.project_selection;
+        if !adding {
+            sel.clear();
+        }
+        for id in picked {
+            if !sel.contains(&id) {
+                sel.push(id);
+            }
+        }
+    }
     for (id, params) in actions {
         if let Err(e) = crate::menus::invoke(app, &ctx, &id, params) {
             app.ui.status = e;

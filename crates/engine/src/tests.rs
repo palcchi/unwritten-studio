@@ -183,6 +183,71 @@ fn text_shape_mask_matte_parent() {
     assert_eq!(info["layers"].as_array().unwrap().len(), 2);
 }
 
+/// The toolbar's Fill / Stroke change a selected shape layer's paint (#205): a shape drawn
+/// without a stroke gets one, later edits change it, and the Contents "Add:" items (#206) include
+/// an empty Path and a Gradient Stroke that render.
+#[test]
+fn toolbar_fill_and_stroke_paint_selected_shape_layers() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"width": 400, "height": 300, "duration": 2})).unwrap();
+    let sh = s.execute("layer.newShape", json!({"kind": "rect", "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();
+    let paint = |s: &mut Session| s.execute("shape.fillStroke", json!({})).unwrap();
+    assert_eq!(paint(&mut s)["stroke"], serde_json::Value::Null, "drawn without a stroke");
+    s.execute("shape.fillStroke", json!({"stroke": "#00ff00", "strokeWidth": 6})).unwrap();
+    let p = paint(&mut s);
+    assert_eq!((p["stroke"][1].as_f64(), p["strokeWidth"].as_f64()), (Some(1.0), Some(6.0)), "{p}");
+    s.execute("shape.fillStroke", json!({"fill": "#0000ff", "strokeWidth": 3})).unwrap();
+    let p = paint(&mut s);
+    assert_eq!((p["fill"][2].as_f64(), p["strokeWidth"].as_f64()), (Some(1.0), Some(3.0)), "{p}");
+    // One stroke, before the fill (paths, stroke, fill), and each change is one undo step.
+    let l = s.active_comp().unwrap().layer(effectcraft_project::LayerId(sh)).unwrap().clone();
+    let group = l.props.group("contents/group").unwrap();
+    let order: Vec<&str> = group.sub("contents").unwrap().groups().map(|g| g.match_id.as_str()).collect();
+    assert_eq!(order, ["rect", "stroke", "fill"]);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(paint(&mut s)["strokeWidth"].as_f64(), Some(6.0));
+    // Only shape layers.
+    s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap();
+    assert!(s.execute("shape.fillStroke", json!({"fill": "#ffffff"})).is_err());
+    for kind in ["path", "gstroke"] {
+        let r = s.execute("layer.addShapeItem", json!({"layer": sh, "kind": kind})).unwrap();
+        assert!(r["path"].as_str().is_some_and(|p| p.starts_with("contents/")), "{r}");
+    }
+    let cid = s.active_comp_id().unwrap();
+    let _ = s.render(cid, s.time(), Default::default());
+}
+
+/// Selecting a mask in the Timeline (its row or its Mask Path) selects all of its points, so the
+/// viewer drags the whole mask (#203); a shape's Path item works the same way.
+#[test]
+fn selecting_a_mask_selects_its_points() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"width": 400, "height": 300, "duration": 2})).unwrap();
+    let l = s.execute("layer.newSolid", json!({"color": "#808080"})).unwrap()["layer"].as_u64().unwrap();
+    let m1 = s.execute("layer.addMask", json!({"layer": l, "shape": "rect"})).unwrap()["mask"].as_u64().unwrap();
+    let m2 = s.execute("layer.addMask", json!({"layer": l, "shape": "ellipse"})).unwrap()["mask"].as_u64().unwrap();
+    let points = |s: &Session, m: u64| s.state.selected_vertices.iter().filter(|v| v.mask == m).count();
+    s.execute("prop.select", json!({"layer": l, "prop": m1, "selectKeys": false})).unwrap();
+    assert_eq!((points(&s, m1), s.state.selected_vertices.len()), (4, 4));
+    // Mask Path selects them too; Shift-adding another mask keeps the first.
+    let path = s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap().props.find_group(m2).unwrap().get("path").unwrap().uid;
+    s.execute("prop.select", json!({"layer": l, "prop": path, "add": true})).unwrap();
+    assert_eq!((points(&s, m1), points(&s, m2)), (4, 4));
+    // Another mask replaces them; another property deselects them.
+    s.execute("prop.select", json!({"layer": l, "prop": m2})).unwrap();
+    assert_eq!((points(&s, m1), points(&s, m2)), (0, 4));
+    // Delete removes the selected mask (not only its points).
+    s.execute("edit.clear", json!({})).unwrap();
+    let masks = |s: &Session| s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap().masks().unwrap().children.len();
+    assert_eq!(masks(&s), 1);
+    s.execute("prop.select", json!({"layer": l, "path": "transform/opacity"})).unwrap();
+    assert!(s.state.selected_vertices.is_empty());
+    let sh = s.execute("layer.newShape", json!({"kind": "star"})).unwrap()["layer"].as_u64().unwrap();
+    let star = s.execute("layer.addShapeItem", json!({"layer": sh, "kind": "path"})).unwrap()["uid"].as_u64().unwrap();
+    s.execute("prop.select", json!({"layer": sh, "prop": star})).unwrap();
+    assert_eq!(s.state.selected_vertices.len(), 0, "an empty Path has no points");
+}
+
 #[test]
 fn save_and_open_roundtrip() {
     let mut s = demo();

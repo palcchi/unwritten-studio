@@ -54,7 +54,7 @@ pub mod roto_cmds;
 mod scene_detect;
 pub mod scripts;
 mod settings;
-mod shape_stroke;
+pub mod shape_stroke;
 mod stubs;
 mod styles;
 mod text_anim;

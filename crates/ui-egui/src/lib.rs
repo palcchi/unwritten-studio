@@ -139,7 +139,8 @@ pub struct Playback {
     pub audio_frame: Option<i64>,
     /// The preview's sound waits for frames: while the frames ahead aren't cached, every frame
     /// shows as it renders, silently; the sound starts once the rest of the preview (or what
-    /// fits in the RAM preview) is cached, so it never plays over skipped frames (#103).
+    /// fits in the RAM preview) is cached, so it never plays over skipped frames (#103), or
+    /// sooner once the silent preview keeps real time with the frames ahead cached (#208).
     pub audio_held: bool,
     /// When the last frames were shown (seconds, the last second's worth): the achieved rate.
     pub shown_at: std::collections::VecDeque<f64>,
@@ -167,6 +168,15 @@ impl Playback {
     pub fn real_time(&self) -> Option<bool> {
         let step = self.plan.map_or(1, |p| p.step).max(1) as f64;
         self.achieved_fps().map(|f| f * step >= self.fps * 0.95)
+    }
+
+    /// The preview has kept real time for the last quarter second (at least two frames) up to
+    /// `now`: rendering keeps up, so sound can start without waiting for the whole preview.
+    pub fn keeps_up(&self, now: f64) -> bool {
+        let step = self.plan.map_or(1, |p| p.step).max(1) as f64;
+        let frame = step / self.fps.max(1.0);
+        let (Some(a), Some(b)) = (self.shown_at.front(), self.shown_at.back()) else { return false };
+        self.shown_at.len() >= 3 && b - a >= (2.0 * frame).max(0.25) && now - b <= 2.0 * frame && self.real_time() == Some(true)
     }
 }
 
@@ -564,6 +574,11 @@ impl EffectcraftApp {
     /// The GPU compositor's adapter, when the viewer has one.
     pub fn gpu_adapter(&self) -> Option<String> {
         self.gpu.as_ref().map(effectcraft_engine::render::Accelerator::name)
+    }
+
+    /// The size of the viewer frame's texture (CPU frames; fitted to the GPU's texture limit).
+    pub fn viewer_texture_size(&self) -> Option<[usize; 2]> {
+        self.viewer_tex.as_ref().map(|(t, _)| t.size())
     }
 
     /// The viewer's current pixels as 8-bit premultiplied RGBA, reading a GPU frame back the
@@ -1016,10 +1031,12 @@ impl EffectcraftApp {
             return;
         }
         let snap = |f: i64| wa + (f - wa).div_euclid(step) * step;
-        // Held sound starts once the frames ahead are cached (see `Playback::audio_held`).
+        // Held sound starts once the frames ahead are cached (see `Playback::audio_held`): the
+        // prefetch window when the silent preview keeps real time, else the rest of the preview.
+        let fit = self.frames_that_fit(&c, scale);
         if self.playback.audio_held
             && let Some(p) = plan
-            && self.cached_ahead(&p, &series, cur, self.frames_that_fit(&c, scale))
+            && ((self.playback.keeps_up(now) && self.cached_ahead(&p, &series, cur, ahead.min(fit))) || self.cached_ahead(&p, &series, cur, fit))
         {
             self.playback.audio_held = false;
             self.playback.start_wall = now;
@@ -1052,6 +1069,8 @@ impl EffectcraftApp {
                 self.audio = None;
                 self.playback.audio_held = true;
                 self.playback.waiting = true;
+                // The rate measured before the stall no longer says it keeps up.
+                self.playback.shown_at.clear();
                 self.playback.start_wall = now;
                 self.playback.start_frame = cur;
             }

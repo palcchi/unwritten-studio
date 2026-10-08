@@ -190,6 +190,35 @@ fn reveal_time_remap(app: &mut EffectcraftApp, params: &Value) {
     }
 }
 
+/// After Alt+Shift+P (A, S, R, T) the Timeline shows the property on each layer it keyed, as in
+/// After Effects: added to what a reveal shortcut shows, else with the layer's Transform twirled
+/// open, else alone like P.
+fn reveal_keyed(app: &mut EffectcraftApp, keyed: &Value, kind: &str) {
+    let layers: std::collections::BTreeSet<u64> = keyed.as_array().into_iter().flatten().filter_map(|k| k.get("layer").and_then(Value::as_u64)).collect();
+    let Some(comp) = app.session.active_comp() else { return };
+    let tl = &mut app.ui.timeline;
+    for id in layers {
+        let shown = tl.layer_reveal.get(&id).filter(|k| !k.is_empty()).cloned();
+        match shown {
+            Some(mut kinds) => {
+                if !kinds.iter().any(|k| k == kind) {
+                    kinds.push(kind.to_string());
+                    tl.layer_reveal.insert(id, kinds);
+                }
+            }
+            None if tl.open_layers.contains(&id) => {
+                if let Some(tr) = comp.layer(effectcraft_engine::project::LayerId(id)).and_then(|l| l.transform()) {
+                    tl.open_groups.insert(tr.uid);
+                }
+            }
+            None => {
+                tl.open_layers.insert(id);
+                tl.layer_reveal.insert(id, vec![kind.to_string()]);
+            }
+        }
+    }
+}
+
 /// The layers a reveal shortcut acts on: the selected ones, else every layer of the active comp.
 fn reveal_targets(app: &EffectcraftApp) -> Vec<u64> {
     if app.session.state.selected_layers.is_empty() {
@@ -314,7 +343,9 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         return Ok(Value::Null);
     }
     if let Some(k) = id.strip_prefix("timeline.keyAt.") {
-        return run_engine(app, ctx, "keys.toggleTransform", json!({"prop": k}));
+        let r = run_engine(app, ctx, "keys.toggleTransform", json!({"prop": k}))?;
+        reveal_keyed(app, &r, k);
+        return Ok(r);
     }
     if let Some(k) = id.strip_prefix("timeline.revealAdd.") {
         reveal(app, k, now, true);

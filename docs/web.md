@@ -384,7 +384,7 @@ with the method's `result`, errors reject with the message.
 | `effectcraft.saveToBrowser(path?)` | save the project to browser storage without downloading it (default: its path, or `/<name>.ecproj`); resolves with `{path, bytes}` |
 | `effectcraft.listStored()` | `{backend, usage, quota, persisted, pending, files: [{path, size, modified}], config: [name]}` |
 | `effectcraft.removeStored(path)` | delete a stored file |
-| `effectcraft.flush()` | resolves once every change is written to browser storage |
+| `effectcraft.flush()` | resolves once every change is written to browser storage; rejects when a write failed (quota exceeded…: the change stays pending and is retried) |
 | `effectcraft.info()` | graphics backend, `gpu`, `storage`, `audio` (`{state, sampleRate, backend, posted, played, underruns}`), `workers`, `frameWorkers`, `diskCache`, `restored`, `webgpu`, `serviceWorker`, version, `crossOriginIsolated`, load timings |
 | `effectcraft.workerFrameCheck(params)` | a frame rendered in a frame worker (its GPU by default) against the page's CPU render: `{width, height, maxDiff, meanDiff, over4, workerMs}` |
 
@@ -412,6 +412,11 @@ reload through the service worker. It writes screenshots and `report.json`:
 cargo xtask web --serve 8765 &
 node apps/effectcraft-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --out target/web/smoke
 ```
+
+`apps/effectcraft-web/tests/workers.mjs` checks the job-worker plumbing (`js/host.js`,
+`web/worker.js`) under Node with a fake `Worker`, without a build: a replaced file is sent to a
+reused worker again even at the same size, and a worker that fails to start fails its job and is
+terminated (`node apps/effectcraft-web/tests/workers.mjs`).
 
 It also checks the M13.10 paths: viewer frames rendered in frame workers while scrubbing with the
 CPU renderer (project synced as diffs, event-loop gaps under 400 ms), a `wait: true` render that

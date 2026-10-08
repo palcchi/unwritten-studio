@@ -615,21 +615,26 @@ export async function browseRead(path) {
 }
 
 /// The fallback where folders can't be opened: pick files (or a whole folder, `directory`) with a
-/// plain file input; resolves with [{path, bytes}] (path relative to the picked folder).
+/// plain file input; resolves with [{path, bytes}] (path relative to the picked folder). A file
+/// that can't be read is listed as {path, error} instead (#226); cancelling resolves with [].
 export function browsePickFiles(directory) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
     if (directory) input.webkitdirectory = true;
+    input.oncancel = () => resolve([]);
     input.onchange = async () => {
-      try {
-        const out = [];
-        for (const f of input.files) {
-          out.push({ path: (directory && f.webkitRelativePath) || f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+      const out = [];
+      for (const f of input.files) {
+        const path = (directory && f.webkitRelativePath) || f.name;
+        try {
+          out.push({ path, bytes: new Uint8Array(await f.arrayBuffer()) });
+        } catch (e) {
+          out.push({ path, error: String((e && (e.message || e.name)) || e) });
         }
-        resolve(out);
-      } catch (e) { reject(e); }
+      }
+      resolve(out);
     };
     input.click();
   });

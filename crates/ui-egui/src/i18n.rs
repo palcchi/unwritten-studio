@@ -22,8 +22,9 @@ fn system_language() -> &'static str {
         static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
         LANGUAGE.get_or_init(|| supported(sys_locale::get_locale().as_deref()))
     }
+    // No system locale in the browser build: English.
     #[cfg(target_arch = "wasm32")]
-    "en"
+    supported(None)
 }
 
 /// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`).

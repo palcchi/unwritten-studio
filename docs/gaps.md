@@ -98,6 +98,12 @@ The most important missing piece: it turns every other estimate here into a meas
   and Change Renderer, #206; deselecting below the layers, Alt+Shift+P and the toolbar's stroke,
   #205; linked Mask Feather, #203), `dragging_in_the_empty_area_box_selects_items` and
   `selecting_a_mask_selects_its_points` (#203), and `input_keys_ignore_later_effects` (#212).
+- Regression evidence for the interface items of [#227](https://github.com/storytold/effectcraft/issues/227),
+  checked headlessly on Windows: `spacebar_taps_preview_and_held_spacebar_pans_the_viewer` and
+  `spacebar_drag_scrolls_the_time_graph` (Spacebar previews on its release, held it is the Hand
+  tool), `right_click_in_effect_controls_shows_the_effect_menu`,
+  `project_items_dropped_on_new_comp_make_a_composition` and
+  `dragging_over_layer_switches_sets_them_all`.
 - Done when: no open bug blocks a basic workflow (import, arrange, animate, preview, render) on
   any of the three desktop platforms, and every bug users report gets triaged within a day.
 

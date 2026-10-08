@@ -263,6 +263,13 @@ eyedroppers read GPU frames back asynchronously (`Gpu::read_display_async`: the 
 frame later). On WebGL2, or without a usable adapter, everything renders on the CPU.
 `effectcraft.info().gpu` reports `{compositor, viewerOnGpu}`.
 
+If the page's WebGPU device is lost (a driver reset, the browser reclaiming the GPU), the canvas
+can't show anything new, while the project stays open and commands keep working. The page then
+covers the canvas with a notice (`showDeviceLost` in `js/host.js`) offering **Save Project** (a
+download) and **Reload**, which first writes pending changes to browser storage
+(`effectcraft.flush()`) so the session comes back after the reload; when the write fails it says
+so and offers **Reload Anyway**.
+
 **GPU effects run in the frame workers.** A browser never lets JavaScript (or wasm) wait for a GPU
 readback, not even in a worker: a buffer maps only once the thread returns to its event loop.
 The CPU renderer, which runs GPU effect chains and reads their results back mid-frame, therefore
@@ -420,7 +427,8 @@ reused worker again even at the same size, and a worker that fails to start fail
 terminated (`node apps/effectcraft-web/tests/workers.mjs`).
 
 `apps/effectcraft-web/tests/page.mjs` checks page-side helpers of `js/host.js` the same way with
-a fake DOM: a picked file that can't be read is reported while the others are added
+a fake DOM: a picked file that can't be read is reported while the others are added, and the
+device-lost notice saves, flushes before reloading and reports a failed flush
 (`node apps/effectcraft-web/tests/page.mjs`).
 
 It also checks the M13.10 paths: viewer frames rendered in frame workers while scrubbing with the

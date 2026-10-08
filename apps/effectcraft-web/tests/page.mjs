@@ -5,12 +5,16 @@
 //
 // - Add Files… / Upload Folder…: a picked file that can't be read is listed with its error
 //   instead of failing the whole pick silently, and cancelling picks nothing (#226).
+// - A lost WebGPU device: the page says so over the canvas and offers Save Project and Reload;
+//   the reload writes pending changes to browser storage first, and a failed write is reported
+//   instead of reloading (#225).
 // Exits non-zero on failure.
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const tick = () => new Promise((r) => setTimeout(r, 0));
 globalThis.self = globalThis;
 
 class FakeElement {
@@ -25,6 +29,9 @@ class FakeElement {
   }
   append(...c) {
     this.children.push(...c);
+  }
+  click() {
+    this.onclick?.();
   }
   *all() {
     yield this;
@@ -46,6 +53,8 @@ globalThis.document = {
     return [...this.body.all()].find((e) => e.id === id) ?? null;
   },
 };
+let reloads = 0;
+globalThis.location = { reload: () => reloads++ };
 
 const host = await import(pathToFileURL(join(here, "../js/host.js")));
 
@@ -66,5 +75,55 @@ assert.deepEqual(out[1], { path: "red-corner.png", error: "Generated unreadable 
 const cancelled = host.browsePickFiles(false);
 picker.oncancel();
 assert.deepEqual(await cancelled, [], "cancelling picks nothing");
+
+// #225: the device-lost notice.
+const calls = [];
+let flushFails = false;
+self.effectcraft = {
+  flush: async () => {
+    calls.push("flush");
+    if (flushFails) throw new Error("quota exceeded");
+  },
+  execute: async (command, params) => {
+    calls.push([command, params]);
+    if (command === "file.save") throw new Error("no path: use file.saveAs {path}");
+  },
+};
+const notice = () => document.getElementById("device-lost");
+const buttons = () => [...notice().all()].filter((e) => e.tag === "button");
+const text = () => [...notice().all()].find((e) => e.tag === "p").textContent;
+
+host.showDeviceLost("GPU device lost (Destroyed): destroyed", true);
+host.showDeviceLost("again", true);
+assert.equal(document.body.children.length, 1, "one notice");
+assert.equal([...notice().all()].find((e) => e.tag === "small").textContent, "GPU device lost (Destroyed): destroyed");
+assert.match(text(), /Reload to continue/);
+assert.deepEqual(
+  buttons().map((b) => b.textContent),
+  ["Save Project", "Reload"],
+);
+// Save Project: Save, or Save As for an untitled project (a download).
+await buttons()[0].onclick();
+assert.deepEqual(calls.splice(0), [
+  ["file.save", {}],
+  ["file.saveAs", { path: "/Untitled Project.ecproj" }],
+]);
+// Reload writes pending changes first.
+await buttons()[1].onclick();
+assert.deepEqual(calls.splice(0), ["flush"]);
+assert.equal(reloads, 1);
+
+// A failed write is reported instead of reloading; Reload Anyway reloads.
+document.body.children = [];
+flushFails = true;
+host.showDeviceLost("GPU device lost (Unknown): gone", false);
+assert.match(text(), /isn't kept in browser storage/);
+await buttons()[1].onclick();
+await tick();
+assert.equal(reloads, 1, "no reload after a failed write");
+assert.match(text(), /quota exceeded/);
+assert.equal(buttons()[1].textContent, "Reload Anyway");
+buttons()[1].onclick();
+assert.equal(reloads, 2);
 
 console.log("page: ok");

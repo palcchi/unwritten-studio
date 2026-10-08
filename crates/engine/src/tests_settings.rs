@@ -487,6 +487,19 @@ fn memory_tick_never_waits_for_the_system() {
     }
 }
 
+/// Settings ▸ Startup & Repair ▸ Window Graphics takes `auto` or `gl` (#243).
+#[test]
+fn window_graphics_is_validated() {
+    let mut s = Session::default();
+    assert_eq!(s.prefs.startup.window_graphics, "auto");
+    s.execute("prefs.set", json!({"key": "startup.windowGraphics", "value": "gl"})).unwrap();
+    for bad in [json!("vulkan"), json!(true)] {
+        assert!(s.execute("prefs.set", json!({"key": "startup.windowGraphics", "value": bad})).is_err());
+    }
+    assert_eq!(s.prefs.startup.window_graphics, "gl");
+    assert_eq!(Prefs::from_json(r#"{"startup":{"windowGraphics":"dx9"}}"#).startup.window_graphics, "auto");
+}
+
 #[test]
 fn interface_language_is_validated_persisted_and_backward_compatible() {
     let store = Arc::new(MemoryConfig::default());

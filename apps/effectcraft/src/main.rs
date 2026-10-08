@@ -15,6 +15,7 @@
 mod appimage;
 mod audio_out;
 mod control_server;
+mod launch_guard;
 #[cfg(target_os = "macos")]
 mod native_menu;
 
@@ -77,6 +78,11 @@ fn main() -> eframe::Result {
     // Wayland shows the window's icon from its desktop entry: an AppImage brings its own.
     #[cfg(target_os = "linux")]
     appimage::integrate_from_env(ICON_PNG);
+    // Settings ▸ Startup & Repair ▸ Window Graphics, switched to OpenGL when the last launch's
+    // window never drew (a crashing graphics driver, #243).
+    let mut launch = launch_guard::Launch::begin(effectcraft_host::config_dir().as_deref(), std::env::var_os("WGPU_BACKEND").is_some());
+    let on_gl = launch.backends == Some(eframe::wgpu::Backends::GL);
+    let notice = launch.notice.take();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("EffectCraft")
@@ -89,7 +95,7 @@ fn main() -> eframe::Result {
             // Wayland matches the window to `ai.storyteller.effectcraft.desktop` by this ID.
             .with_app_id(appimage::APP_ID),
         event_loop_builder: agent_event_loop(control_port.is_some()),
-        wgpu_options: wgpu_options(),
+        wgpu_options: wgpu_options(launch.backends),
         ..Default::default()
     };
     // Start-up milestones: with `RUST_LOG=info` they go to stderr, so a window that never
@@ -155,6 +161,9 @@ fn main() -> eframe::Result {
             let mut app = EffectcraftApp::new(session);
             app.set_gpu_failure_bridge(gpu_failures);
             app.ui.start_screen = show_home;
+            if let Some(n) = notice {
+                app.ui.status = n;
+            }
             if let Some(r) = recovery {
                 app.offer_recovery(r);
             }
@@ -195,13 +204,14 @@ fn main() -> eframe::Result {
                 #[cfg(target_os = "macos")]
                 menu: native_menu::NativeBar::new(&cc.egui_ctx),
                 app,
+                launch,
                 drawn: false,
             }))
         }),
     );
     match &result {
         Ok(()) => log::info!("the window closed"),
-        Err(e) => startup_failed(e),
+        Err(e) => startup_failed(e, !on_gl && cfg!(not(target_os = "macos"))),
     }
     result
 }
@@ -209,11 +219,14 @@ fn main() -> eframe::Result {
 /// The window's wgpu device asks for the adapter's own limits (textures up to 16384 px)
 /// instead of eframe's fixed set: an older GPU that can't meet those (Intel HD Graphics 5500,
 /// #198) still opens the app, and the compositor then checks what it needs and falls back to
-/// the CPU when the device can't run it.
-fn wgpu_options() -> eframe::WgpuConfiguration {
+/// the CPU when the device can't run it. `backends`: Window Graphics' choice, when it makes one.
+fn wgpu_options(backends: Option<eframe::wgpu::Backends>) -> eframe::WgpuConfiguration {
     use eframe::egui_wgpu::WgpuSetup;
     let mut config = eframe::WgpuConfiguration::default();
     if let WgpuSetup::CreateNew(setup) = &mut config.wgpu_setup {
+        if let Some(b) = backends {
+            setup.instance_descriptor.backends = b;
+        }
         setup.device_descriptor = std::sync::Arc::new(|adapter| eframe::wgpu::DeviceDescriptor {
             label: Some("EffectCraft device"),
             required_limits: device_limits(adapter.limits()),
@@ -230,10 +243,12 @@ fn device_limits(adapter: eframe::wgpu::Limits) -> eframe::wgpu::Limits {
 }
 
 /// The window couldn't open (no usable graphics adapter or device): say so instead of quitting
-/// silently, since release builds on Windows have no console.
-fn startup_failed(e: &eframe::Error) {
+/// silently, since release builds on Windows have no console. `gl_next`: the launch guard has
+/// the next launch try OpenGL.
+fn startup_failed(e: &eframe::Error, gl_next: bool) {
+    let next = if gl_next { "The next launch will try OpenGL instead. " } else { "" };
     let message = format!(
-        "EffectCraft couldn't start its window: {e}\n\nUpdating the graphics driver often helps. If it keeps happening, please report it at https://github.com/storytold/effectcraft/issues with this message."
+        "EffectCraft couldn't start its window: {e}\n\n{next}Updating the graphics driver often helps. If it keeps happening, please report it at https://github.com/storytold/effectcraft/issues with this message."
     );
     log::error!("{message}");
     eprintln!("effectcraft: {message}");
@@ -250,6 +265,7 @@ struct Desktop {
     app: EffectcraftApp,
     #[cfg(target_os = "macos")]
     menu: native_menu::NativeBar,
+    launch: launch_guard::Launch,
     /// The first frame was drawn (logged once).
     drawn: bool,
 }
@@ -265,6 +281,7 @@ impl eframe::App for Desktop {
         self.app.ui(ui, frame);
         if !self.drawn {
             self.drawn = true;
+            self.launch.drawn();
             log::info!("first frame drawn");
         }
     }

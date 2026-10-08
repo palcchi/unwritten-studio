@@ -127,9 +127,6 @@ Things that tripped up a long agent-driven session (a multi-scene 3D piece built
 - **Save early in headless mode.** The headless server keeps the project in memory only. If the
   client restarts the server, unsaved work is gone, so call `save_project {"path": …}` after each
   milestone ([#258](https://github.com/storytold/effectcraft/issues/258)).
-- **GPU.** Headless sessions render on the CPU. Start the server with `["mcp", "--gpu"]` to use the
-  GPU compositor; `get_project` shows the backend in use under `renderer.active`
-  ([#262](https://github.com/storytold/effectcraft/issues/262)).
 - **Environment light.** `layer.newLight` also accepts `"kind":"Environment"`: an equirectangular
   image that metallic surfaces reflect. Set its `lightOptions/source` to a footage, comp or solid
   layer by layer id; with no source it uses the comp's Environment Layer (`layer.environment`)

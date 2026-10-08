@@ -514,6 +514,12 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
         assert_eq!(s.prefs.general.language, "ja");
         assert_eq!(store.read(PREFS_FILE).unwrap(), saved);
     }
+    // zh-hans is registered alongside en and ja: it is accepted, persisted and read back.
+    s.execute("prefs.set", json!({"key": "general.language", "value": "zh-hans"})).unwrap();
+    let mut zh = Session { config: Some(store.clone()), ..Default::default() };
+    zh.load_settings();
+    assert_eq!(zh.prefs.general.language, "zh-hans");
+    s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let mut reloaded = Session { config: Some(store), ..Default::default() };
     reloaded.load_settings();
     assert_eq!(reloaded.prefs.general.language, "ja");

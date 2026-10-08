@@ -92,10 +92,17 @@ fn main() -> eframe::Result {
         wgpu_options: wgpu_options(),
         ..Default::default()
     };
+    // Start-up milestones: with `RUST_LOG=info` they go to stderr, so a window that never
+    // appears shows how far start-up got (#234).
+    log::info!("effectcraft {}: opening the window", env!("CARGO_PKG_VERSION"));
     let result = eframe::run_native(
         "EffectCraft",
         options,
         Box::new(move |cc| {
+            match &cc.wgpu_render_state {
+                Some(rs) => log::info!("graphics: {:?}", rs.adapter.get_info()),
+                None => log::info!("graphics: no wgpu device"),
+            }
             // This executable owns the shared device's handlers. Install them before
             // EffectCraft's compositor pipelines are built, without changing handlers from
             // inside Gpu::new. eframe has already constructed its presentation renderer here.
@@ -183,15 +190,18 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
+            log::info!("app created; the window shows after its first frame");
             Ok(Box::new(Desktop {
                 #[cfg(target_os = "macos")]
                 menu: native_menu::NativeBar::new(&cc.egui_ctx),
                 app,
+                drawn: false,
             }))
         }),
     );
-    if let Err(e) = &result {
-        startup_failed(e);
+    match &result {
+        Ok(()) => log::info!("the window closed"),
+        Err(e) => startup_failed(e),
     }
     result
 }
@@ -240,6 +250,8 @@ struct Desktop {
     app: EffectcraftApp,
     #[cfg(target_os = "macos")]
     menu: native_menu::NativeBar,
+    /// The first frame was drawn (logged once).
+    drawn: bool,
 }
 
 impl eframe::App for Desktop {
@@ -251,6 +263,10 @@ impl eframe::App for Desktop {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.app.ui(ui, frame);
+        if !self.drawn {
+            self.drawn = true;
+            log::info!("first frame drawn");
+        }
     }
 
     fn on_exit(&mut self) {

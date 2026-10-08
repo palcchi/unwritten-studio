@@ -593,4 +593,53 @@ mod tests {
         let t1 = run("ec.noise.turbulent", &[("evolution", num(200.0)), ("evolutionOptions/turbulenceFactor", num(2.0))]);
         assert_ne!(t0, t1);
     }
+
+    /// Turbulent Basic Fractal Noise drawn alone at `w` × `h`.
+    fn turbulent_basic(w: u32, h: u32, vals: &[(&str, Value)]) -> Image {
+        let mut all = vec![("fractalType", Value::Enum(2)), ("blendingMode", Value::Enum(BLEND_NONE))];
+        all.extend_from_slice(vals);
+        run_fx("ec.noise.fractal", &all, Image::filled(w, h, [0.0, 0.0, 0.0, 1.0]), 0.0, EffectEnv::default()).img
+    }
+
+    /// (x, y, ∂/∂x, ∂/∂y) of the grey value at every inner pixel (central differences).
+    fn gradients(img: &Image) -> Vec<(i64, i64, f64, f64)> {
+        let v = |x: i64, y: i64| img.get(x, y)[0] as f64;
+        let (w, h) = (img.width as i64, img.height as i64);
+        (1..h - 1).flat_map(|y| (1..w - 1).map(move |x| (x, y, (v(x + 1, y) - v(x - 1, y)) / 2.0, (v(x, y + 1) - v(x, y - 1)) / 2.0))).collect()
+    }
+
+    /// #259: Soft Linear faded between two lattice values with zero slope across every lattice
+    /// line, which Turbulent Basic and high contrast showed as a square grid.
+    #[test]
+    fn soft_linear_has_no_lattice_creases() {
+        // One 16 px layer whose lattice lines run through the pixel centres x, y = 16k: the slope
+        // across them is about the average slope (with the fade it was 2% of it).
+        let one = turbulent_basic(160, 96, &[("complexity", num(1.0)), ("transform/scale", num(16.0)), ("transform/offset", Value::Vec2([0.5, 0.5]))]);
+        let (mut on, mut n_on, mut all, mut n_all) = (0.0, 0.0, 0.0, 0.0);
+        for (x, y, gx, gy) in gradients(&one) {
+            for (k, g) in [(x, gx), (y, gy)] {
+                all += g.abs();
+                n_all += 1.0;
+                if k % 16 == 0 {
+                    on += g.abs();
+                    n_on += 1.0;
+                }
+            }
+        }
+        let across = (on / n_on) / (all / n_all);
+        assert!(across > 0.5, "slope across lattice lines / average slope: {across}");
+        // The issue's settings at a quarter size: gradients run along the lattice axes about as
+        // strongly as along the diagonals (with the fade, 1.2× as strongly).
+        let img = turbulent_basic(480, 270, &[("contrast", num(140.0)), ("brightness", num(-35.0)), ("transform/scale", num(105.0))]);
+        let (mut axis, mut diag) = (0.0, 0.0);
+        for (_, _, gx, gy) in gradients(&img) {
+            let a = gy.atan2(gx).to_degrees().rem_euclid(90.0);
+            if !(15.0..=75.0).contains(&a) {
+                axis += gx.hypot(gy);
+            } else if (30.0..=60.0).contains(&a) {
+                diag += gx.hypot(gy);
+            }
+        }
+        assert!(axis / diag < 1.15, "gradient along the axes / along the diagonals: {}", axis / diag);
+    }
 }

@@ -8,7 +8,7 @@
 
 use effectcraft_engine::color::BlendMode;
 use effectcraft_engine::keyframe::{Interp, Value};
-use effectcraft_engine::project::{Comp, GroupKind, Layer, LayerId, LayerSource, MatteKind, Node, ParamUi, PropGroup, Property};
+use effectcraft_engine::project::{Comp, GroupKind, ItemId, Layer, LayerId, LayerSource, MatteKind, Node, ParamUi, PropGroup, Property};
 use effectcraft_engine::render::EvalCtx;
 use effectcraft_engine::time::Tick;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
@@ -1029,6 +1029,27 @@ fn layer_switch(
         actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name})));
     }
 }
+
+fn anchor_id(comp: ItemId) -> egui::Id {
+    egui::Id::new(("timeline-selection-anchor", comp.0))
+}
+
+/// Remember `layer` as where the next Shift-click selection starts.
+fn set_anchor(ctx: &egui::Context, comp: ItemId, layer: LayerId) {
+    ctx.data_mut(|d| d.insert_temp(anchor_id(comp), layer));
+}
+
+/// The layers a Shift-click on `layer` (its name or its bar) selects: those from the last layer
+/// clicked (else the first selected) to it in stack order, but locked layers and layers the
+/// Timeline doesn't show. `None` without such a layer.
+fn shift_range(ctx: &egui::Context, cid: ItemId, comp: &Comp, rows: &[Row], selected: &[LayerId], layer: LayerId) -> Option<Vec<u64>> {
+    let anchor = ctx.data(|d| d.get_temp::<LayerId>(anchor_id(cid))).or_else(|| selected.first().copied())?;
+    let a = comp.layers.iter().position(|l| l.id == anchor)?;
+    let b = comp.layers.iter().position(|l| l.id == layer)?;
+    let span = comp.layers.get(a.min(b)..=a.max(b))?;
+    Some(span.iter().filter(|l| !l.switches.locked && rows.iter().any(|r| r.layer == l.id)).map(|l| l.id.0).collect())
+}
+
 /// Set on the frame the reorder drag is released.
 /// Where layers dropped at height `py` land among the visible layer rows: above the first row
 /// whose middle is below it (its index in `layer_rows`), else below the last row. Returns that
@@ -1621,27 +1642,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 app.auto.add(&format!("timeline.layer.{}.row", layer.id.0), left, &layer.name);
                 if row_resp.clicked() && !locked {
                     let m = ui.input(|i| i.modifiers);
-                    let anchor_key = egui::Id::new(("timeline-selection-anchor", cid.0));
-                    let anchor = ctx.data(|d| d.get_temp::<LayerId>(anchor_key)).or_else(|| selected.first().copied());
-                    let range = if m.shift {
-                        anchor.and_then(|a| comp.layers.iter().position(|l| l.id == a)).map(|a| {
-                            let b = comp.layers.iter().position(|l| l.id == layer.id).unwrap_or(a);
-                            comp.layers
-                                .get(a.min(b)..=a.max(b))
-                                .unwrap_or_default()
-                                .iter()
-                                .filter(|l| !l.switches.locked && rows.iter().any(|r| r.layer == l.id))
-                                .map(|l| l.id.0)
-                                .collect::<Vec<_>>()
-                        })
-                    } else {
-                        None
-                    };
-                    if let Some(layers) = range {
+                    if let Some(layers) = m.shift.then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {
                         actions.push(("layer.select".into(), json!({"layers": layers})));
                     } else {
                         actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "toggle": m.command})));
-                        ctx.data_mut(|d| d.insert_temp(anchor_key, layer.id));
+                        set_anchor(&ctx, cid, layer.id);
                     }
                 }
                 if row_resp.double_clicked() {
@@ -1842,8 +1847,18 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     if lin.hovered() || lout.hovered() || lin.dragged() || lout.dragged() {
                         ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                     }
-                    if (body.clicked() || body.drag_started()) && !is_sel {
-                        actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "add": ui.input(|i| i.modifiers.shift)})));
+                    let shift = ui.input(|i| i.modifiers.shift);
+                    if let Some(layers) = (body.clicked() && shift).then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {
+                        // Shift-click: the layers from the last one clicked to this one, as in
+                        // the layer outline.
+                        actions.push(("layer.select".into(), json!({"layers": layers})));
+                    } else {
+                        if (body.clicked() || body.drag_started()) && !is_sel {
+                            actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "add": shift})));
+                        }
+                        if (body.clicked() || body.drag_started()) && !shift {
+                            set_anchor(&ctx, cid, layer.id);
+                        }
                     }
                     layer_context_menu(&body, layer, &mut actions);
                     let drag_key = format!("bar-{}", layer.id.0);
@@ -1978,7 +1993,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let wr = Rect::from_min_max(pos2(graph_x0, r.min.y), r.max);
                 gp.rect_filled(wr, 0.0, t.tl_bg);
                 app.auto.add(&format!("timeline.layer.{}.waveform", layer.id.0), wr, "Waveform");
-                match super::waveform::summary(app, &ctx, effectcraft_engine::project::ItemId(*item)) {
+                match super::waveform::summary(app, &ctx, ItemId(*item)) {
                     Some(s) => super::waveform::draw(&gp, wr.shrink2(vec2(0.0, 2.0)), &tm, layer, &s, Color32::from_rgb(0x5f, 0xc8, 0x8a)),
                     None => {
                         gp.text(

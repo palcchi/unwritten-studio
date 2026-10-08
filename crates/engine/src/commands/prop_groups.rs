@@ -174,6 +174,30 @@ pub(crate) fn paste_contents(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"contents": pasted.iter().map(|(_, u)| *u).collect::<Vec<_>>()}))
 }
 
+/// Edit ▸ Duplicate with shape items selected: each is copied in place, above the original and
+/// named as After Effects does ("Rectangle 1" → "Rectangle 2"), and the copies are selected.
+pub(crate) fn duplicate_contents(s: &mut Session, items: &[(LayerId, Uid)]) -> Result<Value> {
+    let c = "edit.duplicate";
+    let cid = s.active_comp_id().ok_or(EngineError::NoComp)?;
+    let copies = s.edit("Duplicate", None, |proj, st| {
+        let mut next = proj.next_id;
+        let mut out = vec![];
+        for (lid, uid) in items {
+            let parent = layer_mut(proj, cid, *lid)?.props.parent_of_mut(*uid).ok_or_else(|| bad(c, "the shape item is gone"))?;
+            let Some((i, Node::Group(g))) = parent.children.iter().enumerate().find(|(_, n)| n.uid() == *uid) else { continue };
+            let mut g = g.clone();
+            g.reassign_uids(&mut next);
+            g.name = super::effect::unique_name(parent, &g.name);
+            out.push((*lid, g.uid));
+            parent.children.insert(i, Node::Group(g));
+        }
+        proj.next_id = next + 1;
+        st.selected_props = out.clone();
+        Ok(out)
+    })?;
+    Ok(json!({"contents": copies.iter().map(|(_, u)| *u).collect::<Vec<_>>()}))
+}
+
 fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "prop.duplicateGroup";
     let (cid, lid, uid) = group_ref(s, p, c, true)?;

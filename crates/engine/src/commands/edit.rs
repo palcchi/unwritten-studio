@@ -109,6 +109,11 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
             }
             return Ok(json!({"effects": out}));
         }
+        // Shape items selected → duplicate them inside their layers.
+        let items = super::prop_groups::selected_contents(s);
+        if !items.is_empty() {
+            return super::prop_groups::duplicate_contents(s, &items);
+        }
     }
     let (cid, ids) = layers_p(s, p)?;
     let new = s.edit("Duplicate", None, |proj, st| {
@@ -701,7 +706,7 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("edit.pasteReversedKeyframes", "Paste Reversed Keyframes", ["Edit"], None, "{layers?, prop?|path?, time?}", has_key_clip, paste_reversed),
         cmd!("edit.clear", "Clear", ["Edit"], Some("Delete"), "{layers?}", layers_or_keys, delete),
-        cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+D"), "{layers?}", has_layers, duplicate),
+        cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+D"), "{layers?} (effects or shape items when they are selected)", has_layers, duplicate),
         cmd!("edit.splitLayer", "Split Layer", ["Edit"], Some("Cmd+Shift+D"), "{layers?}", has_layers, split),
         cmd!("edit.liftWorkArea", "Lift Work Area", ["Edit"], None, "{layers?}", has_comp, lift),
         cmd!("edit.extractWorkArea", "Extract Work Area", ["Edit"], None, "{layers?}", has_comp, extract),

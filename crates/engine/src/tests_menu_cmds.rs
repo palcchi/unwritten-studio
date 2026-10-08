@@ -1111,3 +1111,38 @@ fn shape_contents_copy_cut_and_paste_between_shape_layers() {
     s.execute("layer.select", json!({"layers": [sol]})).unwrap();
     assert!(s.execute("edit.paste", json!({})).is_err());
 }
+
+/// Edit ▸ Duplicate with shape items selected duplicates them in their layer, above the
+/// original and named "Rectangle 2", not the layer (#227).
+#[test]
+fn duplicate_with_shape_items_selected_duplicates_them_in_place() {
+    let mut s = comp();
+    let a = s.execute("layer.newShape", json!({"kind": "rect"})).unwrap()["layer"].as_u64().unwrap();
+    let n = s.active_comp().unwrap().layers.len();
+    let rect = contents_item(&s, a, "Rectangle 1");
+    s.execute("prop.select", json!({"layer": a, "prop": rect})).unwrap();
+    let r = s.execute("edit.duplicate", json!({})).unwrap();
+    assert_eq!(contents_names(&s, a), ["Rectangle 2", "Rectangle 1"]);
+    assert_eq!(s.active_comp().unwrap().layers.len(), n, "no new layer");
+    let copy = r["contents"][0].as_u64().unwrap();
+    assert_eq!(s.state.selected_props, vec![(effectcraft_project::LayerId(a), copy)]);
+    let l = layer(&s, a);
+    let path_uid = |g: u64| l.props.find_group(g).unwrap().sub("contents").unwrap().groups().next().unwrap().uid;
+    assert_ne!(path_uid(copy), path_uid(rect), "the copy has its own properties");
+    // Again, with the copy selected: Rectangle 3, above it.
+    s.execute("edit.duplicate", json!({})).unwrap();
+    assert_eq!(contents_names(&s, a), ["Rectangle 3", "Rectangle 2", "Rectangle 1"]);
+    s.undo();
+    s.undo();
+    assert_eq!(contents_names(&s, a), ["Rectangle 1"]);
+    // An item inside a group is duplicated in that group.
+    let fill = layer(&s, a).props.find_group(rect).unwrap().sub("contents").unwrap().groups().find(|g| g.match_id == "fill").unwrap().uid;
+    s.execute("prop.select", json!({"layer": a, "prop": fill})).unwrap();
+    s.execute("edit.duplicate", json!({})).unwrap();
+    let inner: Vec<String> = layer(&s, a).props.find_group(rect).unwrap().sub("contents").unwrap().groups().map(|g| g.name.clone()).collect();
+    assert_eq!(inner, ["Rectangle Path 1", "Fill 2", "Fill 1"]);
+    // With only the layer selected, the layer is duplicated as before.
+    s.execute("layer.select", json!({"layers": [a]})).unwrap();
+    s.execute("edit.duplicate", json!({})).unwrap();
+    assert_eq!(s.active_comp().unwrap().layers.len(), n + 1);
+}

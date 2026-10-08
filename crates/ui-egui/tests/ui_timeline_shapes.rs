@@ -172,6 +172,16 @@ fn ctrl_c_and_ctrl_v_copy_a_shape_group_into_another_shape_layer() {
 }
 
 #[test]
+fn ctrl_d_duplicates_the_selected_shape_group_in_its_layer() {
+    let (mut h, a, _, rect) = two_shape_layers();
+    click(&mut h, &format!("timeline.group.{rect}.name"));
+    h.input_mut().events.push(Event::Key { key: Key::D, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND });
+    h.run_steps(3);
+    assert_eq!(h.state().session.active_comp().unwrap().layers.len(), 2, "no new layer");
+    assert_eq!(contents_names(&h, a), ["Rectangle 2", "Rectangle 1"]);
+}
+
+#[test]
 fn toolbar_stroke_edits_the_selected_shape_layer() {
     let mut s = session();
     let l = s.execute("layer.newShape", json!({"kind": "rect", "fill": "#ff0000"})).unwrap()["layer"].as_u64().unwrap();

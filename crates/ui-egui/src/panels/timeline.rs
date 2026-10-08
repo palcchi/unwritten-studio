@@ -115,6 +115,20 @@ fn pick_whip_id() -> egui::Id {
     egui::Id::new("tl-pickwhip")
 }
 
+/// The text of an expression being edited when its pick whip was pressed, and the selection in
+/// it (characters): the pick whip's reference goes in there.
+type WhipInto = (String, [usize; 2]);
+
+fn whip_into_id(prop: u64) -> egui::Id {
+    egui::Id::new(("tl-pickwhip-into", prop))
+}
+
+/// After a pick whip into the expression being edited: its editor takes the focus back, the
+/// cursor this many characters before the end (just after the reference).
+fn expr_refocus_id(prop: u64) -> egui::Id {
+    egui::Id::new(("tl-expr-refocus", prop))
+}
+
 #[derive(Clone, Debug)]
 struct Row {
     layer: LayerId,
@@ -2036,6 +2050,25 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let pw = ui.interact(pw_rect, egui::Id::new(("expr-whip", uid)), Sense::drag()).on_hover_text("Expression pick whip: drag onto a property");
                 icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
                 app.auto.add(&format!("timeline.prop.{uid}.pickWhip"), pw_rect, "Expression pick whip");
+                if pw.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+                    // Pressed while the expression is being edited (its text is buffered while
+                    // the editor has the focus): the reference will go in at the cursor,
+                    // replacing the selection (#284).
+                    let into = ctx.data(|d| d.get_temp::<String>(egui::Id::new(("expr-buf", uid)))).map(|buf| {
+                        let n = buf.chars().count();
+                        let sel = egui::text_edit::TextEditState::load(&ctx, egui::Id::new(("expr-edit", uid)))
+                            .and_then(|st| st.cursor.char_range())
+                            .map_or([n, n], |r| [r.primary.index.0.min(r.secondary.index.0).min(n), r.primary.index.0.max(r.secondary.index.0).min(n)]);
+                        (buf, sel)
+                    });
+                    ctx.data_mut(|d| {
+                        if let Some(into) = into {
+                            d.insert_temp(whip_into_id(*uid), into);
+                        } else {
+                            d.remove::<WhipInto>(whip_into_id(*uid));
+                        }
+                    });
+                }
                 if pw.drag_started() {
                     let pw_state: PickWhip = (1, layer.id.0, *uid, pw_rect.center());
                     ctx.data_mut(|d| d.insert_temp(pick_whip_id(), pw_state));
@@ -2089,19 +2122,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 gp.rect_filled(Rect::from_min_max(pos2(graph_x0, r.min.y), r.max), 0.0, Color32::from_rgb(0x1a, 0x1a, 0x1a));
                 let er = Rect::from_min_max(pos2(graph_x0 + 8.0, r.min.y + 3.0), pos2(rect.max.x - 14.0, r.max.y - 3.0));
                 let buf_id = egui::Id::new(("expr-buf", uid));
+                let edit_id = egui::Id::new(("expr-edit", uid));
                 let mut buf: String = ctx.data(|d| d.get_temp(buf_id)).unwrap_or_else(|| ex.text.clone());
+                if let Some(after) = ctx.data_mut(|d| d.remove_temp::<usize>(expr_refocus_id(*uid))) {
+                    // A pick whip just put a reference in: editing goes on in the new text,
+                    // the cursor after the reference.
+                    buf = ex.text.clone();
+                    let mut st = egui::text_edit::TextEditState::load(&ctx, edit_id).unwrap_or_default();
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(buf.chars().count().saturating_sub(after)))));
+                    st.store(&ctx, edit_id);
+                    ctx.memory_mut(|m| m.request_focus(edit_id));
+                }
                 // Settings ▸ Scripting & Expressions ▸ Expressions Editor.
                 let sp = app.session.prefs.scripting.clone();
-                let resp = super::expr_editor::editor(
-                    ui,
-                    egui::Id::new(("expr-edit", uid)),
-                    &mut buf,
-                    er,
-                    &sp,
-                    if ex.enabled { expr_col } else { t.text_dim },
-                    (*lines).clamp(1, 8),
-                    &t,
-                );
+                let resp = super::expr_editor::editor(ui, edit_id, &mut buf, er, &sp, if ex.enabled { expr_col } else { t.text_dim }, (*lines).clamp(1, 8), &t);
                 app.auto.add(&format!("timeline.prop.{uid}.expression"), er, &prop.name);
                 let commit = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && (i.modifiers.command || i.modifiers.ctrl));
                 if commit {
@@ -2443,12 +2477,21 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         if ctx.input(|i| !i.pointer.any_down()) {
             ctx.data_mut(|d| d.remove::<PickWhip>(pick_whip_id()));
+            let into = (kind == 1).then(|| ctx.data_mut(|d| d.remove_temp::<WhipInto>(whip_into_id(src_prop)))).flatten();
             match (kind, target) {
                 (0, Some((_, row))) if row.layer.0 != src_layer => {
                     actions.push(("layer.setParent".into(), json!({"layers": [src_layer], "parent": row.layer.0})));
                 }
                 (1, Some((_, Row { layer, kind: RowKind::Prop { uid }, .. }))) if uid != src_prop => {
-                    actions.push(("prop.pickWhip".into(), json!({"layer": src_layer, "prop": src_prop, "target": {"layer": layer.0, "prop": uid}})));
+                    let mut params = json!({"layer": src_layer, "prop": src_prop, "target": {"layer": layer.0, "prop": uid}});
+                    if let Some((text, [a, b])) = into {
+                        // Into the expression being edited, which goes on being edited.
+                        params["expression"] = json!(text);
+                        params["range"] = json!([a, b]);
+                        let after = text.chars().count().saturating_sub(b);
+                        ctx.data_mut(|d| d.insert_temp(expr_refocus_id(src_prop), after));
+                    }
+                    actions.push(("prop.pickWhip".into(), params));
                 }
                 _ => {}
             }

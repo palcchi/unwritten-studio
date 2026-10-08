@@ -35,8 +35,9 @@ pub(crate) fn snapping_on(app: &EffectcraftApp, mods: egui::Modifiers) -> bool {
 
 /// Snap dragged feature points (`sources`, comp pixels) to the comp's targets: other layers'
 /// edges, corners, centres, anchor points and mask/shape vertices and the comp edges and centre
-/// (when snapping is on, as the Snapping options allow), guides (View ▸ Snap to Guides) and the grid (View ▸ Snap to Grid). Returns
-/// the comp-space correction (zero when nothing is near) and records the feedback for this frame.
+/// (when snapping is on, as the Snapping options allow), guides (View ▸ Snap to Guides) and the
+/// grid (View ▸ Snap to Grid). Returns the comp-space correction (zero when nothing is near) and
+/// records the feedback for this frame.
 pub(crate) fn snap(
     app: &EffectcraftApp,
     ctx: &egui::Context,

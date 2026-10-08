@@ -946,7 +946,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let selected = app.session.state.selected_props.iter().any(|(l, u)| *l == layer.id && *u == g.uid);
         bp.rect_filled(r, 0.0, if selected { Color32::from_rgb(0x2f, 0x3a, 0x52) } else { Color32::from_rgb(0x2a, 0x2a, 0x2a) });
         let fxr = Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(16.0, 16.0));
-        if widgets::icon_toggle(ui, fxr, Icon::Fx, g.enabled, &t, egui::Id::new(("ec-fx", g.uid)), None).clicked() {
+        if widgets::icon_toggle(ui, fxr, Icon::Fx, g.enabled, &t, egui::Id::new(("ec-fx", g.uid)), Sense::click()).clicked() {
             actions.push(("effect.toggle".into(), json!({"layer": layer.id.0, "effect": g.uid})));
         }
         app.auto.add(&format!("effectControls.effect.{}.fx", g.uid), fxr, &g.name);

@@ -1261,6 +1261,52 @@ fn handle_drags_scale_about_the_anchor_and_follow_the_pointer() {
     assert!(close(scale(&h), [162.5, 162.5]), "{:?}", scale(&h));
 }
 
+/// #252: with snapping on, a dragged handle snaps to the comp's corners and edges (and other
+/// layers'), so a layer scales exactly to the comp; Shift keeps the proportions and still lands
+/// on the comp's size.
+#[test]
+fn handle_drags_snap_to_the_comp_edges() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id.0;
+    let scale = |h: &Harness<'_, EffectcraftApp>, id: u64| {
+        let l = h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap().clone();
+        l.props.prop("transform/scale").unwrap().value.as_vec3()
+    };
+    let close = |a: [f64; 3], b: [f64; 2]| (a[0] - b[0]).abs() < 0.01 && (a[1] - b[1]).abs() < 0.01;
+    let drag_handle = |h: &mut Harness<'_, EffectcraftApp>, id: u64, handle: usize, to: [f32; 2], mods: egui::Modifiers| {
+        h.state_mut().session.execute("prop.set", json!({"layer": id, "path": "transform/scale", "value": [100, 100, 100]})).unwrap();
+        h.state_mut().session.execute("layer.select", json!({"layers": [id]})).unwrap();
+        h.run_steps(2);
+        let from = rect(h, &format!("viewer.handle.{id}.{handle}")).center();
+        let to = screen(h, to);
+        drag_path(h, &[from, to], mods);
+        scale(h, id)
+    };
+    // The 80×80 box at the comp centre: its bottom right corner (360, 220) dropped 3 px inside
+    // the comp's (640, 360) lands on it, its right edge 3 px inside the comp's right edge too.
+    let s = drag_handle(&mut h, box_id, 2, [637.0, 357.0], Default::default());
+    assert!(close(s, [800.0, 450.0]), "{s:?}");
+    let s = drag_handle(&mut h, box_id, 5, [637.0, 200.0], Default::default());
+    assert!(close(s, [800.0, 100.0]), "{s:?}");
+    // Snapping off: where the pointer is.
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    let s = drag_handle(&mut h, box_id, 2, [637.0, 357.0], Default::default());
+    assert!(s[0] < 795.0, "{s:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": true})).unwrap();
+    // A comp-shaped layer at 110 % Shift-scaled down by its corner to 3 px outside the comp's:
+    // the comp's size exactly.
+    let wide = h.state_mut().session.execute("layer.newSolid", json!({"name": "Wide", "color": "#20e040", "width": 640, "height": 360})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("prop.set", json!({"layer": wide, "path": "transform/scale", "value": [110, 110, 100]})).unwrap();
+    h.state_mut().session.execute("layer.select", json!({"layers": [wide]})).unwrap();
+    h.run_steps(2);
+    let path = [rect(&h, &format!("viewer.handle.{wide}.2")).center(), screen(&h, [643.0, 362.0])];
+    drag_path(&mut h, &path, egui::Modifiers::SHIFT);
+    let s = scale(&h, wide);
+    assert!(close(s, [100.0, 100.0]), "{s:?}");
+}
+
 /// A comp wider than the GPU's texture limit at Full resolution shows its frame (averaged down
 /// into a texture the renderer accepts) instead of failing the upload (#201: 11000×2200).
 #[test]

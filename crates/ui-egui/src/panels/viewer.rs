@@ -69,15 +69,19 @@ enum Gesture {
         tool: Tool,
     },
     /// A bounding-box handle: scales about the anchor point so the grabbed point follows the
-    /// pointer (corners both axes, edges one), relative to the layer as the drag began.
+    /// pointer (corners both axes, edges one), relative to the layer as the drag began; the
+    /// handle snaps.
     Scale {
         layer: LayerId,
         start_scale: [f64; 3],
         /// The grabbed point relative to the anchor, in layer pixels.
         start_local: [f64; 2],
+        /// The handle's point relative to the anchor, in layer pixels.
+        handle: [f64; 2],
         anchor: [f64; 2],
         axes: [bool; 2],
-        /// Comp → layer pixels as the drag began.
+        /// Layer pixels → comp as the drag began, and its inverse.
+        l2c: Mat3,
         inv: Mat3,
     },
     Rotate {
@@ -262,20 +266,59 @@ fn handle_axes(handle: usize) -> [bool; 2] {
     }
 }
 
-/// The scale that puts the point grabbed at `start` (relative to the anchor, layer pixels)
-/// under the pointer at `cur`, for a layer whose scale was `start_scale` when the drag began.
-/// `proportional` (Shift on a corner) keeps the aspect ratio, following the pointer along the
-/// handle's diagonal. Dragging past the anchor flips the layer, as in After Effects; an axis
-/// whose grabbed point sits on the anchor keeps its scale.
-fn drag_scale(start_scale: [f64; 3], start: [f64; 2], cur: [f64; 2], axes: [bool; 2], proportional: bool) -> [f64; 3] {
-    let ratio = |k: usize| if axes[k] && start[k].abs() > 1e-3 { cur[k] / start[k] } else { 1.0 };
-    let (mut fx, mut fy) = (ratio(0), ratio(1));
-    if proportional && axes == [true, true] {
+/// A bounding-box handle's point in layer pixels (`b`: the content box; handles as in
+/// [`handle_axes`], the corners clockwise from the top left, then the top, right, bottom and
+/// left edges' midpoints).
+fn handle_point(b: [f64; 4], handle: usize) -> [f64; 2] {
+    let (cx, cy) = ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0);
+    match handle {
+        0 => [b[0], b[1]],
+        1 => [b[2], b[1]],
+        2 => [b[2], b[3]],
+        3 => [b[0], b[3]],
+        4 => [cx, b[1]],
+        5 => [b[2], cy],
+        6 => [cx, b[3]],
+        _ => [b[0], cy],
+    }
+}
+
+/// The scale ratio (x, y) that puts the point grabbed at `start` (relative to the anchor, layer
+/// pixels) under the pointer at `cur`. `uniform` (Shift on a corner) keeps the aspect ratio,
+/// following the pointer along the handle's diagonal. Dragging past the anchor flips the layer,
+/// as in After Effects; an axis whose grabbed point sits on the anchor keeps its scale.
+fn drag_ratio(start: [f64; 2], cur: [f64; 2], axes: [bool; 2], uniform: bool) -> [f64; 2] {
+    if uniform {
         let d2 = start[0] * start[0] + start[1] * start[1];
         let f = if d2 > 1e-6 { (cur[0] * start[0] + cur[1] * start[1]) / d2 } else { 1.0 };
-        (fx, fy) = (f, f);
+        return [f, f];
     }
-    [start_scale[0] * fx, start_scale[1] * fy, start_scale[2]]
+    [0, 1].map(|k| if axes[k] && start[k].abs() > 1e-3 { cur[k] / start[k] } else { 1.0 })
+}
+
+/// Snap a handle drag (#252): the handle (`h`, layer pixels from the anchor point `a` as the
+/// drag began; `l2c` that layer space → comp) at scale ratio `f` goes through `snap` (a comp
+/// point → its correction), and the ratio that puts the handle where it snapped comes back.
+/// A `uniform` drag slides the handle along its line from the anchor point to the nearer snapped
+/// line; otherwise each scaled axis takes the snapped point.
+fn snap_handle(f: [f64; 2], h: [f64; 2], a: [f64; 2], l2c: &Mat3, axes: [bool; 2], uniform: bool, snap: impl FnOnce([f64; 2]) -> [f64; 2]) -> [f64; 2] {
+    let at = |f: [f64; 2]| {
+        let q = l2c.apply(gv2(a[0] + f[0] * h[0], a[1] + f[1] * h[1]));
+        [q.x, q.y]
+    };
+    let p = at(f);
+    let c = snap(p);
+    let s = [p[0] + c[0], p[1] + c[1]];
+    if uniform {
+        let o = at([0.0; 2]);
+        let d = [p[0] - o[0], p[1] - o[1]];
+        let k = [0, 1].into_iter().filter(|k| c[*k] != 0.0 && d[*k].abs() > 1e-9).min_by(|x, y| c[*x].abs().total_cmp(&c[*y].abs()));
+        return k.map_or(f, |k| f.map(|v| v * (s[k] - o[k]) / d[k]));
+    }
+    let Some(inv) = l2c.inverse().filter(|_| c != [0.0; 2]) else { return f };
+    let q = inv.apply(gv2(s[0], s[1]));
+    let q = [q.x - a[0], q.y - a[1]];
+    [0, 1].map(|k| if axes[k] && h[k].abs() > 1e-9 { q[k] / h[k] } else { f[k] })
 }
 
 /// A drag `d` (comp pixels), kept to the axis it moves along most when `shift` is held.
@@ -1151,12 +1194,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         let inv = l2c.inverse()?;
                         let a = ectx.v3(&layer, tr, "anchor", [0.0; 3]);
                         let lp = inv.apply(gv2(cpt[0], cpt[1]));
+                        let hp = handle_point(effectcraft_engine::render::content_bounds(&ectx, &layer)?, hi);
                         Some(Gesture::Scale {
                             layer: lid,
                             start_scale: ectx.v3(&layer, tr, "scale", [100.0; 3]),
                             start_local: [lp.x - a[0], lp.y - a[1]],
+                            handle: [hp[0] - a[0], hp[1] - a[1]],
                             anchor: [a[0], a[1]],
                             axes: handle_axes(hi),
+                            l2c,
                             inv,
                         })
                     })
@@ -1227,9 +1273,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     let _ = app.session.execute("prop.set", json!({"layer": lid.0, "path": "transform/position", "value": v, "merge": merge}));
                 }
             }
-            Gesture::Scale { layer, start_scale, start_local, anchor, axes, inv } => {
+            Gesture::Scale { layer, start_scale, start_local, handle, anchor, axes, l2c, inv } => {
                 let lp = inv.apply(gv2(cpt[0], cpt[1]));
-                let v = drag_scale(start_scale, start_local, [lp.x - anchor[0], lp.y - anchor[1]], axes, mods.shift);
+                let uniform = mods.shift && axes == [true, true];
+                let f = drag_ratio(start_local, [lp.x - anchor[0], lp.y - anchor[1]], axes, uniform);
+                // The handle snaps (to the comp's and other layers' edges, corners and centres),
+                // so a layer scales exactly to them, e.g. to the comp's size.
+                let f = snap_handle(f, handle, anchor, &l2c, axes, uniform, |p| vt::snap(app, &ctx, &ectx, &map, &[layer], &[p], mods));
+                let v = [start_scale[0] * f[0], start_scale[1] * f[1], start_scale[2]];
                 let _ = app.session.execute("prop.set", json!({"layer": layer.0, "path": "transform/scale", "value": v, "merge": merge}));
             }
             Gesture::Rotate { layer, center, start_angle, start_rot } => {

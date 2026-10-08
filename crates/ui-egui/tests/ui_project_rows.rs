@@ -119,3 +119,15 @@ fn dragging_in_the_empty_area_box_selects_items() {
     click_at(&mut h, from);
     assert!(h.state().session.state.project_selection.is_empty());
 }
+
+/// A Project panel shorter than its scroll bar's thumb draws instead of panicking: an empty
+/// project in a 1280 × 800 browser window at device pixel ratio 2 (640 × 400 points) left the
+/// list too short for the thumb's 16-point minimum (#231).
+#[test]
+fn a_short_project_panel_draws() {
+    for height in [400.0, 300.0] {
+        let mut h = Harness::builder().with_size(egui::vec2(640.0, height)).build_eframe(|_| EffectcraftApp::new(Session::default()));
+        h.run_steps(3);
+        assert!(h.state().auto.find("project.empty").is_some(), "the Project panel drew at {height} points");
+    }
+}

@@ -2,8 +2,9 @@
 //! search, item list with columns (Name, Label, then the visible optional columns: Type, Size,
 //! Media Duration, Frame Rate, File Path, Comment — shown or hidden from the header's context
 //! menu), folders (drag items into and out of them), renaming (Enter, or double-click the name),
-//! the label colour picker, and the bottom bar (interpret, new folder, new comp, bit depth,
-//! delete). Edits are `project.*` engine commands, so they are undoable.
+//! the label colour picker, and the bottom bar (interpret, new folder, new comp: click, or drop
+//! items on it for a comp from them, bit depth, delete). Edits are engine commands, so they are
+//! undoable.
 
 use std::sync::{Arc, Mutex};
 
@@ -697,6 +698,21 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 "newComp" => crate::panels::dialogs::open_new_comp(app),
                 "newFolder" => actions.push(("project.newFolder".into(), json!({}))),
                 _ => app.ui.status = "Interpret Footage: select a footage item".into(),
+            }
+        }
+        // Items dropped on Create a new Composition: New Comp from Selection with them (After
+        // Effects; several items ask how in its dialog).
+        if id == "newComp"
+            && let Some(DragPayload::Item(iid)) = egui::DragAndDrop::payload::<DragPayload>(&ctx).as_deref()
+            && ui.rect_contains_pointer(r)
+        {
+            p.rect_stroke(r, 4.0, Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+            if ctx.input(|i| i.pointer.any_released()) {
+                if !app.session.state.project_selection.contains(&ItemId(*iid)) {
+                    app.session.state.project_selection = vec![ItemId(*iid)];
+                }
+                actions.push(("file.newCompFromSelection".into(), json!({})));
+                egui::DragAndDrop::clear_payload(&ctx);
             }
         }
         x += 26.0;

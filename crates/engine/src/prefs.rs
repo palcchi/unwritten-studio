@@ -25,8 +25,20 @@ pub const PREFS_FILE: &str = "prefs.json";
 /// Settings ▸ General ▸ Language: (label, `general.language` value).
 pub const LANGUAGES: &[(&str, &str)] = &[("Match System", "system"), ("English", "en"), ("日本語", "ja")];
 
-fn is_language(v: &str) -> bool {
-    LANGUAGES.iter().any(|(_, l)| *l == v)
+/// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).
+pub const WINDOW_GRAPHICS: &[(&str, &str)] = &[("Automatic", "auto"), ("OpenGL (compatibility)", "gl")];
+
+/// The settings whose value must be one of their choices.
+fn choices(key: &str) -> Option<&'static [(&'static str, &'static str)]> {
+    match key {
+        "general.language" => Some(LANGUAGES),
+        "startup.windowGraphics" => Some(WINDOW_GRAPHICS),
+        _ => None,
+    }
+}
+
+fn is_choice(choices: &[(&str, &str)], v: &str) -> bool {
+    choices.iter().any(|(_, c)| *c == v)
 }
 
 /// Unknown keys inside a page, kept so a newer version's settings survive a round trip.
@@ -79,6 +91,10 @@ page!(Startup {
     show_home_on_open_project: bool = false,
     /// After a crash, offer to open the most recent auto-save.
     offer_crash_recovery: bool = true,
+    /// What the desktop window draws with, from the next launch: `auto` (the platform's best
+    /// graphics API) or `gl` (OpenGL, for drivers that crash with the others). A launch whose
+    /// window never drew switches it to `gl` (#243).
+    window_graphics: String = "auto".into(),
 });
 
 page!(ProjectPrefs {
@@ -424,8 +440,11 @@ impl Prefs {
     /// Clamp values into their valid ranges and fill missing labels.
     pub fn normalize(&mut self) {
         self.version = PREFS_VERSION;
+        if !is_choice(WINDOW_GRAPHICS, &self.startup.window_graphics) {
+            self.startup.window_graphics = Startup::default().window_graphics;
+        }
         let g = &mut self.general;
-        if !is_language(&g.language) {
+        if !is_choice(LANGUAGES, &g.language) {
             g.language = General::default().language;
         }
         g.undo_levels = g.undo_levels.clamp(1, 99);
@@ -466,9 +485,11 @@ impl Prefs {
 
     /// Set the value at a dotted key. The key must exist and the value must have its type.
     pub fn set(&mut self, key: &str, value: Value) -> Result<(), String> {
-        if key == "general.language" && !value.as_str().is_some_and(is_language) {
-            let all: Vec<&str> = LANGUAGES.iter().map(|(_, l)| *l).collect();
-            return Err(format!("`general.language` expects one of {}", all.join(", ")));
+        if let Some(c) = choices(key)
+            && !value.as_str().is_some_and(|v| is_choice(c, v))
+        {
+            let all: Vec<&str> = c.iter().map(|(_, v)| *v).collect();
+            return Err(format!("`{key}` expects one of {}", all.join(", ")));
         }
         let mut v = serde_json::to_value(&*self).map_err(|e| e.to_string())?;
         let ptr = format!("/{}", key.replace('.', "/"));
@@ -918,6 +939,10 @@ pub fn pages() -> Vec<Page> {
                 s("startup.showHomeOnLaunch", "Show Home Screen When Launching", B, true),
                 s("startup.showHomeOnOpenProject", "Show Home Screen When Opening a Project", B, true),
                 s("startup.offerCrashRecovery", "Offer to Open the Latest Auto-Save After a Crash", B, true),
+                s("startup.windowGraphics", "Window Graphics", Kind::Choice(WINDOW_GRAPHICS), true),
+                Note(
+                    "Window Graphics applies from the next launch. When the graphics driver stops EffectCraft before its window draws, the next launch switches to OpenGL.",
+                ),
                 Section("Repair"),
                 Button { label: "Reset Settings", command: "prefs.reset", params: "{}" },
                 Button { label: "Reset Keyboard Shortcuts", command: "shortcuts.reset", params: "{}" },

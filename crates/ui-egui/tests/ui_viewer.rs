@@ -134,6 +134,32 @@ fn viewer_click_ignores_inactive_solo_layers() {
     assert_eq!(h.state().session.state.selected_layers, vec![back]);
 }
 
+/// A selected layer under the pointer takes the press before the layers in front of it, as in
+/// After Effects: it stays selected and a drag moves it. With none selected there, the topmost
+/// layer does (#230).
+#[test]
+fn viewer_press_prefers_a_selected_layer_under_the_pointer() {
+    let mut h = selection_harness();
+    let comp = h.state().session.active_comp().unwrap();
+    let (front, back) = (comp.layers[0].id, comp.layers[1].id);
+    h.state_mut().session.execute("layer.select", json!({"layers": [back.0]})).unwrap();
+    h.run_steps(3);
+    let at = screen(&h, [320.0, 180.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_layers, vec![back], "a click keeps the selected layer behind");
+    h.run_steps(40);
+    let (front0, back0) = (position_and_anchor(&h, front).0, position_and_anchor(&h, back).0);
+    drag(&mut h, at, at + vec2(60.0, 0.0));
+    assert_eq!(h.state().session.state.selected_layers, vec![back]);
+    assert_eq!(position_and_anchor(&h, front).0, front0, "the layer in front stays");
+    assert!(position_and_anchor(&h, back).0[0] > back0[0] + 10.0, "the selected layer behind moves");
+    h.state_mut().session.execute("edit.deselectAll", json!({})).unwrap();
+    h.run_steps(40);
+    let at = screen(&h, [300.0, 180.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_layers, vec![front], "nothing selected: the topmost layer");
+}
+
 #[test]
 fn bottom_bar_in_after_effects_order() {
     let h = harness();

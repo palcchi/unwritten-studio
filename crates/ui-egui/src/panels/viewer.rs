@@ -909,10 +909,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         // becomes the target, using the same visible/unlocked hit test as left-click.
         pick(app, &ectx, map.to_comp(pos), false);
         let point = map.to_comp(pos);
-        let hits: Vec<(u64, String)> = selectable_layers(&comp, time)
-            .filter(|l| layer_quad(&ectx, l).is_some_and(|(_, q, _)| point_in_quad(point, &q)))
-            .map(|l| (l.id.0, l.name.clone()))
-            .collect();
+        let hits: Vec<(u64, String)> = layers_at(&ectx, point).map(|l| (l.id.0, l.name.clone())).collect();
         ui.data_mut(|d| d.insert_temp(menu_hits_id, hits));
     }
     let context_layers: Vec<u64> =
@@ -1754,17 +1751,29 @@ pub(crate) fn selectable_layers(comp: &Comp, time: Tick) -> impl Iterator<Item =
         .filter(move |l| l.is_active_at(time) && l.switches.video && !l.switches.locked && !l.is_camera() && !l.is_light() && (!any_solo || l.switches.solo))
 }
 
-/// Topmost selectable layer under a comp point.
-pub(crate) fn layer_at<'a>(ectx: &EvalCtx<'a>, cpt: [f64; 2]) -> Option<&'a Layer> {
-    selectable_layers(ectx.comp, ectx.time).find(|l| layer_quad(ectx, l).is_some_and(|(_, q, _)| point_in_quad(cpt, &q)))
+/// Selectable layers under a comp point, front to back.
+fn layers_at<'a, 'b>(ectx: &'b EvalCtx<'a>, cpt: [f64; 2]) -> impl Iterator<Item = &'a Layer> + 'b {
+    selectable_layers(ectx.comp, ectx.time).filter(move |l| layer_quad(ectx, l).is_some_and(|(_, q, _)| point_in_quad(cpt, &q)))
 }
 
-/// Topmost layer under a comp point (selects it; shift toggles). Returns the hit layer.
+/// Topmost selectable layer under a comp point.
+pub(crate) fn layer_at<'a>(ectx: &EvalCtx<'a>, cpt: [f64; 2]) -> Option<&'a Layer> {
+    layers_at(ectx, cpt).next()
+}
+
+/// The layer a press at a comp point acts on, selected (Shift toggles the topmost layer). As in
+/// After Effects, a selected layer under the point comes before the layers in front of it, so it
+/// can be dragged where they cover it; otherwise the topmost layer (#230).
 pub(crate) fn pick(app: &mut EffectcraftApp, ectx: &EvalCtx, cpt: [f64; 2], toggle: bool) -> Option<LayerId> {
-    let hit = layer_at(ectx, cpt).map(|l| l.id)?;
     if toggle {
+        let hit = layer_at(ectx, cpt)?.id;
         let _ = app.session.execute("layer.select", json!({"layers": [hit.0], "toggle": true}));
-    } else if !app.session.state.selected_layers.contains(&hit) {
+        return Some(hit);
+    }
+    let selected = &app.session.state.selected_layers;
+    let hits: Vec<LayerId> = layers_at(ectx, cpt).map(|l| l.id).collect();
+    let hit = *hits.iter().find(|id| selected.contains(id)).or(hits.first())?;
+    if !selected.contains(&hit) {
         let _ = app.session.execute("layer.select", json!({"layers": [hit.0]}));
     }
     Some(hit)

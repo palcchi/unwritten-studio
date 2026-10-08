@@ -1934,12 +1934,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 egui::Popup::menu(&lang).show(|ui| {
                     for (cat, items) in effectcraft_engine::commands::expr_tools::language_menu() {
                         ui.menu_button(cat, |ui| {
-                            for (label, text) in items {
-                                if ui.button(label).clicked() {
-                                    picked = Some(text);
-                                    ui.close();
+                            widgets::menu_scroll(ui, |ui| {
+                                for (label, text) in items {
+                                    if ui.button(label).clicked() {
+                                        picked = Some(text);
+                                        ui.close();
+                                    }
                                 }
-                            }
+                            })
                         });
                     }
                 });
@@ -2958,12 +2960,14 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], actions: &mut Vec<(S
         item(ui, "Freeze on Last Frame", "layer.freezeOnLastFrame", json!({"layers": layers}));
     });
     ui.menu_button("Blending Mode", |ui| {
-        for m in BlendMode::ALL {
-            item(ui, m.label(), "layer.setBlendMode", json!({"layers": layers, "mode": m.label()}));
-            if m.ends_group() {
-                ui.separator();
+        widgets::menu_scroll(ui, |ui| {
+            for m in BlendMode::ALL {
+                item(ui, m.label(), "layer.setBlendMode", json!({"layers": layers, "mode": m.label()}));
+                if m.ends_group() {
+                    ui.separator();
+                }
             }
-        }
+        })
     });
     ui.menu_button("Arrange", |ui| {
         item(ui, "Bring Layer to Front", "layer.arrange", json!({"layers": layers, "to": "front"}));

@@ -268,28 +268,21 @@ fn dropdown_row(app: &mut EffectcraftApp, ui: &mut egui::Ui, r: Rect, key: &str,
         ui.data_mut(|d| d.insert_temp(pid.with("open"), !open));
     }
     app.auto.add(&format!("preview.{key}"), r, text);
-    let open: bool = ui.data(|d| d.get_temp(pid.with("open")).unwrap_or(false));
-    if !open {
+    if !widgets::popup_is_open(ui, pid) {
         return None;
     }
-    let mut chosen = None;
-    let area = egui::Area::new(pid.with("area")).order(egui::Order::Foreground).fixed_pos(r.left_bottom() + vec2(0.0, 2.0)).show(ui.ctx(), |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(r.width().max(140.0));
-            for (i, label) in items.iter().enumerate() {
-                let resp = ui.selectable_label(current == Some(i), label.as_str());
-                app.auto.add(&format!("preview.{key}.{i}"), resp.rect, label);
-                if resp.clicked() {
-                    chosen = Some(i);
-                }
+    widgets::popup_list(ui, pid, r.left_bottom() + vec2(0.0, 2.0), r, items.len(), 0, |ui| {
+        ui.set_min_width(r.width().max(140.0));
+        let mut chosen = None;
+        for (i, label) in items.iter().enumerate() {
+            let resp = ui.selectable_label(current == Some(i), label.as_str());
+            app.auto.add(&format!("preview.{key}.{i}"), resp.rect, label);
+            if resp.clicked() {
+                chosen = Some(i);
             }
-        });
-    });
-    let outside = widgets::pressed_outside(ui.ctx(), &area.response) && !r.contains(ui.input(|i| i.pointer.interact_pos()).unwrap_or_default());
-    if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.insert_temp(pid.with("open"), false));
-    }
-    chosen
+        }
+        chosen
+    })
 }
 
 /// Audio panel: L/R VU meters (dBFS, 0 to -48) with peak hold and clip indicators, fed by the

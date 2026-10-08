@@ -1543,6 +1543,7 @@ impl eframe::App for EffectcraftApp {
         self.apply_gpu_failure(ctx);
         if !self.styled {
             theme::install(ctx, &self.tokens);
+            fit_window(ctx);
             self.styled = true;
             ctx.request_repaint();
         } else {
@@ -1596,6 +1597,39 @@ impl eframe::App for EffectcraftApp {
 /// Advance playback with the viewer's scale (called by the viewer panel each frame).
 pub(crate) fn tick_playback(app: &mut EffectcraftApp, ctx: &egui::Context, scale: f64) {
     app.advance_playback(ctx, scale);
+}
+
+/// Maximize a first window that doesn't fit the screen, which fits it to the space beside the
+/// taskbar or dock. The 1680 × 1020 window on a smaller screen is only shrunk to the monitor's
+/// size, so with its title bar it ran under the taskbar and cut menus off at the bottom of the
+/// screen (#269).
+fn fit_window(ctx: &egui::Context) {
+    let (monitor, window) = ctx.input(|i| (i.viewport().monitor_size, i.viewport().outer_rect.or(i.viewport().inner_rect)));
+    if let (Some(monitor), Some(window)) = (monitor, window)
+        && overflows_screen(window.size(), monitor)
+    {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+    }
+}
+
+/// Whether a window `size` leaves no room on a `monitor` for a taskbar or dock (points).
+fn overflows_screen(size: egui::Vec2, monitor: egui::Vec2) -> bool {
+    const TASKBAR: f32 = 64.0;
+    size.x > monitor.x || size.y > monitor.y - TASKBAR
+}
+
+#[cfg(test)]
+mod fit_window_tests {
+    use super::overflows_screen;
+    use egui::vec2;
+
+    #[test]
+    fn a_window_taller_than_the_screen_beside_its_taskbar_overflows() {
+        // The default window on a 1366 × 768 laptop (shrunk to the monitor) and on 1080p.
+        assert!(overflows_screen(vec2(1366.0, 799.0), vec2(1366.0, 768.0)));
+        assert!(overflows_screen(vec2(1680.0, 1051.0), vec2(1920.0, 1080.0)));
+        assert!(!overflows_screen(vec2(1680.0, 1051.0), vec2(2560.0, 1440.0)));
+    }
 }
 
 #[cfg(test)]

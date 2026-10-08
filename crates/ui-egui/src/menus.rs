@@ -1537,7 +1537,7 @@ pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
                 if let MenuNode::Submenu { label, children } = node {
                     let r = ui.menu_button(crate::i18n::label(app, "", label), |ui| {
                         ui.set_min_width(if label == "Effect" { 200.0 } else { 280.0 });
-                        menu_nodes(app, ui, children, &mut clicked);
+                        crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, &mut clicked));
                     });
                     app.auto.add(&format!("menu.{label}"), r.response.rect, label);
                 }
@@ -1604,12 +1604,7 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
                 let shown = crate::i18n::submenu(app, label, effectcraft_engine::menus::submenu_label(&app.session, label, &dyn_ctx(&ws, &[])));
                 ui.menu_button((gutter(false), shown.as_str()), |ui| {
                     ui.set_min_width(if children.len() > 30 { 200.0 } else { 240.0 });
-                    // Long submenus (Blending Mode, effect categories) scroll instead of running
-                    // off the screen. Others show whole: egui sizes a new submenu from a default
-                    // 400 pt area, so without a minimum a longer one (Window ▸ Workspace) got
-                    // stuck at that height with its last entries scrolled out of view (#191).
-                    let max_h = ui.ctx().content_rect().height() - 40.0;
-                    egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, |ui| menu_nodes(app, ui, children, clicked));
+                    crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, clicked));
                 });
             }
             MenuNode::Item(e) => {

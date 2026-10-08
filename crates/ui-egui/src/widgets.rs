@@ -293,44 +293,58 @@ pub fn check_label(on: bool, label: &str) -> String {
 
 /// Show a popup menu anchored at `pos` with string options; returns the chosen index.
 pub fn popup_menu(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, options: &[String], current: Option<usize>) -> Option<usize> {
-    let mut chosen = None;
-    let open_id = id.with("open");
-    let open: bool = ui.data(|d| d.get_temp(open_id).unwrap_or(false));
-    if !open {
+    if !popup_is_open(ui, id) {
         return None;
     }
-    // As tall as the window allows (a shape layer's Add menu has 20 entries), scrolling beyond,
-    // and moved up when it would run past the bottom of the window (the Timeline's menus).
+    let seps = options.iter().filter(|o| *o == "-").count();
+    popup_list(ui, id, pos, Rect::NOTHING, options.len().saturating_sub(seps), seps, |ui| {
+        ui.set_min_width(160.0);
+        let mut chosen = None;
+        for (i, o) in options.iter().enumerate() {
+            if o == "-" {
+                ui.separator();
+            } else if ui.selectable_label(current == Some(i), o).clicked() {
+                chosen = Some(i);
+            }
+        }
+        chosen
+    })
+}
+
+/// The open popup list `id` at `pos`, drawn by `body` (`rows` entries and `seps` separators,
+/// for its height): as tall as the window allows, scrolling beyond with a scroll bar (a shape
+/// layer's Add menu has 20 entries, the blend modes 40, the fonts hundreds), and moved up when
+/// it would run past the bottom of the window (the Timeline's menus, #269). Closes when `body`
+/// returns a choice, on Escape, or on a press outside it and outside `anchor` (a control that
+/// toggles the list itself). Returns the choice.
+pub fn popup_list<R>(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, anchor: Rect, rows: usize, seps: usize, body: impl FnOnce(&mut Ui) -> Option<R>) -> Option<R> {
     let screen = ui.ctx().content_rect();
     let max_h = (screen.height() - 24.0).max(120.0);
     let sp = ui.spacing();
-    let seps = options.iter().filter(|o| *o == "-").count() as f32;
-    let rows = options.len() as f32 - seps;
-    let est = (rows * (sp.interact_size.y + sp.item_spacing.y + 4.0) + seps * (2.0 * sp.item_spacing.y + 2.0) + 16.0).min(max_h + 12.0);
+    let est = (rows as f32 * (sp.interact_size.y + sp.item_spacing.y + 4.0) + seps as f32 * (2.0 * sp.item_spacing.y + 2.0) + 16.0).min(max_h + 12.0);
     let pos = egui::pos2(pos.x, pos.y.min(screen.bottom() - est).max(screen.top()));
+    let mut chosen = None;
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(160.0);
             // (An area's content is laid out in last frame's size: ask for the estimate.)
-            egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height((est - 16.0).min(max_h)).show(ui, |ui| {
-                for (i, o) in options.iter().enumerate() {
-                    if o == "-" {
-                        ui.separator();
-                        continue;
-                    }
-                    let sel = current == Some(i);
-                    if ui.selectable_label(sel, o).clicked() {
-                        chosen = Some(i);
-                    }
-                }
-            });
+            egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height((est - 16.0).min(max_h)).show(ui, |ui| chosen = body(ui));
         });
     });
-    let clicked_outside = pressed_outside(ui.ctx(), &area.response);
-    if chosen.is_some() || clicked_outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.insert_temp(open_id, false));
+    let outside = pressed_outside(ui.ctx(), &area.response) && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| anchor.contains(p));
+    if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        ui.data_mut(|d| d.insert_temp(id.with("open"), false));
     }
     chosen
+}
+
+/// A menu's (or submenu's) entries, scrolling with a scroll bar when they are taller than the
+/// window instead of running off it (Edit on a short screen, #269; Blending Mode). Others show
+/// whole: egui sizes a new menu from a default 400 pt area, so without a minimum a longer one
+/// (Window ▸ Workspace) got stuck at that height with its last entries scrolled out of view
+/// (#191).
+pub fn menu_scroll<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let max_h = ui.ctx().content_rect().height() - 40.0;
+    egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, add).inner
 }
 
 /// Whether a [`popup_menu`] is open (build its options only then: they can be long).

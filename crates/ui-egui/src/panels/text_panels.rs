@@ -544,51 +544,44 @@ pub fn paragraph(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
 /// The font menu: recent fonts first, names in English or the fonts' own language, and a
 /// "Sample" preview in each font (Settings ▸ Type).
 fn font_popup(app: &EffectcraftApp, ui: &mut egui::Ui, id: egui::Id, pos: egui::Pos2, current: &str) -> Option<String> {
-    if !ui.data(|d| d.get_temp::<bool>(id.with("open")).unwrap_or(false)) {
+    if !widgets::popup_is_open(ui, id) {
         return None;
     }
     let rows = effectcraft_engine::font_menu(&app.session.prefs);
     let preview = app.session.prefs.type_.font_preview;
     let t = app.tokens;
-    let mut chosen = None;
-    let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(if preview { 300.0 } else { 180.0 });
-            egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-                for r in &rows {
-                    if r.family.is_empty() {
-                        ui.separator();
-                        continue;
+    let seps = rows.iter().filter(|r| r.family.is_empty()).count();
+    widgets::popup_list(ui, id, pos, Rect::NOTHING, rows.len().saturating_sub(seps), seps, |ui| {
+        ui.set_min_width(if preview { 300.0 } else { 180.0 });
+        let mut chosen = None;
+        for r in &rows {
+            if r.family.is_empty() {
+                ui.separator();
+                continue;
+            }
+            let resp = ui.selectable_label(r.family == current, &r.display);
+            if preview && ui.is_rect_visible(resp.rect) {
+                let key = egui::Id::new(("font-preview", &r.family));
+                let lines: std::sync::Arc<Vec<Vec<[f32; 2]>>> = match ui.data(|d| d.get_temp(key)) {
+                    Some(l) => l,
+                    None => {
+                        let l = std::sync::Arc::new(effectcraft_engine::font_preview(&r.family, 14.0));
+                        ui.data_mut(|d| d.insert_temp(key, l.clone()));
+                        l
                     }
-                    let resp = ui.selectable_label(r.family == current, &r.display);
-                    if preview && ui.is_rect_visible(resp.rect) {
-                        let key = egui::Id::new(("font-preview", &r.family));
-                        let lines: std::sync::Arc<Vec<Vec<[f32; 2]>>> = match ui.data(|d| d.get_temp(key)) {
-                            Some(l) => l,
-                            None => {
-                                let l = std::sync::Arc::new(effectcraft_engine::font_preview(&r.family, 14.0));
-                                ui.data_mut(|d| d.insert_temp(key, l.clone()));
-                                l
-                            }
-                        };
-                        let o = pos2(resp.rect.max.x - 120.0, resp.rect.center().y + 5.0);
-                        for poly in lines.iter() {
-                            let pts: Vec<egui::Pos2> = poly.iter().map(|p| o + vec2(p[0], p[1])).collect();
-                            ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.0, t.text_dim)));
-                        }
-                    }
-                    if resp.clicked() {
-                        chosen = Some(r.family.clone());
-                    }
+                };
+                let o = pos2(resp.rect.max.x - 120.0, resp.rect.center().y + 5.0);
+                for poly in lines.iter() {
+                    let pts: Vec<egui::Pos2> = poly.iter().map(|p| o + vec2(p[0], p[1])).collect();
+                    ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.0, t.text_dim)));
                 }
-            });
-        });
-    });
-    let outside = widgets::pressed_outside(ui.ctx(), &area.response);
-    if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.insert_temp(id.with("open"), false));
-    }
-    chosen
+            }
+            if resp.clicked() {
+                chosen = Some(r.family.clone());
+            }
+        }
+        chosen
+    })
 }
 
 /// Align panel: Align Layers to Selection / Composition, the six align buttons and the six

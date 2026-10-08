@@ -175,12 +175,6 @@ fn fit(r: Rect, w: f32, h: f32) -> Rect {
     Rect::from_center_size(r.center(), vec2(w * s, h * s))
 }
 
-/// A scroll bar thumb's length on a `track` long: the share of `content` in view, at least 16
-/// points but never longer than the track (a panel only a few points tall still draws, #231).
-fn thumb_len(track: f32, visible: f32, content: f32) -> f32 {
-    (track * visible / content).max(16.0).min(track).max(0.0)
-}
-
 /// An inline text edit in progress: (item, field `name`|`comment`, text).
 type Editing = (u64, String, String);
 fn edit_id() -> egui::Id {
@@ -345,18 +339,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         };
         app.ui.project_hscroll = (app.ui.project_hscroll - d).clamp(0.0, overflow);
     }
-    if overflow > 0.0 {
-        let track = Rect::from_min_max(pos2(opt_x0, list.max.y - 5.0), pos2(rect.max.x - 4.0, list.max.y - 1.0));
-        let tw = thumb_len(track.width(), track.width(), track.width() + overflow);
-        let thumb = Rect::from_min_size(pos2(track.min.x + (track.width() - tw) * (hscroll / overflow), track.min.y), vec2(tw, track.height()));
-        let sresp = ui.interact(track.expand2(vec2(0.0, 2.0)), egui::Id::new("proj-hscroll"), Sense::drag());
-        p.rect_filled(track, 2.0, t.field_bg);
-        p.rect_filled(thumb, 2.0, if sresp.hovered() || sresp.dragged() { t.text_dim } else { t.text_faint });
-        app.auto.add("project.hscroll", track, &format!("{hscroll}/{overflow}"));
-        if sresp.dragged() {
-            app.ui.project_hscroll = (hscroll + sresp.drag_delta().x * overflow / (track.width() - tw).max(1.0)).clamp(0.0, overflow);
-        }
-    }
     let rows = visible_rows(app);
     // Enter renames the selected item (Project panel focused, not typing).
     if app.ui.focused == crate::dock::PanelKind::Project
@@ -401,17 +383,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     app.ui.project_scroll = app.ui.project_scroll.clamp(0.0, max_scroll);
     let scroll = app.ui.project_scroll;
-    if max_scroll > 0.0 {
-        let track = Rect::from_min_max(pos2(rect.max.x - 6.0, list.min.y + 1.0), pos2(rect.max.x - 2.0, list.max.y - 7.0));
-        let th = thumb_len(track.height(), list.height(), content_h);
-        let thumb = Rect::from_min_size(pos2(track.min.x, track.min.y + (track.height() - th) * (scroll / max_scroll)), vec2(track.width(), th));
-        let vresp = ui.interact(track.expand2(vec2(2.0, 0.0)), egui::Id::new("proj-vscroll"), Sense::drag());
-        p.rect_filled(thumb, 2.0, if vresp.hovered() || vresp.dragged() { t.text_dim } else { t.text_faint });
-        app.auto.add("project.vscroll", track, &format!("{scroll}/{max_scroll}"));
-        if vresp.dragged() {
-            app.ui.project_scroll = (scroll + vresp.drag_delta().y * max_scroll / (track.height() - th).max(1.0)).clamp(0.0, max_scroll);
-        }
-    }
     let first = ((scroll / ROW_H).floor() as usize).min(rows.len());
     let mut y = list.min.y - (scroll - first as f32 * ROW_H);
     let project = app.session.project.clone();
@@ -634,6 +605,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ui.close();
             }
         });
+    }
+    // The scroll bars, over the rows (which would take their presses otherwise).
+    if overflow > 0.0 {
+        let track = Rect::from_min_max(pos2(opt_x0, list.max.y - 5.0), pos2(rect.max.x - 4.0, list.max.y - 1.0));
+        app.ui.project_hscroll = widgets::scroll_bar(ui, &mut app.auto, "project.hscroll", track, hscroll, overflow, &t);
+    }
+    if max_scroll > 0.0 {
+        let track = Rect::from_min_max(pos2(rect.max.x - 6.0, list.min.y + 1.0), pos2(rect.max.x - 2.0, list.max.y - 7.0));
+        app.ui.project_scroll = widgets::scroll_bar(ui, &mut app.auto, "project.vscroll", track, scroll, max_scroll, &t);
     }
     // Dropping a dragged item on the list: into the folder under the pointer (or the folder of
     // the item under it), or the project root below the rows.

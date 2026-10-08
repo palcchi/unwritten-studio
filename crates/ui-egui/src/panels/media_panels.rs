@@ -17,8 +17,8 @@ use serde_json::{Value, json};
 
 use super::DragPayload;
 use super::panel_kit as kit;
-use crate::EffectcraftApp;
 use crate::theme::Tokens;
+use crate::{EffectcraftApp, widgets};
 
 // ---------------------------------------------------------------- Media Browser
 
@@ -159,19 +159,12 @@ pub fn media_browser(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let tile = vec2(140.0, 112.0);
     let cols = ((list.width() - 8.0) / tile.x).floor().max(1.0) as usize;
     let mut budget = 2u32;
-    let scroll_id = egui::Id::new("mb-scroll");
-    let mut scroll: f32 = ctx.data(|d| d.get_temp(scroll_id).unwrap_or(0.0));
-    if ui.rect_contains_pointer(list) {
-        scroll -= ctx.input(|i| i.smooth_scroll_delta.y);
-    }
-    let rows = entries.len().div_ceil(cols);
-    scroll = scroll.clamp(0.0, (rows as f32 * tile.y - list.height() + 8.0).max(0.0));
-    ctx.data_mut(|d| d.insert_temp(scroll_id, scroll));
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("mb-scroll"), list);
     let lp = p.with_clip_rect(list);
     let mut actions: Vec<(&str, Value)> = vec![];
     for (i, e) in entries.iter().enumerate() {
         let r = Rect::from_min_size(
-            pos2(list.min.x + 8.0 + (i % cols) as f32 * tile.x, list.min.y + 8.0 + (i / cols) as f32 * tile.y - scroll),
+            pos2(list.min.x + 8.0 + (i % cols) as f32 * tile.x, list.min.y + 8.0 + (i / cols) as f32 * tile.y - scroll.offset),
             tile - vec2(8.0, 8.0),
         );
         if !r.intersects(list) {
@@ -232,6 +225,7 @@ pub fn media_browser(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if entries.is_empty() {
         lp.text(list.center(), Align2::CENTER_CENTER, "Empty folder", Tokens::ui(12.0), t.text_faint);
     }
+    scroll.end(ui, &mut app.auto, "mediaBrowser.scroll", entries.len().div_ceil(cols) as f32 * tile.y + 8.0, &t);
     if budget == 0 {
         ctx.request_repaint();
     }

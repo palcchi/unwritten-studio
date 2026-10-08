@@ -455,34 +455,27 @@ pub(crate) fn draw_frame(app: &mut EffectcraftApp, ctx: &egui::Context, painter:
 /// `viewer.<auto>.<n>` automation ids.
 fn popup(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: &str, anchor: Rect, items: &[(String, bool)], auto: &str) -> Option<usize> {
     let pid = egui::Id::new(id);
-    let open: bool = ui.data(|d| d.get_temp(pid.with("open")).unwrap_or(false));
-    if !open {
+    if !widgets::popup_is_open(ui, pid) {
         return None;
     }
     let h: f32 = items.iter().map(|(l, _)| if l == "-" { 9.0 } else { 21.0 }).sum::<f32>() + 14.0;
-    let pos = anchor.left_top() - vec2(0.0, h + 4.0);
-    let mut chosen = None;
-    let area = egui::Area::new(pid.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_min_width(170.0);
-            for (i, (label, on)) in items.iter().enumerate() {
-                if label == "-" {
-                    ui.separator();
-                    continue;
-                }
-                let r = ui.selectable_label(*on, label.as_str());
-                app.auto.add(&format!("viewer.{auto}.{i}"), r.rect, label);
-                if r.clicked() {
-                    chosen = Some(i);
-                }
+    let seps = items.iter().filter(|(l, _)| l == "-").count();
+    widgets::popup_list(ui, pid, anchor.left_top() - vec2(0.0, h + 4.0), anchor, items.len().saturating_sub(seps), seps, |ui| {
+        ui.set_min_width(170.0);
+        let mut chosen = None;
+        for (i, (label, on)) in items.iter().enumerate() {
+            if label == "-" {
+                ui.separator();
+                continue;
             }
-        });
-    });
-    let outside = widgets::pressed_outside(ui.ctx(), &area.response) && !anchor.contains(ui.input(|i| i.pointer.interact_pos()).unwrap_or_default());
-    if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.insert_temp(pid.with("open"), false));
-    }
-    chosen
+            let r = ui.selectable_label(*on, label.as_str());
+            app.auto.add(&format!("viewer.{auto}.{i}"), r.rect, label);
+            if r.clicked() {
+                chosen = Some(i);
+            }
+        }
+        chosen
+    })
 }
 
 fn toggle_popup(ui: &egui::Ui, id: &str) {

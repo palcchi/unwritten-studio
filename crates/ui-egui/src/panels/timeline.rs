@@ -1934,12 +1934,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 egui::Popup::menu(&lang).show(|ui| {
                     for (cat, items) in effectcraft_engine::commands::expr_tools::language_menu() {
                         ui.menu_button(cat, |ui| {
-                            for (label, text) in items {
-                                if ui.button(label).clicked() {
-                                    picked = Some(text);
-                                    ui.close();
+                            widgets::menu_scroll(ui, |ui| {
+                                for (label, text) in items {
+                                    if ui.button(label).clicked() {
+                                        picked = Some(text);
+                                        ui.close();
+                                    }
                                 }
-                            }
+                            })
                         });
                     }
                 });
@@ -2438,18 +2440,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if overflow > 0.0 {
         // Outline scroll bar along the top of the footer, under the columns.
         let track = Rect::from_min_max(pos2(rect.min.x + 2.0, footer.min.y + 1.0), pos2(graph_x0 - 3.0, footer.min.y + 5.0));
-        let frac = left_w / natural_w;
-        let tw = (track.width() * frac).max(20.0);
-        let tx = track.min.x + (track.width() - tw) * (oscroll / overflow);
-        let thumb = Rect::from_min_size(pos2(tx, track.min.y), vec2(tw, track.height()));
-        p.rect_filled(track, 2.0, t.field_bg);
-        let sresp = ui.interact(track.expand2(vec2(0.0, 2.0)), egui::Id::new("tl-outline-scroll"), Sense::drag());
-        p.rect_filled(thumb, 2.0, if sresp.dragged() || sresp.hovered() { t.text_dim } else { t.text_faint });
-        app.auto.add("timeline.outlineScroll", track, &format!("{oscroll}/{overflow}"));
-        if sresp.dragged() {
-            let k = overflow / (track.width() - tw).max(1.0);
-            app.ui.timeline.outline_scroll = (oscroll + sresp.drag_delta().x * k).clamp(0.0, overflow);
-        }
+        app.ui.timeline.outline_scroll = widgets::scroll_bar(ui, &mut app.auto, "timeline.outlineScroll", track, oscroll, overflow, &t);
+    }
+    if max_scroll > 0.0 {
+        // The layer rows' scroll bar, on the right edge beside the time graph.
+        let track = Rect::from_min_max(pos2(rect.max.x - 6.0, rows_rect.min.y + 1.0), pos2(rect.max.x - 2.0, rows_rect.max.y - 1.0));
+        app.ui.timeline.scroll_y = widgets::scroll_bar(ui, &mut app.auto, "timeline.scroll", track, app.ui.timeline.scroll_y, max_scroll, &t);
     }
     let tgl = Rect::from_min_size(pos2(footer.min.x + 10.0, footer.min.y + 3.0), vec2(150.0, 18.0));
     let tresp = ui.interact(tgl, egui::Id::new("tl-toggle-modes"), Sense::click());
@@ -2958,12 +2954,14 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], actions: &mut Vec<(S
         item(ui, "Freeze on Last Frame", "layer.freezeOnLastFrame", json!({"layers": layers}));
     });
     ui.menu_button("Blending Mode", |ui| {
-        for m in BlendMode::ALL {
-            item(ui, m.label(), "layer.setBlendMode", json!({"layers": layers, "mode": m.label()}));
-            if m.ends_group() {
-                ui.separator();
+        widgets::menu_scroll(ui, |ui| {
+            for m in BlendMode::ALL {
+                item(ui, m.label(), "layer.setBlendMode", json!({"layers": layers, "mode": m.label()}));
+                if m.ends_group() {
+                    ui.separator();
+                }
             }
-        }
+        })
     });
     ui.menu_button("Arrange", |ui| {
         item(ui, "Bring Layer to Front", "layer.arrange", json!({"layers": layers, "to": "front"}));

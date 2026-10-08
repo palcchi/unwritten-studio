@@ -527,7 +527,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // ---------------------------------------------------------- items
     let list = Rect::from_min_max(pos2(rect.min.x, head.max.y), pos2(rect.max.x, rect.max.y - FOOT_H));
     let lp = p.with_clip_rect(list);
-    let mut y = list.min.y;
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("rq-scroll"), list);
+    // Items scroll under the header and footer: clip their widgets (and hit tests) to the list.
+    let panel_clip = ui.clip_rect();
+    ui.set_clip_rect(list.intersect(panel_clip));
+    let mut y = list.min.y - scroll.offset;
     if queue.is_empty() {
         lp.text(pos2(list.center().x, list.min.y + 30.0), Align2::CENTER_CENTER, "The render queue is empty.", Tokens::ui(12.0), t.text_faint);
     }
@@ -746,6 +750,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
     }
+    ui.set_clip_rect(panel_clip);
+    let content = y + scroll.offset - list.min.y;
+    scroll.end(ui, &mut app.auto, "renderQueue.scroll", content, &t);
     ui.data_mut(|d| match &editing {
         Some(e) => {
             d.insert_temp(editing_id, e.clone());

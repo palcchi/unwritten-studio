@@ -57,7 +57,7 @@ The server speaks JSON-RPC 2.0 over stdio, one message per line, and supports MC
 | `run_script {code, name?}` | Run JavaScript with the After Effects-style scripting object model (`app.project`, `comp.layers.addText(…)`, `layer.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(…)`…). Returns `{ok, result, output, error: {message, line, column}}`; edits are undoable. |
 | `get_project` / `get_comp {comp?}` | Project items, comp settings and layers. |
 | `get_layer {layer, comp?, time?, depth?, flat?}` | A layer's property tree (`depth` limits how many group levels expand). Every node has a `path`. |
-| `get_property {layer, path, comp?, time?}` | Value at a time, keyframes and expression. |
+| `get_property {layer, path, comp?, time?}` | A leaf property's value at a time, keyframes and expression. Group paths (for example `geometryOptions`) contain children: inspect them with `get_layer`, then query a leaf such as `geometryOptions/extrusionDepth`. |
 | `set_property {layer, path, value?, time?, expression?, comp?}` | Sets a static value. With `time` it sets a keyframe; with `expression` it sets an expression. |
 | `add_keyframe {layer, path, time+value \| keys:[...], interpolation?, comp?}` | Adds keys, then optionally applies linear/bezier/hold/easyEase. |
 | `list_effects {filter?}` | Effect ids, names, categories, GPU / 32-bpc support and parameters. |

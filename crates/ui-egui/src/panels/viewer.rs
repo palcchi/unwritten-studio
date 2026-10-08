@@ -919,6 +919,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
 
     // Puppet pins and meshes of the selected layers (Puppet tools).
     let mut pin_hits: Vec<super::puppet_tool::PinHit> = vec![];
+    // The selected layers with a Puppet effect, top of the stack first (the layers the Puppet
+    // tools work on).
+    let mut puppet_layers: Vec<(&Layer, super::puppet_tool::Overlay)> = vec![];
     if app.ui.tool.puppet_kind().is_some() {
         let sel_props: Vec<u64> = app.session.state.selected_props.iter().map(|(_, u)| *u).collect();
         for lid in &selected {
@@ -927,8 +930,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             {
                 let hover = ui.input(|i| i.pointer.hover_pos());
                 pin_hits.extend(super::puppet_tool::draw(&painter, &map, &ectx, l, &ov, app.session.state.puppet.show_mesh, &sel_props, hover));
+                puppet_layers.push((l, ov));
             }
         }
+        puppet_layers.sort_by_key(|(l, _)| comp.index_of(l.id));
         for h in &pin_hits {
             app.auto.add(&format!("viewer.puppetPin.{}", h.pin), Rect::from_center_size(h.pos, vec2(10.0, 10.0)), "Puppet pin");
             if let Some(hp) = h.handle {
@@ -938,6 +943,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
     }
+    // The layer a Puppet tool press works on: while selected layers are rigged, only those
+    // ([`super::puppet_tool::target`]); otherwise the layer under the pointer, selected.
+    let puppet_layer = |app: &mut EffectcraftApp, cpt: [f64; 2]| -> Option<LayerId> {
+        if puppet_layers.is_empty() {
+            return pick(app, &ectx, cpt, false);
+        }
+        super::puppet_tool::target(&ectx, &puppet_layers, cpt, |l| layers_at(&ectx, cpt).any(|h| h.id == l.id))
+    };
 
     // Project items, files and effects dropped on the viewer.
     super::viewer_drop::show(app, ui, &painter, &map, &ectx);
@@ -1121,7 +1134,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             t if t.is_shape() => Some(Gesture::Create { tool: t, start: cpt }),
             t if t.puppet_kind().is_some() && super::puppet_tool::hit(&pin_hits, press).is_none() => {
                 // Off the pins: Alt or a press outside the art drags a marquee that selects pins.
-                (mods.alt || pick(app, &ectx, cpt, false).is_none()).then_some(Gesture::PinMarquee { start: press })
+                (mods.alt || puppet_layer(app, cpt).is_none()).then_some(Gesture::PinMarquee { start: press })
             }
             t if t.puppet_kind().is_some() => super::puppet_tool::hit(&pin_hits, press).and_then(|(h, part)| {
                 use super::puppet_tool::PinPart;
@@ -1557,7 +1570,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 if let Some((h, _)) = super::puppet_tool::hit(&pin_hits, pos) {
                     // Click selects the pin; Shift-click adds or removes it.
                     let _ = app.session.execute("puppet.selectPins", json!({"layer": h.layer.0, "pins": [h.pin], "toggle": mods.shift}));
-                } else if let Some(l) = pick(app, &ectx, cpt, false).and_then(|l| comp.layer(l))
+                } else if let Some(l) = puppet_layer(app, cpt).and_then(|l| comp.layer(l))
                     && let Some(inv) = l2c(&ectx, l).0.inverse()
                 {
                     let lp = inv.apply(gv2(cpt[0], cpt[1]));

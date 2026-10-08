@@ -400,6 +400,28 @@ Browser in the web app (landed in M13.10: browser storage and File System Access
   wrong signatures and versions, fuel exhaustion, traps and bit-identical output; script
   `Socket` validates ports, and ScriptUI resource strings accept trailing array commas.
 
+## Update: ease presets (#254)
+
+**Window ▸ Ease Presets** is our own panel for what ease-curve plug-ins are used for in After
+Effects (G8): keep easing curves by name and apply them to pairs of keyframes. A curve is the out
+handle of the first key and the in handle of the second, in the Keyframe Velocity dialog's terms:
+influence in percent, and speed relative to the segment's average speed, so one curve fits any
+duration and change of value. Applying it eases every pair of neighbouring selected keyframes of
+each property in one undo step, per dimension, and along the motion path for spatial properties
+(as Easy Ease does); an Auto Bezier key keeps its other side. Twelve built-in curves (Linear,
+Smooth, Ease In-Out Soft / plain / Strong, Accelerate and Decelerate with Strong variants, Expo
+In-Out / Accelerate / Decelerate) are our own numbers; user presets are kept in the settings store
+(`ease_presets.json`; a corrupt file or entry is skipped, never fatal). The panel draws each preset
+as a thumbnail (a click applies it) and the working curve in a value graph whose two handles drag;
+Apply, From Keys (the curve between the first selected pair), Save Current, Rename and Delete.
+Commands: `keys.easePreset.apply {preset | curve}` (`curve` as `{outInfluence, outSpeed,
+inInfluence, inSpeed}` or cubic-bezier handles `[x1, y1, x2, y2]`), `keys.easePreset.capture`,
+`keys.easePreset.save {name, curve?}`, `keys.easePreset.list`, `keys.easePreset.rename {name,
+newName}`, `keys.easePreset.delete {name}`; automation ids `easePresets.*`.
+
+Not yet: curves with more than one bend (bounce and elastic shapes, which need keyframes in
+between), preset import / export files, and a live preview on the keys while dragging the handles.
+
 ## Update: M5.9–M5.14 keyframes, M3.15 clipboard, M12.8 responsiveness
 
 - **The app froze every 10 s on Windows** (M12.8): the cache budgets' memory reading started

@@ -2403,6 +2403,22 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mrows = rows_rect.intersect(Rect::from_min_max(pos2(graph_x0, rows_rect.min.y), rows_rect.max));
     super::markers_ui::comp_markers(app, ui, &comp, tm, mstrip, mrows);
 
+    // Spacebar held: the Hand tool. Dragging the ruler or the time graph scrolls it in time when
+    // zoomed in (registered last, so it takes the drag from the bars, keys and markers there).
+    if super::space_hand(&ctx) {
+        let area = Rect::from_min_max(pos2(graph_x0, ruler.min.y), pos2(rect.max.x, rows_rect.max.y));
+        let hand = ui.interact(area, egui::Id::new("tl-hand"), Sense::drag());
+        app.auto.add("timeline.hand", area, "Hand (hold Spacebar)");
+        if hand.hovered() || hand.dragged() {
+            ctx.set_cursor_icon(if hand.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+        }
+        if hand.dragged() && app.ui.timeline.pps.is_some() {
+            let start = app.ui.timeline.start;
+            let last = (comp.duration.seconds() - (tm.t(graph_x1) - tm.start)).max(start).max(0.0);
+            app.ui.timeline.start = (start - hand.drag_delta().x as f64 / pps).clamp(0.0, last);
+        }
+    }
+
     // Drop targets: effects from Effects & Presets go on the layer under the pointer. Footage and
     // comps from the Project panel and files from the Media Browser go where they are dropped: a
     // line shows the place in the stack, and over the time graph a marker shows the In point too

@@ -1396,6 +1396,12 @@ fn mods_match(want: egui::Modifiers, got: egui::Modifiers) -> bool {
     want.command == got.command && want.shift == got.shift && want.alt == got.alt && (want.ctrl == got.ctrl || got.command && cfg!(not(target_os = "macos")))
 }
 
+/// Set (egui temp data) from a plain Spacebar press until its release while a tap would still
+/// run the Spacebar shortcut.
+fn space_tap_id() -> egui::Id {
+    egui::Id::new("spacebar-tap")
+}
+
 /// Dispatch keyboard shortcuts (skipped while typing in a text field).
 pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
@@ -1420,12 +1426,17 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
         }
         return;
     }
+    // A mouse button down while Spacebar is held belongs to the Hand tool: its release won't
+    // preview.
+    if ctx.input(|i| i.pointer.any_down()) || ctx.egui_wants_keyboard_input() {
+        ctx.data_mut(|d| d.remove::<bool>(space_tap_id()));
+    }
     if ctx.egui_wants_keyboard_input() {
         return;
     }
     // Text editing in the viewer takes the clipboard events itself.
     let clipboard = app.session.state.text_edit.is_none();
-    let events: Vec<(egui::Key, egui::Modifiers)> = ctx.input(|i| {
+    let events: Vec<(egui::Key, egui::Modifiers, bool)> = ctx.input(|i| {
         // The windowing layer turns Ctrl+C / Ctrl+X / Ctrl+V into clipboard events instead of
         // key presses: map them back to the keys (with the modifiers held) so Edit ▸ Copy, Cut,
         // Paste and their variants (Ctrl+Alt+C…) run.
@@ -1436,11 +1447,12 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
                 egui::Event::Key { key, pressed: true, modifiers, repeat, .. }
                     if !*repeat || matches!(key, egui::Key::PageUp | egui::Key::PageDown | egui::Key::ArrowLeft | egui::Key::ArrowRight) =>
                 {
-                    Some((*key, *modifiers))
+                    Some((*key, *modifiers, true))
                 }
-                egui::Event::Copy if clipboard => Some((egui::Key::C, held)),
-                egui::Event::Cut if clipboard => Some((egui::Key::X, held)),
-                egui::Event::Paste(_) if clipboard => Some((egui::Key::V, held)),
+                egui::Event::Key { key: egui::Key::Space, pressed: false, .. } => Some((egui::Key::Space, egui::Modifiers::NONE, false)),
+                egui::Event::Copy if clipboard => Some((egui::Key::C, held, true)),
+                egui::Event::Cut if clipboard => Some((egui::Key::X, held, true)),
+                egui::Event::Paste(_) if clipboard => Some((egui::Key::V, held, true)),
                 _ => None,
             })
             .collect()
@@ -1449,7 +1461,20 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
         return;
     }
     let binds = bindings(&app.session);
-    for (key, mods) in events {
+    for (key, mods, pressed) in events {
+        // Plain Spacebar runs its shortcut (Play Current Preview) on the release: held, it is
+        // the Hand tool (After Effects), and a drag with it must not start or stop playback.
+        if key == egui::Key::Space && (!pressed || !mods.any()) {
+            if pressed {
+                if app.dialog.is_none() {
+                    ctx.data_mut(|d| d.insert_temp(space_tap_id(), true));
+                }
+                continue;
+            }
+            if !ctx.data_mut(|d| d.remove_temp::<bool>(space_tap_id())).unwrap_or(false) {
+                continue;
+            }
+        }
         // Escape closes dialogs.
         if key == egui::Key::Escape && app.dialog.is_some() {
             // Escape while recording a shortcut cancels the recording, not the editor.

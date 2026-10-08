@@ -83,6 +83,12 @@ pub fn timecode(session: &Session, comp: &Comp, t: Tick) -> String {
     effectcraft_engine::commands::time::display_time(session, comp, t)
 }
 
+/// Spacebar held outside a text field: the Hand tool (drags pan the viewer and scroll the
+/// Timeline).
+pub(crate) fn space_hand(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.key_down(egui::Key::Space)) && !ctx.egui_wants_keyboard_input()
+}
+
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: PanelKind, rect: Rect) {
     match p {
         PanelKind::Composition => viewers::show(app, ui, 0, rect),

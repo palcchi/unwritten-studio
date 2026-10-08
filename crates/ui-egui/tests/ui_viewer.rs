@@ -761,6 +761,67 @@ fn middle_and_hand_drags_pan_the_viewer_and_the_pan_stays_after_release() {
     assert!((end[0] - after[0] + 50.0).abs() < 1.0 && (end[1] - after[1] + 30.0).abs() < 1.0, "{after:?} → {end:?}");
 }
 
+/// A Spacebar press or release (`repeat`: the keyboard's auto-repeat while it is held).
+fn space(h: &mut Harness<'_, EffectcraftApp>, pressed: bool, repeat: bool) {
+    h.input_mut().events.push(Event::Key { key: egui::Key::Space, physical_key: None, pressed, repeat, modifiers: Default::default() });
+    h.step();
+}
+
+/// #227: a Spacebar tap starts and stops the preview when it is released; held, Spacebar is the
+/// Hand tool, so a drag pans the viewer and neither starts nor stops the preview. Auto-repeat
+/// while it is held toggles nothing more, and a space typed in a text field doesn't preview.
+#[test]
+fn spacebar_taps_preview_and_held_spacebar_pans_the_viewer() {
+    let mut h = harness();
+    let playing = |h: &Harness<'_, EffectcraftApp>| h.state().playback.playing;
+    let tap = |h: &mut Harness<'_, EffectcraftApp>| {
+        space(h, true, false);
+        space(h, false, false);
+    };
+    space(&mut h, true, false);
+    assert!(!playing(&h), "the press alone doesn't play");
+    space(&mut h, false, false);
+    assert!(playing(&h), "the release does");
+    tap(&mut h);
+    assert!(!playing(&h), "another tap stops");
+    // Held with auto-repeat: one toggle, on the release.
+    space(&mut h, true, false);
+    for _ in 0..5 {
+        space(&mut h, true, true);
+    }
+    assert!(!playing(&h));
+    space(&mut h, false, false);
+    assert!(playing(&h));
+    tap(&mut h);
+
+    // Held and dragged: pans the viewer (the Box under the pointer stays), and plays nothing.
+    let box_pos = |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layers[0].props.prop("transform/position").unwrap().value.clone();
+    let (pos, before) = (box_pos(&h), h.state().ui.viewer.pan);
+    let c = rect(&h, "viewer.comp").center();
+    space(&mut h, true, false);
+    drag_with(&mut h, egui::PointerButton::Primary, c, c + vec2(80.0, 40.0));
+    space(&mut h, false, false);
+    let after = h.state().ui.viewer.pan;
+    assert!((after[0] - before[0] - 80.0).abs() < 1.0 && (after[1] - before[1] - 40.0).abs() < 1.0, "{before:?} → {after:?}");
+    assert_eq!(box_pos(&h), pos);
+    assert!(!playing(&h), "a Spacebar drag doesn't start the preview");
+    // Nor stop one.
+    tap(&mut h);
+    let c = rect(&h, "viewer.comp").center();
+    space(&mut h, true, false);
+    drag_with(&mut h, egui::PointerButton::Primary, c, c - vec2(30.0, 0.0));
+    space(&mut h, false, false);
+    assert!(playing(&h), "a Spacebar drag doesn't stop the preview");
+    tap(&mut h);
+    assert!(!playing(&h));
+
+    // In a text field Spacebar types.
+    let search = rect(&h, "timeline.search").center();
+    click(&mut h, search);
+    tap(&mut h);
+    assert!(!playing(&h), "a space typed in the Timeline search doesn't preview");
+}
+
 #[test]
 fn timeline_rows_drag_to_reorder_layers() {
     let mut h = harness();

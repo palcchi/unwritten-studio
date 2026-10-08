@@ -387,6 +387,24 @@ fn select_keys(s: &mut Session, p: &Value) -> Result<Value> {
     } else {
         s.state.selected_keys = sel;
     }
+    // From the Timeline, selected keys select their properties and layers too, as in After
+    // Effects, so the Graph Editor shows them (#252).
+    if b_p(p, "selectProperties").unwrap_or(false) && !s.state.selected_keys.is_empty() {
+        let extend = b_p(p, "add").unwrap_or(false) || b_p(p, "toggle").unwrap_or(false);
+        let st = &mut s.state;
+        if !extend {
+            st.selected_props.clear();
+            st.selected_layers.clear();
+        }
+        for k in &st.selected_keys {
+            if !st.selected_props.contains(&(k.layer, k.prop)) {
+                st.selected_props.push((k.layer, k.prop));
+            }
+            if !st.selected_layers.contains(&k.layer) {
+                st.selected_layers.push(k.layer);
+            }
+        }
+    }
     Ok(json!(s.state.selected_keys.len()))
 }
 
@@ -780,7 +798,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Select Keyframes",
             [],
             None,
-            "{keys: [{layer, prop: uid | path (or `path`), time (layer s)}], add?, toggle?: bool (Shift+click: in or out of the selection)}",
+            "{keys: [{layer, prop: uid | path (or `path`), time (layer s)}], add?, toggle?: bool (Shift+click: in or out of the selection), selectProperties?: bool (their properties and layers too, as a Timeline click does)}",
             has_comp,
             select_keys
         ),

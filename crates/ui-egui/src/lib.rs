@@ -383,16 +383,21 @@ impl EffectcraftApp {
     }
 
     pub fn set_workspace(&mut self, name: &str) {
-        self.ui.workspace = name.to_string();
-        self.ui.dock = self.ui.saved_workspaces.get(name).cloned().unwrap_or_else(|| dock::workspace(name));
-        self.ui.floating = self.ui.saved_floating.get(name).cloned().unwrap_or_else(|| dock::workspace_floating(name));
-        self.ui.maximized = None;
-        // Learn: the Home screen's Learn tab (tutorials) in the Composition panel.
+        // Learn: the Home screen's Learn tab (tutorials) in the Composition panel. Leaving it for
+        // another workspace closes the Home screen again: it stayed over every workspace until a
+        // project was created (#272).
         if name == "Learn" {
             self.ui.start_screen = true;
             self.ui.home_learn = true;
             self.ui.home_templates = false;
+        } else if self.ui.workspace == "Learn" {
+            self.ui.start_screen = false;
+            self.ui.home_learn = false;
         }
+        self.ui.workspace = name.to_string();
+        self.ui.dock = self.ui.saved_workspaces.get(name).cloned().unwrap_or_else(|| dock::workspace(name));
+        self.ui.floating = self.ui.saved_floating.get(name).cloned().unwrap_or_else(|| dock::workspace_floating(name));
+        self.ui.maximized = None;
     }
 
     /// Built-in workspaces followed by the saved ones (Window ▸ Workspace ▸ Save as New Workspace).

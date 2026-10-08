@@ -21,7 +21,7 @@
 //! effectcraft-cli bench --ops [--small] [--layers N] [--comps N] [--footage N]   everyday-operation timings
 //!     on a large generated project (open, save, auto-save, undo/redo, timeline, Project panel)
 //! effectcraft-cli script FILE.jsx [F.ecproj] | --eval CODE    run an After Effects-style script
-//! effectcraft-cli mcp [--bridge PORT]                         MCP server on stdio
+//! effectcraft-cli mcp [--autosave | --bridge PORT]            MCP server on stdio
 //!
 //! Project:  --project F.ecproj (or a positional *.ecproj) | --demo | --empty   (default: demo; mcp: empty)
 //! Saving:   --save (back to --project) | --save-as F.ecproj
@@ -109,7 +109,7 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
   script FILE.jsx [F.ecproj] | --eval CODE run JavaScript with the After Effects-style object model
                                            (app.project, comps, layers, properties…); prints writeLn
                                            output and the result; errors exit 1 with file:line:col
-  mcp [--bridge PORT]                      MCP server (JSON-RPC over stdio)
+  mcp [--autosave | --bridge PORT]         MCP server (JSON-RPC over stdio); --autosave preserves unsaved headless work
 options: --project F.ecproj | --demo | --empty   --save | --save-as F   --bridge PORT   --json   --gpu
 <comp>: id or name, '-' = active comp; <layer>: id, '#n' or name; <value>: JSON or bare string";
 
@@ -173,6 +173,7 @@ const FLAGS: &[&str] = &[
     "--ops",
     "--small",
     "--adv3d",
+    "--autosave",
 ];
 
 struct Args {
@@ -321,6 +322,17 @@ fn backend(args: &Args, default_demo: bool) -> Result<Backend, Failure> {
 /// renderer setting, Mercury GPU Acceleration by default).
 fn session(args: &Args) -> Result<effectcraft_engine::Session, Failure> {
     let mut s = effectcraft_host::session();
+    if args.flag("--autosave") {
+        let dir = effectcraft_host::config_dir().ok_or_else(|| Failure::Error("--autosave: no config directory; set EFFECTCRAFT_CONFIG_DIR".into()))?;
+        // Read only auto-save settings. Opting in must not change headless rendering or load
+        // the desktop's models, shortcuts, disk cache or recovery sentinel.
+        use effectcraft_engine::config::ConfigStore;
+        let config = effectcraft_engine::config::DirConfig::new(dir);
+        if let Some(text) = config.read(effectcraft_engine::prefs::PREFS_FILE) {
+            s.prefs.auto_save = effectcraft_engine::prefs::Prefs::from_json(&text).auto_save;
+        }
+        s.prefs.normalize();
+    }
     if args.flag("--gpu") {
         let g = effectcraft_gpu::Gpu::try_headless().map_err(|e| Failure::Error(format!("--gpu: no usable GPU adapter ({e})")))?;
         s.accel = Some(std::sync::Arc::new(g));
@@ -402,6 +414,9 @@ fn emit(v: &Value, json_out: bool) {
 }
 
 fn run(cmd: &str, args: &Args, json_out: bool) -> Result<(), Failure> {
+    if args.flag("--autosave") && cmd != "mcp" {
+        return usage_err("--autosave is only supported by mcp");
+    }
     match cmd {
         "render" => render(args, json_out)?,
         "bench" => bench_cmd(args)?,
@@ -561,9 +576,20 @@ fn run(cmd: &str, args: &Args, json_out: bool) -> Result<(), Failure> {
             }
         }
         "mcp" => {
+            if args.flag("--autosave") && args.opt("--bridge").is_some() {
+                return usage_err("--autosave is for headless MCP; the bridged app owns its auto-saves");
+            }
             let b = backend(args, false)?;
+            let server = McpServer::new(b);
+            let mut server = if args.flag("--autosave") {
+                let root =
+                    effectcraft_host::config_dir().ok_or_else(|| Failure::Error("--autosave: no config directory; set EFFECTCRAFT_CONFIG_DIR".into()))?;
+                server.with_autosave(&root)?
+            } else {
+                server
+            };
             // A client that closes its end of stdout has ended the session.
-            match McpServer::new(b).serve_stdio() {
+            match server.serve_stdio() {
                 Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => return Err(e.to_string().into()),
                 _ => {}
             }

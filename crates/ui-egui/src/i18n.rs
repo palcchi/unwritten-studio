@@ -674,6 +674,7 @@ const JAPANESE: &[(&str, &str, &str)] = &[
     ("window.panel", "Render Queue", "レンダーキュー"),
     ("window.panel", "Timeline", "タイムライン"),
     ("window.panel", "Create Nulls From Paths", "パスからヌルを作成"),
+    ("window.panel", "Ease Presets", "イーズプリセット"),
     ("window.panel", "VR Comp Editor", "VRコンポジションエディター"),
     ("", "Help", "ヘルプ"),
     ("help.docs", "EffectCraft Help...", "EffectCraftヘルプ..."),

@@ -667,6 +667,9 @@ pub struct UiState {
     /// Lumetri Scopes panel options.
     #[serde(default)]
     pub scopes: crate::panels::scopes_panel::ScopesState,
+    /// Ease Presets panel: working curve, selected preset, name field.
+    #[serde(default)]
+    pub ease_presets: crate::panels::ease_presets::EasePanelState,
 }
 
 impl Default for UiState {
@@ -721,6 +724,7 @@ impl Default for UiState {
             mini_flowchart: None,
             flowchart: Default::default(),
             scopes: Default::default(),
+            ease_presets: Default::default(),
         }
     }
 }

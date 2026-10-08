@@ -96,6 +96,69 @@ fn imported_files_go_into_the_comp_where_they_were_dropped() {
     assert!(s.execute("layer.addItem", json!({"item": "a.png", "position": [1.0]})).is_err(), "position needs x and y");
 }
 
+/// #270: files dropped or picked in the Import dialog (`file.import {background}`) are probed in
+/// a background job that says which file it is reading and how many are left; then they arrive
+/// in one undo step, all selected, with a count. The same file imported again arrives again.
+#[test]
+fn background_imports_report_progress_and_select_what_arrived() {
+    use effectcraft_project::{Footage, FootageKind, ItemId};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    /// Probes file k once `allow` > k (a slow video; 5 s at most, so an import that waits for it
+    /// fails the test instead of hanging it); `.xyz` files fail.
+    struct Gated {
+        started: AtomicUsize,
+        allow: Arc<AtomicUsize>,
+    }
+    impl crate::Importer for Gated {
+        fn probe(&self, path: &str) -> Result<Footage, String> {
+            let k = self.started.fetch_add(1, Ordering::SeqCst);
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while self.allow.load(Ordering::SeqCst) <= k && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            if path.ends_with(".xyz") {
+                return Err("unsupported file".into());
+            }
+            Ok(Footage { path: path.into(), kind: FootageKind::Still, width: 64, height: 32, has_video: true, ..Default::default() })
+        }
+    }
+    let allow = Arc::new(AtomicUsize::new(1));
+    let mut s = Session { importer: Some(Arc::new(Gated { started: AtomicUsize::new(0), allow: allow.clone() })), ..Default::default() };
+    s.execute("comp.new", json!({"name": "Main", "width": 320, "height": 180, "frameRate": 30, "duration": 4})).unwrap();
+    let undo = s.history.undo.len();
+    let r = s.execute("file.import", json!({"paths": ["/drop/a.png", "/drop/b.png", "/drop/a.png"], "background": true})).unwrap();
+    let job = r["job"].as_str().unwrap().to_string();
+    // The first file is through; the second is being read.
+    let running = |s: &mut Session| s.execute("jobs.list", json!({})).unwrap()["running"].as_array().unwrap().clone();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while running(&mut s)[0]["done"] != json!(1) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let row = running(&mut s)[0].clone();
+    assert_eq!(row["id"], json!(job));
+    assert_eq!(row["label"], json!("Importing 3 files"));
+    assert_eq!(row["message"], json!("b.png (2 of 3)"));
+    assert_eq!((row["done"].as_u64(), row["total"].as_u64()), (Some(1), Some(3)));
+    assert!(s.project.items.values().all(|i| i.name != "a.png"), "nothing is added before the import finishes");
+    allow.store(usize::MAX, Ordering::SeqCst);
+    s.execute("jobs.wait", json!({})).unwrap();
+    let names = |s: &Session, ids: &[ItemId]| ids.iter().map(|i| s.project.item(*i).unwrap().name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&s, &s.state.project_selection), ["a.png", "b.png", "a.png"], "everything imported is selected, the same file twice too");
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step");
+    let rec = s.job_log.last().unwrap();
+    assert_eq!((rec.status.as_str(), rec.message.as_str()), ("done", "Imported 3 items"));
+    assert!(s.drain_events().iter().any(|e| matches!(e, crate::Event::Toast { message, .. } if message == "Imported 3 items")));
+    // Dropped on the viewer: they become layers too; a file that can't be read is reported.
+    s.execute("file.import", json!({"paths": ["/drop/c.png", "/drop/d.xyz"], "background": true, "addToComp": true, "position": [10.0, 20.0]})).unwrap();
+    s.execute("jobs.wait", json!({})).unwrap();
+    assert_eq!(s.active_comp().unwrap().layers.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["c.png"]);
+    assert_eq!(s.job_log.last().unwrap().message, "Imported 1 item. /drop/d.xyz: unsupported file");
+    // Agents and scripts import at once by default.
+    let r = s.execute("file.import", json!({"paths": ["/drop/e.png"]})).unwrap();
+    assert_eq!(r["items"].as_array().map(Vec::len), Some(1));
+}
+
 /// Audio, Lock and Shy don't change pixels: toggling them keeps the cached layers (#103).
 #[test]
 fn audio_lock_and_shy_keep_cached_layers() {

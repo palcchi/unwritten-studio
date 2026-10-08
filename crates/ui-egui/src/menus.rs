@@ -1158,6 +1158,10 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     };
     let Some(v) = picked else { return Some(Ok(Value::Null)) };
     p.insert(key.to_string(), v);
+    // Picked files import in the background, with the Importing card showing progress (#270).
+    if matches!(id, "file.import" | "file.importMultiple") {
+        p.insert("background".into(), Value::Bool(true));
+    }
     // Photoshop files ask how to import them first.
     if id == "file.import" && crate::panels::dialogs::open_form(app, id, &Value::Object(p.clone())) {
         return Some(Ok(json!({"dialog": id})));

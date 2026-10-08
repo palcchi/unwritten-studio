@@ -56,6 +56,7 @@
   <a href="#get-started">Get started</a> ·
   <a href="#where-it-stands">Status</a> ·
   <a href="#how-its-made">How it's made</a> ·
+  <a href="#downloads">Downloads</a> ·
   <a href="#the-crafting-apps">The Crafting Apps</a> ·
   <a href="#license-and-credits">License</a>
 </p>
@@ -182,8 +183,9 @@ See [docs/agents.md](docs/agents.md) and [docs/control-protocol.md](docs/control
 ## Get started
 
 Installers for each version are on the [Releases](https://github.com/storytold/effectcraft/releases)
-page: a universal macOS app; Windows MSIs and portable zips for x64, x86 and ARM64; and Linux
-AppImage, deb, rpm and tar.gz for x86_64 and aarch64. The Windows ARM64 build runs natively on
+page: a universal macOS app; Windows MSIs and portable zips for x64, x86 and ARM64; Linux
+AppImage, Flatpak, deb, rpm and tar.gz for x86_64 and aarch64; a FreeBSD x86_64 tarball; and the
+web build. [Downloads](#downloads) lists every file. The Windows ARM64 build runs natively on
 Windows on ARM, without x64 emulation. CI installs that MSI on Windows 11 ARM64 hardware, checks
 both programs are ARM64 and runs the command-line tool there, but it doesn't open the app's window
 or run the test suite natively on ARM64 yet, so please report anything that behaves differently.
@@ -234,6 +236,50 @@ send us right now.
 - **Private by default.** No telemetry, and no network access unless you ask for it.
 - **One family.** EffectCraft shares its time model and text engine design with FilmCraft, and
   gets its video and audio codecs from it.
+
+## Downloads
+
+Every [release](https://github.com/storytold/effectcraft/releases/latest) ships these builds. `<ver>` is the
+version number; `SHA256SUMS.txt` lists a checksum for every file.
+
+### macOS
+
+| Build | File | Notes |
+|---|---|---|
+| App, universal (Apple silicon + Intel) | `effectcraft-<ver>-macos-universal.dmg` | Signed and notarized |
+| Command-line tool, universal | `effectcraft-cli-<ver>-macos-universal.zip` | Signed and notarized |
+
+### Windows
+
+| Build | Installer | Portable |
+|---|---|---|
+| x64 (64-bit Intel/AMD) | `effectcraft-<ver>-windows-x64.msi` | `effectcraft-<ver>-windows-x64-portable.zip` |
+| arm64 (Snapdragon and other ARM PCs) | `effectcraft-<ver>-windows-arm64.msi` | `effectcraft-<ver>-windows-arm64-portable.zip` |
+| x86 (32-bit) | `effectcraft-<ver>-windows-x86.msi` | `effectcraft-<ver>-windows-x86-portable.zip` |
+
+Installers and executables are code-signed.
+
+### Linux
+
+| Format | x86_64 | aarch64 (ARM64) | Notes |
+|---|---|---|---|
+| AppImage | `effectcraft-<ver>-linux-x86_64.AppImage` | `effectcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
+| Flatpak | `effectcraft-<ver>-linux-x86_64.flatpak` | `effectcraft-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
+| Debian/Ubuntu | `effectcraft-<ver>-linux-x86_64.deb` | `effectcraft-<ver>-linux-aarch64.deb` | |
+| Fedora/RHEL/openSUSE | `effectcraft-<ver>-linux-x86_64.rpm` | `effectcraft-<ver>-linux-aarch64.rpm` | |
+| Tarball | `effectcraft-<ver>-linux-x86_64.tar.gz` | `effectcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+
+### FreeBSD
+
+| Build | File |
+|---|---|
+| x86_64 | `effectcraft-<ver>-freebsd-x86_64.tar.gz` |
+
+### Web (WebAssembly)
+
+| Build | File | Notes |
+|---|---|---|
+| Static site | `effectcraft-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
 
 ## The Crafting Apps
 

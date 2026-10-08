@@ -2352,6 +2352,39 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     ui.set_clip_rect(full_clip);
+    // The background responses sit below rows, bars and editors, preserving their menus.
+    if !graph_on {
+        app.auto.add("timeline.empty", empty_rect, "Right-click to create a layer");
+    }
+    for (response, area) in [(&outline_empty, "outline"), (&empty, "graph")] {
+        response.context_menu(|ui| {
+            let menu = ui.menu_button("New", |ui| {
+                for (key, label, command, params) in [
+                    ("text", "Text", "layer.newText", json!({"text": "Text"})),
+                    ("solid", "Solid…", "layer.newSolid", json!({})),
+                    ("light", "Light…", "layer.newLight", json!({})),
+                    ("camera", "Camera…", "layer.newCamera", json!({})),
+                    ("null", "Null Object", "layer.newNull", json!({})),
+                    ("shape", "Shape Layer", "layer.newShape", json!({"kind": "none"})),
+                    ("adjustment", "Adjustment Layer", "layer.newAdjustment", json!({})),
+                ] {
+                    let response = ui.button(label);
+                    app.auto.add(&format!("timeline.context.{area}.{key}"), response.rect, label);
+                    if response.clicked() {
+                        actions.push((command.into(), params));
+                        ui.close();
+                    }
+                }
+            });
+            app.auto.add(&format!("timeline.context.{area}.new"), menu.response.rect, "New");
+            let response = ui.button("Composition Settings…");
+            app.auto.add(&format!("timeline.context.{area}.settings"), response.rect, "Composition Settings…");
+            if response.clicked() {
+                actions.push(("comp.settings".into(), json!({})));
+                ui.close();
+            }
+        });
+    }
     if outline_empty.clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
         actions.push(("layer.select".into(), json!({"layers": []})));
     }

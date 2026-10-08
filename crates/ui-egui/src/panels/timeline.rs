@@ -685,8 +685,11 @@ fn build_rows(app: &EffectcraftApp, comp: &Comp) -> Vec<Row> {
 fn reveal_rows(app: &EffectcraftApp, l: &Layer, kinds: &[String], rows: &mut Vec<Row>) {
     let tl = &app.ui.timeline;
     let has = |k: &str| kinds.iter().any(|r| r == k);
-    let group_rows = |rows: &mut Vec<Row>, g: &PropGroup, fx: bool| {
+    // Groups shown with their whole contents: the revealed properties inside aren't listed again.
+    let mut shown_groups: Vec<u64> = vec![];
+    let mut group_rows = |rows: &mut Vec<Row>, g: &PropGroup, fx: bool| {
         for g in g.groups() {
+            shown_groups.push(g.uid);
             rows.push(Row {
                 layer: l.id,
                 depth: 1,
@@ -751,11 +754,6 @@ fn reveal_rows(app: &EffectcraftApp, l: &Layer, kinds: &[String], rows: &mut Vec
             wanted.extend(found);
         }
     }
-    if !wanted.is_empty() {
-        let mut found = vec![];
-        collect_props(&l.props, &mut found, &|p| wanted.contains(&p.uid));
-        rows.extend(found.into_iter().map(|uid| Row { layer: l.id, depth: 1, kind: RowKind::Prop { uid } }));
-    }
     // SS: the selected properties and groups (as Animation ▸ Reveal Properties shows them).
     let selected: std::collections::BTreeSet<u64> = app.session.state.selected_props.iter().filter(|(lid, _)| *lid == l.id).map(|(_, u)| *u).collect();
     if has("props") || has("selected") {
@@ -784,17 +782,124 @@ fn reveal_rows(app: &EffectcraftApp, l: &Layer, kinds: &[String], rows: &mut Vec
             if open {
                 push_group(rows, l, g, 2, &tl.open_groups);
             }
+            shown_groups.push(g.uid);
         }
-        let mut found = vec![];
-        collect_props(&l.props, &mut found, &|p| prop_visible(p, l) && reveal_props.contains(&p.uid) && !wanted.contains(&p.uid));
-        rows.extend(found.into_iter().map(|uid| Row { layer: l.id, depth: 1, kind: RowKind::Prop { uid } }));
+        wanted.extend(picked.iter().copied());
     }
+    revealed_rows(rows, l, &wanted, &shown_groups, &tl.open_groups);
     if has("waveform")
         && let Some(item) = super::waveform::audio_item(&app.session.project, l)
     {
         rows.push(Row { layer: l.id, depth: 1, kind: RowKind::Waveform { item: item.0 } });
     }
 }
+
+/// Rows for the revealed properties `shown` of `l`, in tree order. Those inside an effect show
+/// under the effect and its groups, as in After Effects (Puppet ▸ Mesh 1 ▸ Deform ▸ Puppet
+/// Pin 1 ▸ Position: every pin's Position is told apart, #273); the others (Transform, masks…)
+/// on their own. Groups in `skip` already show with their contents.
+fn revealed_rows(rows: &mut Vec<Row>, l: &Layer, shown: &std::collections::BTreeSet<u64>, skip: &[u64], open: &std::collections::BTreeSet<u64>) {
+    struct Tree<'a> {
+        l: &'a Layer,
+        wanted: &'a dyn Fn(&Property) -> bool,
+        skip: &'a [u64],
+        open: &'a std::collections::BTreeSet<u64>,
+    }
+    fn holds(g: &PropGroup, wanted: &dyn Fn(&Property) -> bool) -> bool {
+        g.children.iter().any(|c| match c {
+            Node::Prop(p) => wanted(p),
+            Node::Group(sg) => holds(sg, wanted),
+        })
+    }
+    // A group holding revealed properties (twirled as the user left it), then those inside.
+    fn group(rows: &mut Vec<Row>, t: &Tree<'_>, g: &PropGroup, depth: usize) {
+        if t.skip.contains(&g.uid) || !holds(g, t.wanted) {
+            return;
+        }
+        let o = t.open.contains(&g.uid);
+        let fx = matches!(g.kind, GroupKind::Effect { .. }).then_some(g.enabled);
+        rows.push(Row { layer: t.l.id, depth, kind: RowKind::Group { uid: g.uid, name: g.name.clone(), open: o, has_children: true, fx, eye: None } });
+        if !o {
+            return;
+        }
+        for c in &g.children {
+            match c {
+                Node::Prop(p) if (t.wanted)(p) => rows.push(Row { layer: t.l.id, depth: depth + 1, kind: RowKind::Prop { uid: p.uid } }),
+                Node::Group(sg) => group(rows, t, sg, depth + 1),
+                Node::Prop(_) => {}
+            }
+        }
+    }
+    let wanted = |p: &Property| shown.contains(&p.uid) && prop_visible(p, l);
+    let tree = Tree { l, wanted: &wanted, skip, open };
+    for c in &l.props.children {
+        match c {
+            Node::Group(fx) if fx.match_id == "effects" => {
+                for e in fx.groups() {
+                    group(rows, &tree, e, 1);
+                }
+            }
+            Node::Group(g) => {
+                let mut found = vec![];
+                collect_props(g, &mut found, &wanted);
+                rows.extend(found.into_iter().map(|uid| Row { layer: l.id, depth: 1, kind: RowKind::Prop { uid } }));
+            }
+            Node::Prop(p) if wanted(p) => rows.push(Row { layer: l.id, depth: 1, kind: RowKind::Prop { uid: p.uid } }),
+            Node::Prop(_) => {}
+        }
+    }
+}
+
+/// Uids of the groups that hold property `uid` of `l`, outermost first.
+fn enclosing_groups(l: &Layer, uid: u64) -> Vec<u64> {
+    let path = l.props.path_of(uid).unwrap_or_default();
+    let mut ids: Vec<u64> = path.split('/').filter_map(|s| s.strip_prefix('@')?.parse().ok()).collect();
+    ids.pop();
+    ids
+}
+
+/// Twirl open the groups holding `props` of `layer` that sit inside effects, so their rows show
+/// (a U reveal, an EE reveal, a puppet pin placed or moved in the viewer).
+pub(crate) fn open_effect_paths(app: &mut EffectcraftApp, layer: u64, props: &[u64]) {
+    let Some(l) = app.session.active_comp().and_then(|c| c.layer(LayerId(layer))) else { return };
+    let Some(fx) = l.effects().map(|g| g.uid) else { return };
+    let mut open = vec![];
+    for p in props {
+        let path = enclosing_groups(l, *p);
+        if path.first() == Some(&fx) {
+            open.extend(path);
+        }
+    }
+    app.ui.timeline.open_groups.extend(open);
+}
+
+/// After a reveal shortcut that picks properties by state (EE expressions): those inside effects
+/// on `layers` show under their effect, twirled open.
+pub(crate) fn open_revealed(app: &mut EffectcraftApp, layers: &[u64], kinds: &[String]) {
+    for kind in kinds.iter().filter(|k| matches!(k.as_str(), "animated" | "expressions")) {
+        for id in layers {
+            let Some(l) = app.session.active_comp().and_then(|c| c.layer(LayerId(*id))) else { continue };
+            let mut found = vec![];
+            collect_props(&l.props, &mut found, &|p| prop_visible(p, l) && reveal_matches(p, &[], kind));
+            open_effect_paths(app, *id, &found);
+        }
+    }
+}
+
+/// After the viewer edits a property (a puppet pin placed, moved or recorded): when `layer` is
+/// twirled open, its groups open, and a U reveal of the layer takes it in, so its keyframes show
+/// (#273). A collapsed layer stays collapsed, as in After Effects.
+pub fn keep_in_view(app: &mut EffectcraftApp, layer: LayerId, prop: u64) {
+    if !app.ui.timeline.open_layers.contains(&layer.0) {
+        return;
+    }
+    open_effect_paths(app, layer.0, &[prop]);
+    let tl = &mut app.ui.timeline;
+    if tl.layer_reveal.get(&layer.0).is_some_and(|k| k.iter().any(|k| k == "props")) {
+        tl.reveal_props.insert(prop);
+    }
+}
+
 fn collect_props(g: &PropGroup, out: &mut Vec<u64>, f: &dyn Fn(&Property) -> bool) {
     for c in &g.children {
         match c {

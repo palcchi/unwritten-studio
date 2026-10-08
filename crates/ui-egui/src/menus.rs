@@ -173,7 +173,8 @@ pub fn reveal(app: &mut EffectcraftApp, kind: &str, now: f64, add: bool) {
     } else {
         kinds = vec![kind.to_string()];
     }
-    tl.apply_reveal(&targets, kinds);
+    tl.apply_reveal(&targets, kinds.clone());
+    crate::panels::timeline::open_revealed(app, &targets, &kinds);
 }
 
 /// Show Time Remap on the layers of a `layer.enableTimeRemap` (`layers` by id, else the
@@ -1072,6 +1073,10 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             tl.apply_reveal(&hidden, vec![]);
             if !shown.is_empty() {
                 tl.apply_reveal(&shown, vec!["props".into()]);
+            }
+            // Properties inside effects (puppet pins…) show under their effect, twirled open.
+            for (layer, prop) in props.iter().filter_map(|x| Some((x.get("layer")?.as_u64()?, x.get("prop")?.as_u64()?))) {
+                crate::panels::timeline::open_effect_paths(app, layer, &[prop]);
             }
             json!({"revealed": found.len()})
         }

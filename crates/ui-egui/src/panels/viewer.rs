@@ -1456,10 +1456,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 Gesture::PuppetRecord { layer, pin, others, cti, samples, .. } => {
                     let pts: Vec<serde_json::Value> = samples.iter().map(|(t, p)| json!([t, p[0], p[1]])).collect();
                     let q = json!({"layer": layer.0, "pin": pin, "pins": others, "samples": pts, "start": cti.seconds()});
-                    if let Err(e) = app.session.execute("puppet.recordPin", q) {
-                        app.ui.status = e.to_string();
+                    match app.session.execute("puppet.recordPin", q) {
+                        Ok(_) => {
+                            for p in std::iter::once(pin).chain(others) {
+                                super::puppet_tool::reveal_pin(app, layer, p);
+                            }
+                        }
+                        Err(e) => app.ui.status = e.to_string(),
                     }
                 }
+                Gesture::PuppetPin { layer, pin, .. } => super::puppet_tool::reveal_pin(app, layer, pin),
                 Gesture::Create { tool, start } => {
                     let end = map.to_comp(pos);
                     create_shape(app, tool, start, end, mods.shift);
@@ -1555,9 +1561,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     && let Some(inv) = l2c(&ectx, l).0.inverse()
                 {
                     let lp = inv.apply(gv2(cpt[0], cpt[1]));
-                    let r = app.session.execute("puppet.addPin", json!({"layer": l.id.0, "kind": t.puppet_kind(), "position": [lp.x, lp.y]}));
-                    if let Err(e) = r {
-                        app.ui.status = e.to_string();
+                    match app.session.execute("puppet.addPin", json!({"layer": l.id.0, "kind": t.puppet_kind(), "position": [lp.x, lp.y]})) {
+                        Ok(r) => {
+                            if let Some(pin) = r["pin"].as_u64() {
+                                super::puppet_tool::reveal_pin(app, l.id, pin);
+                            }
+                        }
+                        Err(e) => app.ui.status = e.to_string(),
                     }
                 }
             }

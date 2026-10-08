@@ -100,7 +100,8 @@ time), primitive layers (Layer ▸ New ▸ Cube/Sphere/Plane/Torus/Cone/Cylinder
 Geometry Options), text and shape layers with Geometry Options ▸ Extrusion Depth (glyph and
 fill outlines flattened, triangulated with holes and extruded with Angular/Concave/Convex
 bevels, per character so per-character 3D carries over), and a textured card for every other
-3D layer. Shading is physically based in linear light (glTF metallic-roughness; Cook–Torrance
+3D layer. Classic 3D doesn't draw model or primitive layers, so adding one switches a Classic 3D
+comp to Advanced 3D in the same undo step, as in After Effects. Shading is physically based in linear light (glTF metallic-roughness; Cook–Torrance
 GGX specular, Smith–Schlick geometry, Schlick Fresnel, Lambert diffuse, after Karis 2013):
 parallel, spot and point lights with After Effects' falloffs, ambient lights, image-based
 light from an Environment light whose Source (or the comp's Environment Layer, Layer ▸

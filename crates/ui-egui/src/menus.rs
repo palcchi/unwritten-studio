@@ -1549,6 +1549,18 @@ pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     }
 }
 
+/// The entries of top-level menu `name` (the Effect menu is the Effect Controls panel's context
+/// menu); returns the chosen command and its params.
+pub(crate) fn menu_contents(app: &mut EffectcraftApp, ui: &mut egui::Ui, name: &str) -> Option<(String, Value)> {
+    let mut clicked = None;
+    if let Some(MenuNode::Submenu { children, .. }) =
+        effectcraft_engine::menus::menu_bar().iter().find(|n| matches!(n, MenuNode::Submenu { label, .. } if label == name))
+    {
+        menu_nodes(app, ui, children, &mut clicked);
+    }
+    clicked.map(|(id, params)| (id, if params.is_null() { json!({}) } else { params }))
+}
+
 fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], clicked: &mut Option<(String, Value)>) {
     for n in nodes {
         match n {

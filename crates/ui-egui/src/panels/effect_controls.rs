@@ -1063,6 +1063,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             ctx.data_mut(|d| d.remove::<u64>(drag_id));
         }
     }
+    // Right-click anywhere a control has no menu of its own: the Effect menu, which applies to
+    // the selected layers (After Effects). Drawn after the rows, whose menus open first.
+    let menu_id = bg.id.with("effect-menu");
+    let open = ui.input(|i| i.pointer.secondary_clicked())
+        && ui.rect_contains_pointer(body)
+        && (!egui::Popup::is_any_open(&ctx) || egui::Popup::is_id_open(&ctx, menu_id));
+    egui::Popup::context_menu(&bg).id(menu_id).open_memory(open.then_some(egui::SetOpenCommand::Bool(true))).show(|ui| {
+        ui.set_min_width(200.0);
+        actions.extend(crate::menus::menu_contents(app, ui, "Effect"));
+    });
     ui.set_clip_rect(panel_clip);
     let content_h = y + scroll - body.min.y;
     scroll = scroll.min((content_h - body.height()).max(0.0));

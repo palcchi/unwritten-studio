@@ -142,6 +142,12 @@ The most important missing piece: it turns every other estimate here into a meas
 - `.aep` / `.aepx` import is the largest single barrier to switching. It needs an **owner
   decision** on clean-room scope (whether and how the format may be studied), like the open
   `.prproj` question in `plan/STATUS.md`.
+- A candidate for that decision (#248): [py-aep](https://github.com/forticheprod/py-aep), an MIT
+  licensed Python library that reads and writes `.aep` files, reported by a user as working well.
+  It can't be linked into the pure-Rust app. It could run as an external converter (`.aep` to
+  `.ecproj`, the way ffmpeg is used only from outside), or its format knowledge could be ported.
+  The second means reading another implementation of the format, which AGENTS.md rules out
+  unless the clean-room scope allows it.
 - Also in this area: relative footage paths and relinking when a project moves (parity.md, Project).
 - Done when: the decision is recorded and, if approved, a corpus of real-world-shaped projects
   opens with its comps, layers, keyframes, effects and expressions intact.

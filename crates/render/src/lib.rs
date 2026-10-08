@@ -33,7 +33,7 @@ use effectcraft_project::{Comp, Footage, FootageKind, FrameBlend, GroupKind, Ite
 pub use effectcraft_raster::Image;
 use effectcraft_raster::{WarpOpts, composite_warp};
 use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
-pub use eval::{EvalCtx, ExprHost, source_size};
+pub use eval::{EvalCtx, ExprHost, effect_bounds, source_size};
 use rayon::prelude::*;
 
 /// Supplies decoded footage frames (implemented by the media layer).
@@ -80,13 +80,30 @@ pub fn is_vector_footage(f: &Footage) -> bool {
     matches!(f.codec.as_str(), "SVG" | "PDF" | "AI" | "EPS")
 }
 
-/// Layer parameters and audio for effects (see [`effectcraft_effects::EffectHost`]).
+/// Layer parameters and audio for effects (see [`effectcraft_effects::EffectHost`]). What it
+/// hands out is in effect space (see [`effect_bounds`]): the other layer's for its pixels, the
+/// running layer's for its own frames and the comp scene.
 struct FxHost<'r, 'a, 'c> {
     r: &'r Renderer<'a>,
     ctx: &'c EvalCtx<'a>,
     layer: &'c Layer,
+    /// Where the stack's effect space starts in layer coordinates (zero on adjustment layers,
+    /// whose effects run on the comp below).
+    origin: [f64; 2],
     /// Index of the effect being rendered (bounds `self_at` to effects before it).
     index: std::sync::atomic::AtomicUsize,
+}
+
+impl FxHost<'_, '_, '_> {
+    /// Another layer's pixels for a layer parameter, in its effect space; `layer_space`: `buf`
+    /// is still in layer space (its source or its content).
+    fn pixels(&self, other: &Layer, mut buf: Buf, layer_space: bool) -> LayerPixels {
+        let (size, origin) = self.ctx.effect_bounds(other);
+        if layer_space {
+            buf.rebase(origin);
+        }
+        LayerPixels { buf, size }
+    }
 }
 
 /// Nesting limit for effects that render layers (other layers, other times).
@@ -104,9 +121,7 @@ impl EffectHost for FxHost<'_, '_, '_> {
         let sub = self.r.nested();
         // The cached layer buffer is shared; effects get their own copy.
         let buf = if masks_and_effects { (*sub.content_buf(self.ctx, other)?).clone() } else { sub.source(self.ctx, other)? };
-        let size = source_size(self.r.project, other);
-        let size = if size.0 == 0 { [self.ctx.comp.width as f64, self.ctx.comp.height as f64] } else { [size.0 as f64, size.1 as f64] };
-        Some(LayerPixels { buf, size })
+        Some(self.pixels(other, buf, true))
     }
 
     fn layer_masks(&self, id: u64) -> Option<LayerPixels> {
@@ -116,9 +131,7 @@ impl EffectHost for FxHost<'_, '_, '_> {
         }
         let sub = self.r.nested();
         let buf = (*sub.layer_input(self.ctx, other, 0)?).clone();
-        let size = source_size(self.r.project, other);
-        let size = if size.0 == 0 { [self.ctx.comp.width as f64, self.ctx.comp.height as f64] } else { [size.0 as f64, size.1 as f64] };
-        Some(LayerPixels { buf, size })
+        Some(self.pixels(other, buf, false))
     }
 
     fn audio(&self, id: u64, start: f64, frames: usize, rate: u32) -> Option<Vec<f32>> {
@@ -194,7 +207,7 @@ impl EffectHost for FxHost<'_, '_, '_> {
             };
             Some(effectcraft_effects::CompLight { pos: [pos.x, pos.y, pos.z], dir: [dir.x / len, dir.y / len, dir.z / len], color: l.color, kind })
         });
-        Some(effectcraft_effects::CompScene { camera: Some(camera), light })
+        Some(effectcraft_effects::CompScene { camera: Some(camera), light }.rebased(self.origin))
     }
 
     fn layer_at(&self, id: u64, comp_time: f64, masks_and_effects: bool) -> Option<LayerPixels> {
@@ -204,10 +217,11 @@ impl EffectHost for FxHost<'_, '_, '_> {
         }
         let ctx = self.ctx.at(Tick::from_seconds_f64(comp_time));
         let sub = self.r.nested();
-        let buf = if masks_and_effects { (*sub.content_buf(&ctx, other)?).clone() } else { (*sub.layer_input(&ctx, other, 0)?).clone() };
-        let size = source_size(self.r.project, other);
-        let size = if size.0 == 0 { [self.ctx.comp.width as f64, self.ctx.comp.height as f64] } else { [size.0 as f64, size.1 as f64] };
-        Some(LayerPixels { buf, size })
+        Some(if masks_and_effects {
+            self.pixels(other, (*sub.content_buf(&ctx, other)?).clone(), true)
+        } else {
+            self.pixels(other, (*sub.layer_input(&ctx, other, 0)?).clone(), false)
+        })
     }
 }
 
@@ -870,16 +884,40 @@ impl<'a> Renderer<'a> {
         self.apply_effects_timed(ctx, layer, buf, adjustment, usize::MAX, None)
     }
 
-    /// Run the first `limit` effects of the layer's stack (by position; disabled ones count).
-    fn apply_effects_timed(&self, ctx: &EvalCtx, layer: &Layer, buf: Buf, adjustment: bool, limit: usize, timing: Option<&mut Vec<(String, f64)>>) -> Buf {
+    /// Run the first `limit` effects of the layer's stack (by position; disabled ones count) on
+    /// `buf` (layer space, or the comp below for an adjustment layer).
+    fn apply_effects_timed(&self, ctx: &EvalCtx, layer: &Layer, mut buf: Buf, adjustment: bool, limit: usize, timing: Option<&mut Vec<(String, f64)>>) -> Buf {
+        // The comp below an adjustment layer is not in its layer space: it stays as it is.
+        let origin = if adjustment { [0.0; 2] } else { ctx.effect_bounds(layer).1 };
+        buf.rebase(origin);
+        let mut out = self.effect_space_stack(ctx, layer, buf, adjustment, limit, timing, origin);
+        out.rebase([-origin[0], -origin[1]]);
+        out
+    }
+
+    /// [`Renderer::apply_effects_timed`] on a buffer already in effect space (measured from
+    /// `origin`, in layer coordinates); the result stays in effect space.
+    #[allow(clippy::too_many_arguments)]
+    fn effect_space_stack(
+        &self,
+        ctx: &EvalCtx,
+        layer: &Layer,
+        buf: Buf,
+        adjustment: bool,
+        limit: usize,
+        timing: Option<&mut Vec<(String, f64)>>,
+        origin: [f64; 2],
+    ) -> Buf {
         let mut t = CpuFx { accel: self.active_accel(), levels: self.pipe.levels, buf: Some(buf) };
-        self.run_effect_stack(ctx, layer, adjustment, limit, timing, &mut t);
+        self.run_effect_stack(ctx, layer, adjustment, limit, timing, origin, &mut t);
         t.buf.unwrap_or_else(|| Buf { img: Image::new(1, 1), offset: [0.0; 2], scale: self.opts.scale })
     }
 
-    /// Run the layer's video effect stack on `target`: runs of GPU-capable effects go to
-    /// [`FxTarget::gpu`] (when an accelerator is active and supports them), the rest to
-    /// [`FxTarget::cpu`] one by one (quantised to the bit depth after each).
+    /// Run the layer's video effect stack on `target` (in effect space, measured from `origin`
+    /// in layer coordinates): runs of GPU-capable effects go to [`FxTarget::gpu`] (when an
+    /// accelerator is active and supports them), the rest to [`FxTarget::cpu`] one by one
+    /// (quantised to the bit depth after each).
+    #[allow(clippy::too_many_arguments)]
     fn run_effect_stack(
         &self,
         ctx: &EvalCtx,
@@ -887,6 +925,7 @@ impl<'a> Renderer<'a> {
         adjustment: bool,
         limit: usize,
         mut timing: Option<&mut Vec<(String, f64)>>,
+        origin: [f64; 2],
         target: &mut dyn FxTarget,
     ) {
         if !layer.switches.effects {
@@ -894,17 +933,14 @@ impl<'a> Renderer<'a> {
         }
         let Some(fx) = layer.effects() else { return };
         let lt = layer.layer_time(ctx.time);
-        let size = source_size(self.project, layer);
-        // Layers without a source rectangle (shape, text) have comp-sized bounds centred on
-        // their origin, which their content surrounds.
-        let (layer_size, bounds_origin) = if size.0 == 0 {
-            let (w, h) = (ctx.comp.width as f64, ctx.comp.height as f64);
-            ([w, h], [-w / 2.0, -h / 2.0])
-        } else {
-            ([size.0 as f64, size.1 as f64], [0.0; 2])
-        };
-        let mask_shapes = masks::shapes(ctx, layer);
-        let host = FxHost { r: self, ctx, layer, index: Default::default() };
+        let layer_size = ctx.effect_bounds(layer).0;
+        let mut mask_shapes = masks::shapes(ctx, layer);
+        if origin != [0.0; 2] {
+            for q in mask_shapes.iter_mut().flat_map(|m| m.points.iter_mut()) {
+                *q = [q[0] - origin[0], q[1] - origin[1]];
+            }
+        }
+        let host = FxHost { r: self, ctx, layer, origin, index: Default::default() };
         let env = EffectEnv {
             masks: &mask_shapes,
             host: Some(&host),
@@ -914,7 +950,6 @@ impl<'a> Renderer<'a> {
             working_space: self.pipe.space,
             working_linear: self.pipe.linear,
             shutter: self.mb_on(ctx, layer).then_some((ctx.comp.shutter_angle, ctx.comp.shutter_phase, ctx.comp.motion_blur_samples)),
-            bounds_origin,
         };
         // Video effects in stack order (index, group, spec); disabled and audio effects skipped.
         let stack: Vec<(usize, &effectcraft_project::PropGroup, &'static effectcraft_effects::EffectSpec)> = fx
@@ -1243,8 +1278,9 @@ impl<'a> Renderer<'a> {
     }
 
     /// A layer's input at the context time: source → masks → its first `effects` effects
-    /// (what Time effects read at neighbouring times). Served from / stored in the layer cache
-    /// under its own key, so scrubbing reuses frames rendered for earlier output frames.
+    /// (what Time effects read at neighbouring times), in effect space (see [`effect_bounds`]):
+    /// what effect `effects` sees. Served from / stored in the layer cache under its own key,
+    /// so scrubbing reuses frames rendered for earlier output frames.
     pub fn layer_input(&self, ctx: &EvalCtx, layer: &Layer, effects: usize) -> Option<Arc<Buf>> {
         let key = self.cache.and_then(|_| cache::input_key(ctx, layer, self.raster_scale(ctx, layer), self.opts.draft, self.mb_on(ctx, layer), effects));
         let key = self.content_key(ctx, layer, key);
@@ -1254,8 +1290,10 @@ impl<'a> Renderer<'a> {
             return Some(b);
         }
         let mut buf = self.masked_source(ctx, layer)?;
+        let origin = ctx.effect_bounds(layer).1;
+        buf.rebase(origin);
         if effects > 0 {
-            buf = self.apply_effects_timed(ctx, layer, buf, false, effects, None);
+            buf = self.effect_space_stack(ctx, layer, buf, false, effects, None, origin);
         }
         let buf = Arc::new(buf);
         if let (Some(c), Some(k)) = (self.cache, key) {
@@ -1888,7 +1926,8 @@ impl<'a> Renderer<'a> {
     /// parameters and environment. `adjustment`: the stack runs on the comp below (adjustment
     /// layers).
     pub fn run_effects_on(&self, ctx: &EvalCtx, layer: &Layer, adjustment: bool, target: &mut dyn FxTarget) {
-        self.run_effect_stack(ctx, layer, adjustment, usize::MAX, None, target);
+        // `target` is used as it is: the comp below for adjustment layers (the callers).
+        self.run_effect_stack(ctx, layer, adjustment, usize::MAX, None, [0.0; 2], target);
     }
 
     /// An adjustment layer's footprint (its source with masks applied, layer space): where

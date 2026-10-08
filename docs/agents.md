@@ -174,6 +174,15 @@ build real projects through these interfaces; they are worked examples of everyt
   Save / Don't Save / Cancel prompt (`ui_click` on `dialog.unsaved.save` / `dontSave` / `cancel`;
   `dialog.unsaved.revert` for Revert); the control channel's `app.quit {"force": true}` skips it.
 
+### Effect positions
+
+Effect points, Puppet pins (`puppet.addPin`, `puppet.recordPin`), Paint, Liquify and Roto Brush
+strokes and `effect.pickColor` are in **effect space**: layer pixels from the top-left of the
+layer's effect bounds. For footage, solids and precomps that is the layer's own pixel grid. Shape
+and text layers have comp-sized bounds centred on their content's origin, so in a `w` × `h` comp
+the point `[w / 2, h / 2]` is that origin (a new effect's default point). `prop.get` / `prop.set`
+read and write these values as they are.
+
 ### Motion tracking
 
 Trackers live on the tracked layer (`Motion Trackers ▸ Tracker n ▸ Track Point n`) and are driven
@@ -304,7 +313,7 @@ effectcraft-cli run shot.ecproj camera.createFromSolve '{"kind":"solid","points"
 
 The Roto Brush tool (Alt+W cycles Roto Brush / Refine Edge) paints in the Layer panel; agents use
 `roto.stroke {layer, kind: fg|bg|refine|refineErase, points: [[x, y], …], frame?, radius?}`
-(layer pixels, layer frames). The first foreground stroke applies the Roto Brush & Refine Edge
+(effect space, layer frames). The first foreground stroke applies the Roto Brush & Refine Edge
 effect and sets the base frame with a span of 20 frames each side. `roto.propagate {layer,
 direction?: forward|backward|both, to?, wait?}` segments the span (in the background unless
 `wait`); strokes on any other frame correct it and propagation restarts from there.
@@ -409,7 +418,7 @@ that closes the dialog). File ▸ Scripts: `file.scripts.list`, `file.runScript 
   states as a branch); `edit.history.goto {"index": n}` (or `id`, or `steps`) jumps to any of
   them. MCP: the `history` tool.
 * `puppet.recordPin {"layer": "#1", "pin": "Puppet Pin 1", "samples": [[t, x, y]…]}` records a
-  drag (t = seconds since it began, layer space) into Position keys at the comp frame rate from the
+  drag (t = seconds since it began, effect space) into Position keys at the comp frame rate from the
   current time; `puppet.recordOptions {speed, smoothing, useDraftDeformation, showMesh}`.
 * `puppet.selectPins {"layer": "#1", "pins": ["Puppet Pin 1"], "add"?, "toggle"?}` selects pins
   like the viewer's click / Shift-click (`pins: []` deselects); Edit ▸ Clear (Delete) then removes

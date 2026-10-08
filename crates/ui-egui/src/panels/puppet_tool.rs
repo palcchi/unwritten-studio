@@ -12,7 +12,7 @@ use effectcraft_engine::render::EvalCtx;
 use effectcraft_engine::time::Tick;
 use egui::{Color32, Pos2, Stroke};
 
-use super::viewer::{ViewerMap, l2c};
+use super::viewer::{ViewerMap, fx2c};
 use crate::EffectcraftApp;
 
 /// Deformed meshes of a layer's Puppet effect: (mesh uid, mesh, deformed vertices, pins).
@@ -82,7 +82,7 @@ pub fn overlay(app: &EffectcraftApp, ctx: &egui::Context, cid: ItemId, layer: &L
     Some(overlay)
 }
 
-/// Where a pin sits now (layer space): its Position, or (Bend / Starch / Overlap pins) its rest
+/// Where a pin sits now (effect space): its Position, or (Bend / Starch / Overlap pins) its rest
 /// point carried along by the deformation.
 pub fn pin_position(mesh: &Mesh, def: &[[f64; 2]], p: &Pin) -> [f64; 2] {
     if p.kind.moves() {
@@ -124,7 +124,7 @@ pub fn draw(
     selected: &[u64],
     hover: Option<Pos2>,
 ) -> Vec<PinHit> {
-    let (m, _) = l2c(ectx, layer);
+    let m = fx2c(ectx, layer);
     let scr = |q: [f64; 2]| {
         let c = m.apply(gv2(q[0], q[1]));
         map.to_screen([c.x, c.y])

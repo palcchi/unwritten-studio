@@ -927,31 +927,46 @@ impl Session {
 
 /// Bring effect instances saved by earlier versions up to date with the effect registry
 /// (renamed / regrouped / added parameters, reordered popups; see
-/// [`effectcraft_effects::migrate`]).
+/// [`effectcraft_effects::migrate`]), and a project from before
+/// [`effectcraft_project::SCHEMA_EFFECT_SPACE`] into effect space
+/// ([`effectcraft_effects::migrate::to_effect_space`]). Stamps the current schema.
 pub fn upgrade_effects(p: &mut Project) {
-    let mut sizes = std::collections::HashMap::new();
+    let to_effect_space = p.schema < effectcraft_project::SCHEMA_EFFECT_SPACE;
+    // Effect bounds per layer: (size, top-left in layer coordinates).
+    let mut bounds = std::collections::HashMap::new();
     for (cid, c) in p.comps() {
         for l in &c.layers {
-            let (w, h) = effectcraft_render::source_size(p, l);
-            sizes.insert((*cid, l.id), if w == 0 { [c.width as f64, c.height as f64] } else { [w as f64, h as f64] });
+            bounds.insert((*cid, l.id), effectcraft_render::effect_bounds(p, c, l));
         }
     }
     let mut next = p.next_id;
     for (cid, it) in p.items.iter_mut() {
         let effectcraft_project::ItemKind::Comp(c) = &mut it.kind else { continue };
         for l in &mut std::sync::Arc::make_mut(c).layers {
-            let size = sizes.get(&(*cid, l.id)).copied().unwrap_or([100.0, 100.0]);
+            let (size, origin) = bounds.get(&(*cid, l.id)).copied().unwrap_or(([100.0, 100.0], [0.0; 2]));
+            // Effect space starts at the bounds' top-left: positions move by minus that corner.
+            // Adjustment layers run their effects on the comp below as it is: nothing moves.
+            let shift = |o: [f64; 2]| [-o[0], -o[1]];
+            let d = if l.switches.adjustment { [0.0; 2] } else { shift(origin) };
+            let clone_d = |src: Option<u64>| match src {
+                Some(id) => bounds.get(&(*cid, effectcraft_project::LayerId(id))).map_or([0.0; 2], |b| shift(b.1)),
+                None => d,
+            };
             let Some(fx) = l.props.sub_mut("effects") else { continue };
             for n in &mut fx.children {
                 let effectcraft_project::Node::Group(g) = n else { continue };
                 let effectcraft_project::GroupKind::Effect { effect } = &g.kind else { continue };
                 if let Some(spec) = effectcraft_effects::find(effect) {
                     effectcraft_effects::migrate::upgrade_instance(spec, g, &mut effectcraft_project::build::Ids(&mut next), size);
+                    if to_effect_space {
+                        effectcraft_effects::migrate::to_effect_space(spec, g, size, d, &clone_d);
+                    }
                 }
             }
         }
     }
     p.next_id = next;
+    p.schema = effectcraft_project::SCHEMA_VERSION;
 }
 
 #[cfg(test)]

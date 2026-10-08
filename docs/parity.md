@@ -549,7 +549,7 @@ Since (M5.16): Key Light (After Effects' Keylight 1.2) is checked end to end on 
 plate with an uneven screen, spill and soft edges (`effect.apply "Keylight (1.2)"`, pick, Clip
 Black / White, render). The colour eyedroppers of Keying effects sample the effect's input
 rather than the keyed frame (Ctrl/Cmd+click averages 5 × 5 pixels); agents do the same with
-`effect.pickColor {effect, param, x, y, average?}` (layer pixels). Searching "keylight" in
+`effect.pickColor {effect, param, x, y, average?}` (effect space). Searching "keylight" in
 Effects & Presets, or `list_effects`, finds it.
 
 ## Update: M4.9–M4.11 nested comps and motion blur

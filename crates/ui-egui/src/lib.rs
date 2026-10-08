@@ -1569,7 +1569,7 @@ impl eframe::App for EffectcraftApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_gpu_failure(ctx);
         if !self.styled {
-            theme::install(ctx, &self.tokens);
+            theme::install(ctx, &self.tokens, &self.session.prefs.general.language);
             fit_window(ctx);
             self.styled = true;
             ctx.request_repaint();

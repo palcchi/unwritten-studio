@@ -2244,7 +2244,7 @@ mod tests {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
         let ctx = egui::Context::default();
         let tokens = crate::theme::Tokens::for_kind(crate::theme::ThemeKind::Dark);
-        crate::theme::install(&ctx, &tokens);
+        crate::theme::install(&ctx, &tokens, &app.session.prefs.general.language);
         crate::panels::settings::open(&mut app, "general");
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {
             crate::panels::settings::show(&mut app, &ctx, &tokens);

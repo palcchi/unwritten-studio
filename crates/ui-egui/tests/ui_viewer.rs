@@ -1434,6 +1434,36 @@ fn handle_drags_snap_to_the_comp_edges() {
     assert!(close(s, [100.0, 100.0]), "{s:?}");
 }
 
+/// The arrow keys over the Composition panel nudge the selected layer 1 pixel at the viewer's
+/// magnification (half a comp pixel at 200 %), Shift+arrow 10, one undo step each (#290).
+#[test]
+fn arrow_keys_nudge_the_selected_layer_at_the_viewer_magnification() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id;
+    h.state_mut().session.execute("prop.set", json!({"layer": box_id.0, "path": "transform/position", "value": [100, 100, 0]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.run_steps(2);
+    let at = screen(&h, [100.0, 100.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_layers, vec![box_id]);
+    let pos = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().value.as_vec3()
+    };
+    let ppp = h.ctx.pixels_per_point();
+    h.state_mut().ui.viewer.zoom = Some(1.0 / ppp);
+    h.run_steps(2);
+    let undo = h.state().session.history.undo.len();
+    key(&mut h, egui::Key::ArrowRight, egui::Modifiers::NONE);
+    key(&mut h, egui::Key::ArrowDown, egui::Modifiers::SHIFT);
+    assert_eq!(pos(&h), [101.0, 110.0, 0.0]);
+    assert_eq!(h.state().session.history.undo.len(), undo + 2, "one undo step per press");
+    h.state_mut().ui.viewer.zoom = Some(2.0 / ppp);
+    h.run_steps(2);
+    key(&mut h, egui::Key::ArrowLeft, egui::Modifiers::NONE);
+    key(&mut h, egui::Key::ArrowUp, egui::Modifiers::NONE);
+    assert_eq!(pos(&h), [100.5, 109.5, 0.0], "sub-pixel steps when zoomed in");
+}
+
 /// A comp wider than the GPU's texture limit at Full resolution shows its frame (averaged down
 /// into a texture the renderer accepts) instead of failing the upload (#201: 11000×2200).
 #[test]

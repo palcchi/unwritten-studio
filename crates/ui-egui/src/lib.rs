@@ -503,6 +503,7 @@ impl EffectcraftApp {
         self.gpu_checked = true;
         self.frames.retire_gpu();
         self.session.accel = None;
+        self.session.accel_note = Some(format!("GPU preview retired: {}", failure.reason));
         self.session.layer_cache.clear();
         self.gpu = None;
         if let Some(rs) = &self.wgpu {
@@ -559,10 +560,14 @@ impl EffectcraftApp {
                 self.gpu = Some(g);
                 self.wgpu = Some(rs.clone());
             }
-            Ok(Err(e)) => log::info!("GPU compositor unavailable: {e}"),
+            Ok(Err(e)) => {
+                log::info!("GPU compositor unavailable: {e}");
+                self.session.accel_note = Some(format!("GPU compositor unavailable: {e}"));
+            }
             Err(e) => {
                 let reason = e.downcast_ref::<String>().map(String::as_str).or_else(|| e.downcast_ref::<&str>().copied()).unwrap_or("backend panicked");
                 log::warn!("GPU compositor setup failed; using CPU compositing: {reason}");
+                self.session.accel_note = Some(format!("GPU compositor setup failed: {reason}"));
             }
         }
     }

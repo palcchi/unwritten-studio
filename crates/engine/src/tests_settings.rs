@@ -536,3 +536,15 @@ fn unicode_label_colors_fall_back_without_panicking() {
     s.execute("prefs.set", json!({"key": "labels.0.color", "value": "#aBcD09"})).unwrap();
     assert_eq!(s.prefs.label_rgb(Label::Red), [0xab, 0xcd, 9]);
 }
+
+/// `render.backend` says why it renders on the CPU (#262): the Software Only renderer, or the
+/// host's reason there is no GPU compositor.
+#[test]
+fn render_backend_says_why_it_renders_on_the_cpu() {
+    let mut s = Session::default();
+    let why = |s: &mut Session| s.execute("render.backend", json!({})).unwrap()["why"].clone();
+    assert_eq!(why(&mut s), json!("no GPU compositor is attached"));
+    s.accel_note = Some("headless: renders on the CPU unless started with --gpu".into());
+    assert_eq!(why(&mut s), json!("headless: renders on the CPU unless started with --gpu"));
+    assert_eq!(s.execute("render.backend", json!({"backend": "cpu"})).unwrap()["why"], json!("the project's renderer is Mercury Software Only"));
+}

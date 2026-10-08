@@ -322,8 +322,10 @@ fn backend(args: &Args, default_demo: bool) -> Result<Backend, Failure> {
 fn session(args: &Args) -> Result<effectcraft_engine::Session, Failure> {
     let mut s = effectcraft_host::session();
     if args.flag("--gpu") {
-        let g = effectcraft_gpu::Gpu::headless().ok_or_else(|| Failure::Error("--gpu: no usable GPU adapter".into()))?;
+        let g = effectcraft_gpu::Gpu::try_headless().map_err(|e| Failure::Error(format!("--gpu: no usable GPU adapter ({e})")))?;
         s.accel = Some(std::sync::Arc::new(g));
+    } else {
+        s.accel_note = Some("headless: renders on the CPU unless started with --gpu".into());
     }
     Ok(s)
 }
@@ -1069,7 +1071,7 @@ fn adv3d_bench_comp(p: &mut effectcraft_engine::project::Project) -> Option<Item
 /// warm; "up/dn MB" are the GPU's uploads / readbacks per warm GPU frame.
 fn bench_gpu(s: &Session, args: &Args) -> Result<(), Failure> {
     use effectcraft_render::Backend;
-    let gpu = effectcraft_gpu::Gpu::headless().ok_or_else(|| Failure::Error("--gpu: no usable GPU adapter".into()))?;
+    let gpu = effectcraft_gpu::Gpu::try_headless().map_err(|e| Failure::Error(format!("--gpu: no usable GPU adapter ({e})")))?;
     let n = args.num("--n")?.unwrap_or(10.0).max(1.0) as usize;
     // Every comp, plus an adjustment-layer comp built for the benchmark (the main comp under a
     // full-frame adjustment layer with a GPU effect stack) and an Advanced 3D comp (`--adv3d`:

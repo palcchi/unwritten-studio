@@ -895,7 +895,14 @@ impl<'a> Renderer<'a> {
         let Some(fx) = layer.effects() else { return };
         let lt = layer.layer_time(ctx.time);
         let size = source_size(self.project, layer);
-        let layer_size = if size.0 == 0 { [ctx.comp.width as f64, ctx.comp.height as f64] } else { [size.0 as f64, size.1 as f64] };
+        // Layers without a source rectangle (shape, text) have comp-sized bounds centred on
+        // their origin, which their content surrounds.
+        let (layer_size, bounds_origin) = if size.0 == 0 {
+            let (w, h) = (ctx.comp.width as f64, ctx.comp.height as f64);
+            ([w, h], [-w / 2.0, -h / 2.0])
+        } else {
+            ([size.0 as f64, size.1 as f64], [0.0; 2])
+        };
         let mask_shapes = masks::shapes(ctx, layer);
         let host = FxHost { r: self, ctx, layer, index: Default::default() };
         let env = EffectEnv {
@@ -907,6 +914,7 @@ impl<'a> Renderer<'a> {
             working_space: self.pipe.space,
             working_linear: self.pipe.linear,
             shutter: self.mb_on(ctx, layer).then_some((ctx.comp.shutter_angle, ctx.comp.shutter_phase, ctx.comp.motion_blur_samples)),
+            bounds_origin,
         };
         // Video effects in stack order (index, group, spec); disabled and audio effects skipped.
         let stack: Vec<(usize, &effectcraft_project::PropGroup, &'static effectcraft_effects::EffectSpec)> = fx

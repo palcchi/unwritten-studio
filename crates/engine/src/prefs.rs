@@ -22,6 +22,13 @@ pub const PREFS_VERSION: u32 = 2;
 /// Settings file name in the config store.
 pub const PREFS_FILE: &str = "prefs.json";
 
+/// Settings ▸ General ▸ Language: (label, `general.language` value).
+pub const LANGUAGES: &[(&str, &str)] = &[("Match System", "system"), ("English", "en"), ("日本語", "ja")];
+
+fn is_language(v: &str) -> bool {
+    LANGUAGES.iter().any(|(_, l)| *l == v)
+}
+
 /// Unknown keys inside a page, kept so a newer version's settings survive a round trip.
 type Extra = BTreeMap<String, Value>;
 
@@ -44,8 +51,9 @@ macro_rules! page {
 }
 
 page!(General {
-    /// Interface language (`en` or `ja`).
-    language: String = "en".into(),
+    /// Interface language: `system` (the operating system's, where EffectCraft has it, else
+    /// English), `en` or `ja`.
+    language: String = "system".into(),
     /// Levels of Undo (1–99).
     undo_levels: u32 = 32,
     /// Path Point and Handle Size (px).
@@ -417,8 +425,8 @@ impl Prefs {
     pub fn normalize(&mut self) {
         self.version = PREFS_VERSION;
         let g = &mut self.general;
-        if !matches!(g.language.as_str(), "en" | "ja") {
-            g.language = "en".into();
+        if !is_language(&g.language) {
+            g.language = General::default().language;
         }
         g.undo_levels = g.undo_levels.clamp(1, 99);
         g.path_point_size = g.path_point_size.clamp(3, 20);
@@ -458,8 +466,9 @@ impl Prefs {
 
     /// Set the value at a dotted key. The key must exist and the value must have its type.
     pub fn set(&mut self, key: &str, value: Value) -> Result<(), String> {
-        if key == "general.language" && !matches!(value.as_str(), Some("en" | "ja")) {
-            return Err("`general.language` expects `en` or `ja`".into());
+        if key == "general.language" && !value.as_str().is_some_and(is_language) {
+            let all: Vec<&str> = LANGUAGES.iter().map(|(_, l)| *l).collect();
+            return Err(format!("`general.language` expects one of {}", all.join(", ")));
         }
         let mut v = serde_json::to_value(&*self).map_err(|e| e.to_string())?;
         let ptr = format!("/{}", key.replace('.', "/"));
@@ -885,7 +894,7 @@ pub fn pages() -> Vec<Page> {
             id: "general",
             title: "General",
             items: vec![
-                s("general.language", "Language", Kind::Choice(&[("English", "en"), ("日本語", "ja")]), true),
+                s("general.language", "Language", Kind::Choice(LANGUAGES), true),
                 s("general.undoLevels", "Levels of Undo", Kind::Int(1, 99, ""), true),
                 s("general.pathPointSize", "Path Point and Handle Size", Kind::Int(3, 20, "px"), true),
                 s("general.recentItems", "Recent Projects Shown", Kind::Int(1, 30, ""), true),

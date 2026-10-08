@@ -15,6 +15,7 @@
 //!     [--jpeg-quality N] [--bitrate KBPS] [--prores proxy|lt|standard|hq|4444|4444xq] [--audio auto|on|off]
 //!     [--profile main|main10] [--level auto|4.1] [--rate-control bitrate|quality] [--video-quality 1-100]
 //!     [--keyint FRAMES] [--webm-codec vp9|av1] [--audio-bitrate KBPS] [--opus-app audio|voice]
+//!     (a relative --out is relative to the working directory; --queue outputs follow the project's own settings)
 //! effectcraft-cli render F.ecproj --queue                    render the project's Render Queue
 //! effectcraft-cli bench [--comp C] [--time S] [--scale K] [--n N] [--play N] [--gpu [--adv3d]]   render timings
 //!     (--gpu: CPU vs GPU ms/frame for every comp at Full and Half)
@@ -100,6 +101,7 @@ const USAGE: &str = "usage: effectcraft-cli <info|commands|exec|run|props|get|se
          [--keyint FRAMES] [--webm-codec vp9|av1] [--audio-bitrate KBPS] [--opus-app audio|voice] | --queue
                                            (formats h264|hevc|av1|prores|webm|png|jpeg|tiff|exr|gif|wav|aiff;
                                            --profile..--keyint: HEVC / AV1, --audio-bitrate/--opus-app: WebM Opus)
+                                           a relative --out is relative to the working directory
   bench [--comp C] [--time S] [--scale K] [--n N] [--play N] [--gpu [--adv3d]]   per-layer/effect render timings;
                                            --play N renders N consecutive frames with/without the layer cache;
                                            --gpu compares CPU and GPU ms/frame for every comp at Full and Half
@@ -587,6 +589,12 @@ fn with_saved(v: Value, saved: Option<String>) -> Value {
     }
 }
 
+/// A relative `--out` is relative to the working directory, like `--project` and every other CLI
+/// path. The Render Queue alone would resolve it against the project's folder.
+fn from_cwd(path: &str) -> Result<String, Failure> {
+    std::path::absolute(path).map(|p| p.to_string_lossy().into_owned()).map_err(|e| Failure::Error(format!("render: cannot resolve --out {path}: {e}")))
+}
+
 /// `render`: queue `--comp` (or the active comp) with the given settings unless `--queue`, then
 /// render the queue with a progress line on stderr. Fails if any item fails.
 fn render(args: &Args, json_out: bool) -> Result<(), Failure> {
@@ -602,6 +610,7 @@ fn render(args: &Args, json_out: bool) -> Result<(), Failure> {
     let err = |e: effectcraft_engine::EngineError| Failure::Error(e.to_string());
     if !args.flag("--queue") {
         let Some(out) = args.opt("--out") else { return usage_err("render: --out FILE is required (or --queue)") };
+        let out = &from_cwd(out)?;
         let mut p = json!({"output": out});
         if let Some(c) = args.opt("--comp") {
             p["comp"] = json!(c);

@@ -3,12 +3,13 @@
 use std::path::Path;
 
 use crate::autosave::{self, Sentinel};
+use crate::ease_presets::EASE_PRESETS_FILE;
 use crate::prefs::{PREFS_FILE, Prefs};
 use crate::shortcuts::{Keymaps, SHORTCUTS_FILE, ShortcutTable, UiCommand};
 use crate::{EngineError, Result, Session};
 
 impl Session {
-    /// Load settings and shortcut presets from the config store and apply them.
+    /// Load settings, shortcut and ease presets from the config store and apply them.
     pub fn load_settings(&mut self) {
         if let Some(c) = &self.config {
             if let Some(t) = c.read(PREFS_FILE) {
@@ -16,6 +17,9 @@ impl Session {
             }
             if let Some(t) = c.read(SHORTCUTS_FILE) {
                 self.keymaps = Keymaps::from_json(&t);
+            }
+            if let Some(t) = c.read(EASE_PRESETS_FILE) {
+                self.ease_presets = crate::ease_presets::parse(&t);
             }
         }
         self.prefs_changed();

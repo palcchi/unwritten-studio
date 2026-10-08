@@ -193,11 +193,22 @@ pub fn text_fit(p: &egui::Painter, pos: egui::Pos2, align: Align2, text: &str, f
 
 /// Rounded search field with a magnifier icon.
 pub fn search_field(ui: &mut Ui, rect: Rect, text: &mut String, hint: &str, t: &Tokens) -> Response {
+    field(ui, rect, text, hint, t, true)
+}
+
+/// Rounded text field.
+pub fn text_field(ui: &mut Ui, rect: Rect, text: &mut String, hint: &str, t: &Tokens) -> Response {
+    field(ui, rect, text, hint, t, false)
+}
+
+fn field(ui: &mut Ui, rect: Rect, text: &mut String, hint: &str, t: &Tokens, search: bool) -> Response {
     let h = rect.height();
     ui.painter().rect_filled(rect, h / 2.0, t.field_bg);
     ui.painter().rect_stroke(rect, h / 2.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
-    icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.min.x + 12.0, rect.center().y), vec2(12.0, 12.0)), Icon::Search, t.text_dim);
-    let inner = Rect::from_min_max(pos2(rect.min.x + 22.0, rect.min.y + 1.0), pos2(rect.max.x - 8.0, rect.max.y - 1.0));
+    if search {
+        icons::paint(ui.painter(), Rect::from_center_size(pos2(rect.min.x + 12.0, rect.center().y), vec2(12.0, 12.0)), Icon::Search, t.text_dim);
+    }
+    let inner = Rect::from_min_max(pos2(rect.min.x + if search { 22.0 } else { 9.0 }, rect.min.y + 1.0), pos2(rect.max.x - 8.0, rect.max.y - 1.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     child.add(
         egui::TextEdit::singleline(text)

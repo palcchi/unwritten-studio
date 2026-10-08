@@ -185,6 +185,9 @@ The most important missing piece: it turns every other estimate here into a meas
 - After Effects SDK plug-ins cannot run in EffectCraft. Our own WebAssembly plug-in API exists
   ([plugins.md](plugins.md)). Grow it: documentation, examples, and original effects that cover
   what the most common third-party plug-ins are used for (particles, glows, 3D objects, sabers).
+- Done so far: ease presets (Window ▸ Ease Presets, `keys.easePreset.*`, #254) cover what
+  ease-curve plug-ins are used for: easing curves kept by name, drawn and edited in a value graph,
+  and applied to pairs of keyframes ([parity.md](parity.md#update-ease-presets-254)).
 
 ### G9. Reach
 

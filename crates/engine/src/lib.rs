@@ -15,6 +15,7 @@ pub mod camera_track;
 pub mod commands;
 pub mod config;
 pub mod demo;
+pub mod ease_presets;
 pub mod footage_check;
 pub mod guard;
 pub mod history;
@@ -384,6 +385,8 @@ pub struct Session {
     pub config: Option<Arc<dyn config::ConfigStore>>,
     /// Keyboard shortcut presets.
     pub keymaps: shortcuts::Keymaps,
+    /// User ease presets (Window ▸ Ease Presets; the built-in ones are in [`ease_presets`]).
+    pub ease_presets: Vec<ease_presets::EasePreset>,
     /// Frontend-only commands offered for binding.
     pub ui_commands: Vec<shortcuts::UiCommand>,
     /// Cache of the resolved active preset (read it with [`Session::shortcuts`]).
@@ -493,6 +496,7 @@ impl Default for Session {
             prefs_revision: 0,
             config: None,
             keymaps: shortcuts::Keymaps::default(),
+            ease_presets: vec![],
             ui_commands: vec![],
             shortcut_table: std::sync::OnceLock::new(),
             autosave: autosave::AutoSaveState::default(),
@@ -962,6 +966,8 @@ mod tests_codec_options;
 mod tests_color_view;
 #[cfg(test)]
 mod tests_disk_cache;
+#[cfg(test)]
+mod tests_ease_presets;
 #[cfg(test)]
 mod tests_effects;
 #[cfg(test)]

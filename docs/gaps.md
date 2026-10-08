@@ -104,6 +104,17 @@ The most important missing piece: it turns every other estimate here into a meas
   tool), `right_click_in_effect_controls_shows_the_effect_menu`,
   `project_items_dropped_on_new_comp_make_a_composition` and
   `dragging_over_layer_switches_sets_them_all`.
+- Regression evidence for the shape layer items of
+  [#227](https://github.com/storytold/effectcraft/issues/227), checked headlessly on Windows:
+  `shape_tools_draw_into_the_selected_shape_layer` and `ui_viewer`
+  `shape_tool_draws_into_the_selected_shape_layer` (a shape tool adds a group to the selected
+  shape layer), `shape_contents_copy_cut_and_paste_between_shape_layers` and
+  `ctrl_c_and_ctrl_v_copy_a_shape_group_into_another_shape_layer` (Copy, Cut and Paste of shape
+  items), `duplicate_with_shape_items_selected_duplicates_them_in_place` and
+  `ctrl_d_duplicates_the_selected_shape_group_in_its_layer` (Duplicate), and
+  `shape_tool_options_paint_new_shapes`, `masks_of_every_shape_tool_kind`,
+  `tool_creates_mask_draws_a_mask_on_the_selected_shape_layer` and
+  `fill_options_paint_the_next_shape` (Tool Creates Shape / Mask, Fill and Stroke Options).
 - Done when: no open bug blocks a basic workflow (import, arrange, animate, preview, render) on
   any of the three desktop platforms, and every bug users report gets triaged within a day.
 

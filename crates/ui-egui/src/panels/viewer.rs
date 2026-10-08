@@ -1654,8 +1654,9 @@ fn draw_rigs(app: &mut EffectcraftApp, painter: &egui::Painter, map: &ViewerMap,
 
 /// Pen tool press at `pos`: continue the path in progress (pressing its first vertex closes it),
 /// add a vertex on a visible path's segment, or start a new path: a mask on the selected
-/// footage/solid layer, a shape path (Shape n group with Fill and Stroke) on the selected shape
-/// layer, or a new shape layer when nothing is selected. The placed point snaps.
+/// footage/solid layer (or shape layer, with Tool Creates Mask), a shape path (Shape n group with
+/// the Tools bar's Fill and Stroke) on the selected shape layer, or a new shape layer when
+/// nothing is selected. The placed point snaps.
 fn pen_press(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, map: &ViewerMap, paths: &[ov::PathInfo], pos: Pos2, mods: egui::Modifiers) {
     use effectcraft_engine::project::LayerSource;
     let gid = egui::Id::new("viewer-gesture");
@@ -1702,7 +1703,7 @@ fn pen_press(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, map: &
         .find(|id| ectx.comp.layer(*id).is_some_and(|l| !l.switches.locked && (l.masks().is_some() || matches!(l.source, LayerSource::Shape))));
     let layer = target.and_then(|id| ectx.comp.layer(id));
     let (lid, uid, inv) = match layer {
-        Some(l) if !matches!(l.source, LayerSource::Shape) => {
+        Some(l) if !matches!(l.source, LayerSource::Shape) || app.session.state.shape_tool.creates_mask => {
             let Some(inv) = l2c(ectx, l).0.inverse() else { return };
             let lp = inv.apply(gv2(c[0], c[1]));
             let Ok(v) = app.session.execute("mask.new", json!({"layer": l.id.0, "vertices": [[lp.x, lp.y]]})) else { return };
@@ -1712,23 +1713,13 @@ fn pen_press(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, map: &
         Some(l) => {
             let Some(inv) = l2c(ectx, l).0.inverse() else { return };
             let lp = inv.apply(gv2(c[0], c[1]));
-            let fill = app.ui.fill_color;
-            let stroke = app.ui.stroke_color;
-            let r = app.session.execute(
-                "shape.newPath",
-                json!({"layer": l.id.0, "vertices": [[lp.x, lp.y]], "space": "layer", "fill": [fill[0], fill[1], fill[2]], "stroke": [stroke[0], stroke[1], stroke[2]], "strokeWidth": app.ui.stroke_width}),
-            );
+            let r = app.session.execute("shape.newPath", json!({"layer": l.id.0, "vertices": [[lp.x, lp.y]], "space": "layer"}));
             let Some(path) = r.ok().and_then(|v| v["path"].as_u64()) else { return };
             (l.id, path, inv)
         }
         None => {
             // A new shape layer at the comp centre (unrotated: comp → layer is a translation).
-            let fill = app.ui.fill_color;
-            let stroke = app.ui.stroke_color;
-            let r = app.session.execute(
-                "shape.newPath",
-                json!({"vertices": [c], "space": "comp", "fill": [fill[0], fill[1], fill[2]], "stroke": [stroke[0], stroke[1], stroke[2]], "strokeWidth": app.ui.stroke_width}),
-            );
+            let r = app.session.execute("shape.newPath", json!({"vertices": [c], "space": "comp"}));
             let Some(v) = r.ok() else { return };
             let (Some(l), Some(path)) = (v["layer"].as_u64(), v["path"].as_u64()) else { return };
             let inv = Mat3::translate(gv2(-(ectx.comp.width as f64) / 2.0, -(ectx.comp.height as f64) / 2.0));
@@ -1799,13 +1790,14 @@ fn create_shape(app: &mut EffectcraftApp, tool: Tool, a: [f64; 2], b: [f64; 2], 
         Tool::Polygon => "polygon",
         _ => "star",
     };
-    // A non-shape layer selected and "creates mask": add a mask instead.
+    // A footage, solid or other non-shape layer selected, or a shape layer with Tool Creates
+    // Mask: a mask on it instead.
+    let creates_mask = app.session.state.shape_tool.creates_mask;
     let sel = app.session.state.selected_layers.first().copied();
     let sel_layer = sel.and_then(|id| app.session.active_comp().and_then(|c| c.layer(id)).cloned());
     if let Some(l) = sel_layer
-        && !matches!(l.source, effectcraft_engine::project::LayerSource::Shape)
         && l.source.is_av()
-        && matches!(kind, "rect" | "ellipse")
+        && (creates_mask || !matches!(l.source, effectcraft_engine::project::LayerSource::Shape))
     {
         // Mask in layer space: invert the layer transform.
         let comp = app.session.active_comp_arc();
@@ -1821,21 +1813,16 @@ fn create_shape(app: &mut EffectcraftApp, tool: Tool, a: [f64; 2], b: [f64; 2], 
             let inv = l2c(&ectx, &l).0.inverse().unwrap_or(Mat3::IDENTITY);
             let p0 = inv.apply(gv2(cx - w / 2.0, cy - h / 2.0));
             let p1 = inv.apply(gv2(cx + w / 2.0, cy + h / 2.0));
-            let _ = app.session.execute(
-                "layer.addMask",
-                json!({"layer": l.id.0, "shape": if kind == "ellipse" { "ellipse" } else { "rect" }, "rect": [p0.x.min(p1.x), p0.y.min(p1.y), (p1.x - p0.x).abs(), (p1.y - p0.y).abs()]}),
-            );
+            let rect = [p0.x.min(p1.x), p0.y.min(p1.y), (p1.x - p0.x).abs(), (p1.y - p0.y).abs()];
+            if let Err(e) = app.session.execute("layer.addMask", json!({"layer": l.id.0, "shape": kind, "rect": rect})) {
+                app.ui.status = e.to_string();
+            }
             return;
         }
     }
     // Into the selected shape layer's Contents as a new group (as in After Effects), else a new
-    // shape layer.
-    let fill = app.ui.fill_color;
-    let stroke = app.ui.stroke_color;
-    if let Err(e) = app.session.execute(
-        "shape.newShape",
-        json!({"kind": kind, "size": [w, h], "position": [cx, cy], "fill": [fill[0], fill[1], fill[2]], "stroke": [stroke[0], stroke[1], stroke[2]], "strokeWidth": app.ui.stroke_width}),
-    ) {
+    // shape layer; painted with the Tools bar's Fill and Stroke.
+    if let Err(e) = app.session.execute("shape.newShape", json!({"kind": kind, "size": [w, h], "position": [cx, cy]})) {
         app.ui.status = e.to_string();
     }
 }

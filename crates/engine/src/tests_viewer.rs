@@ -223,7 +223,7 @@ fn shape_pen_builds_shape_group_and_renders() {
     assert_eq!(img.get(200, 170), [0.0, 1.0, 0.0, 1.0]);
     assert_eq!(img.get(50, 50)[3], 0.0);
     // With the shape layer selected the Pen adds a second group (with a stroke) to it.
-    let r2 = s.execute("shape.newPath", json!({"vertices": [[0, 0], [10, 10]], "space": "layer"})).unwrap();
+    let r2 = s.execute("shape.newPath", json!({"vertices": [[0, 0], [10, 10]], "space": "layer", "strokeWidth": 2})).unwrap();
     assert_eq!(r2["layer"].as_u64(), Some(lid));
     let l = layer(&s, lid);
     let names: Vec<String> = l.props.sub("contents").unwrap().groups().map(|g| g.name.clone()).collect();
@@ -280,6 +280,69 @@ fn shape_tools_draw_into_the_selected_shape_layer() {
     let sol = s.execute("layer.newSolid", json!({"color": "#ffffff"})).unwrap()["layer"].as_u64().unwrap();
     assert!(s.execute("shape.newShape", json!({"layer": sol})).is_err());
     assert!(s.execute("shape.newShape", json!({"kind": "blob"})).is_err());
+}
+
+/// The Tools bar's Fill / Stroke Options (None, Solid Color, Linear and Radial Gradient, blend
+/// mode, opacity) and Stroke Width paint new shapes and Pen paths; a command's own paint
+/// parameters win (#227).
+#[test]
+fn shape_tool_options_paint_new_shapes() {
+    use crate::commands::shape_tool::ShapeTool;
+    let mut s = comp();
+    let o = s.execute("shape.toolOptions", json!({})).unwrap();
+    assert_eq!((o["createsMask"].clone(), o["fill"]["kind"].clone(), o["strokeWidth"].clone()), (json!(false), json!("solid"), json!(0.0)));
+    // A radial gradient fill at 50% in Multiply and a red 4 px stroke.
+    let o = s
+        .execute("shape.toolOptions", json!({"fillType": "Radial Gradient", "fillBlend": "multiply", "fillOpacity": 50, "stroke": [1, 0, 0], "strokeWidth": 4}))
+        .unwrap();
+    assert_eq!(o["fill"]["kind"], json!("radial"));
+    let r = s.execute("shape.newShape", json!({"kind": "ellipse", "size": [100, 60]})).unwrap();
+    let lid = r["layer"].as_u64().unwrap();
+    let items = |s: &Session, g: u64| layer(s, lid).props.find_group(g).unwrap().sub("contents").unwrap().clone();
+    let g = items(&s, r["group"].as_u64().unwrap());
+    assert_eq!(g.groups().map(|x| x.match_id.as_str()).collect::<Vec<_>>(), ["ellipse", "stroke", "gfill"]);
+    let at = |g: &effectcraft_project::PropGroup, item: &str, prop: &str| g.groups().find(|x| x.match_id == item).unwrap().get(prop).unwrap().value.clone();
+    let multiply = effectcraft_color::BlendMode::ALL.iter().position(|m| *m == effectcraft_color::BlendMode::Multiply).unwrap() as u32;
+    assert_eq!(at(&g, "gfill", "type"), KV::Enum(1));
+    assert_eq!(at(&g, "gfill", "blend"), KV::Enum(multiply));
+    assert_eq!(at(&g, "gfill", "opacity").as_f64(), 50.0);
+    assert_eq!(at(&g, "gfill", "end").components(), [50.0, 0.0], "out from the centre");
+    assert_eq!(at(&g, "stroke", "color").components(), [1.0, 0.0, 0.0, 1.0]);
+    assert_eq!(at(&g, "stroke", "width").as_f64(), 4.0);
+    // No fill and a linear gradient stroke, across a Pen path's points.
+    s.execute("shape.toolOptions", json!({"fill": false, "strokeType": "linear"})).unwrap();
+    let r = s.execute("shape.newPath", json!({"layer": lid, "vertices": [[10, 20], [110, 40]], "space": "layer"})).unwrap();
+    let g = items(&s, r["group"].as_u64().unwrap());
+    assert_eq!(g.groups().map(|x| x.match_id.as_str()).collect::<Vec<_>>(), ["path", "gstroke"]);
+    assert_eq!((at(&g, "gstroke", "start").components(), at(&g, "gstroke", "end").components()), (vec![10.0, 30.0], vec![110.0, 30.0]));
+    // A command's own paint wins over the Tools bar's.
+    let r = s.execute("shape.newShape", json!({"kind": "rect", "fill": "#00ff00", "strokeWidth": 0})).unwrap();
+    let g = items(&s, r["group"].as_u64().unwrap());
+    assert_eq!(g.groups().map(|x| x.match_id.as_str()).collect::<Vec<_>>(), ["rect", "fill"]);
+    assert_eq!(at(&g, "fill", "color").components(), [0.0, 1.0, 0.0, 1.0]);
+    // Bad values are errors that leave the options as they were; reset restores the defaults.
+    let before = s.state.shape_tool.clone();
+    for bad in [json!({"fillType": "plaid"}), json!({"strokeBlend": "nope"}), json!({"fill": true}), json!({"strokeWidth": "wide"})] {
+        assert!(s.execute("shape.toolOptions", bad.clone()).is_err(), "{bad}");
+    }
+    assert_eq!(s.state.shape_tool, before);
+    s.execute("shape.toolOptions", json!({"reset": true, "createsMask": true})).unwrap();
+    assert_eq!(s.state.shape_tool, ShapeTool { creates_mask: true, ..ShapeTool::default() });
+}
+
+/// Tool Creates Mask: every shape tool draws its mask (#227).
+#[test]
+fn masks_of_every_shape_tool_kind() {
+    let mut s = comp();
+    let sol = s.execute("layer.newSolid", json!({"color": "#ffffff"})).unwrap()["layer"].as_u64().unwrap();
+    for (kind, n) in [("rect", 4), ("ellipse", 4), ("rounded", 8), ("polygon", 6), ("star", 10)] {
+        let m = s.execute("layer.addMask", json!({"layer": sol, "shape": kind, "rect": [100, 100, 80, 80]})).unwrap()["mask"].as_u64().unwrap();
+        let path = layer(&s, sol).props.find_group(m).unwrap().get("path").unwrap().value.as_path().unwrap().clone();
+        assert!(path.closed, "{kind}");
+        assert!(if kind == "rounded" { path.vertices.len() >= n } else { path.vertices.len() == n }, "{kind}: {}", path.vertices.len());
+        assert!(path.vertices.iter().all(|v| (100.0..=180.0).contains(&v[0]) && (100.0..=180.0).contains(&v[1])), "{kind}: inside the box");
+    }
+    assert!(s.execute("layer.addMask", json!({"layer": sol, "shape": "blob"})).is_err());
 }
 
 #[test]

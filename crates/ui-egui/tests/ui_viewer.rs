@@ -3,11 +3,13 @@
 //! (egui_kittest, UI logic only).
 
 use effectcraft_engine::Session;
+use effectcraft_engine::commands::shape_tool::PaintKind;
 use effectcraft_engine::project::LayerId;
 use effectcraft_ui_egui::EffectcraftApp;
 use effectcraft_ui_egui::state::Tool;
 use egui::{Event, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use serde_json::json;
 
 fn app() -> EffectcraftApp {
@@ -278,6 +280,72 @@ fn shape_tool_draws_into_the_selected_shape_layer() {
     assert_eq!(comp.layers.len(), n0 + 1);
     assert!(matches!(comp.layers[0].source, effectcraft_engine::project::LayerSource::Shape));
     assert_ne!(comp.layers[0].id, LayerId(l));
+}
+
+/// With a shape layer selected and a shape tool active, the Tools bar's Tool Creates Mask makes
+/// the tool draw a mask on the layer (and hides Fill and Stroke); Tool Creates Shape draws
+/// shapes again (#227).
+#[test]
+fn tool_creates_mask_draws_a_mask_on_the_selected_shape_layer() {
+    let mut h = harness();
+    let l = h.state_mut().session.execute("layer.newShape", json!({"kind": "rect", "size": [100, 100], "position": [320, 180]})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().ui.tool = Tool::Star;
+    h.run_steps(2);
+    assert!(h.state().auto.find("header.fill").is_some());
+    let at = rect(&h, "header.createsMask").center();
+    click(&mut h, at);
+    assert!(h.state().session.state.shape_tool.creates_mask);
+    assert!(h.state().auto.find("header.fill").is_none(), "no Fill or Stroke for masks");
+    let (a, b) = (screen(&h, [100.0, 100.0]), screen(&h, [200.0, 200.0]));
+    drag(&mut h, a, b);
+    let layer = h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().clone();
+    let masks = layer.props.sub("masks").unwrap();
+    assert_eq!(masks.groups().count(), 1, "a mask");
+    assert_eq!(masks.groups().next().unwrap().get("path").unwrap().value.as_path().unwrap().vertices.len(), 10, "a star");
+    assert_eq!(layer.props.sub("contents").unwrap().groups().count(), 1, "no new shape");
+    let at = rect(&h, "header.createsShape").center();
+    click(&mut h, at);
+    assert!(!h.state().session.state.shape_tool.creates_mask);
+}
+
+/// Clicking the word "Fill" opens Fill Options: a radial gradient in Multiply at 40% paints the
+/// next shape drawn (#227).
+#[test]
+fn fill_options_paint_the_next_shape() {
+    let mut h = harness();
+    h.state_mut().ui.tool = Tool::Ellipse;
+    h.run_steps(2);
+    let at = rect(&h, "header.fillOptions").center();
+    click(&mut h, at);
+    let at = rect(&h, "header.fillOptions.radial").center();
+    click(&mut h, at);
+    let at = rect(&h, "header.fillOptions.blend").center();
+    click(&mut h, at);
+    let at = h.get_by_label("Multiply").rect().center();
+    click(&mut h, at);
+    let at = rect(&h, "header.fillOptions.opacity").center();
+    click(&mut h, at);
+    h.input_mut().events.push(Event::Text("40".into()));
+    h.step();
+    h.input_mut().events.push(Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    h.run_steps(2);
+    let fill = h.state().session.state.shape_tool.fill.clone();
+    assert_eq!((fill.kind, fill.blend, fill.opacity), (PaintKind::Radial, effectcraft_engine::color::BlendMode::Multiply, 40.0));
+    h.input_mut().events.push(Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    h.run_steps(3);
+    assert!(h.state().auto.find("header.fillOptions.radial").is_none(), "closed");
+    let (a, b) = (screen(&h, [100.0, 100.0]), screen(&h, [220.0, 160.0]));
+    drag(&mut h, a, b);
+    let layer = h.state().session.active_comp().unwrap().layers[0].clone();
+    let g = layer.props.sub("contents").unwrap().groups().next().unwrap().sub("contents").unwrap().clone();
+    assert_eq!(g.groups().map(|x| x.match_id.as_str()).collect::<Vec<_>>(), ["ellipse", "gfill"]);
+    let gfill = g.groups().find(|x| x.match_id == "gfill").unwrap();
+    let multiply = effectcraft_engine::color::BlendMode::ALL.iter().position(|m| *m == effectcraft_engine::color::BlendMode::Multiply).unwrap() as u32;
+    assert_eq!(gfill.get("type").unwrap().value, effectcraft_keyframe::Value::Enum(1));
+    assert_eq!(gfill.get("blend").unwrap().value, effectcraft_keyframe::Value::Enum(multiply));
+    assert_eq!(gfill.get("opacity").unwrap().value.as_f64(), 40.0);
 }
 
 #[test]

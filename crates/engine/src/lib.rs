@@ -238,6 +238,9 @@ pub struct EditorState {
     /// Puppet tool options for new meshes.
     #[serde(default)]
     pub puppet: commands::puppet::PuppetOptions,
+    /// The shape tools' and the Pen's options (Tool Creates Shape / Mask, Fill and Stroke).
+    #[serde(default)]
+    pub shape_tool: commands::shape_tool::ShapeTool,
     /// View ▸ Switch View Layout: 1, 2 or 4 views side by side in the Composition viewer.
     #[serde(default = "one_view")]
     pub view_layout: u8,

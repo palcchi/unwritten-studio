@@ -633,13 +633,7 @@ pub struct UiState {
     /// Effects & Presets contents-menu view options.
     #[serde(default)]
     pub effects_view: EffectsView,
-    /// Shape tool options.
-    pub fill_color: [f32; 3],
-    pub stroke_color: [f32; 3],
-    pub stroke_width: f32,
     pub snapping: bool,
-    /// Tool creates shape (true) or mask (false) when a layer is selected.
-    pub tool_creates_shape: bool,
     pub start_screen: bool,
     /// The Home screen shows its Learn tab (tutorials) instead of the recent projects.
     #[serde(default)]
@@ -714,11 +708,7 @@ impl Default for UiState {
             effects_favorites: BTreeSet::new(),
             effects_recent: Vec::new(),
             effects_view: EffectsView::default(),
-            fill_color: [0.24, 0.55, 0.96],
-            stroke_color: [1.0, 1.0, 1.0],
-            stroke_width: 0.0,
             snapping: true,
-            tool_creates_shape: true,
             start_screen: false,
             home_learn: false,
             home_templates: false,

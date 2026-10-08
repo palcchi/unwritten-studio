@@ -199,20 +199,10 @@ fn pts(v: Option<&Value>) -> Vec<[f64; 2]> {
     v.and_then(Value::as_array).map(|a| a.iter().filter_map(|p| Some([p.get(0)?.as_f64()?, p.get(1)?.as_f64()?])).collect()).unwrap_or_default()
 }
 
-fn rgba(v: Option<&Value>, d: [f64; 4]) -> [f64; 4] {
-    match v {
-        Some(Value::Array(a)) => {
-            let g = |i: usize, d: f64| a.get(i).and_then(Value::as_f64).unwrap_or(d);
-            [g(0, d[0]), g(1, d[1]), g(2, d[2]), g(3, 1.0)]
-        }
-        Some(Value::String(h)) => effectcraft_color::Rgba::from_hex(h).map(|c| [c.r as f64, c.g as f64, c.b as f64, 1.0]).unwrap_or(d),
-        _ => d,
-    }
-}
-
-/// Pen tool on a shape layer: a new Shape group ("Shape n" with Path 1, Stroke 1 and Fill 1) on
-/// the given / selected shape layer, or on a new shape layer when none is given. Vertices are
-/// in the layer's space, or comp space (`space: "comp"`, the default for a new layer).
+/// Pen tool on a shape layer: a new Shape group ("Shape n" with Path 1 and the Tools bar's
+/// Stroke and Fill unless given) on the given / selected shape layer, or on a new shape layer
+/// when none is given. Vertices are in the layer's space, or comp space (`space: "comp"`, the
+/// default for a new layer).
 fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
     let cid = comp_id(s, p)?;
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?.clone();
@@ -246,9 +236,11 @@ fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     let path = ShapePath { vertices: v, in_tangents: ins, out_tangents: outs, closed: b_p(p, "closed").unwrap_or(false), feather: Vec::new() };
-    let fill = (!matches!(p.get("fill"), Some(Value::Null) | Some(Value::Bool(false)))).then(|| rgba(p.get("fill"), [0.25, 0.55, 1.0, 1.0]));
-    let width = f_p(p, "strokeWidth").unwrap_or(2.0);
-    let stroke = (width > 0.0).then(|| rgba(p.get("stroke"), [1.0, 1.0, 1.0, 1.0]));
+    let paint = super::shape_tool::paint_p(p, &s.state.shape_tool, "shape.newPath")?;
+    // Gradients run across the path's points.
+    let (lo, hi) =
+        path.vertices.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), v| ([lo[0].min(v[0]), lo[1].min(v[1])], [hi[0].max(v[0]), hi[1].max(v[1])]));
+    let bounds = [lo[0], lo[1], hi[0] - lo[0], hi[1] - lo[1]];
     let name = str_p(p, "name").map(str::to_string);
     let (lid, group, path_uid) = s.edit("Pen Tool", None, |proj, st| {
         let lid = match target {
@@ -260,12 +252,7 @@ fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
         let pg = build::shape_path(&mut ids, path);
         let path_uid = pg.uid;
         let mut items = vec![pg];
-        if let Some(c) = stroke {
-            items.push(build::shape_stroke(&mut ids, c, width));
-        }
-        if let Some(c) = fill {
-            items.push(build::shape_fill(&mut ids, c));
-        }
+        items.extend(super::shape_tool::paint_items(&mut ids, &paint, bounds));
         let g = build::shape_group(&mut ids, "Shape 1", items);
         proj.next_id = next;
         let group = super::shape_tool::add_to_contents(proj, cid, lid, g, [0.0, 0.0], "shape.newPath")?;
@@ -500,7 +487,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Pen Tool (Shape Path)",
             [],
             None,
-            "{layer?, vertices: [[x,y]…], inTangents?, outTangents?, closed?, space?: comp|layer, fill?: [r,g,b]|#hex|false, stroke?, strokeWidth?, name?}",
+            "{layer?, vertices: [[x,y]…], inTangents?, outTangents?, closed?, space?: comp|layer, fill?: [r,g,b]|#hex|false, fillType?, fillBlend?, fillOpacity?, stroke?, strokeType?, strokeBlend?, strokeOpacity?, strokeWidth? (default the Tools bar's, shape.toolOptions), name?}",
             shape_layer_or_none,
             new_path
         ),

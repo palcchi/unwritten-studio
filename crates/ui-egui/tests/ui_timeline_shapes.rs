@@ -195,5 +195,5 @@ fn toolbar_stroke_edits_the_selected_shape_layer() {
     let layer = h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().clone();
     let width = layer.props.prop("contents/group/contents/stroke/width").map(|p| p.value.as_f64());
     assert_eq!(width, Some(4.0), "a stroke was added with the toolbar's width");
-    assert_eq!(h.state().ui.stroke_width, 4.0);
+    assert_eq!(h.state().session.state.shape_tool.stroke_width, 4.0);
 }

@@ -1320,9 +1320,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         s += secs_per_label;
     }
-    // Scrub in the ruler.
+    // Scrub in the ruler: the current time jumps to the pointer as soon as the button goes down
+    // (After Effects), then follows it.
     let rresp = ui.interact(Rect::from_min_max(pos2(graph_x0, ruler.min.y + 12.0), ruler.max), egui::Id::new("tl-ruler"), Sense::click_and_drag());
-    if (rresp.dragged() || rresp.clicked())
+    if ((rresp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down())) || rresp.clicked())
         && let Some(pt) = rresp.interact_pointer_pos()
     {
         let mut secs = tm.t(pt.x).max(0.0);

@@ -213,3 +213,31 @@ fn shift_dragging_the_work_area_snaps_to_the_current_time() {
     drag_with(&mut h, mid, to, Modifiers::SHIFT);
     assert!(near(work_area(&h), (3.0, 6.0)), "the bar snaps its end to the CTI: {:?}", work_area(&h));
 }
+
+/// #284: pressing in the time ruler moves the current time there at once, before the pointer
+/// moves or the button comes up (After Effects); dragging on then scrubs.
+#[test]
+fn a_press_in_the_ruler_moves_the_current_time() {
+    let (mut h, _) = harness();
+    // (Opening the comp showed all of it.)
+    h.state_mut().ui.timeline.pps = Some(200.0);
+    h.state_mut().ui.timeline.start = 10.0;
+    h.run_steps(2);
+    let ruler = rect(&h, "timeline.ruler");
+    let (start, _) = visible(&h);
+    // 2 s into the visible span at 200 px/s (the ruler maps time from 6 px in).
+    let at = pos2(ruler.min.x + 6.0 + 400.0, ruler.min.y + 17.0);
+    h.event(Event::PointerMoved(at));
+    h.step();
+    h.event(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    let now = h.state().session.time().seconds();
+    assert!((now - (start + 2.0)).abs() < 0.05, "the press moved the CTI to {}: {now}", start + 2.0);
+    // Still held: dragging scrubs on.
+    h.event(Event::PointerMoved(at + vec2(100.0, 0.0)));
+    h.step();
+    let now = h.state().session.time().seconds();
+    assert!((now - (start + 2.5)).abs() < 0.05, "{now}");
+    h.event(Event::PointerButton { pos: at + vec2(100.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.step();
+}

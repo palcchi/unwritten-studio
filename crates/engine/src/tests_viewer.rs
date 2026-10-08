@@ -69,7 +69,7 @@ fn snap_targets_cover_layers_comp_guides_and_grid() {
     let cid = s.active_comp_id().unwrap();
     let comp = s.project.comp(cid).unwrap().clone();
     let ctx = effectcraft_render::EvalCtx::new(&s.project, cid, &comp, Tick::ZERO);
-    let opts = crate::viewer::SnapOptions { guides: true, grid: true, grid_spacing: 100.0 };
+    let opts = crate::viewer::SnapOptions { layers: true, features: Default::default(), guides: true, grid: true, grid_spacing: 100.0 };
     let t = crate::viewer::targets(&ctx, &[LayerId(b)], opts);
     // Layer a's corner (270, 155) is a target; layer b (dragged) is not.
     assert!(t.iter().any(|x| x.source == SnapSource::Layer(LayerId(a)) && x.kind == SnapKind::Point && x.pos == [270.0, 155.0]));
@@ -81,6 +81,62 @@ fn snap_targets_cover_layers_comp_guides_and_grid() {
     let hit = snap(&[[272.0, 157.0]], &t, 6.0).unwrap();
     assert_eq!(hit.at, [270.0, 155.0]);
     assert_eq!(hit.delta, [-2.0, -2.0]);
+}
+
+/// Tools bar ▸ Snapping options (#253): Snap Edges Extended off keeps a layer's edges to its
+/// extent, each feature family can be turned off, hidden layers are no targets, and with
+/// Snapping off only guides and the grid are left.
+#[test]
+fn snapping_options_pick_the_targets() {
+    use crate::viewer::{SnapFeatures, SnapOptions, layer_features, targets};
+    let mut s = comp();
+    // A 100×50 solid at the comp centre: x 270–370, y 155–205.
+    let a = s.execute("layer.newSolid", json!({"color": "#ff0000", "width": 100, "height": 50})).unwrap()["layer"].as_u64().unwrap();
+    let hidden = s.execute("layer.newSolid", json!({"color": "#00ff00", "width": 40, "height": 40})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("prop.set", json!({"layer": hidden, "path": "transform/position", "value": [50, 50, 0]})).unwrap();
+    s.execute("layer.setSwitch", json!({"layers": [hidden], "switch": "video", "value": false})).unwrap();
+    s.execute("view.addGuide", json!({"orientation": "vertical", "position": 77})).unwrap();
+    let cid = s.active_comp_id().unwrap();
+    let comp = s.project.comp(cid).unwrap().clone();
+    let ctx = effectcraft_render::EvalCtx::new(&s.project, cid, &comp, Tick::ZERO);
+    let opts = |features: SnapFeatures| SnapOptions { layers: true, features, guides: false, grid: false, grid_spacing: 0.0 };
+    let all = targets(&ctx, &[], opts(SnapFeatures::default()));
+    assert!(!all.iter().any(|t| t.source == SnapSource::Layer(LayerId(hidden))), "hidden layers are no targets");
+    // Extended: a point far below layer a snaps to its left edge's line.
+    assert_eq!(snap(&[[268.0, 340.0]], &all, 4.0).unwrap().at, [270.0, 340.0]);
+    // Not extended: only along the edge.
+    let own = targets(&ctx, &[], opts(SnapFeatures { edges_extended: false, ..Default::default() }));
+    assert!(snap(&[[268.0, 340.0]], &own, 4.0).is_none_or(|h| h.hits.iter().all(|t| t.source != SnapSource::Layer(LayerId(a)))));
+    assert_eq!(snap(&[[268.0, 190.0]], &own, 4.0).unwrap().at, [270.0, 190.0]);
+    // Centres (and anchor points, a's sits in its centre) off: nothing at the comp centre, where
+    // a's centre is too; edges off: no edge lines or midpoints, only the comp's centre lines.
+    let no_centres = targets(&ctx, &[], opts(SnapFeatures { centers: false, anchor_points: false, ..Default::default() }));
+    assert!(!no_centres.iter().any(|t| t.pos == [320.0, 180.0]));
+    assert!(no_centres.iter().any(|t| t.pos == [270.0, 155.0]), "corners stay");
+    let no_edges = targets(&ctx, &[], opts(SnapFeatures { edges: false, ..Default::default() }));
+    assert!(!no_edges.iter().any(|t| t.pos == [320.0, 155.0]));
+    assert!(no_edges.iter().filter(|t| t.kind != SnapKind::Point).all(|t| t.source == SnapSource::Comp && (t.pos[0] == 320.0 || t.pos[1] == 180.0)));
+    // The dragged layer's features follow the options too: corners only.
+    let l = comp.layer(LayerId(a)).unwrap();
+    let corners = SnapFeatures { edges: false, centers: false, anchor_points: false, paths: false, ..Default::default() };
+    assert_eq!(layer_features(&ctx, l, corners), vec![[270.0, 155.0], [370.0, 155.0], [370.0, 205.0], [270.0, 205.0]]);
+    // Snapping off: guides only.
+    let guides = targets(&ctx, &[], SnapOptions { layers: false, guides: true, ..opts(SnapFeatures::default()) });
+    assert!(!guides.is_empty() && guides.iter().all(|t| t.source == SnapSource::Guide));
+}
+
+#[test]
+fn snapping_options_command_sets_and_toggles() {
+    let mut s = comp();
+    assert!(s.state.snap_features.edges_extended && s.state.snap_features.anchor_points);
+    let r = s.execute("view.snappingOptions", json!({"edgesExtended": false, "anchorPoints": false})).unwrap();
+    assert_eq!(r["edgesExtended"], false);
+    assert!(!s.state.snap_features.edges_extended && !s.state.snap_features.anchor_points && s.state.snap_features.corners);
+    s.execute("view.snappingOptions", json!({"toggle": "paths"})).unwrap();
+    assert!(!s.state.snap_features.paths);
+    s.execute("view.snappingOptions", json!({"toggle": "paths"})).unwrap();
+    assert!(s.state.snap_features.paths);
+    assert!(s.execute("view.snappingOptions", json!({"toggle": "nope"})).is_err());
 }
 
 // ---------------------------------------------------------------- channels, exposure, snapshot

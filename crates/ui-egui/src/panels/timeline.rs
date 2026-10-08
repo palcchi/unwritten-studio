@@ -330,6 +330,18 @@ fn snap_candidates(comp: &Comp, rows: &[Row]) -> Vec<f64> {
     v
 }
 
+/// Shift-dragging the work area or one of its ends (#252): the correction (seconds) that puts
+/// the nearest of the `moving` times on the current time, a key, a layer in / out point or a
+/// marker within 8 px (the work area's own ends are no targets).
+fn work_area_snap(app: &EffectcraftApp, comp: &Comp, moving: &[f64], pps: f64) -> f64 {
+    let (a, b) = (comp.work_area.0.seconds(), comp.work_area.1.seconds());
+    let mut cands = snap_candidates(comp, &build_rows(app, comp));
+    cands.retain(|c| (c - a).abs() > 1e-9 && (c - b).abs() > 1e-9);
+    cands.push(app.session.time().seconds());
+    let tol = 8.0 / pps.max(1e-6);
+    moving.iter().map(|t| snap_time(&cands, *t, tol) - t).filter(|d| *d != 0.0).min_by(|x, y| x.abs().total_cmp(&y.abs())).unwrap_or(0.0)
+}
+
 /// Timeline horizontal mapping.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TMap {
@@ -1079,10 +1091,31 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     p.rect_filled(ruler, 0.0, t.tl_ruler_bg);
     app.auto.add("timeline.ruler", ruler, &format!("{},{}", tm.start, tm.pps));
     // Work area bar: below the ruler, beside the column headers (After Effects' layout), with
-    // blue begin / end handles; the cache bar runs under it.
+    // blue begin / end handles; the cache bar runs under it. Dragging the bar moves the work
+    // area, the handles move its ends; Shift snaps (#252).
     let wa_row = Rect::from_min_max(pos2(graph_x0, top + header_h), pos2(rect.max.x, top + header_h + colhdr_h));
-    let wa = Rect::from_min_max(pos2(tm.x(comp.work_area.0.seconds()), wa_row.min.y + 3.0), pos2(tm.x(comp.work_area.1.seconds()), wa_row.max.y - 6.0));
+    let (wa0, wa1) = (comp.work_area.0.seconds(), comp.work_area.1.seconds());
+    let wa = Rect::from_min_max(pos2(tm.x(wa0), wa_row.min.y + 3.0), pos2(tm.x(wa1), wa_row.max.y - 6.0));
     p.with_clip_rect(wa_row).rect_filled(wa, 0.0, WORK_AREA_BAR);
+    let shift = ui.input(|i| i.modifiers.shift);
+    let bar = wa.intersect(wa_row);
+    let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::drag());
+    app.auto.add("timeline.workArea.bar", bar, "Work area");
+    let bar_start = egui::Id::new("wa-bar-start");
+    if bresp.drag_started() {
+        ctx.data_mut(|d| d.insert_temp(bar_start, wa0));
+    }
+    if bresp.dragged()
+        && let (Some(a0), Some(d)) = (ctx.data(|d| d.get_temp::<f64>(bar_start)), bresp.total_drag_delta())
+    {
+        let len = wa1 - wa0;
+        let mut a = a0 + d.x as f64 / pps.max(1e-6);
+        if shift {
+            a += work_area_snap(app, &comp, &[a, a + len], pps);
+        }
+        let a = fr.snap_nearest(Tick::from_seconds_f64(a.clamp(0.0, (comp.duration.seconds() - len).max(0.0)))).seconds();
+        let _ = app.session.execute("comp.workArea", json!({"start": a, "end": a + len, "merge": "wa-drag"}));
+    }
     for (hx, set) in [(wa.min.x, "begin"), (wa.max.x, "end")] {
         let hr = Rect::from_center_size(pos2(hx, wa.center().y), vec2(8.0, 14.0));
         let handle = if set == "begin" {
@@ -1096,7 +1129,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if resp.dragged()
             && let Some(pt) = resp.interact_pointer_pos()
         {
-            let secs = fr.snap_nearest(Tick::from_seconds_f64(tm.t(pt.x).max(0.0))).seconds();
+            let mut secs = tm.t(pt.x).max(0.0);
+            if shift {
+                secs += work_area_snap(app, &comp, &[secs], pps);
+            }
+            let secs = fr.snap_nearest(Tick::from_seconds_f64(secs)).seconds();
             let key = if set == "begin" { "start" } else { "end" };
             let _ = app.session.execute("comp.workArea", json!({key: secs, "merge": "wa-drag"}));
         }

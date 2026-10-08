@@ -202,6 +202,9 @@ pub struct EditorState {
     #[serde(default)]
     pub selected_vertices: Vec<VertexRef>,
     pub snapping: bool,
+    /// Tools bar ▸ Snapping options (which features snap, Snap Edges Extended).
+    #[serde(default)]
+    pub snap_features: viewer::SnapFeatures,
     /// Last applied effect id (Effect ▸ last effect).
     pub last_effect: Option<String>,
     /// Viewer region of interest `[x, y, w, h]` in comp pixels (Composition ▸ Crop Comp to Region

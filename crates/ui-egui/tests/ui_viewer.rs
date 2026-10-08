@@ -249,6 +249,59 @@ fn layer_drag_snaps_to_comp_centre_and_ctrl_disables() {
     assert!((p[0] - 320.0).abs() > 1.0, "{p:?}");
 }
 
+/// #253: a dragged layer's feature nearest the pointer snaps to other layers' edges; Cmd/Ctrl
+/// held during the drag turns snapping on while the Snapping checkbox is off (and off while it
+/// is on), and the Tools bar's Snapping options turn Snap Edges Extended off, so an edge only
+/// snaps along the layer.
+#[test]
+fn layer_drag_snaps_to_other_layers_edges_ctrl_toggles_and_options_apply() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id;
+    // A 100×100 target at x 450–550, y 50–150.
+    let target = h.state_mut().session.execute("layer.newSolid", json!({"name": "Target", "color": "#20e040", "width": 100, "height": 100})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    let place = |h: &mut Harness<'_, EffectcraftApp>| {
+        let s = &mut h.state_mut().session;
+        s.execute("prop.set", json!({"layer": target, "path": "transform/position", "value": [500, 100, 0]})).unwrap();
+        s.execute("prop.set", json!({"layer": box_id.0, "path": "transform/position", "value": [100, 250, 0]})).unwrap();
+        s.execute("edit.deselectAll", json!({})).unwrap();
+        h.run_steps(2);
+    };
+    let pos = |h: &Harness<'_, EffectcraftApp>| {
+        let l = h.state().session.active_comp().unwrap().layer(box_id).unwrap().clone();
+        l.props.prop("transform/position").unwrap().value.as_vec3()
+    };
+    // Grab the box by its top right corner (140, 210) and drop it 3 px left of the target's
+    // left edge, well below the target: the corner lands on the edge's line (x 450).
+    let ctrl = egui::Modifiers { ctrl: true, command: true, ..Default::default() };
+    let drop = |h: &mut Harness<'_, EffectcraftApp>, mods: egui::Modifiers| {
+        place(h);
+        let (from, to) = (screen(h, [138.0, 212.0]), screen(h, [445.0, 232.0]));
+        hold_drag(h, from, to, mods);
+        pos(h)
+    };
+    let snapped = |p: [f64; 3]| (p[0] - 410.0).abs() < 0.01;
+    let p = drop(&mut h, Default::default());
+    assert!(snapped(p), "snapping on: {p:?}");
+    let p = drop(&mut h, ctrl);
+    assert!(!snapped(p), "Ctrl turns it off: {p:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    let p = drop(&mut h, Default::default());
+    assert!(!snapped(p), "snapping off: {p:?}");
+    let p = drop(&mut h, ctrl);
+    assert!(snapped(p), "Ctrl turns it on: {p:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": true})).unwrap();
+    // Snapping options ▸ Snap Edges Extended off: below the target its edge no longer snaps.
+    let menu = rect(&h, "header.snappingOptions").center();
+    click(&mut h, menu);
+    let item = h.query_by_label("✓ Snap Edges Extended").expect("the Snapping options menu").rect().center();
+    click(&mut h, item);
+    assert!(!h.state().session.state.snap_features.edges_extended);
+    let p = drop(&mut h, Default::default());
+    assert!(!snapped(p), "edges not extended: {p:?}");
+}
+
 /// With a shape layer selected the Rectangle tool draws a new group into its Contents (After
 /// Effects' behaviour); with nothing selected it draws a new shape layer (#227).
 #[test]
@@ -1206,6 +1259,52 @@ fn handle_drags_scale_about_the_anchor_and_follow_the_pointer() {
     let path = [corner, screen(&h, [400.0, 230.0])];
     drag_path(&mut h, &path, egui::Modifiers::SHIFT);
     assert!(close(scale(&h), [162.5, 162.5]), "{:?}", scale(&h));
+}
+
+/// #252: with snapping on, a dragged handle snaps to the comp's corners and edges (and other
+/// layers'), so a layer scales exactly to the comp; Shift keeps the proportions and still lands
+/// on the comp's size.
+#[test]
+fn handle_drags_snap_to_the_comp_edges() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id.0;
+    let scale = |h: &Harness<'_, EffectcraftApp>, id: u64| {
+        let l = h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap().clone();
+        l.props.prop("transform/scale").unwrap().value.as_vec3()
+    };
+    let close = |a: [f64; 3], b: [f64; 2]| (a[0] - b[0]).abs() < 0.01 && (a[1] - b[1]).abs() < 0.01;
+    let drag_handle = |h: &mut Harness<'_, EffectcraftApp>, id: u64, handle: usize, to: [f32; 2], mods: egui::Modifiers| {
+        h.state_mut().session.execute("prop.set", json!({"layer": id, "path": "transform/scale", "value": [100, 100, 100]})).unwrap();
+        h.state_mut().session.execute("layer.select", json!({"layers": [id]})).unwrap();
+        h.run_steps(2);
+        let from = rect(h, &format!("viewer.handle.{id}.{handle}")).center();
+        let to = screen(h, to);
+        drag_path(h, &[from, to], mods);
+        scale(h, id)
+    };
+    // The 80×80 box at the comp centre: its bottom right corner (360, 220) dropped 3 px inside
+    // the comp's (640, 360) lands on it, its right edge 3 px inside the comp's right edge too.
+    let s = drag_handle(&mut h, box_id, 2, [637.0, 357.0], Default::default());
+    assert!(close(s, [800.0, 450.0]), "{s:?}");
+    let s = drag_handle(&mut h, box_id, 5, [637.0, 200.0], Default::default());
+    assert!(close(s, [800.0, 100.0]), "{s:?}");
+    // Snapping off: where the pointer is.
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    let s = drag_handle(&mut h, box_id, 2, [637.0, 357.0], Default::default());
+    assert!(s[0] < 795.0, "{s:?}");
+    h.state_mut().session.execute("view.snapping", json!({"value": true})).unwrap();
+    // A comp-shaped layer at 110 % Shift-scaled down by its corner to 3 px outside the comp's:
+    // the comp's size exactly.
+    let wide = h.state_mut().session.execute("layer.newSolid", json!({"name": "Wide", "color": "#20e040", "width": 640, "height": 360})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("prop.set", json!({"layer": wide, "path": "transform/scale", "value": [110, 110, 100]})).unwrap();
+    h.state_mut().session.execute("layer.select", json!({"layers": [wide]})).unwrap();
+    h.run_steps(2);
+    let path = [rect(&h, &format!("viewer.handle.{wide}.2")).center(), screen(&h, [643.0, 362.0])];
+    drag_path(&mut h, &path, egui::Modifiers::SHIFT);
+    let s = scale(&h, wide);
+    assert!(close(s, [100.0, 100.0]), "{s:?}");
 }
 
 /// A comp wider than the GPU's texture limit at Full resolution shows its frame (averaged down

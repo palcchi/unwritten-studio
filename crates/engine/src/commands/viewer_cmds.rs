@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, b_p, bad, comp_id, f_p, has_comp, merge_p, str_p};
-use crate::viewer::{Channel, CustomRgb, SimProfile, Simulation, Snapshot};
+use crate::viewer::{Channel, CustomRgb, SimProfile, Simulation, SnapFeatures, Snapshot};
 use crate::{EngineError, Result, Session, VertexRef, cmd, query};
 
 /// Composition ▸ Preview ▸ Fast Previews modes.
@@ -107,6 +107,21 @@ pub struct LockedViewer {
 fn snapping(s: &mut Session, p: &Value) -> Result<Value> {
     s.state.snapping = b_p(p, "value").unwrap_or(!s.state.snapping);
     Ok(json!(s.state.snapping))
+}
+
+/// Tools bar ▸ Snapping options: sets the options passed (`toggle` flips one by key).
+fn snapping_options(s: &mut Session, p: &Value) -> Result<Value> {
+    let f = &mut s.state.snap_features;
+    if let Some(k) = str_p(p, "toggle") {
+        let v = f.option_mut(k).ok_or_else(|| bad("view.snappingOptions", format!("unknown option `{k}`")))?;
+        *v = !*v;
+    }
+    for (k, _) in SnapFeatures::OPTIONS {
+        if let (Some(v), Some(o)) = (b_p(p, k), f.option_mut(k)) {
+            *o = v;
+        }
+    }
+    Ok(json!(s.state.snap_features))
 }
 
 fn channel(s: &mut Session, p: &Value) -> Result<Value> {
@@ -447,6 +462,15 @@ fn display_color_state(s: &mut Session, _: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("view.snapping", "Snapping", ["View"], None, "{value?}", always, snapping),
+        cmd!(
+            "view.snappingOptions",
+            "Snapping Options",
+            [],
+            None,
+            "{edgesExtended?, edges?, corners?, centers?, anchorPoints?, paths?: bool, toggle?: one of those keys} → the options",
+            always,
+            snapping_options
+        ),
         cmd!("view.displayColorManagement", "Use Display Color Management", ["View"], None, "{value?}", always, display_cm),
         cmd!(
             "view.simulateOutput",

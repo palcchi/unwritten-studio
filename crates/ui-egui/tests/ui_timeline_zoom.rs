@@ -64,16 +64,24 @@ fn rect(h: &Harness<'_, EffectcraftApp>, id: &str) -> egui::Rect {
 }
 
 fn drag(h: &mut Harness<'_, EffectcraftApp>, from: Pos2, to: Pos2) {
+    drag_with(h, from, to, Modifiers::NONE);
+}
+
+/// [`drag`] with `modifiers` held.
+fn drag_with(h: &mut Harness<'_, EffectcraftApp>, from: Pos2, to: Pos2, modifiers: Modifiers) {
+    h.event(Event::ModifiersChanged(modifiers));
     h.event(Event::PointerMoved(from));
     h.step();
-    h.event(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.event(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers });
     h.step();
     for k in 1..=8 {
         h.event(Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
         h.step();
     }
-    h.event(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.event(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers });
     h.run_steps(2);
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.step();
 }
 
 /// The visible span (seconds) from the ruler's automation label ("start,pps") and width.
@@ -160,4 +168,48 @@ fn spacebar_drag_scrolls_the_time_graph() {
     // Without Spacebar the same drag moves the bar.
     drag(&mut h, from, from - vec2(400.0, 0.0));
     assert!(in_point(&h) < -1.0, "{}", in_point(&h));
+}
+
+/// #252: Shift-dragging a work area end, or the whole work area bar, snaps to the current-time
+/// indicator when it comes within reach; without Shift it lands where the pointer is.
+#[test]
+fn shift_dragging_the_work_area_snaps_to_the_current_time() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Short", "width": 320, "height": 180, "frameRate": 30, "duration": 10})).unwrap();
+    s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap();
+    let mut app = EffectcraftApp::new(s);
+    app.ui.timeline.pps = Some(100.0);
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| app);
+    let reset = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.state_mut().session.execute("comp.workArea", json!({"start": 1.0, "end": 4.0})).unwrap();
+        h.state_mut().session.execute("time.set", json!({"time": 6.0})).unwrap();
+        h.run_steps(3);
+    };
+    let work_area = |h: &Harness<'_, EffectcraftApp>| {
+        let wa = h.state().session.active_comp().unwrap().work_area;
+        (wa.0.seconds(), wa.1.seconds())
+    };
+    let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6;
+    reset(&mut h);
+    // Screen x of a time, from the handles at 1 s and 4 s.
+    let (b, e) = (rect(&h, "timeline.workArea.begin").center(), rect(&h, "timeline.workArea.end").center());
+    let pps = (e.x - b.x) / 3.0;
+    let x = |t: f32| b.x + (t - 1.0) * pps;
+    // The end handle to 5 px before the CTI (6 s).
+    let to = pos2(x(6.0) - 5.0, e.y);
+    drag(&mut h, e, to);
+    assert!(work_area(&h).1 < 5.99, "no Shift: no snap {:?}", work_area(&h));
+    reset(&mut h);
+    drag_with(&mut h, e, to, Modifiers::SHIFT);
+    assert!(near(work_area(&h), (1.0, 6.0)), "the end snaps to the CTI: {:?}", work_area(&h));
+    // The bar moved so its end comes 5 px before the CTI: it moves as a whole and snaps.
+    reset(&mut h);
+    let mid = rect(&h, "timeline.workArea.bar").center();
+    let to = mid + vec2(x(6.0) - 5.0 - e.x, 0.0);
+    drag(&mut h, mid, to);
+    let (a, z) = work_area(&h);
+    assert!((z - a - 3.0).abs() < 1e-6 && z < 5.99 && a > 1.5, "no Shift: moved, no snap {a}..{z}");
+    reset(&mut h);
+    drag_with(&mut h, mid, to, Modifiers::SHIFT);
+    assert!(near(work_area(&h), (3.0, 6.0)), "the bar snaps its end to the CTI: {:?}", work_area(&h));
 }

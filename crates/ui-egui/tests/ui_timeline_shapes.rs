@@ -1,6 +1,7 @@
 //! Timeline rows for shape layers, masks and keyframing: the Contents "Add:" menu and the Classic
 //! 3D "Change Renderer…" row (#206), Alt+Shift+P revealing the key it adds and clicks below the
-//! layers deselecting them (#205), and Mask Feather's linked values (#203).
+//! layers deselecting them (#205), Mask Feather's linked values (#203), and copying shape items
+//! between shape layers (#227).
 
 use effectcraft_engine::Session;
 use effectcraft_engine::project::LayerId;
@@ -134,6 +135,40 @@ fn mask_feather_values_are_linked_and_not_negative() {
     click(&mut h, &format!("timeline.prop.{uid}.link"));
     type_value(&mut h, 1, "7");
     assert_eq!(feather(&h).1, vec![0.0, 7.0], "unlinked");
+}
+
+/// Two shape layers, "Rect" (Rectangle 1) and "Oval" (Ellipse 1, selected): (harness with Rect's
+/// Contents open, Rect, Oval, Rectangle 1's uid).
+fn two_shape_layers() -> (Harness<'static, EffectcraftApp>, u64, u64, u64) {
+    let mut s = session();
+    let a = s.execute("layer.newShape", json!({"kind": "rect", "name": "Rect"})).unwrap()["layer"].as_u64().unwrap();
+    let b = s.execute("layer.newShape", json!({"kind": "ellipse", "name": "Oval"})).unwrap()["layer"].as_u64().unwrap();
+    let contents = s.active_comp().unwrap().layer(LayerId(a)).unwrap().props.sub("contents").unwrap().clone();
+    let rect = contents.groups().next().unwrap().uid;
+    let mut h = harness(s);
+    h.state_mut().ui.timeline.open_groups.insert(contents.uid);
+    open_layer(&mut h, a);
+    (h, a, b, rect)
+}
+
+fn contents_names(h: &Harness<'_, EffectcraftApp>, l: u64) -> Vec<String> {
+    h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.sub("contents").unwrap().groups().map(|g| g.name.clone()).collect()
+}
+
+#[test]
+fn ctrl_c_and_ctrl_v_copy_a_shape_group_into_another_shape_layer() {
+    let (mut h, a, b, rect) = two_shape_layers();
+    click(&mut h, &format!("timeline.group.{rect}.name"));
+    assert_eq!(h.state().session.state.selected_props, vec![(LayerId(a), rect)]);
+    h.input_mut().events.push(Event::Copy);
+    h.step();
+    click(&mut h, &format!("timeline.layer.{b}.row"));
+    assert_eq!(h.state().session.state.selected_layers, vec![LayerId(b)]);
+    h.input_mut().events.push(Event::Paste("EffectCraft: 1 shape item".into()));
+    h.run_steps(3);
+    assert_eq!(h.state().session.active_comp().unwrap().layers.len(), 2, "no new layer");
+    assert_eq!(contents_names(&h, b), ["Rectangle 1", "Ellipse 1"]);
+    assert_eq!(contents_names(&h, a), ["Rectangle 1"]);
 }
 
 #[test]

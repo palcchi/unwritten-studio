@@ -194,6 +194,10 @@ pub struct EditorState {
     /// selected layers.
     #[serde(skip)]
     pub effect_clipboard: Vec<effectcraft_project::PropGroup>,
+    /// Copied shape items (Edit ▸ Copy with groups, paths, paints or path operations selected in
+    /// a shape layer's Contents); Paste adds them to the selected shape layers.
+    #[serde(skip)]
+    pub contents_clipboard: Vec<effectcraft_project::PropGroup>,
     /// Selected mask vertices (viewer Selection tool / pen).
     #[serde(default)]
     pub selected_vertices: Vec<VertexRef>,

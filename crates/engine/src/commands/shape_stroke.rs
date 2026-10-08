@@ -201,7 +201,7 @@ fn wave(s: &mut Session, p: &Value) -> Result<Value> {
 const PATHS: [&str; 4] = ["rect", "ellipse", "star", "path"];
 
 /// Shape groups nest; deeper contents are left alone (never-crash recursion bound).
-const MAX_DEPTH: usize = 64;
+pub(crate) const MAX_DEPTH: usize = 64;
 
 /// The first Fill colour, Stroke colour and Stroke Width in `layer`'s contents at layer time
 /// `lt` (what the toolbar shows for a selected shape layer).

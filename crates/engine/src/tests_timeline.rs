@@ -428,6 +428,19 @@ fn parenting_keeps_the_layer_in_place() {
     assert!(s.active_comp().unwrap().layer(effectcraft_project::LayerId(child)).unwrap().parent.is_some());
 }
 
+/// #284: toggling stopwatches with one `merge` key (dragging over them) is one undo step.
+#[test]
+fn stopwatch_toggles_with_a_merge_key_are_one_undo_step() {
+    let (mut s, l) = setup();
+    let steps = s.history.undo.len();
+    for path in ["transform/position", "transform/scale", "transform/opacity"] {
+        s.execute("prop.toggleAnimation", json!({"layer": l, "path": path, "value": true, "merge": "drag"})).unwrap();
+    }
+    assert_eq!(s.history.undo.len(), steps + 1);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(["transform/position", "transform/scale", "transform/opacity"].iter().all(|p| !prop(&s, l, p).is_animated()));
+}
+
 #[test]
 fn pick_whip_generates_ae_reference_expressions() {
     let (mut s, l) = setup();

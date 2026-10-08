@@ -980,8 +980,8 @@ fn key_drag_id() -> egui::Id {
     egui::Id::new("tl-key-drag")
 }
 
-/// A layer switch pressed and dragged over other layers: the switch, the state the press gave
-/// it, and the undo step the drag folds into.
+/// A switch pressed and dragged over other rows: the switch, the state the press gave it, and
+/// the undo step the drag folds into.
 #[derive(Clone, Debug)]
 struct SwitchDrag {
     switch: &'static str,
@@ -993,9 +993,24 @@ fn switch_drag_id() -> egui::Id {
     egui::Id::new("tl-switch-drag")
 }
 
-/// A layer's switch (A/V Features and Switches columns) in `row`. Pressing it sets it, and
-/// dragging on gives the same switch of every layer the pointer passes the same new state, in
-/// one undo step (After Effects).
+/// The press-and-drag gesture of the Timeline's switches and stopwatches (`switch`, on `row`,
+/// now `on`, pressed through `resp`): the press gives it the opposite state, and dragging on
+/// gives every `switch` the pointer passes that same state, in one undo step, whatever its own
+/// (After Effects). The state to set and the undo step to fold it into, when it changes now.
+fn switch_gesture(ui: &egui::Ui, resp: &egui::Response, row: Rect, switch: &'static str, on: bool) -> Option<(bool, String)> {
+    if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+        let merge = format!("tl-switch-{}", ui.input(|i| i.time));
+        ui.data_mut(|d| d.insert_temp(switch_drag_id(), SwitchDrag { switch, value: !on, merge: merge.clone() }));
+        return Some((!on, merge));
+    }
+    let d = ui.data(|d| d.get_temp::<SwitchDrag>(switch_drag_id())).filter(|d| d.switch == switch && d.value != on)?;
+    // The heights the pointer moved over since the last frame, so a quick drag skips no row.
+    let (a, b) = ui.input(|i| i.pointer.interact_pos().map(|p| (p.y - i.pointer.delta().y, p.y)))?;
+    (a.min(b) < row.max.y && a.max(b) >= row.min.y).then_some((d.value, d.merge))
+}
+
+/// A layer's switch (A/V Features and Switches columns) in `row`, with the
+/// [`switch_gesture`].
 #[allow(clippy::too_many_arguments)]
 fn layer_switch(
     ui: &mut egui::Ui,
@@ -1010,20 +1025,8 @@ fn layer_switch(
     actions: &mut Vec<(String, serde_json::Value)>,
 ) {
     let resp = widgets::icon_toggle(ui, br, icon, on, t, id, Sense::click_and_drag());
-    let set = |actions: &mut Vec<(String, serde_json::Value)>, value: bool, merge: &str| {
-        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name, "value": value, "merge": merge})))
-    };
-    if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
-        let merge = format!("tl-switch-{}", ui.input(|i| i.time));
-        set(actions, !on, &merge);
-        ui.data_mut(|d| d.insert_temp(switch_drag_id(), SwitchDrag { switch: name, value: !on, merge }));
-    } else if let Some(d) = ui.data(|d| d.get_temp::<SwitchDrag>(switch_drag_id())).filter(|d| d.switch == name && d.value != on)
-        // The heights the pointer moved over since the last frame, so a quick drag skips no row.
-        && let Some((a, b)) = ui.input(|i| i.pointer.interact_pos().map(|p| (p.y - i.pointer.delta().y, p.y)))
-        && a.min(b) < row.max.y
-        && a.max(b) >= row.min.y
-    {
-        set(actions, d.value, &d.merge);
+    if let Some((value, merge)) = switch_gesture(ui, &resp, row, name, on) {
+        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name, "value": value, "merge": merge})));
     } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
         // Keyboard or accessibility activation (a pointer press was handled above).
         actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name})));
@@ -2161,10 +2164,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     app.auto.add(&format!("timeline.prop.{uid}.addKey"), mid, "Add or remove keyframe");
                 }
-                // Stopwatch.
+                // Stopwatch: Alt+click adds an expression; a press toggles the animation, and
+                // dragging on over other stopwatches gives them the same state (#284).
                 if !prop.static_only {
                     let swr = Rect::from_center_size(pos2(indent, cy), vec2(15.0, 15.0));
-                    let resp = ui.interact(swr, egui::Id::new(("stopwatch", uid)), Sense::click());
+                    let resp = ui.interact(swr, egui::Id::new(("stopwatch", uid)), Sense::click_and_drag());
                     let col = if prop.is_animated() {
                         t.hot_text
                     } else if resp.hovered() {
@@ -2174,12 +2178,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     };
                     icons::paint(&lp, swr, Icon::Stopwatch, col);
                     app.auto.add(&format!("timeline.prop.{uid}.stopwatch"), swr, &prop.name);
-                    if resp.clicked() {
-                        if ui.input(|i| i.modifiers.alt) {
+                    if ui.input(|i| i.modifiers.alt) {
+                        if resp.clicked() {
                             actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid})));
-                        } else {
-                            actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
                         }
+                    } else if let Some((value, merge)) = switch_gesture(ui, &resp, r, "stopwatch", prop.is_animated()) {
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "value": value, "merge": merge})));
+                    } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
+                        // Keyboard or accessibility activation.
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
                     }
                 }
                 let name_x = indent + 12.0;

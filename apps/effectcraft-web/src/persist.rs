@@ -60,7 +60,8 @@ pub fn last_error() -> Option<String> {
     LAST_ERROR.with(|e| e.borrow().clone())
 }
 
-fn js_err(e: JsValue) -> String {
+/// A JavaScript error (a rejected promise's reason) as text.
+pub(crate) fn js_err(e: JsValue) -> String {
     e.as_string().or_else(|| js_sys::Reflect::get(&e, &"message".into()).ok().and_then(|m| m.as_string())).unwrap_or_else(|| format!("{e:?}"))
 }
 

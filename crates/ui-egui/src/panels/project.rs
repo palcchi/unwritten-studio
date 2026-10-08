@@ -174,6 +174,12 @@ fn fit(r: Rect, w: f32, h: f32) -> Rect {
     Rect::from_center_size(r.center(), vec2(w * s, h * s))
 }
 
+/// A scroll bar thumb's length on a `track` long: the share of `content` in view, at least 16
+/// points but never longer than the track (a panel only a few points tall still draws, #231).
+fn thumb_len(track: f32, visible: f32, content: f32) -> f32 {
+    (track * visible / content).max(16.0).min(track).max(0.0)
+}
+
 /// An inline text edit in progress: (item, field `name`|`comment`, text).
 type Editing = (u64, String, String);
 fn edit_id() -> egui::Id {
@@ -340,7 +346,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     if overflow > 0.0 {
         let track = Rect::from_min_max(pos2(opt_x0, list.max.y - 5.0), pos2(rect.max.x - 4.0, list.max.y - 1.0));
-        let tw = (track.width() * track.width() / (track.width() + overflow)).max(16.0);
+        let tw = thumb_len(track.width(), track.width(), track.width() + overflow);
         let thumb = Rect::from_min_size(pos2(track.min.x + (track.width() - tw) * (hscroll / overflow), track.min.y), vec2(tw, track.height()));
         let sresp = ui.interact(track.expand2(vec2(0.0, 2.0)), egui::Id::new("proj-hscroll"), Sense::drag());
         p.rect_filled(track, 2.0, t.field_bg);
@@ -396,7 +402,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let scroll = app.ui.project_scroll;
     if max_scroll > 0.0 {
         let track = Rect::from_min_max(pos2(rect.max.x - 6.0, list.min.y + 1.0), pos2(rect.max.x - 2.0, list.max.y - 7.0));
-        let th = (track.height() * list.height() / content_h).clamp(16.0, track.height());
+        let th = thumb_len(track.height(), list.height(), content_h);
         let thumb = Rect::from_min_size(pos2(track.min.x, track.min.y + (track.height() - th) * (scroll / max_scroll)), vec2(track.width(), th));
         let vresp = ui.interact(track.expand2(vec2(2.0, 0.0)), egui::Id::new("proj-vscroll"), Sense::drag());
         p.rect_filled(thumb, 2.0, if vresp.hovered() || vresp.dragged() { t.text_dim } else { t.text_faint });

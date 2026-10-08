@@ -230,7 +230,8 @@ Window ▸ Media Browser browses a virtual tree (`src/browse.rs`):
 
 - **Browser Storage**: every file in browser storage (imported media, saved projects, files added
   with **Add Files…** or **Upload Folder…**, plain file inputs that work in every browser). This is
-  the persistent recent list where folders can't be opened.
+  the persistent recent list where folders can't be opened. A picked file that can't be read is
+  named in the status bar with the browser's reason, and the others are still added.
 - **Folders**: **Open Folder…** (File System Access API, `showDirectoryPicker`, Chromium) lists a
   folder from the user's disk; only the listing is read, and a file's bytes are read when it is
   imported (then kept in browser storage). The folder handles are remembered in IndexedDB; after
@@ -261,6 +262,13 @@ drawn straight from their texture, with no readback. The Info panel's pixel read
 eyedroppers read GPU frames back asynchronously (`Gpu::read_display_async`: the pixels arrive a
 frame later). On WebGL2, or without a usable adapter, everything renders on the CPU.
 `effectcraft.info().gpu` reports `{compositor, viewerOnGpu}`.
+
+If the page's WebGPU device is lost (a driver reset, the browser reclaiming the GPU), the canvas
+can't show anything new, while the project stays open and commands keep working. The page then
+covers the canvas with a notice (`showDeviceLost` in `js/host.js`) offering **Save Project** (a
+download) and **Reload**, which first writes pending changes to browser storage
+(`effectcraft.flush()`) so the session comes back after the reload; when the write fails it says
+so and offers **Reload Anyway**.
 
 **GPU effects run in the frame workers.** A browser never lets JavaScript (or wasm) wait for a GPU
 readback, not even in a worker: a buffer maps only once the thread returns to its event loop.
@@ -417,6 +425,11 @@ node apps/effectcraft-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --out tar
 `web/worker.js`) under Node with a fake `Worker`, without a build: a replaced file is sent to a
 reused worker again even at the same size, and a worker that fails to start fails its job and is
 terminated (`node apps/effectcraft-web/tests/workers.mjs`).
+
+`apps/effectcraft-web/tests/page.mjs` checks page-side helpers of `js/host.js` the same way with
+a fake DOM: a picked file that can't be read is reported while the others are added, and the
+device-lost notice saves, flushes before reloading and reports a failed flush
+(`node apps/effectcraft-web/tests/page.mjs`).
 
 It also checks the M13.10 paths: viewer frames rendered in frame workers while scrubbing with the
 CPU renderer (project synced as diffs, event-loop gaps under 400 ms), a `wait: true` render that

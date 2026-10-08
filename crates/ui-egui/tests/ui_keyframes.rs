@@ -148,6 +148,23 @@ fn shift_click_toggles_and_ctrl_click_switches_interpolation() {
     assert_eq!(key(&h).out_interp, effectcraft_engine::keyframe::Interp::Hold);
 }
 
+/// Clicking a key in the Timeline selects its property and layer too, as in After Effects, so
+/// the Graph Editor shows the key's curve (#252).
+#[test]
+fn a_key_clicked_in_the_timeline_shows_in_the_graph_editor() {
+    let (mut h, id, uid) = harness();
+    h.state_mut().session.execute("edit.deselectAll", json!({})).unwrap();
+    h.run_steps(2);
+    let ks = keys(&h, uid);
+    click_with(&mut h, ks[1], Default::default());
+    let st = &h.state().session.state;
+    assert_eq!(st.selected_keys.len(), 1);
+    assert_eq!((st.selected_props.clone(), st.selected_layers.clone()), (vec![(id, uid)], vec![id]), "the key's property and layer");
+    h.state_mut().ui.timeline.graph_editor = true;
+    h.run_steps(4);
+    assert!(h.state().auto.find(&format!("timeline.graph.key.{uid}.0.1")).is_some(), "the Graph Editor shows the key");
+}
+
 #[test]
 fn graph_editor_drags_move_every_selected_key_and_shift_keeps_an_axis() {
     let (mut h, id, uid) = harness();

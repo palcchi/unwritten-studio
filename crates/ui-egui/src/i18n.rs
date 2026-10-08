@@ -7,7 +7,31 @@ use crate::EffectcraftApp;
 use effectcraft_engine::menus::MenuEntry;
 
 pub(crate) fn japanese(app: &EffectcraftApp) -> bool {
-    app.session.prefs.general.language == "ja"
+    match app.session.prefs.general.language.as_str() {
+        "system" => system_language() == "ja",
+        l => l == "ja",
+    }
+}
+
+/// Settings ▸ General ▸ Language ▸ Match System: the operating system's interface language
+/// where EffectCraft has it, else English (#229), as After Effects installs in the system's
+/// language. The browser build stays in English: it has no Japanese font of its own.
+fn system_language() -> &'static str {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+        LANGUAGE.get_or_init(|| supported(sys_locale::get_locale().as_deref()))
+    }
+    #[cfg(target_arch = "wasm32")]
+    "en"
+}
+
+/// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`).
+fn supported(locale: Option<&str>) -> &'static str {
+    match locale.and_then(|l| l.split(['-', '_']).next()) {
+        Some(l) if l.eq_ignore_ascii_case("ja") => "ja",
+        _ => "en",
+    }
 }
 
 pub(crate) fn label<'a>(app: &EffectcraftApp, command: &str, source: &'a str) -> &'a str {
@@ -723,6 +747,7 @@ mod tests {
     #[test]
     fn language_changes_native_labels_without_changing_commands_or_parameters() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"en"})).unwrap();
         let en = crate::native_menu::build(&app);
         let state = crate::native_menu::state_key(&app);
         app.session.execute("prefs.set", json!({"key":"general.language", "value":"ja"})).unwrap();
@@ -749,6 +774,26 @@ mod tests {
         app.session.execute("prefs.set", json!({"key":"general.language", "value":"en"})).unwrap();
         assert_eq!(label(&app, "", "Composition"), "Composition");
     }
+    #[test]
+    fn match_system_uses_the_system_language_where_there_is_a_catalog() {
+        for (locale, language) in [
+            (Some("ja-JP"), "ja"),
+            (Some("ja"), "ja"),
+            (Some("JA_jp.UTF-8"), "ja"),
+            (Some("en-US"), "en"),
+            (Some("jv-ID"), "en"),
+            (Some("de-DE"), "en"),
+            (None, "en"),
+        ] {
+            assert_eq!(supported(locale), language, "{locale:?}");
+        }
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        assert_eq!(app.session.prefs.general.language, "system", "the default");
+        assert_eq!(japanese(&app), system_language() == "ja");
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"ja"})).unwrap();
+        assert!(japanese(&app));
+    }
+
     #[test]
     fn general_settings_exposes_the_language_automation_id() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());

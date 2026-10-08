@@ -29,7 +29,7 @@ Commands (CLI, MCP, control channel):
 
 ### Settings that change behaviour
 
-- `general.language`: interface language (`en` / `ja`), Settings ▸ General ▸ Language; menu labels change immediately. Native Japanese UI uses installed system fonts; the web host must supply a Japanese font.
+- `general.language`: interface language (`system` / `en` / `ja`), Settings ▸ General ▸ Language; menu labels change immediately. `system` (Match System, the default) follows the operating system's interface language where EffectCraft has a translation and is English otherwise; the browser build stays in English with it. Native Japanese UI uses installed system fonts; the web host must supply a Japanese font.
 - `general.undoLevels`: Levels of Undo
 - `general.pathPointSize`: Path Point and Handle Size
 - `general.recentItems`: Recent Projects Shown

@@ -1828,12 +1828,16 @@ fn create_shape(app: &mut EffectcraftApp, tool: Tool, a: [f64; 2], b: [f64; 2], 
             return;
         }
     }
+    // Into the selected shape layer's Contents as a new group (as in After Effects), else a new
+    // shape layer.
     let fill = app.ui.fill_color;
     let stroke = app.ui.stroke_color;
-    let _ = app.session.execute(
-        "layer.newShape",
+    if let Err(e) = app.session.execute(
+        "shape.newShape",
         json!({"kind": kind, "size": [w, h], "position": [cx, cy], "fill": [fill[0], fill[1], fill[2]], "stroke": [stroke[0], stroke[1], stroke[2]], "strokeWidth": app.ui.stroke_width}),
-    );
+    ) {
+        app.ui.status = e.to_string();
+    }
 }
 
 fn empty_state(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {

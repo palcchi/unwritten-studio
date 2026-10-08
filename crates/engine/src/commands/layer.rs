@@ -206,26 +206,7 @@ fn new_text(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// Contents for a new shape (one group with path + fill + stroke).
-fn shape_contents(ids: &mut Ids, kind: &str, size: [f64; 2], fill: Option<[f64; 4]>, stroke: Option<([f64; 4], f64)>) -> Option<PropGroup> {
-    let (path, gname) = match kind {
-        "rect" | "rectangle" => (build::shape_rect(ids, size, [0.0, 0.0], 0.0), "Rectangle 1"),
-        "rounded" | "roundedRect" => (build::shape_rect(ids, size, [0.0, 0.0], size[0].min(size[1]) * 0.15), "Rectangle 1"),
-        "ellipse" => (build::shape_ellipse(ids, size, [0.0, 0.0]), "Ellipse 1"),
-        "star" => (build::shape_star(ids, true, 5.0, [0.0, 0.0], size[0] / 2.0, size[0] / 4.0), "Polystar 1"),
-        "polygon" => (build::shape_star(ids, false, 6.0, [0.0, 0.0], size[0] / 2.0, 0.0), "Polystar 1"),
-        _ => return None,
-    };
-    let mut items = vec![path];
-    if let Some((c, w)) = stroke {
-        items.push(build::shape_stroke(ids, c, w));
-    }
-    if let Some(c) = fill {
-        items.push(build::shape_fill(ids, c));
-    }
-    Some(build::shape_group(ids, gname, items))
-}
-
-fn c4(c: Option<[f32; 3]>, d: [f64; 4]) -> [f64; 4] {
+pub(crate) fn c4(c: Option<[f32; 3]>, d: [f64; 4]) -> [f64; 4] {
     c.map(|c| [c[0] as f64, c[1] as f64, c[2] as f64, 1.0]).unwrap_or(d)
 }
 
@@ -236,27 +217,24 @@ fn new_shape(s: &mut Session, p: &Value) -> Result<Value> {
     let size = p
         .get("size")
         .and_then(Value::as_array)
-        .map(|a| [a[0].as_f64().unwrap_or(200.0), a.get(1).and_then(Value::as_f64).unwrap_or(200.0)])
+        .map(|a| [a.first().and_then(Value::as_f64).unwrap_or(200.0), a.get(1).and_then(Value::as_f64).unwrap_or(200.0)])
         .unwrap_or([300.0, 300.0]);
     let fill = Some(c4(color_p(p, "fill"), [0.25, 0.55, 1.0, 1.0]));
     let stroke = (f_p(p, "strokeWidth").unwrap_or(0.0) > 0.0).then(|| (c4(color_p(p, "stroke"), [1.0, 1.0, 1.0, 1.0]), f_p(p, "strokeWidth").unwrap_or(2.0)));
-    let pos = p.get("position").and_then(|v| v.as_array()).map(|a| [a[0].as_f64().unwrap_or(0.0), a.get(1).and_then(Value::as_f64).unwrap_or(0.0)]);
+    let pos = p
+        .get("position")
+        .and_then(|v| v.as_array())
+        .map(|a| [a.first().and_then(Value::as_f64).unwrap_or(0.0), a.get(1).and_then(Value::as_f64).unwrap_or(0.0)]);
     let name = str_p(p, "name").unwrap_or("Shape Layer 1").to_string();
     let id = s.edit("New Shape Layer", None, |proj, st| {
-        let mut l = build::layer(proj, &comp, &name, LayerSource::Shape, (comp.width, comp.height), None);
+        let lid = super::shape_tool::new_shape_layer(proj, st, &comp, cid, Some(&name), pos)?;
         let mut next = proj.next_id;
-        if let Some(g) = shape_contents(&mut Ids(&mut next), &kind, size, fill, stroke)
-            && let Some(c) = l.props.sub_mut("contents")
-        {
-            c.children.push(g.into());
-        }
+        let g = super::shape_tool::shape_group(&mut Ids(&mut next), &kind, size, fill, stroke);
         proj.next_id = next;
-        if let Some(pos) = pos
-            && let Some(pr) = l.props.prop_mut("transform/position")
-        {
-            pr.value = KV::Vec3([pos[0], pos[1], 0.0]);
+        if let Some(g) = g {
+            super::shape_tool::add_to_contents(proj, cid, lid, g, [0.0, 0.0], "layer.newShape")?;
         }
-        insert_layer(proj, st, cid, l)
+        Ok(lid)
     })?;
     Ok(json!({"layer": id.0}))
 }

@@ -247,6 +247,39 @@ fn layer_drag_snaps_to_comp_centre_and_ctrl_disables() {
     assert!((p[0] - 320.0).abs() > 1.0, "{p:?}");
 }
 
+/// With a shape layer selected the Rectangle tool draws a new group into its Contents (After
+/// Effects' behaviour); with nothing selected it draws a new shape layer (#227).
+#[test]
+fn shape_tool_draws_into_the_selected_shape_layer() {
+    let mut h = harness();
+    let l = h.state_mut().session.execute("layer.newShape", json!({"kind": "rect", "size": [100, 100], "position": [320, 180]})).unwrap()["layer"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().ui.tool = Tool::Rectangle;
+    h.run_steps(2);
+    let n0 = h.state().session.active_comp().unwrap().layers.len();
+    let (a, b) = (screen(&h, [100.0, 100.0]), screen(&h, [200.0, 160.0]));
+    drag(&mut h, a, b);
+    let comp = h.state().session.active_comp().unwrap().clone();
+    assert_eq!(comp.layers.len(), n0, "no new layer");
+    let contents = comp.layer(LayerId(l)).unwrap().props.sub("contents").unwrap().clone();
+    let names: Vec<&str> = contents.groups().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["Rectangle 2", "Rectangle 1"]);
+    // Placed where it was drawn (centred near comp (150, 130)), in the layer's space: the layer
+    // sits at the comp centre.
+    let g = contents.groups().next().unwrap();
+    let at = g.sub("transform").unwrap().get("position").unwrap().value.components();
+    assert!((at[0] + 170.0).abs() < 8.0 && (at[1] + 50.0).abs() < 8.0, "{at:?}");
+    // Nothing selected: a new shape layer.
+    h.state_mut().session.execute("edit.deselectAll", json!({})).unwrap();
+    let (a, b) = (screen(&h, [400.0, 250.0]), screen(&h, [500.0, 300.0]));
+    drag(&mut h, a, b);
+    let comp = h.state().session.active_comp().unwrap();
+    assert_eq!(comp.layers.len(), n0 + 1);
+    assert!(matches!(comp.layers[0].source, effectcraft_engine::project::LayerSource::Shape));
+    assert_ne!(comp.layers[0].id, LayerId(l));
+}
+
 #[test]
 fn shape_pen_draws_a_closed_shape_layer() {
     let mut h = harness();

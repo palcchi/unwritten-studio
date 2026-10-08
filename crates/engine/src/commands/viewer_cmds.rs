@@ -3,7 +3,6 @@
 //! shape layers (`shape.newPath`).
 
 use effectcraft_keyframe::ShapePath;
-use effectcraft_project::LayerSource;
 use effectcraft_project::build::{self, Ids};
 use effectcraft_render::RenderOpts;
 use serde::{Deserialize, Serialize};
@@ -226,15 +225,7 @@ fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
     let mut outs = pts(p.get("outTangents"));
     ins.resize(n, [0.0; 2]);
     outs.resize(n, [0.0; 2]);
-    let target = match p.get("layer") {
-        Some(l) => Some(super::resolve_layer(&comp, l).ok_or_else(|| bad("shape.newPath", format!("no layer {l}")))?),
-        None => s.state.selected_layers.iter().copied().find(|l| comp.layer(*l).is_some_and(|l| matches!(l.source, LayerSource::Shape) && !l.switches.locked)),
-    };
-    if let Some(l) = target.and_then(|l| comp.layer(l))
-        && !matches!(l.source, LayerSource::Shape)
-    {
-        return Err(bad("shape.newPath", "the layer is not a shape layer"));
-    }
+    let target = super::shape_tool::draw_target(s, &comp, p, "shape.newPath")?;
     let comp_space = str_p(p, "space").map(|s| s == "comp").unwrap_or(target.is_none());
     if comp_space {
         // Comp → layer space of the target (a new layer sits at the comp centre, unrotated).
@@ -262,17 +253,9 @@ fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
     let (lid, group, path_uid) = s.edit("Pen Tool", None, |proj, st| {
         let lid = match target {
             Some(l) => l,
-            None => {
-                let count = comp.layers.iter().filter(|l| matches!(l.source, LayerSource::Shape)).count();
-                let lname = name.clone().unwrap_or_else(|| format!("Shape Layer {}", count + 1));
-                let l = build::layer(proj, &comp, &lname, LayerSource::Shape, (comp.width, comp.height), None);
-                super::layer::insert_layer(proj, st, cid, l)?
-            }
+            None => super::shape_tool::new_shape_layer(proj, st, &comp, cid, name.as_deref(), None)?,
         };
         let mut next = proj.next_id;
-        let l = super::layer_mut(proj, cid, lid)?;
-        let contents = l.props.sub_mut("contents").ok_or_else(|| bad("shape.newPath", "the layer has no contents"))?;
-        let k = contents.groups().filter(|g| g.match_id == "group").count();
         let mut ids = Ids(&mut next);
         let pg = build::shape_path(&mut ids, path);
         let path_uid = pg.uid;
@@ -283,10 +266,9 @@ fn new_path(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(c) = fill {
             items.push(build::shape_fill(&mut ids, c));
         }
-        let g = build::shape_group(&mut ids, &format!("Shape {}", k + 1), items);
-        let group = g.uid;
-        contents.children.insert(0, g.into());
+        let g = build::shape_group(&mut ids, "Shape 1", items);
         proj.next_id = next;
+        let group = super::shape_tool::add_to_contents(proj, cid, lid, g, [0.0, 0.0], "shape.newPath")?;
         st.selected_layers = vec![lid];
         st.selected_vertices = vec![VertexRef { layer: lid, mask: path_uid, index: n - 1 }];
         Ok((lid, group, path_uid))

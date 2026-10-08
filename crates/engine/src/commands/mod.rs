@@ -55,6 +55,7 @@ mod scene_detect;
 pub mod scripts;
 mod settings;
 pub mod shape_stroke;
+pub mod shape_tool;
 mod stubs;
 mod styles;
 mod text_anim;
@@ -165,6 +166,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(view::specs());
         v.extend(viewer_cmds::specs());
         v.extend(shape_stroke::specs());
+        v.extend(shape_tool::specs());
         v.extend(focus::specs());
         v.extend(key_labels::specs());
         v.extend(key_transform::specs());

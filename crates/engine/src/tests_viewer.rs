@@ -238,6 +238,50 @@ fn shape_pen_builds_shape_group_and_renders() {
     assert!(s.execute("shape.newPath", json!({"layer": sol, "vertices": [[0, 0]]})).is_err());
 }
 
+/// The shape tools draw into the selected shape layer's Contents as a new group, as After
+/// Effects does, and a new shape layer only with none selected (#227).
+#[test]
+fn shape_tools_draw_into_the_selected_shape_layer() {
+    let mut s = comp();
+    // Nothing selected: a new shape layer centred on the shape.
+    let r = s.execute("shape.newShape", json!({"kind": "rect", "size": [100, 60], "position": [200, 100], "fill": [1, 0, 0]})).unwrap();
+    let lid = r["layer"].as_u64().unwrap();
+    let l = layer(&s, lid);
+    assert_eq!(l.name, "Shape Layer 1");
+    assert_eq!(l.props.prop("transform/position").unwrap().value.components()[..2], [200.0, 100.0]);
+    // Selected (and scaled 200%): the next shape goes on top of its Contents, in layer space.
+    s.execute("prop.set", json!({"layer": lid, "path": "transform/scale", "value": [200, 200, 100]})).unwrap();
+    let n = s.active_comp().unwrap().layers.len();
+    let r = s.execute("shape.newShape", json!({"kind": "ellipse", "size": [40, 20], "position": [300, 160]})).unwrap();
+    assert_eq!(r["layer"].as_u64(), Some(lid));
+    assert_eq!(s.active_comp().unwrap().layers.len(), n, "no new layer");
+    let l = layer(&s, lid);
+    let contents = l.props.sub("contents").unwrap();
+    let names: Vec<&str> = contents.groups().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["Ellipse 1", "Rectangle 1"]);
+    let g = l.props.find_group(r["group"].as_u64().unwrap()).unwrap();
+    assert_eq!(g.sub("transform").unwrap().get("position").unwrap().value.components(), [50.0, 30.0]);
+    assert_eq!(g.sub("contents").unwrap().groups().next().unwrap().get("size").unwrap().value.components(), [20.0, 10.0]);
+    // A second rectangle is "Rectangle 2"; it renders where it was drawn.
+    s.execute("shape.newShape", json!({"kind": "rect", "size": [40, 40], "position": [500, 300], "fill": [0, 1, 0]})).unwrap();
+    let names: Vec<String> = layer(&s, lid).props.sub("contents").unwrap().groups().map(|g| g.name.clone()).collect();
+    assert_eq!(names, ["Rectangle 2", "Ellipse 1", "Rectangle 1"]);
+    let img = s.render(s.active_comp_id().unwrap(), Tick::ZERO, Default::default());
+    assert_eq!(img.get(500, 300), [0.0, 1.0, 0.0, 1.0]);
+    // Each shape is one undo step.
+    s.undo();
+    s.undo();
+    assert_eq!(layer(&s, lid).props.sub("contents").unwrap().groups().count(), 1);
+    // A locked shape layer isn't drawn into; a solid is refused when named.
+    s.execute("layer.setSwitch", json!({"layers": [lid], "switch": "locked", "value": true})).unwrap();
+    s.state.selected_layers = vec![LayerId(lid)];
+    let r = s.execute("shape.newShape", json!({"kind": "star"})).unwrap();
+    assert_ne!(r["layer"].as_u64(), Some(lid));
+    let sol = s.execute("layer.newSolid", json!({"color": "#ffffff"})).unwrap()["layer"].as_u64().unwrap();
+    assert!(s.execute("shape.newShape", json!({"layer": sol})).is_err());
+    assert!(s.execute("shape.newShape", json!({"kind": "blob"})).is_err());
+}
+
 #[test]
 fn vertex_add_delete_convert_on_shape_paths_and_masks_undo() {
     let mut s = comp();

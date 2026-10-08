@@ -17,16 +17,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let (rgba, xy) = match (app.pointer_comp, &app.viewer_image) {
         (Some([cx, cy]), Some(img)) => {
-            let comp = app.session.active_comp();
-            let (cw, ch) = comp.map(|c| (c.width as f32, c.height as f32)).unwrap_or((1.0, 1.0));
-            let sx = (cx / cw * img.size[0] as f32) as i64;
-            let sy = (cy / ch * img.size[1] as f32) as i64;
-            let px = if sx >= 0 && sy >= 0 && (sx as usize) < img.size[0] && (sy as usize) < img.size[1] {
-                Some(img.pixels[sy as usize * img.size[0] + sx as usize])
-            } else {
-                None
-            };
-            (px, Some((cx, cy)))
+            let comp = app.session.active_comp().map_or([1.0, 1.0], |c| [c.width as f32, c.height as f32]);
+            let region = super::viewer_tools::shown_region(ui.ctx(), comp);
+            (super::fx_widgets::frame_pixel(img, region, [cx as f64, cy as f64]), Some((cx, cy)))
         }
         _ => (None, None),
     };

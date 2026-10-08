@@ -1167,7 +1167,7 @@ pub fn viewer_hook(
             if pick.kind == "color"
                 && keyer.is_none()
                 && let Some(img) = &app.viewer_image
-                && let Some(s) = fw::sample_frame(img, map.comp, c)
+                && let Some(s) = fw::sample_frame(img, super::viewer_tools::shown_region(&ctx, map.comp), c)
             {
                 let sw = Rect::from_min_size(hp + vec2(14.0, 14.0), vec2(26.0, 18.0));
                 painter.rect_filled(sw, 2.0, Color32::from_rgb((s[0] * 255.0) as u8, (s[1] * 255.0) as u8, (s[2] * 255.0) as u8));
@@ -1192,7 +1192,7 @@ pub fn viewer_hook(
                     ));
                 }
             } else if let Some(img) = &app.viewer_image
-                && let Some(s) = fw::sample_frame(img, map.comp, c)
+                && let Some(s) = fw::sample_frame(img, super::viewer_tools::shown_region(&ctx, map.comp), c)
             {
                 actions.push(("prop.set".into(), json!({"layer": pick.layer, "prop": pick.prop, "value": [s[0], s[1], s[2], 1.0]})));
             }

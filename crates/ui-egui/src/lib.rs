@@ -1383,7 +1383,7 @@ impl EffectcraftApp {
             self.session.poll_mask_track();
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
-        // Background tasks (Content-Aware Fill, Scene Edit Detection).
+        // Background tasks (Content-Aware Fill, Scene Edit Detection, imports).
         if !self.session.tasks.is_empty() {
             self.session.poll_jobs();
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -1451,10 +1451,13 @@ impl EffectcraftApp {
         panels::scriptui_view::sync_panels(self);
         panels::scriptui_view::show_windows(self, &ctx);
         panels::learn::coach(self, &ctx);
-        self.draw_toast(ui, full);
+        let lift = panels::media_panels::import_card(self, ui, full);
+        self.draw_toast(ui, full, lift);
     }
 
-    fn draw_toast(&mut self, ui: &mut egui::Ui, full: egui::Rect) {
+    /// The status message or the latest toast, bottom left (`lift` points higher while the
+    /// Importing card is there).
+    fn draw_toast(&mut self, ui: &mut egui::Ui, full: egui::Rect, lift: f32) {
         let now = ui.input(|i| i.time);
         let msg = if !self.ui.status.is_empty() {
             Some(self.ui.status.clone())
@@ -1463,11 +1466,12 @@ impl EffectcraftApp {
         };
         if let Some(m) = msg {
             let t = &self.tokens;
-            let galley = ui.painter().layout_no_wrap(m, Tokens::ui(12.0), t.text);
-            let r = egui::Rect::from_min_size(egui::pos2(full.min.x + 16.0, full.max.y - 44.0), galley.size() + egui::vec2(24.0, 14.0));
+            let galley = ui.painter().layout_no_wrap(m.clone(), Tokens::ui(12.0), t.text);
+            let r = egui::Rect::from_min_size(egui::pos2(full.min.x + 16.0, full.max.y - 44.0 - lift), galley.size() + egui::vec2(24.0, 14.0));
             ui.painter().rect_filled(r, 6.0, t.panel_bg);
             ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, t.field_border), egui::StrokeKind::Inside);
             ui.painter().galley(r.min + egui::vec2(12.0, 7.0), galley, t.text);
+            self.auto.add("toast", r, &m);
             let resp = ui.interact(r, egui::Id::new("toast"), egui::Sense::click());
             if resp.clicked() {
                 self.ui.status.clear();

@@ -173,7 +173,8 @@ pub fn reveal(app: &mut EffectcraftApp, kind: &str, now: f64, add: bool) {
     } else {
         kinds = vec![kind.to_string()];
     }
-    tl.apply_reveal(&targets, kinds);
+    tl.apply_reveal(&targets, kinds.clone());
+    crate::panels::timeline::open_revealed(app, &targets, &kinds);
 }
 
 /// Show Time Remap on the layers of a `layer.enableTimeRemap` (`layers` by id, else the
@@ -1073,6 +1074,10 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             if !shown.is_empty() {
                 tl.apply_reveal(&shown, vec!["props".into()]);
             }
+            // Properties inside effects (puppet pins…) show under their effect, twirled open.
+            for (layer, prop) in props.iter().filter_map(|x| Some((x.get("layer")?.as_u64()?, x.get("prop")?.as_u64()?))) {
+                crate::panels::timeline::open_effect_paths(app, layer, &[prop]);
+            }
             json!({"revealed": found.len()})
         }
         _ => return Err(format!("`{id}` is not a frontend command")),
@@ -1153,6 +1158,10 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     };
     let Some(v) = picked else { return Some(Ok(Value::Null)) };
     p.insert(key.to_string(), v);
+    // Picked files import in the background, with the Importing card showing progress (#270).
+    if matches!(id, "file.import" | "file.importMultiple") {
+        p.insert("background".into(), Value::Bool(true));
+    }
     // Photoshop files ask how to import them first.
     if id == "file.import" && crate::panels::dialogs::open_form(app, id, &Value::Object(p.clone())) {
         return Some(Ok(json!({"dialog": id})));

@@ -229,3 +229,14 @@ fn adding_models_switches_classic_comps_to_advanced_3d() {
     s.execute("comp.renderer", json!({"renderer": "classic3d"})).unwrap();
     assert!(toasts(&mut s).iter().any(|m| m.contains("Classic 3D doesn't draw")));
 }
+
+/// Importing a 3D model doesn't ask how to interpret its alpha (Interpret Footage): a model
+/// renders its own.
+#[test]
+fn importing_a_model_does_not_ask_about_alpha() {
+    let mut s = session();
+    assert_eq!(s.prefs.unlabeled_alpha(false), None, "Ask User");
+    let r = s.execute("file.import", json!({"paths": [fixture("quad.glb")]})).unwrap();
+    assert_eq!(r["unlabeledAlpha"], json!([]));
+    assert!(!s.drain_events().iter().any(|e| matches!(e, crate::Event::Frontend { command, .. } if command == "file.interpretFootage")));
+}

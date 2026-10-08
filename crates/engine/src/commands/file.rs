@@ -264,9 +264,13 @@ impl Prober {
         {
             warning = Some(format!("{path}: {gaps}"));
         }
-        // Settings ▸ Import ▸ Interpret Unlabeled Alpha As.
+        // Settings ▸ Import ▸ Interpret Unlabeled Alpha As: images only (a 3D model renders its
+        // own alpha, and audio and data have none).
         let mut ask_alpha = false;
-        if f.alpha != effectcraft_project::AlphaMode::Ignore && !alpha_is_labeled(path, &f.codec) {
+        if matches!(f.kind, FootageKind::Still | FootageKind::Sequence | FootageKind::Video)
+            && f.alpha != effectcraft_project::AlphaMode::Ignore
+            && !alpha_is_labeled(path, &f.codec)
+        {
             let setting = if f.kind == FootageKind::Video { self.movie_alpha } else { self.still_alpha };
             match setting {
                 Some(a) => f.alpha = a,

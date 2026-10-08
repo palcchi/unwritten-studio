@@ -862,6 +862,56 @@ struct KeyDrag {
 fn key_drag_id() -> egui::Id {
     egui::Id::new("tl-key-drag")
 }
+
+/// A layer switch pressed and dragged over other layers: the switch, the state the press gave
+/// it, and the undo step the drag folds into.
+#[derive(Clone, Debug)]
+struct SwitchDrag {
+    switch: &'static str,
+    value: bool,
+    merge: String,
+}
+
+fn switch_drag_id() -> egui::Id {
+    egui::Id::new("tl-switch-drag")
+}
+
+/// A layer's switch (A/V Features and Switches columns) in `row`. Pressing it sets it, and
+/// dragging on gives the same switch of every layer the pointer passes the same new state, in
+/// one undo step (After Effects).
+#[allow(clippy::too_many_arguments)]
+fn layer_switch(
+    ui: &mut egui::Ui,
+    t: &Tokens,
+    row: Rect,
+    br: Rect,
+    icon: Icon,
+    on: bool,
+    id: egui::Id,
+    layer: u64,
+    name: &'static str,
+    actions: &mut Vec<(String, serde_json::Value)>,
+) {
+    let resp = widgets::icon_toggle(ui, br, icon, on, t, id, Sense::click_and_drag());
+    let set = |actions: &mut Vec<(String, serde_json::Value)>, value: bool, merge: &str| {
+        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name, "value": value, "merge": merge})))
+    };
+    if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+        let merge = format!("tl-switch-{}", ui.input(|i| i.time));
+        set(actions, !on, &merge);
+        ui.data_mut(|d| d.insert_temp(switch_drag_id(), SwitchDrag { switch: name, value: !on, merge }));
+    } else if let Some(d) = ui.data(|d| d.get_temp::<SwitchDrag>(switch_drag_id())).filter(|d| d.switch == name && d.value != on)
+        // The heights the pointer moved over since the last frame, so a quick drag skips no row.
+        && let Some((a, b)) = ui.input(|i| i.pointer.interact_pos().map(|p| (p.y - i.pointer.delta().y, p.y)))
+        && a.min(b) < row.max.y
+        && a.max(b) >= row.min.y
+    {
+        set(actions, d.value, &d.merge);
+    } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
+        // Keyboard or accessibility activation (a pointer press was handled above).
+        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name})));
+    }
+}
 /// Set on the frame the reorder drag is released.
 /// Where layers dropped at height `py` land among the visible layer rows: above the first row
 /// whose middle is below it (its index in `layer_rows`), else below the last row. Returns that
@@ -923,6 +973,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     p.line_segment([pos2(graph_x0 - 1.0, top), pos2(graph_x0 - 1.0, rect.max.y)], Stroke::new(1.0, t.app_bg));
 
     let mut actions: Vec<(String, serde_json::Value)> = Vec::new();
+    if !ui.input(|i| i.pointer.primary_down()) {
+        ctx.data_mut(|d| d.remove::<SwitchDrag>(switch_drag_id()));
+    }
     // ---- header (left): time display, search, switches.
     let tc = crate::panels::timecode(&app.session, &comp, time);
     let tc_rect = Rect::from_min_size(pos2(rect.min.x + 12.0, top + 6.0), vec2(150.0, 24.0));
@@ -1339,11 +1392,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         continue;
                     }
                     lp.rect_filled(br.shrink(0.5), 1.0, SWITCH_BOX);
-                    let resp = widgets::icon_toggle(ui, br, icon, on, &t, egui::Id::new(("av", layer.id.0, i)), None);
+                    layer_switch(ui, &t, r, br, icon, on, egui::Id::new(("av", layer.id.0, i)), layer.id.0, name, &mut actions);
                     app.auto.add(&format!("timeline.layer.{}.{name}", layer.id.0), br, name);
-                    if resp.clicked() {
-                        actions.push(("layer.setSwitch".into(), json!({"layers": [layer.id.0], "switch": name})));
-                    }
                 }
                 // Label swatch.
                 if vis.label {
@@ -1484,11 +1534,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     let br = Rect::from_center_size(pos2(cw.switches + SW * i as f32 + SW / 2.0, cy), vec2(16.0, 16.0));
                     lp.rect_filled(br.shrink(1.0), 1.0, SWITCH_BOX);
-                    let resp = widgets::icon_toggle(ui, br, icon, on, &t, egui::Id::new(("sw", layer.id.0, i)), None);
+                    layer_switch(ui, &t, r, br, icon, on, egui::Id::new(("sw", layer.id.0, i)), layer.id.0, name, &mut actions);
                     app.auto.add(&format!("timeline.layer.{}.switch.{name}", layer.id.0), br, name);
-                    if resp.clicked() {
-                        actions.push(("layer.setSwitch".into(), json!({"layers": [layer.id.0], "switch": name})));
-                    }
                 }
                 // Modes.
                 if app.ui.timeline.show_modes && layer.source.is_av() {
@@ -1715,7 +1762,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 if let Some(en) = fx {
                     let fr_ = Rect::from_center_size(pos2(cw.switches + SW * 3.0 + SW / 2.0, cy), vec2(16.0, 16.0));
-                    if widgets::icon_toggle(ui, fr_, Icon::Fx, *en, &t, egui::Id::new(("gfx", uid)), None).clicked() {
+                    if widgets::icon_toggle(ui, fr_, Icon::Fx, *en, &t, egui::Id::new(("gfx", uid)), Sense::click()).clicked() {
                         actions.push(("effect.toggle".into(), json!({"layer": layer.id.0, "effect": uid})));
                     }
                     app.auto.add(&format!("timeline.group.{uid}.fx"), fr_, name);
@@ -1724,7 +1771,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     // Layer style eye switch in the A/V column, like AE.
                     let er = Rect::from_center_size(pos2(cw.av + 10.0, cy), vec2(15.0, 15.0));
                     lp.rect_stroke(er.shrink(1.5), 2.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
-                    if widgets::icon_toggle(ui, er, Icon::Eye, *en, &t, egui::Id::new(("geye", uid)), None).clicked() {
+                    if widgets::icon_toggle(ui, er, Icon::Eye, *en, &t, egui::Id::new(("geye", uid)), Sense::click()).clicked() {
                         actions.push(("layer.style.toggle".into(), json!({"layer": layer.id.0, "style": uid})));
                     }
                     app.auto.add(&format!("timeline.group.{uid}.eye"), er, name);
@@ -2402,6 +2449,22 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mstrip = Rect::from_min_max(pos2(graph_x0, ruler.max.y - 12.0), pos2(graph_x1 + 10.0, ruler.max.y));
     let mrows = rows_rect.intersect(Rect::from_min_max(pos2(graph_x0, rows_rect.min.y), rows_rect.max));
     super::markers_ui::comp_markers(app, ui, &comp, tm, mstrip, mrows);
+
+    // Spacebar held: the Hand tool. Dragging the ruler or the time graph scrolls it in time when
+    // zoomed in (registered last, so it takes the drag from the bars, keys and markers there).
+    if super::space_hand(&ctx) {
+        let area = Rect::from_min_max(pos2(graph_x0, ruler.min.y), pos2(rect.max.x, rows_rect.max.y));
+        let hand = ui.interact(area, egui::Id::new("tl-hand"), Sense::drag());
+        app.auto.add("timeline.hand", area, "Hand (hold Spacebar)");
+        if hand.hovered() || hand.dragged() {
+            ctx.set_cursor_icon(if hand.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+        }
+        if hand.dragged() && app.ui.timeline.pps.is_some() {
+            let start = app.ui.timeline.start;
+            let last = (comp.duration.seconds() - (tm.t(graph_x1) - tm.start)).max(start).max(0.0);
+            app.ui.timeline.start = (start - hand.drag_delta().x as f64 / pps).clamp(0.0, last);
+        }
+    }
 
     // Drop targets: effects from Effects & Presets go on the layer under the pointer. Footage and
     // comps from the Project panel and files from the Media Browser go where they are dropped: a

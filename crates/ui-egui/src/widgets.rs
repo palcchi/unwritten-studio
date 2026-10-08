@@ -148,15 +148,15 @@ pub fn twirl(ui: &mut Ui, rect: Rect, open: bool, id: egui::Id, t: &Tokens) -> R
     resp
 }
 
-/// A flat icon toggle inside a rect.
-pub fn icon_toggle(ui: &mut Ui, rect: Rect, icon: Icon, on: bool, t: &Tokens, id: egui::Id, on_color: Option<Color32>) -> Response {
-    let resp = ui.interact(rect, id, Sense::click());
+/// A flat icon toggle inside a rect (`sense`: click, or click and drag for a switch dragged
+/// over several rows).
+pub fn icon_toggle(ui: &mut Ui, rect: Rect, icon: Icon, on: bool, t: &Tokens, id: egui::Id, sense: Sense) -> Response {
+    let resp = ui.interact(rect, id, sense);
     if resp.hovered() {
         ui.painter().rect_filled(rect, 2.0, t.hover);
     }
-    let col = if on { on_color.unwrap_or(t.icon) } else { t.text_faint.gamma_multiply(0.7) };
     if on || resp.hovered() {
-        icons::paint(ui.painter(), rect.shrink(rect.width() * 0.18), icon, if !on { t.text_faint } else { col });
+        icons::paint(ui.painter(), rect.shrink(rect.width() * 0.18), icon, if on { t.icon } else { t.text_faint });
     }
     resp
 }

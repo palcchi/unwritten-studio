@@ -404,7 +404,8 @@ fn set_switch(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_p(p, "switch").ok_or_else(|| bad("layer.setSwitch", "missing `switch`"))?.to_string();
     let v = b_p(p, "value");
     let label = format!("Layer Switch ({name})");
-    let r = s.edit(&label, None, |proj, _| {
+    // `merge`: a switch dragged over several layers in the Timeline is one undo step.
+    let r = s.edit(&label, merge_p(p), |proj, _| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let mut last = false;
         // Toggle relative to the first layer so a multi-selection ends up consistent.
@@ -1344,7 +1345,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Layer Switch",
             [],
             None,
-            "{layers?, switch: video|audio|solo|lock|shy|collapse|quality|fx|frameBlend|motionBlur|adjustment|threeD|guide|preserveTransparency, value?}",
+            "{layers?, switch: video|audio|solo|lock|shy|collapse|quality|fx|frameBlend|motionBlur|adjustment|threeD|guide|preserveTransparency, value?, merge?}",
             has_layers,
             set_switch
         ),

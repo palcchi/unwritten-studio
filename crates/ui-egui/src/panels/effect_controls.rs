@@ -946,7 +946,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let selected = app.session.state.selected_props.iter().any(|(l, u)| *l == layer.id && *u == g.uid);
         bp.rect_filled(r, 0.0, if selected { Color32::from_rgb(0x2f, 0x3a, 0x52) } else { Color32::from_rgb(0x2a, 0x2a, 0x2a) });
         let fxr = Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(16.0, 16.0));
-        if widgets::icon_toggle(ui, fxr, Icon::Fx, g.enabled, &t, egui::Id::new(("ec-fx", g.uid)), None).clicked() {
+        if widgets::icon_toggle(ui, fxr, Icon::Fx, g.enabled, &t, egui::Id::new(("ec-fx", g.uid)), Sense::click()).clicked() {
             actions.push(("effect.toggle".into(), json!({"layer": layer.id.0, "effect": g.uid})));
         }
         app.auto.add(&format!("effectControls.effect.{}.fx", g.uid), fxr, &g.name);
@@ -1063,6 +1063,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             ctx.data_mut(|d| d.remove::<u64>(drag_id));
         }
     }
+    // Right-click anywhere a control has no menu of its own: the Effect menu, which applies to
+    // the selected layers (After Effects). Drawn after the rows, whose menus open first.
+    let menu_id = bg.id.with("effect-menu");
+    let open = ui.input(|i| i.pointer.secondary_clicked())
+        && ui.rect_contains_pointer(body)
+        && (!egui::Popup::is_any_open(&ctx) || egui::Popup::is_id_open(&ctx, menu_id));
+    egui::Popup::context_menu(&bg).id(menu_id).open_memory(open.then_some(egui::SetOpenCommand::Bool(true))).show(|ui| {
+        ui.set_min_width(200.0);
+        actions.extend(crate::menus::menu_contents(app, ui, "Effect"));
+    });
     ui.set_clip_rect(panel_clip);
     let content_h = y + scroll - body.min.y;
     scroll = scroll.min((content_h - body.height()).max(0.0));

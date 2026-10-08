@@ -136,3 +136,32 @@ fn effects_dropped_on_the_viewer_go_on_the_layer_under_the_pointer() {
     let effects = |id: u64| comp.layer(effectcraft_engine::project::LayerId(id)).unwrap().effects().map_or(0, |fx| fx.groups().count());
     assert_eq!((effects(top), effects(middle)), (1, 0), "on Top, which is under the pointer");
 }
+
+/// #227: Project items dropped on Create a new Composition (the Project panel's footer) make a
+/// composition from them, as File ▸ New Comp from Selection does; several items ask how in its
+/// dialog.
+#[test]
+fn project_items_dropped_on_new_comp_make_a_composition() {
+    let (mut h, clip) = harness();
+    let comps = |h: &Harness<'_, EffectcraftApp>| h.state().session.project.comps().count();
+    let before = comps(&h);
+    let item = rect(&h, &format!("project.item.{clip}.name")).center();
+    let button = rect(&h, "project.newComp").center();
+    drag(&mut h, item, button, Modifiers::NONE);
+    assert_eq!(comps(&h), before + 1);
+    let comp = h.state().session.active_comp().unwrap();
+    assert_eq!((comp.width, comp.height, comp.duration.seconds()), (160, 90, 1.0), "the item's settings");
+    assert_eq!(stack(&h), ["Clip"], "holding the item");
+    assert_ne!(h.state().session.active_comp_id().map(|c| c.0), Some(clip), "a new comp, open");
+    assert!(h.state().dialog.is_none());
+
+    // Two selected items, one dragged: New Composition from Selection asks how.
+    let main = h.state().session.project.items.values().find(|i| i.name == "Main").unwrap().id;
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), main];
+    h.run_steps(2);
+    let item = rect(&h, &format!("project.item.{clip}.name")).center();
+    drag(&mut h, item, button, Modifiers::NONE);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form));
+    assert!(h.state().auto.find("form.field.single").is_some(), "the New Composition from Selection dialog");
+    assert_eq!(comps(&h), before + 1, "nothing made yet");
+}

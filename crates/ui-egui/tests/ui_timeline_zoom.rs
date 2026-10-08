@@ -124,3 +124,40 @@ fn semicolon_toggles_frame_level_and_the_whole_comp() {
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.zoomFrameToggle", json!({})).unwrap();
     assert_eq!(h.state().ui.timeline.pps, None);
 }
+
+fn space(h: &mut Harness<'_, EffectcraftApp>, pressed: bool) {
+    h.event(Event::Key { key: egui::Key::Space, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE });
+    h.step();
+}
+
+/// #227: with Spacebar held, a drag over the time graph scrolls it in time (the Hand tool)
+/// instead of moving the layer bar under the pointer, and the release doesn't preview.
+#[test]
+fn spacebar_drag_scrolls_the_time_graph() {
+    let (mut h, layer) = harness();
+    // (Opening the comp showed all of it.)
+    h.state_mut().ui.timeline.pps = Some(200.0);
+    h.state_mut().ui.timeline.start = 10.0;
+    h.run_steps(2);
+    let in_point = |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layers[0].in_point.seconds();
+    let from = pos2(rect(&h, "timeline.ruler").center().x, over_bar(&h, layer).y);
+    // 400 px to the left at 200 px/s: 2 s later.
+    space(&mut h, true);
+    drag(&mut h, from, from - vec2(400.0, 0.0));
+    space(&mut h, false);
+    let (a, _) = visible(&h);
+    assert!((a - 12.0).abs() < 0.01, "starts at {a}");
+    assert_eq!(in_point(&h), 0.0, "the bar didn't move");
+    assert!(!h.state().playback.playing, "a Spacebar drag doesn't preview");
+    // To the right, at most back to the comp's start.
+    space(&mut h, true);
+    for _ in 0..6 {
+        drag(&mut h, from, from + vec2(500.0, 0.0));
+    }
+    space(&mut h, false);
+    assert_eq!(visible(&h).0, 0.0);
+    assert_eq!(in_point(&h), 0.0);
+    // Without Spacebar the same drag moves the bar.
+    drag(&mut h, from, from - vec2(400.0, 0.0));
+    assert!(in_point(&h) < -1.0, "{}", in_point(&h));
+}

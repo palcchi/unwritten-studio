@@ -991,7 +991,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     app.ui.viewer.interacting = resp.dragged();
     let mods = ui.input(|i| i.modifiers);
-    let space_pan = ui.input(|i| i.key_down(egui::Key::Space)) && !ctx.egui_wants_keyboard_input();
+    let space_pan = super::space_hand(&ctx);
     // Pen tool: each press places a vertex (dragging pulls Bezier tangents); pressing on the
     // first vertex closes the path.
     if app.ui.tool == Tool::Pen

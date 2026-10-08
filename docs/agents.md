@@ -36,7 +36,10 @@ You can also register it from the command line:
 Desktop, Cursor and the like) take the same `command` and `args`.
 
 - **Headless** (`["mcp"]`): an in-process session with no window. Add `"--demo"` or
-  `"--project", "file.ecproj"` to start with content. Startup is instant.
+  `"--project", "file.ecproj"` to start with content. Startup is instant. It renders on the CPU
+  unless you add `"--gpu"` (`["mcp", "--gpu"]`), which attaches the GPU compositor on a device of
+  its own; if no adapter is usable the server says why and exits. `get_project`'s `renderer`
+  (`render.backend`) reports `active` (`gpu` / `cpu`) and, on the CPU, `why`.
 - **Bridge** (`["mcp", "--bridge", "9877"]`): drives a running `effectcraft --control 9877`, so you
   see every change live. Bridge mode adds `screenshot` and the `ui_*` tools.
 

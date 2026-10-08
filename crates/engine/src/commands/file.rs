@@ -546,11 +546,20 @@ fn render_backend(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn backend_status(s: &Session) -> Value {
     let adapter = s.accel.as_ref().map(|a| a.name());
     let gpu = s.project.settings.gpu_acceleration;
+    // Why it renders on the CPU (#262).
+    let why = if !gpu {
+        Some("the project's renderer is Mercury Software Only".to_string())
+    } else if adapter.is_none() {
+        Some(s.accel_note.clone().unwrap_or_else(|| "no GPU compositor is attached".into()))
+    } else {
+        None
+    };
     json!({
         "renderer": if gpu { "Mercury GPU Acceleration" } else { "Mercury Software Only" },
         "gpuAcceleration": gpu,
         "adapter": adapter,
         "active": if gpu && adapter.is_some() { "gpu" } else { "cpu" },
+        "why": why,
     })
 }
 

@@ -340,6 +340,9 @@ pub struct Session {
     /// that ask for [`effectcraft_render::Backend::Gpu`]/`Auto`, and by Render Queue exports
     /// when the project's renderer is the GPU.
     pub accel: Option<Arc<dyn effectcraft_render::Accelerator>>,
+    /// Why there is no [`Session::accel`] (`render.backend`'s `why`): the host's reason, e.g. a
+    /// headless start without `--gpu` or the compositor's setup error.
+    pub accel_note: Option<String>,
     /// Expression syntax checker (set by the host that links the expression engine).
     pub expr_check: Option<fn(&str) -> std::result::Result<(), String>>,
     pub importer: Option<Arc<dyn Importer>>,
@@ -473,6 +476,7 @@ impl Default for Session {
             footage: Arc::new(NoFootage),
             expr: None,
             accel: None,
+            accel_note: None,
             expr_check: None,
             importer: None,
             exporter: None,

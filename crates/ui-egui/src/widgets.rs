@@ -2,6 +2,7 @@
 
 use egui::{Align2, Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 
+use crate::automation::Registry;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 
@@ -275,6 +276,79 @@ pub fn checkbox(ui: &mut Ui, rect: Rect, on: bool, t: &Tokens, id: egui::Id) -> 
         ui.painter().line(vec![p(0.2, 0.52), p(0.42, 0.74), p(0.8, 0.28)], Stroke::new(1.6, Color32::WHITE));
     }
     resp
+}
+
+/// A scroll bar along `track` (vertical when it is taller than wide) for content scrolled
+/// `scroll` of `max`, registered for automation as `key` ("scroll/max"): drag the thumb, or
+/// press the track beside it to centre the thumb there. The thumb's length is the share in view
+/// (the view is about as long as its track), at least 16 points but never longer than the track
+/// (a panel only a few points tall still draws, #231). Returns the new scroll.
+pub fn scroll_bar(ui: &mut Ui, auto: &mut Registry, key: &str, track: Rect, scroll: f32, max: f32, t: &Tokens) -> f32 {
+    if !track.is_positive() {
+        // (A panel too short for its bar.)
+        return scroll.clamp(0.0, max.max(0.0));
+    }
+    let vertical = track.height() >= track.width();
+    let a = usize::from(vertical);
+    let len = track.size()[a];
+    let thumb_len = (len * len / (len + max.max(0.0)).max(1.0)).max(16.0).min(len).max(0.0);
+    let travel = (len - thumb_len).max(1.0);
+    let thumb_at = |s: f32| track.min[a] + (len - thumb_len) * if max > 0.0 { (s / max).clamp(0.0, 1.0) } else { 0.0 };
+    let resp = ui.interact(track.expand2(if vertical { vec2(3.0, 0.0) } else { vec2(0.0, 3.0) }), egui::Id::new(key), Sense::drag());
+    let pressed = resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.any_pressed());
+    let mut s = scroll;
+    if let Some(p) = resp.interact_pointer_pos().filter(|p| pressed && !(thumb_at(scroll)..=thumb_at(scroll) + thumb_len).contains(&p[a])) {
+        s = (p[a] - thumb_len / 2.0 - track.min[a]) * max / travel;
+    } else if resp.dragged() {
+        s += resp.drag_delta()[a] * max / travel;
+    }
+    let s = s.clamp(0.0, max.max(0.0));
+    let thumb = if vertical {
+        Rect::from_min_size(pos2(track.min.x, thumb_at(s)), vec2(track.width(), thumb_len))
+    } else {
+        Rect::from_min_size(pos2(thumb_at(s), track.min.y), vec2(thumb_len, track.height()))
+    };
+    ui.painter().rect_filled(track, 2.0, t.field_bg);
+    ui.painter().rect_filled(thumb, 2.0, if resp.hovered() || resp.dragged() { t.text_dim } else { t.text_faint });
+    auto.add(key, track, &format!("{s}/{max}"));
+    if s != scroll {
+        ui.ctx().request_repaint();
+    }
+    s
+}
+
+/// Vertical scrolling for a panel that lays out its own rows: [`PanelScroll::begin`] gives the
+/// offset to draw them at (moved by the mouse wheel over `area`), [`PanelScroll::end`] takes the
+/// rows' height and draws a [`scroll_bar`] on the right edge while they overflow, so every
+/// panel can be scrolled without a wheel or touchpad (#271).
+pub struct PanelScroll {
+    id: egui::Id,
+    area: Rect,
+    /// How far the rows are scrolled up.
+    pub offset: f32,
+}
+
+impl PanelScroll {
+    pub fn begin(ui: &Ui, id: egui::Id, area: Rect) -> Self {
+        // (Clamped to last frame's overflow: the rows' height is known once they are drawn.)
+        let (mut offset, max): (f32, f32) = ui.data(|d| d.get_temp(id)).unwrap_or_default();
+        if ui.rect_contains_pointer(area) {
+            offset -= ui.input(|i| i.smooth_scroll_delta.y);
+        }
+        Self { id, area, offset: offset.clamp(0.0, max.max(0.0)) }
+    }
+
+    /// The rows were `content` points tall: keep the offset, with the scroll bar registered for
+    /// automation as `key`.
+    pub fn end(self, ui: &mut Ui, auto: &mut Registry, key: &str, content: f32, t: &Tokens) {
+        let max = (content - self.area.height()).max(0.0);
+        let mut offset = self.offset.min(max);
+        if max > 0.0 {
+            let track = Rect::from_min_max(pos2(self.area.max.x - 6.0, self.area.min.y + 1.0), pos2(self.area.max.x - 2.0, self.area.max.y - 1.0));
+            offset = scroll_bar(ui, auto, key, track, offset, max, t);
+        }
+        ui.data_mut(|d| d.insert_temp(self.id, (offset, max)));
+    }
 }
 
 /// A pointer press this frame landed outside a popup `Area` (its `show` response). egui

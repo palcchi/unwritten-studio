@@ -198,16 +198,12 @@ fn graph(app: &mut EffectcraftApp, ui: &mut egui::Ui, g: Rect, curve: &mut EaseC
 fn grid(app: &mut EffectcraftApp, ui: &mut egui::Ui, list: Rect, selected: Option<&str>) -> Option<(String, EaseCurve)> {
     let t = app.tokens;
     let p = ui.painter().with_clip_rect(list);
-    let scroll_id = egui::Id::new("easePresets.scroll");
-    let mut scroll: f32 = ui.ctx().data(|d| d.get_temp(scroll_id).unwrap_or(0.0));
-    if ui.rect_contains_pointer(list) {
-        scroll = (scroll - ui.input(|i| i.smooth_scroll_delta.y)).max(0.0);
-    }
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("ease-presets-scroll"), list);
     let cols = (((list.width() + GAP) / (TILE.x + GAP)).floor() as usize).max(1);
     let (mut clicked, mut count) = (None, 0);
     for (n, (name, curve, built_in)) in ease_presets::presets(&app.session).enumerate() {
         count = n + 1;
-        let r = Rect::from_min_size(list.min + vec2((n % cols) as f32 * (TILE.x + GAP), (n / cols) as f32 * (TILE.y + GAP) - scroll), TILE);
+        let r = Rect::from_min_size(list.min + vec2((n % cols) as f32 * (TILE.x + GAP), (n / cols) as f32 * (TILE.y + GAP) - scroll.offset), TILE);
         if !r.intersects(list) {
             continue;
         }
@@ -242,8 +238,6 @@ fn grid(app: &mut EffectcraftApp, ui: &mut egui::Ui, list: Rect, selected: Optio
             clicked = Some((name.to_string(), curve));
         }
     }
-    let content = count.div_ceil(cols) as f32 * (TILE.y + GAP);
-    scroll = scroll.min((content - list.height()).max(0.0));
-    ui.ctx().data_mut(|d| d.insert_temp(scroll_id, scroll));
+    scroll.end(ui, &mut app.auto, "easePresets.scroll", count.div_ceil(cols) as f32 * (TILE.y + GAP), &t);
     clicked
 }

@@ -86,7 +86,9 @@ pub fn character(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let target = text_target(app);
     let enabled = target.is_some();
     let doc = target.as_ref().map(|t| t.doc.clone()).unwrap_or_default();
-    let mut y = rect.min.y + 10.0;
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("character-scroll"), rect);
+    let top = rect.min.y + 10.0 - scroll.offset;
+    let mut y = top;
     let x0 = rect.min.x + 10.0;
     let w = rect.width() - 20.0;
     let mut actions: Vec<serde_json::Value> = vec![];
@@ -279,7 +281,10 @@ pub fn character(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 actions.push(json!({"variations": {tag.clone(): nv}, "merge": format!("char-axis-{tag}")}));
             }
         }
+        y += 20.0 + axes.len().div_ceil(2) as f32 * 24.0;
     }
+    // (Room for the status line at the bottom.)
+    scroll.end(ui, &mut app.auto, "character.scroll", y + 44.0 - top, &t);
     match &target {
         None => {
             p.text(pos2(rect.center().x, rect.max.y - 20.0), Align2::CENTER_CENTER, "Select a text layer", Tokens::ui(11.0), t.text_faint);
@@ -441,7 +446,9 @@ pub fn paragraph(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let doc = target.as_ref().map(|t| t.doc.clone()).unwrap_or_default();
     let x0 = rect.min.x + 10.0;
     let w = rect.width() - 20.0;
-    let mut y = rect.min.y + 10.0;
+    let scroll = widgets::PanelScroll::begin(ui, egui::Id::new("paragraph-scroll"), rect);
+    let top = rect.min.y + 10.0 - scroll.offset;
+    let mut y = top;
     let mut actions: Vec<serde_json::Value> = vec![];
     let bw = ((w - 6.0 * 3.0) / 7.0).clamp(20.0, 28.0);
     for (i, (j, key)) in ALIGNS.into_iter().enumerate() {
@@ -530,6 +537,8 @@ pub fn paragraph(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     app.auto.add("paragraph.hangingPunctuation", hr, "Roman Hanging Punctuation");
     p.text(pos2(x0 + 20.0, y + 7.0), Align2::LEFT_CENTER, "Roman Hanging Punctuation", Tokens::ui(11.5), t.text_dim);
+    // (Room for the status line at the bottom.)
+    scroll.end(ui, &mut app.auto, "paragraph.scroll", y + 44.0 - top, &t);
     if !enabled {
         p.text(pos2(rect.center().x, rect.max.y - 20.0), Align2::CENTER_CENTER, "Select a text layer", Tokens::ui(11.0), t.text_faint);
     }

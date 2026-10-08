@@ -186,8 +186,10 @@ pub fn build(app: &EffectcraftApp) -> NativeMenu {
                                 role: Role::Services,
                                 label: if crate::i18n::japanese(app) {
                                     "サービス"
-                                } else if crate::i18n::chinese(app) {
+                                } else if crate::i18n::simplified(app) {
                                     "服务"
+                                } else if crate::i18n::traditional(app) {
+                                    "服務"
                                 } else {
                                     "Services"
                                 }

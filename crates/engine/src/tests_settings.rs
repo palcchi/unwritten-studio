@@ -519,6 +519,11 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     let mut zh = Session { config: Some(store.clone()), ..Default::default() };
     zh.load_settings();
     assert_eq!(zh.prefs.general.language, "zh-hans");
+    // zh-hant is the same: another language of the registered set, not an error.
+    s.execute("prefs.set", json!({"key": "general.language", "value": "zh-hant"})).unwrap();
+    let mut zh_hant = Session { config: Some(store.clone()), ..Default::default() };
+    zh_hant.load_settings();
+    assert_eq!(zh_hant.prefs.general.language, "zh-hant");
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let mut reloaded = Session { config: Some(store), ..Default::default() };
     reloaded.load_settings();

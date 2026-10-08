@@ -368,6 +368,26 @@ fn effects_see_layer_masks() {
     assert!(img.get(150, 50)[3] > 0.99, "mode None mask does not cut the layer");
 }
 
+/// An open mask (the Pen still drawing it) leaves the layer whole; closed, it masks (#290).
+#[test]
+fn open_masks_make_no_transparency() {
+    let render = |closed: bool| {
+        let (mut p, cid, comp) = setup();
+        let mut l = solid(&mut p, &comp, [1.0, 0.0, 0.0], 200, 100);
+        let path = ShapePath { closed, ..ShapePath::rect([50.0, 50.0], 40.0, 40.0) };
+        let mut next = p.next_id;
+        let m = build::mask(&mut Ids(&mut next), "Mask 1", path, MaskMode::Add, [255, 255, 0]);
+        p.next_id = next;
+        l.props.sub_mut("masks").unwrap().children.push(m.into());
+        p.comp_mut(cid).unwrap().layers.push(l);
+        render_frame(&p, cid, Tick::ZERO, 1.0)
+    };
+    let open = render(false);
+    assert!(open.get(50, 50)[3] > 0.99 && open.get(150, 50)[3] > 0.99, "the open mask cut the layer");
+    let closed = render(true);
+    assert!(closed.get(50, 50)[3] > 0.99 && closed.get(150, 50)[3] < 0.01, "the closed mask masks");
+}
+
 #[test]
 fn effects_read_layer_params() {
     let (mut p, cid, comp) = setup();

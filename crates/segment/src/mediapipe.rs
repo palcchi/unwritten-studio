@@ -107,8 +107,11 @@ fn weighted_nms(mut dets: Vec<Detection>) -> Vec<Detection> {
     dets.sort_by(|a, b| b.score.total_cmp(&a.score));
     let mut out = vec![];
     while let Some(top) = dets.first().copied() {
-        let (cluster, rest): (Vec<Detection>, Vec<Detection>) = dets.into_iter().partition(|d| iou(&d.bbox, &top.bbox) > NMS_IOU);
+        // `top` always joins its own cluster: its overlap with itself is 0 for a degenerate box
+        // (NaN or zero area), so partitioning it with the rest would never shrink `dets`.
+        let (mut cluster, rest): (Vec<Detection>, Vec<Detection>) = dets.into_iter().skip(1).partition(|d| iou(&d.bbox, &top.bbox) > NMS_IOU);
         dets = rest;
+        cluster.insert(0, top);
         let total: f32 = cluster.iter().map(|d| d.score).sum();
         if total <= 0.0 {
             out.push(top);
@@ -281,6 +284,18 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert!((out[0].bbox[0] - 0.5).abs() < 1e-5 && out[0].score == 0.9);
         assert_eq!(out[1].bbox[0], 50.0);
+    }
+
+    /// A degenerate box (NaN or zero area) overlaps nothing, not even itself: each still becomes
+    /// its own output instead of looping forever (#367).
+    #[test]
+    fn nms_terminates_on_degenerate_boxes() {
+        let d = Detection { bbox: [f32::NAN; 4], keypoints: [[f32::NAN; 2]; 6], score: 0.7 };
+        assert_eq!(weighted_nms(vec![d, d, d]).len(), 3);
+        let z = Detection { bbox: [0.0; 4], keypoints: [[0.0; 2]; 6], score: 0.0 };
+        assert_eq!(weighted_nms(vec![z, z]).len(), 2);
+        let n = Detection { bbox: [0.0; 4], keypoints: [[0.0; 2]; 6], score: f32::NAN };
+        assert_eq!(weighted_nms(vec![n, z, d]).len(), 3);
     }
 
     /// The official bundle (`EFFECTCRAFT_FACE_LANDMARKER` = path to `face_landmarker.task`) on a

@@ -401,6 +401,25 @@ Browser in the web app (landed in M13.10: browser storage and File System Access
   wrong signatures and versions, fuel exhaustion, traps and bit-identical output; script
   `Socket` validates ports, and ScriptUI resource strings accept trailing array commas.
 
+## Update: text and viewer fidelity (G1)
+
+Fixes from measured reports:
+
+- Glyphs that touch or overlap ("ff") are drawn as one outline, so no light seam shows where
+  their anti-aliased edges meet (#415). Characters of other colours, with Blur, or under an
+  Inter-Character Blending mode are still composited one by one.
+- Interior layer styles (Gradient / Color Overlay, Satin, Inner Glow, Inner Shadow, the inside of
+  Stroke) blend onto the layer's colour inside its alpha, so an anti-aliased edge no longer shows
+  a rim of the layer's own fill (#416). Not yet: Inner Bevel still shades an anti-aliased edge
+  over the layer's own colour.
+- Text layers are always rasterised at their on-screen scale, sharp at any Scale as in After
+  Effects, and an unscaled layer at a fractional position is no longer rasterised a quarter octave
+  too large (#390).
+- The viewer's Auto resolution renders the pixels the magnification needs (Full above 50 %), and
+  frames shown below 100 % are averaged (GPU frames through mip levels, CPU frames by a whole
+  factor) instead of minified bilinearly (#417). Not yet: the viewer resolution and magnification
+  are not remembered between launches.
+
 ## Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 
 EffectCraft's core keeps After Effects parity; what After Effects users get from third parties is

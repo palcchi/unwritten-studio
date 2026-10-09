@@ -252,17 +252,12 @@ impl Resolution {
     /// Render scale for a viewer magnification (and display pixel density).
     pub fn scale(self, zoom: f32, ppp: f32) -> f64 {
         match self {
+            // As in After Effects, Auto renders the pixels the magnification needs: the coarsest
+            // whole factor that still gives every screen pixel a rendered one (Full above 50 %,
+            // Half down to 33.3 %, Third down to 25 %, Quarter below), never fewer (#417).
             Resolution::Auto => {
-                let z = (zoom * ppp) as f64;
-                if z >= 0.75 {
-                    1.0
-                } else if z >= 0.45 {
-                    0.5
-                } else if z >= 0.3 {
-                    1.0 / 3.0
-                } else {
-                    0.25
-                }
+                let n = (1.0 / (zoom * ppp) as f64 + 1e-3).floor();
+                if n >= 1.0 { 1.0 / n.min(4.0) } else { 1.0 }
             }
             Resolution::Full => 1.0,
             Resolution::Half => 0.5,

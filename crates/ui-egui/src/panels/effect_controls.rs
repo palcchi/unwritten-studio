@@ -30,8 +30,12 @@ use crate::{EffectcraftApp, widgets};
 
 type Actions = Vec<(String, serde_json::Value)>;
 
-const ROW: f32 = 24.0;
+const ROW: f32 = 20.0;
 const DIAL_ROW: f32 = 64.0;
+// The effect title starts at 44 pt. Each level's names sit one tree step farther in;
+// reserve the same icon gutter for properties and groups so sibling names align.
+const PARAM_NAME_X: f32 = 58.0;
+const TREE_INDENT: f32 = 14.0;
 
 fn selected_layer(app: &EffectcraftApp) -> Option<Layer> {
     let comp = app.session.active_comp()?;
@@ -183,7 +187,9 @@ fn prop_row(
         key_navigator(app, ui, p, layer, prop, ectx, r, actions);
     }
     let value = ectx.value(layer, prop);
-    let vx = (r.min.x + r.width() * 0.48).max(swr.max.x + 130.0);
+    // Keep a shared value column while names and their icons follow the group hierarchy.
+    // Extremely deep groups still leave a little name space before their value.
+    let vx = (r.min.x + r.width() * 0.48).max(r.min.x + PARAM_NAME_X + 124.0).max(swr.max.x + 40.0);
     // A vector's values end before the keyframe navigator: in a narrow panel they move left over
     // the name (cut short) instead of running under the navigator (#271).
     let vx = match &value {
@@ -200,8 +206,8 @@ fn prop_row(
         }
         _ => vx,
     };
-    let name_clip =
-        Rect::from_min_max(pos2(swr.max.x + 6.0, r.min.y), pos2(((r.min.x + r.width() * 0.48).max(swr.max.x + 124.0) - 4.0).min(vx - 6.0), r.max.y));
+    let name_clip = Rect::from_min_max(pos2(swr.max.x + 6.0, r.min.y), pos2(vx - 6.0, r.max.y));
+    app.auto.add(&format!("effectControls.prop.{uid}.name"), name_clip, &prop.name);
     p.with_clip_rect(name_clip.intersect(p.clip_rect())).text(pos2(swr.max.x + 6.0, cy), Align2::LEFT_CENTER, &prop.name, Tokens::ui(12.0), t.text);
     let merge = format!("ec-{uid}");
     let set =
@@ -538,9 +544,10 @@ fn group_rows(
                     continue;
                 }
                 *y += ROW;
-                let indent = 24.0 + 14.0 * depth as f32;
+                let indent = PARAM_NAME_X - 13.0 + TREE_INDENT * depth as f32;
                 let visible = !(r.max.y < rect.min.y || r.min.y > rect.max.y);
                 if visible {
+                    app.auto.add(&format!("effectControls.row.{}", pr.uid), r, &pr.name);
                     prop_row(app, ui, p, layer, g, pr, ectx, r, indent, actions);
                 }
                 if app.ui.fx_slider_open.contains(&pr.uid) {
@@ -558,6 +565,8 @@ fn group_rows(
                         }
                     }
                 }
+                // Expanded sliders/dials belong to their parameter; separate after the whole block.
+                widgets::parameter_separator(p, Rect::from_min_max(r.min, pos2(r.max.x, *y)), &t);
             }
             Node::Group(sg) => {
                 // Paint strokes live in the Timeline only (AE's Paint shows Paint on Transparent).
@@ -566,8 +575,11 @@ fn group_rows(
                 }
                 *y += ROW;
                 let open = !app.ui.fx_closed.contains(&sg.uid);
-                let tw = Rect::from_center_size(pos2(r.min.x + 12.0 + 14.0 * depth as f32, r.center().y), vec2(12.0, 12.0));
+                widgets::parameter_separator(p, r, &t);
+                let tw = Rect::from_center_size(pos2(r.min.x + PARAM_NAME_X - 12.0 + TREE_INDENT * depth as f32, r.center().y), vec2(12.0, 12.0));
                 if r.max.y >= rect.min.y && r.min.y <= rect.max.y {
+                    app.auto.add(&format!("effectControls.row.{}", sg.uid), r, &sg.name);
+                    app.auto.add(&format!("effectControls.group.{}.twirl", sg.uid), tw, &sg.name);
                     if widgets::twirl(ui, tw, open, egui::Id::new(("ec-g", sg.uid)), &t).clicked() {
                         if open {
                             app.ui.fx_closed.insert(sg.uid);
@@ -575,7 +587,8 @@ fn group_rows(
                             app.ui.fx_closed.remove(&sg.uid);
                         }
                     }
-                    p.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &sg.name, Tokens::ui(12.0), t.text);
+                    let name = p.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &sg.name, Tokens::ui(12.0), t.text);
+                    app.auto.add(&format!("effectControls.group.{}.name", sg.uid), name, &sg.name);
                 }
                 if open {
                     let sub = fx.sub(&sg.match_id);
@@ -963,9 +976,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut tops: Vec<(u64, f32)> = vec![];
     for (fi, g) in fx.iter().enumerate() {
         let GroupKind::Effect { effect } = &g.kind else { continue };
-        let r = Rect::from_min_size(pos2(body.min.x, y), vec2(body.width(), 26.0));
+        let r = Rect::from_min_size(pos2(body.min.x, y), vec2(body.width(), ROW + 2.0));
         tops.push((g.uid, r.min.y));
-        y += 26.0;
+        y += ROW + 2.0;
         let open = !app.ui.fx_closed.contains(&g.uid);
         let selected = app.session.state.selected_props.iter().any(|(l, u)| *l == layer.id && *u == g.uid);
         bp.rect_filled(r, 0.0, if selected { Color32::from_rgb(0x2f, 0x3a, 0x52) } else { Color32::from_rgb(0x2a, 0x2a, 0x2a) });
@@ -983,7 +996,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
         app.auto.add(&format!("effectControls.effect.{}.twirl", g.uid), tw, &g.name);
-        bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &g.name, Tokens::semibold(12.0), t.text);
+        let name = bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &g.name, Tokens::semibold(12.0), t.text);
+        app.auto.add(&format!("effectControls.effect.{}.name", g.uid), name, &g.name);
         let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.min.y + 4.0), vec2(40.0, 18.0));
         let rresp = ui.interact(reset, egui::Id::new(("ec-reset", g.uid)), Sense::click());
         bp.text(reset.center(), Align2::CENTER_CENTER, "Reset", Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
@@ -1070,7 +1084,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // Drag an effect header to reorder: insertion line between headers.
     if let Some(du) = dragging {
         if let Some(pos) = ctx.pointer_interact_pos() {
-            let slot = tops.iter().position(|(_, ty)| pos.y < *ty + 13.0).unwrap_or(tops.len());
+            let slot = tops.iter().position(|(_, ty)| pos.y < *ty + (ROW + 2.0) / 2.0).unwrap_or(tops.len());
             let ly = tops.get(slot).map(|(_, ty)| *ty).unwrap_or(y - 4.0);
             bp.line_segment([pos2(body.min.x + 4.0, ly), pos2(body.max.x - 4.0, ly)], Stroke::new(2.0, t.accent));
             if ctx.input(|i| i.pointer.any_released()) {

@@ -81,3 +81,22 @@ Source File Timecode).
   "sequence": false}` for one frame).
 - **File ▸ Reload Footage** (Ctrl+Alt+L) reads the files again. A sequence picks up frames
   added to its folder (a render still in progress) and keeps its interpretation.
+
+**File ▸ Dependencies ▸ Relink Missing Footage…** searches a chosen folder and its subfolders
+for missing source files on the desktop. It relinks unique exact filenames whose decoded type,
+dimensions, codec and audio/video flags agree with the saved footage (movies and audio also
+require matching native frame rate and frame count). The Progress panel reports completion;
+the result includes each candidate's high or low confidence and reason. Confidence is a metadata
+heuristic, not proof of identical contents. Duplicate filenames remain unresolved even if only
+one decodes successfully; use Replace Footage to choose them manually.
+
+Relinking preserves item names, interpretation, layer timing and the saved sequence range, and
+the entire operation is one undo step. Sequences require every saved frame in the new folder;
+extra frames do not extend the range. Existing files are untouched. Layer-specific/page-specific
+footage, models and embedded data are left unresolved. Symlinks are skipped, unreadable folders
+fail the search without edits, and searches are limited to 100,000 entries. Browser folder
+relinking is unavailable.
+
+Agents: `file.relinkFootage {"folder": "/moved/shots", "dryRun": true, "wait": true}` returns
+a report without edits. Omit `dryRun` to apply unique high-confidence matches. Without `wait`,
+the command returns a cancellable job; `jobs.wait` / `jobs.list` expose its report.

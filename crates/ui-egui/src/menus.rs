@@ -1125,6 +1125,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
 /// Commands that need a file or folder path: ask the host's file dialog when `params` lacks one.
 fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
     enum Ask {
+        Folder,
         Import,
         OpenProject,
         Save(&'static str),
@@ -1151,6 +1152,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
         "file.installScript" | "file.installScriptUIPanel" => ("path", Ask::Open(&["jsx", "js"])),
         "effect.plugins.load" if params.get("folder").is_none() => ("path", Ask::Open(&["wasm", "wat"])),
         "file.replaceFootage" => ("path", Ask::Import),
+        "file.relinkFootage" => ("folder", Ask::Folder),
         "file.collectFiles" => ("folder", Ask::Save("Collected Files")),
         "file.saveCopyAsXml" => ("path", Ask::Save("Untitled Project.ecprojx")),
         "keys.rpfCameraImport" => ("path", Ask::Open(&["json", "csv", "txt"])),
@@ -1169,6 +1171,10 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     }
     let mut p = params.as_object().cloned().unwrap_or_default();
     let picked: Option<Value> = match ask {
+        Ask::Folder => {
+            let Some(f) = app.hooks.pick_folder.as_ref() else { return Some(Err("no folder dialog available (pass `folder`)".into())) };
+            f().map(Value::from)
+        }
         Ask::Import => {
             let Some(f) = app.hooks.pick_files.as_ref() else { return Some(Err("no file dialog available (pass `paths`)".into())) };
             let paths = f(&[

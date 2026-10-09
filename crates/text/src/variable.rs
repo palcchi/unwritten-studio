@@ -197,26 +197,40 @@ mod tests {
             eprintln!("no variable font installed: skipped");
             return;
         };
-        // An axis that changes widths (wdth or wght, else the first that moves).
-        let a = axes.iter().find(|a| a.tag == "wdth" && a.max > a.min).or_else(|| axes.iter().find(|a| a.tag == "wght" && a.max > a.min)).unwrap_or(&axes[0]);
         let info = crate::fonts::face(face).info.clone();
-        let st = |v: f32| crate::TextStyle {
+        // An axis that moves the advance: `wdth` and `wght` usually do, but a monospaced family
+        // keeps its advances fixed along `wght` (Google Sans Code does) and moves them along its
+        // own axis instead, so try the axes in order, take the first one that moves, and skip a
+        // machine whose variable faces never do.
+        let st = |a: &FontAxis, v: f32| crate::TextStyle {
             family: info.family.clone(),
             style: info.style.clone(),
             size: 100.0,
             variations: vec![(a.tag.clone(), v)],
             ..Default::default()
         };
-        let (lo, hi) = (crate::layout::measure("Hamburgefonts", &st(a.min)), crate::layout::measure("Hamburgefonts", &st(a.max)));
+        let mut moving = None;
+        for a in axes.iter().filter(|a| a.max > a.min) {
+            let (lo, hi) = (crate::layout::measure("Hamburgefonts", &st(a, a.min)), crate::layout::measure("Hamburgefonts", &st(a, a.max)));
+            if (lo - hi).abs() > 1.0 {
+                moving = Some((a.clone(), lo, hi));
+                break;
+            }
+        }
+        let Some((a, lo, hi)) = moving else {
+            eprintln!("no variable axis installed here moves the advance: skipped");
+            return;
+        };
         if crate::resolve(&info.family, &info.style).face != face {
             eprintln!("variable face not reachable by family/style: skipped");
             return;
         }
+        // The axis was picked because it moves the advance; the outline has to follow it too.
         assert!((lo - hi).abs() > 1.0, "{} {}..{}: advances {lo} vs {hi}", a.tag, a.min, a.max);
         let ink = |v: f32| {
-            let l = crate::layout::layout("H", &st(v), &crate::ParagraphStyle::default());
+            let l = crate::layout::layout("H", &st(&a, v), &crate::ParagraphStyle::default());
             l.glyphs.iter().map(|g| crate::glyph_outline(g).area().abs()).sum::<f64>()
         };
-        assert!((ink(a.min) - ink(a.max)).abs() > 1.0);
+        assert!((ink(a.min) - ink(a.max)).abs() > 1.0, "{} {}..{}: outlines do not move", a.tag, a.min, a.max);
     }
 }

@@ -154,9 +154,9 @@ Things that tripped up a long agent-driven session (a multi-scene 3D piece built
   example `app.run("layer.new3dPrimitive", {kind: "cube", position: [x, y, z]})` inside a loop. A
   script that throws keeps the edits it already made: wrap it in `app.beginUndoGroup()` /
   `app.endUndoGroup()` so one `undo {}` removes them all. (`batch` rolls back on its own.)
-- **Save early in headless mode.** The headless server keeps the project in memory only. If the
-  client restarts the server, unsaved work is gone, so call `save_project {"path": …}` after each
-  milestone ([#258](https://github.com/storytold/effectcraft/issues/258)).
+- **Save early in headless mode.** Without `--autosave` the headless server keeps the project in
+  memory only, so a server restart loses unsaved work: start it with `mcp --autosave` (see above)
+  or call `save_project {"path": …}` after each milestone.
 - **Environment light.** `layer.newLight` also accepts `"kind":"Environment"`: an equirectangular
   image that metallic surfaces reflect. Set its `lightOptions/source` to a footage, comp or solid
   layer by layer id; with no source it uses the comp's Environment Layer (`layer.environment`)

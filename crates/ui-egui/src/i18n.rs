@@ -7,7 +7,7 @@ use crate::EffectcraftApp;
 use effectcraft_engine::menus::MenuEntry;
 
 /// Every language with a catalog, in the order Settings ▸ General ▸ Language lists them.
-const CATALOG_CODES: [&str; 3] = ["ja", "zh-hans", "zh-hant"];
+const CATALOG_CODES: [&str; 4] = ["ja", "zh-hans", "zh-hant", "uk"];
 
 /// The active interface language: the stored preference when it names a catalog, otherwise `en`
 /// (English is the source of every label and needs no lookup).
@@ -38,9 +38,14 @@ pub(crate) fn traditional(app: &EffectcraftApp) -> bool {
     language(app) == "zh-hant"
 }
 
+/// The UI is in Ukrainian.
+pub(crate) fn ukrainian(app: &EffectcraftApp) -> bool {
+    language(app) == "uk"
+}
+
 /// Settings ▸ General ▸ Language ▸ Match System: the operating system's interface language
 /// where EffectCraft has it, else English (#229), as After Effects installs in the system's
-/// language. The browser build stays in English: it has no Japanese font of its own.
+/// language. The browser build stays in English because it has no system-locale probe.
 fn system_language() -> &'static str {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -53,7 +58,7 @@ fn system_language() -> &'static str {
 }
 
 /// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`, `zh-Hans-CN` → `zh-hans`,
-/// `zh-TW` → `zh-hant`).
+/// `zh-TW` → `zh-hant`, `uk-UA` → `uk`).
 fn supported(locale: Option<&str>) -> &'static str {
     let Some(locale) = locale else { return "en" };
     let mut parts = locale.split(['-', '_']);
@@ -61,6 +66,7 @@ fn supported(locale: Option<&str>) -> &'static str {
     let rest: Vec<String> = parts.map(|p| p.to_ascii_lowercase()).collect();
     match primary.as_str() {
         "ja" => "ja",
+        "uk" => "uk",
         "zh" => {
             let traditional = rest.iter().any(|p| p.starts_with("hant") || p.starts_with("tw") || p.starts_with("hk") || p.starts_with("mo"));
             if traditional { "zh-hant" } else { "zh-hans" }
@@ -74,6 +80,7 @@ pub(crate) fn label<'a>(app: &EffectcraftApp, command: &str, source: &'a str) ->
         "ja" => lookup(JAPANESE, command, source),
         "zh-hans" => lookup(SIMPLIFIED_CHINESE, command, source),
         "zh-hant" => lookup(TRADITIONAL_CHINESE, command, source),
+        "uk" => lookup(UKRAINIAN, command, source),
         _ => source,
     }
 }
@@ -91,6 +98,7 @@ pub(crate) fn entry(app: &EffectcraftApp, e: &MenuEntry, shown: String) -> Strin
         "ja" => ("取り消し", "取り消しできません", "やり直し", "やり直しできません"),
         "zh-hans" => ("撤销", "无可撤销的操作", "重做", "无可重做的操作"),
         "zh-hant" => ("復原", "沒有可復原的操作", "重做", "沒有可重做的操作"),
+        "uk" => ("Скасувати", "Немає дій для скасування", "Повторити", "Немає дій для повторення"),
         _ => return shown,
     };
     match e.command.as_str() {
@@ -113,6 +121,17 @@ pub(crate) fn entry(app: &EffectcraftApp, e: &MenuEntry, shown: String) -> Strin
 
 pub(crate) fn submenu(app: &EffectcraftApp, source: &str, shown: String) -> String {
     match language(app) {
+        "uk" => {
+            if source == "Assign Shortcut to Workspace" {
+                if let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix("” Workspace")) {
+                    return format!("Призначити скорочення для робочого простору «{name}»");
+                }
+            } else if source == "Assign Shortcut to 3D View"
+                && let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix('”'))
+            {
+                return format!("Призначити скорочення для вигляду 3D «{name}»");
+            }
+        }
         "ja" => {
             if source == "Assign Shortcut to Workspace" {
                 if let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix("” Workspace")) {
@@ -2018,6 +2037,629 @@ const JAPANESE: &[(&str, &str, &str)] = &[
     ("file.openDemoProject", "Open Demo Project", "デモプロジェクトを開く"),
 ];
 
+/// Ukrainian (uk): original translations of the English menu labels, using ordinary
+/// Ukrainian motion-graphics vocabulary. Product names and technical identifiers stay verbatim.
+/// The (command, source) keys match the other catalogs; no proprietary localization was used.
+const UKRAINIAN: &[(&str, &str, &str)] = &[
+    ("", "EffectCraft", "EffectCraft"),
+    ("app.about", "About EffectCraft...", "Про EffectCraft..."),
+    ("", "Settings...", "Налаштування..."),
+    ("app.settings", "General...", "Загальні..."),
+    ("app.settings", "Startup & Repair...", "Запуск і відновлення..."),
+    ("app.settings", "Project...", "Проєкт..."),
+    ("app.settings", "Composition...", "Композиція..."),
+    ("app.settings", "Previews...", "Попередній перегляд..."),
+    ("app.settings", "Appearance...", "Вигляд..."),
+    ("app.settings", "Grids & Guides...", "Сітки та напрямні..."),
+    ("app.settings", "Labels...", "Мітки..."),
+    ("app.settings", "Type...", "Текст..."),
+    ("app.settings", "Import...", "Імпорт..."),
+    ("app.settings", "Export...", "Експорт..."),
+    ("app.settings", "Audio...", "Аудіо..."),
+    ("app.settings", "Disk...", "Диск..."),
+    ("app.settings", "Memory & CPU...", "Пам’ять і CPU..."),
+    ("app.settings", "Video...", "Відео..."),
+    ("app.settings", "3D...", "3D..."),
+    ("app.settings", "Scripting & Expressions...", "Скрипти та вирази..."),
+    ("app.hide", "Hide EffectCraft", "Приховати EffectCraft"),
+    ("app.hideOthers", "Hide Others", "Приховати решту"),
+    ("app.showAll", "Show All", "Показати все"),
+    ("app.quit", "Quit EffectCraft", "Вийти з EffectCraft"),
+    ("", "File", "Файл"),
+    ("", "New", "Створити"),
+    ("file.newProject", "New Project", "Новий проєкт"),
+    ("file.newFromTemplate", "New Project from Template...", "Новий проєкт із шаблону..."),
+    ("project.newFolder", "New Folder", "Нова тека"),
+    ("file.open", "Open Project...", "Відкрити проєкт..."),
+    ("", "Open Recent", "Відкрити нещодавні"),
+    ("file.clearRecent", "Clear Recent Projects", "Очистити список нещодавніх проєктів"),
+    ("file.close", "Close", "Закрити"),
+    ("file.closeProject", "Close Project", "Закрити проєкт"),
+    ("file.save", "Save", "Зберегти"),
+    ("", "Save As", "Зберегти як"),
+    ("file.saveAs", "Save As...", "Зберегти як..."),
+    ("file.saveCopy", "Save a Copy...", "Зберегти копію..."),
+    ("file.saveCopyAsXml", "Save a Copy As XML...", "Зберегти копію як XML..."),
+    ("templates.saveAs", "Save as Template...", "Зберегти як шаблон..."),
+    ("file.incrementAndSave", "Increment and Save", "Збільшити номер версії та зберегти"),
+    ("file.revert", "Revert", "Повернути до збереженого"),
+    ("", "Import", "Імпорт"),
+    ("file.import", "File...", "Файл..."),
+    ("file.importMultiple", "Multiple Files...", "Кілька файлів..."),
+    ("file.importTimeline", "Adobe Premiere Pro Project...", "Проєкт Adobe Premiere Pro..."),
+    ("file.importPlaceholder", "Placeholder...", "Заповнювач..."),
+    ("file.importSolid", "Solid...", "Суцільний колір..."),
+    ("file.importLottie", "Lottie...", "Lottie..."),
+    ("file.importVanishingPoint", "Vanishing Point (.vpe)...", "Точка сходження (.vpe)..."),
+    ("essential.importTemplate", "Essential Graphics Template...", "Шаблон основної графіки..."),
+    ("", "Import Recent Footage", "Імпортувати нещодавні матеріали"),
+    ("file.clearRecentFootage", "Clear Recent Footage", "Очистити список нещодавніх матеріалів"),
+    ("", "Export", "Експорт"),
+    ("renderQueue.add", "Add to Render Queue", "Додати до черги рендерингу"),
+    ("file.exportTimeline", "Adobe Premiere Pro Project...", "Проєкт Adobe Premiere Pro..."),
+    ("file.exportLottie", "Lottie JSON...", "Lottie JSON..."),
+    ("essential.exportTemplate", "Essential Graphics Template...", "Шаблон основної графіки..."),
+    ("app.find", "Find", "Знайти"),
+    ("layer.addItem", "Add Footage to Comp", "Додати матеріал до композиції"),
+    ("file.newCompFromSelection", "New Comp from Selection...", "Нова композиція з виділеного..."),
+    ("", "Dependencies", "Залежності"),
+    ("file.collectFiles", "Collect Files...", "Зібрати файли..."),
+    ("file.consolidateFootage", "Consolidate All Footage", "Об’єднати повторювані матеріали"),
+    ("file.removeUnusedFootage", "Remove Unused Footage", "Вилучити невикористані матеріали"),
+    ("file.reduceProject", "Reduce Project", "Скоротити проєкт"),
+    ("file.findMissing", "Find Missing Effects", "Знайти відсутні ефекти"),
+    ("file.findMissing", "Find Missing Fonts", "Знайти відсутні шрифти"),
+    ("file.findMissing", "Find Missing Footage", "Знайти відсутні матеріали"),
+    ("file.watchFolder", "Watch Folder...", "Спостерігати за текою..."),
+    ("", "Scripts", "Скрипти"),
+    ("file.installScript", "Install Script File...", "Встановити файл скрипту..."),
+    ("file.installScriptUIPanel", "Install ScriptUI Panel...", "Встановити панель ScriptUI..."),
+    ("file.runScript", "Run Script File...", "Виконати файл скрипту..."),
+    ("", "Create Proxy", "Створити проксі"),
+    ("file.createProxy", "Still...", "Зображення..."),
+    ("file.createProxy", "Movie...", "Відео..."),
+    ("", "Set Proxy", "Призначити проксі"),
+    ("file.setProxy", "File...", "Файл..."),
+    ("file.setProxyNone", "None", "Немає"),
+    ("", "Interpret Footage", "Інтерпретувати матеріал"),
+    ("file.interpretFootage", "Main...", "Основний..."),
+    ("file.interpretProxy", "Proxy...", "Проксі..."),
+    ("file.rememberInterpretation", "Remember Interpretation", "Запам’ятати інтерпретацію"),
+    ("file.applyInterpretation", "Apply Interpretation", "Застосувати інтерпретацію"),
+    ("", "Replace Footage", "Замінити матеріал"),
+    ("file.replaceFootage", "File...", "Файл..."),
+    ("file.replaceWithPlaceholder", "Placeholder...", "Заповнювач..."),
+    ("file.replaceWithSolid", "Solid...", "Суцільний колір..."),
+    ("file.replaceWithLayeredComp", "With Layered Comp", "Багатошаровою композицією"),
+    ("file.reloadFootage", "Reload Footage", "Перезавантажити матеріал"),
+    ("file.revealInFinder", "Reveal in Finder", "Показати у Finder"),
+    ("file.projectSettings", "Project Settings...", "Налаштування проєкту..."),
+    ("app.quit", "Exit", "Вийти"),
+    ("", "Edit", "Редагування"),
+    ("edit.undo", "Undo", "Скасувати"),
+    ("edit.redo", "Redo", "Повторити"),
+    ("", "History", "Історія"),
+    ("app.commandPalette", "Quick Apply...", "Швидко застосувати..."),
+    ("edit.cut", "Cut", "Вирізати"),
+    ("edit.copy", "Copy", "Копіювати"),
+    ("edit.copyWithPropertyLinks", "Copy with Property Links", "Копіювати зі зв’язками властивостей"),
+    ("edit.copyWithRelativePropertyLinks", "Copy with Relative Property Links", "Копіювати з відносними зв’язками властивостей"),
+    ("edit.copyExpressionOnly", "Copy Expression Only", "Копіювати лише вираз"),
+    ("edit.paste", "Paste", "Вставити"),
+    ("edit.pasteReversedKeyframes", "Paste Reversed Keyframes", "Вставити ключові кадри у зворотному порядку"),
+    ("edit.pasteTextMatchFormatting", "Paste Text and Match Formatting", "Вставити текст із відповідним форматуванням"),
+    ("edit.pasteTextFormattingOnly", "Paste Text Formatting Only", "Вставити лише форматування тексту"),
+    ("edit.clear", "Clear", "Очистити"),
+    ("edit.duplicate", "Duplicate", "Дублювати"),
+    ("edit.splitLayer", "Split Layer", "Розділити шар"),
+    ("edit.liftWorkArea", "Lift Work Area", "Вилучити робочу область зі збереженням проміжку"),
+    ("edit.extractWorkArea", "Extract Work Area", "Вилучити робочу область зі зсувом"),
+    ("edit.selectAll", "Select All", "Виділити все"),
+    ("edit.deselectAll", "Deselect All", "Зняти всі виділення"),
+    ("", "Label", "Мітка"),
+    ("edit.selectLabelGroup", "Select Label Group", "Виділити групу мітки"),
+    ("edit.label", "None", "Немає"),
+    ("edit.label", "Red", "Червоний"),
+    ("edit.label", "Yellow", "Жовтий"),
+    ("edit.label", "Aqua", "Аквамариновий"),
+    ("edit.label", "Pink", "Рожевий"),
+    ("edit.label", "Lavender", "Лавандовий"),
+    ("edit.label", "Peach", "Персиковий"),
+    ("edit.label", "Sea Foam", "М’ятний"),
+    ("edit.label", "Blue", "Синій"),
+    ("edit.label", "Green", "Зелений"),
+    ("edit.label", "Purple", "Фіолетовий"),
+    ("edit.label", "Orange", "Помаранчевий"),
+    ("edit.label", "Brown", "Коричневий"),
+    ("edit.label", "Fuchsia", "Фуксія"),
+    ("edit.label", "Cyan", "Блакитний"),
+    ("edit.label", "Sandstone", "Піщаний"),
+    ("edit.label", "Dark Green", "Темно-зелений"),
+    ("app.settings", "Edit Label Colors...", "Змінити кольори міток..."),
+    ("", "Select Keyframe Label Group", "Виділити групу мітки ключових кадрів"),
+    ("keys.selectLabelGroup", "On Selected Layers", "На виділених шарах"),
+    ("keys.selectLabelGroup", "On All Layers", "На всіх шарах"),
+    ("keys.selectLabelGroup", "Visible Keyframes on Selected Layers", "Видимі ключові кадри на виділених шарах"),
+    ("keys.selectLabelGroup", "Visible Keyframes on All Layers", "Видимі ключові кадри на всіх шарах"),
+    ("", "Purge", "Очистити пам’ять"),
+    ("edit.purge", "All Cache...", "Весь кеш..."),
+    ("edit.purge", "All Memory & Disk Cache...", "Усю пам’ять і дисковий кеш..."),
+    ("edit.purge", "All Memory", "Усю пам’ять"),
+    ("edit.purge", "All Disk Cache...", "Весь дисковий кеш..."),
+    ("edit.purge", "All 3D Cache...", "Весь кеш 3D..."),
+    ("edit.purgeUndo", "Undo", "Історія скасувань"),
+    ("edit.purge", "Image Cache Memory", "Кеш зображень у пам’яті"),
+    ("edit.purge", "Snapshot", "Знімок"),
+    ("edit.editOriginal", "Edit Original...", "Редагувати оригінал..."),
+    ("", "Templates", "Шаблони"),
+    ("app.templates", "Render Settings...", "Налаштування рендерингу..."),
+    ("app.templates", "Output Module...", "Модуль виведення..."),
+    ("app.keyboardShortcuts", "Keyboard Shortcuts", "Клавіатурні скорочення"),
+    ("", "Preferences", "Налаштування"),
+    ("", "Composition", "Композиція"),
+    ("comp.new", "New Composition...", "Нова композиція..."),
+    ("comp.settings", "Composition Settings...", "Налаштування композиції..."),
+    ("comp.setPosterTime", "Set Poster Time", "Задати час кадру-афіші"),
+    ("comp.trimToWorkArea", "Trim Comp to Work Area", "Обрізати композицію до робочої області"),
+    ("comp.cropToRegionOfInterest", "Crop Comp to Region of Interest", "Обрізати композицію до області інтересу"),
+    ("comp.cropToLayerBounds", "Crop Comp to Selected Layer(s) Bounds", "Обрізати композицію до меж виділених шарів (шару)"),
+    ("render.addOutputModule", "Add Output Module", "Додати модуль виведення"),
+    ("", "Preview", "Попередній перегляд"),
+    ("playback.toggle", "Play Current Preview", "Відтворити поточний попередній перегляд"),
+    ("playback.cacheWhenIdle", "Cache Frames When Idle", "Кешувати кадри під час простою"),
+    ("playback.audio", "Audio", "Аудіо"),
+    ("", "Save Frame As", "Зберегти кадр як"),
+    ("comp.saveFrameAs", "File...", "Файл..."),
+    ("comp.saveFrameAsPsd", "Photoshop Layers...", "Шари Photoshop..."),
+    ("comp.saveFrameAsExr", "ProEXR...", "ProEXR..."),
+    ("render.preRender", "Pre-render...", "Попередній рендеринг..."),
+    ("render.saveCurrentPreview", "Save Current Preview...", "Зберегти поточний попередній перегляд..."),
+    ("comp.openInEssentialGraphics", "Open in Essential Graphics", "Відкрити в основній графіці"),
+    ("", "Responsive Design — Time", "Адаптивний дизайн — час"),
+    ("comp.responsiveTime", "Create Intro", "Створити вступ"),
+    ("comp.responsiveTime", "Create Outro", "Створити завершення"),
+    ("comp.responsiveTime", "Create Protected Region from Work Area", "Створити захищену ділянку з робочої області"),
+    ("comp.flowchart", "Composition Flowchart", "Блок-схема композиції"),
+    ("comp.miniFlowchart", "Composition Mini-Flowchart", "Мініблок-схема композиції"),
+    ("", "VR", "VR"),
+    ("comp.vr.createEnvironment", "Create VR Environment...", "Створити середовище VR..."),
+    ("comp.vr.extractCubemap", "Extract Cubemap...", "Видобути кубічну карту..."),
+    ("", "Layer", "Шар"),
+    ("layer.newText", "Text", "Текст"),
+    ("layer.newSolid", "Solid...", "Суцільний колір..."),
+    ("layer.newLight", "Light...", "Світло..."),
+    ("layer.newCamera", "Camera...", "Камера..."),
+    ("layer.newNull", "Null Object", "Нульовий об’єкт"),
+    ("layer.newShape", "Shape Layer", "Шар фігури"),
+    ("layer.newAdjustment", "Adjustment Layer", "Коригувальний шар"),
+    ("layer.newContentAwareFill", "Content-Aware Fill Layer...", "Шар заливки з урахуванням вмісту..."),
+    ("layer.new3dPrimitive", "Cube", "Куб"),
+    ("layer.new3dPrimitive", "Sphere", "Сфера"),
+    ("layer.new3dPrimitive", "Plane", "Площина"),
+    ("layer.new3dPrimitive", "Torus", "Тор"),
+    ("layer.new3dPrimitive", "Cone", "Конус"),
+    ("layer.new3dPrimitive", "Cylinder", "Циліндр"),
+    ("layer.settings", "Layer Settings...", "Налаштування шару..."),
+    ("layer.openLayer", "Open Layer", "Відкрити шар"),
+    ("layer.openSource", "Open Layer Source", "Відкрити джерело шару"),
+    ("layer.revealInFinder", "Reveal in Finder", "Показати у Finder"),
+    ("", "Mask", "Маска"),
+    ("layer.addMask", "New Mask", "Нова маска"),
+    ("layer.mask.shape", "Mask Shape...", "Форма маски..."),
+    ("layer.mask.set", "Mask Feather...", "Розтушовування маски..."),
+    ("layer.mask.set", "Mask Opacity...", "Непрозорість маски..."),
+    ("layer.mask.set", "Mask Expansion...", "Розширення маски..."),
+    ("layer.mask.reset", "Reset Mask", "Скинути маску"),
+    ("layer.mask.remove", "Remove Mask", "Вилучити маску"),
+    ("layer.mask.removeAll", "Remove All Masks", "Вилучити всі маски"),
+    ("track.mask", "Track Mask", "Відстежувати маску"),
+    ("", "Mode", "Режим"),
+    ("layer.mask.mode", "None", "Немає"),
+    ("layer.mask.mode", "Add", "Додавання"),
+    ("layer.mask.mode", "Subtract", "Віднімання"),
+    ("layer.mask.mode", "Intersect", "Перетин"),
+    ("layer.mask.mode", "Lighten", "Освітлення"),
+    ("layer.mask.mode", "Darken", "Затемнення"),
+    ("layer.mask.mode", "Difference", "Різниця"),
+    ("layer.mask.invert", "Inverted", "Інвертована"),
+    ("layer.mask.lock", "Locked", "Заблокована"),
+    ("", "Motion Blur", "Розмиття руху"),
+    ("layer.mask.motionBlur", "Same As Layer", "Як у шару"),
+    ("layer.mask.motionBlur", "On", "Увімкнено"),
+    ("layer.mask.motionBlur", "Off", "Вимкнено"),
+    ("", "Feather Falloff", "Спад розтушовування"),
+    ("layer.mask.featherFalloff", "Smooth", "Плавний"),
+    ("layer.mask.featherFalloff", "Linear", "Лінійний"),
+    ("layer.mask.unlockAll", "Unlock All Masks", "Розблокувати всі маски"),
+    ("layer.mask.lockOthers", "Lock Other Masks", "Заблокувати інші маски"),
+    ("layer.mask.hideLocked", "Hide Locked Masks", "Приховати заблоковані маски"),
+    ("", "Mask and Shape Path", "Контур маски та фігури"),
+    ("path.rotoBezier", "RotoBezier", "RotoBezier"),
+    ("mask.setClosed", "Closed", "Замкнений"),
+    ("path.convertToBezier", "Convert To Bezier Path", "Перетворити на контур Безьє"),
+    ("path.setFirstVertex", "Set First Vertex", "Задати першу вершину"),
+    ("path.freeTransform", "Free Transform Points", "Вільне трансформування точок"),
+    ("", "Quality", "Якість"),
+    ("layer.quality", "Best", "Найкраща"),
+    ("layer.quality", "Draft", "Чорнова"),
+    ("layer.quality", "Wireframe", "Каркас"),
+    ("layer.sampling", "Bilinear", "Білінійна"),
+    ("layer.sampling", "Bicubic", "Бікубічна"),
+    ("", "Switches", "Перемикачі"),
+    ("layer.hideOtherVideo", "Hide Other Video", "Приховати інше відео"),
+    ("layer.showAllVideo", "Show All Video", "Показати все відео"),
+    ("layer.unlockAll", "Unlock All Layers", "Розблокувати всі шари"),
+    ("layer.expressions", "Enable Expressions", "Увімкнути вирази"),
+    ("layer.expressions", "Disable Expressions", "Вимкнути вирази"),
+    ("layer.setSwitch", "Shy", "Сором’язливий"),
+    ("layer.setSwitch", "Lock", "Заблокувати"),
+    ("layer.setSwitch", "Audio", "Аудіо"),
+    ("layer.setSwitch", "Video", "Відео"),
+    ("layer.setSwitch", "Solo", "Соло"),
+    ("layer.setSwitch", "Effect", "Ефект"),
+    ("layer.setSwitch", "Collapse", "Згорнути трансформації"),
+    ("layer.setSwitch", "Motion Blur", "Розмиття руху"),
+    ("layer.setSwitch", "Adjustment Layer", "Коригувальний шар"),
+    ("", "Transform", "Трансформація"),
+    ("layer.transform", "Reset", "Скинути"),
+    ("layer.setTransform", "Anchor Point...", "Опорна точка..."),
+    ("layer.setTransform", "Position...", "Положення..."),
+    ("layer.setTransform", "Scale...", "Масштаб..."),
+    ("layer.setTransform", "Orientation...", "Орієнтація..."),
+    ("layer.setTransform", "Rotation...", "Обертання..."),
+    ("layer.setTransform", "Opacity...", "Непрозорість..."),
+    ("layer.transform", "Flip Horizontal", "Віддзеркалити горизонтально"),
+    ("layer.transform", "Flip Vertical", "Віддзеркалити вертикально"),
+    ("layer.transform", "Center In View", "Центрувати у вікні перегляду"),
+    ("layer.centerAnchor", "Center Anchor Point in Layer Content", "Центрувати опорну точку у вмісті шару"),
+    ("layer.transform", "Fit to Comp", "Підігнати до композиції"),
+    ("layer.transform", "Fit to Comp Width", "Підігнати до ширини композиції"),
+    ("layer.transform", "Fit to Comp Height", "Підігнати до висоти композиції"),
+    ("layer.autoOrient", "Auto-Orient...", "Автоматична орієнтація..."),
+    ("", "Time", "Час"),
+    ("layer.enableTimeRemap", "Enable Time Remapping", "Увімкнути перепризначення часу"),
+    ("layer.timeReverse", "Time-Reverse Layer", "Обернути час шару"),
+    ("layer.timeStretch", "Time Stretch...", "Розтягування часу..."),
+    ("layer.freezeFrame", "Freeze Frame", "Зупинити кадр"),
+    ("layer.freezeOnLastFrame", "Freeze On Last Frame", "Зупинити на останньому кадрі"),
+    ("layer.alignVideoToData", "Align Video to Data", "Узгодити відео з даними"),
+    ("", "Frame Blending", "Змішування кадрів"),
+    ("layer.frameBlending", "Off", "Вимкнено"),
+    ("layer.frameBlending", "Frame Mix", "Змішування кадрів"),
+    ("layer.frameBlending", "Pixel Motion", "Рух пікселів"),
+    ("layer.setSwitch", "3D Layer", "Шар 3D"),
+    ("layer.setSwitch", "Guide Layer", "Допоміжний шар"),
+    ("layer.environment", "Environment Layer", "Шар середовища"),
+    ("", "Markers", "Маркери"),
+    ("layer.addMarker", "Add Marker", "Додати маркер"),
+    ("layer.updateMarkersFromSource", "Update Markers From Source", "Оновити маркери з джерела"),
+    ("layer.markersLock", "Lock Markers", "Заблокувати маркери"),
+    ("layer.deleteAllMarkers", "Delete All Markers", "Вилучити всі маркери"),
+    ("layer.setSwitch", "Preserve Transparency", "Зберігати прозорість"),
+    ("", "Blending Mode", "Режим накладання"),
+    ("layer.setBlendMode", "Normal", "Звичайний"),
+    ("layer.setBlendMode", "Dissolve", "Розчинення"),
+    ("layer.setBlendMode", "Dancing Dissolve", "Рухоме розчинення"),
+    ("layer.setBlendMode", "Darken", "Затемнення"),
+    ("layer.setBlendMode", "Multiply", "Множення"),
+    ("layer.setBlendMode", "Color Burn", "Затемнення основи"),
+    ("layer.setBlendMode", "Classic Color Burn", "Класичне затемнення основи"),
+    ("layer.setBlendMode", "Linear Burn", "Лінійне затемнення"),
+    ("layer.setBlendMode", "Darker Color", "Темніший колір"),
+    ("layer.setBlendMode", "Add", "Додавання"),
+    ("layer.setBlendMode", "Lighten", "Освітлення"),
+    ("layer.setBlendMode", "Screen", "Екран"),
+    ("layer.setBlendMode", "Color Dodge", "Освітлення основи"),
+    ("layer.setBlendMode", "Classic Color Dodge", "Класичне освітлення основи"),
+    ("layer.setBlendMode", "Linear Dodge", "Лінійне освітлення"),
+    ("layer.setBlendMode", "Lighter Color", "Світліший колір"),
+    ("layer.setBlendMode", "Overlay", "Перекриття"),
+    ("layer.setBlendMode", "Soft Light", "М’яке світло"),
+    ("layer.setBlendMode", "Hard Light", "Жорстке світло"),
+    ("layer.setBlendMode", "Linear Light", "Лінійне світло"),
+    ("layer.setBlendMode", "Vivid Light", "Яскраве світло"),
+    ("layer.setBlendMode", "Pin Light", "Точкове світло"),
+    ("layer.setBlendMode", "Hard Mix", "Жорстке змішування"),
+    ("layer.setBlendMode", "Difference", "Різниця"),
+    ("layer.setBlendMode", "Classic Difference", "Класична різниця"),
+    ("layer.setBlendMode", "Exclusion", "Виключення"),
+    ("layer.setBlendMode", "Subtract", "Віднімання"),
+    ("layer.setBlendMode", "Divide", "Ділення"),
+    ("layer.setBlendMode", "Hue", "Колірний тон"),
+    ("layer.setBlendMode", "Saturation", "Насиченість"),
+    ("layer.setBlendMode", "Color", "Колір"),
+    ("layer.setBlendMode", "Luminosity", "Світність"),
+    ("layer.setBlendMode", "Stencil Alpha", "Трафарет за альфа-каналом"),
+    ("layer.setBlendMode", "Stencil Luma", "Трафарет за яскравістю"),
+    ("layer.setBlendMode", "Silhouette Alpha", "Силует за альфа-каналом"),
+    ("layer.setBlendMode", "Silhouette Luma", "Силует за яскравістю"),
+    ("layer.setBlendMode", "Alpha Add", "Додавання альфа-каналу"),
+    ("layer.setBlendMode", "Luminescent Premul", "Люмінесцентне попереднє множення"),
+    ("layer.setBlendMode", "Next Blending Mode", "Наступний режим накладання"),
+    ("layer.setBlendMode", "Previous Blending Mode", "Попередній режим накладання"),
+    ("", "Track Matte", "Підкладка"),
+    ("layer.trackMatte", "No Track Matte", "Без підкладки"),
+    ("layer.trackMatte", "Alpha Matte", "Підкладка за альфа-каналом"),
+    ("layer.trackMatte", "Alpha Inverted Matte", "Інвертована підкладка за альфа-каналом"),
+    ("layer.trackMatte", "Luma Matte", "Підкладка за яскравістю"),
+    ("layer.trackMatte", "Luma Inverted Matte", "Інвертована підкладка за яскравістю"),
+    ("layer.trackMatte", "Matte with Layer Above", "Підкладка з шару вище"),
+    ("layer.trackMatte", "Matte with Layer Below", "Підкладка з шару нижче"),
+    ("", "Layer Styles", "Стилі шару"),
+    ("layer.style.options", "Layer Style Options...", "Параметри стилю шару..."),
+    ("layer.style.convertToEditable", "Convert to Editable Styles", "Перетворити на редаговані стилі"),
+    ("layer.style.showAll", "Show All", "Показати все"),
+    ("layer.style.removeAll", "Remove All", "Вилучити все"),
+    ("layer.style.dropShadow", "Drop Shadow", "Тінь"),
+    ("layer.style.innerShadow", "Inner Shadow", "Внутрішня тінь"),
+    ("layer.style.outerGlow", "Outer Glow", "Зовнішнє світіння"),
+    ("layer.style.innerGlow", "Inner Glow", "Внутрішнє світіння"),
+    ("layer.style.bevelEmboss", "Bevel and Emboss", "Фаска та тиснення"),
+    ("layer.style.satin", "Satin", "Атлас"),
+    ("layer.style.colorOverlay", "Color Overlay", "Накладання кольору"),
+    ("layer.style.gradientOverlay", "Gradient Overlay", "Накладання градієнта"),
+    ("layer.style.stroke", "Stroke", "Обведення"),
+    ("path.groupShapes", "Group Shapes", "Згрупувати фігури"),
+    ("path.ungroupShapes", "Ungroup Shapes", "Розгрупувати фігури"),
+    ("", "Arrange", "Упорядкувати"),
+    ("layer.arrange", "Bring Layer to Front", "Перемістити шар на передній план"),
+    ("layer.arrange", "Bring Layer Forward", "Перемістити шар уперед"),
+    ("layer.arrange", "Send Layer Backward", "Перемістити шар назад"),
+    ("layer.arrange", "Send Layer to Back", "Перемістити шар на задній план"),
+    ("", "Reveal", "Показати"),
+    ("layer.revealSource", "Reveal Layer Source in Project", "Показати джерело шару в проєкті"),
+    ("comp.flowchart", "Reveal Layer in Project Flowchart", "Показати шар у блок-схемі проєкту"),
+    ("comp.revealInProject", "Reveal Composition in Project", "Показати композицію в проєкті"),
+    ("layer.revealExpressionErrors", "Reveal Expression Errors", "Показати помилки виразів"),
+    ("", "Create", "Створити"),
+    ("layer.create", "Convert to Editable Text", "Перетворити на редагований текст"),
+    ("layer.create", "Create Shapes from Text", "Створити фігури з тексту"),
+    ("layer.create", "Create Masks from Text", "Створити маски з тексту"),
+    ("layer.create", "Create Shapes from Vector Layer", "Створити фігури з векторного шару"),
+    ("layer.create", "Create Keyframes from Data", "Створити ключові кадри з даних"),
+    ("layer.create", "Null Controllers for Positional Points", "Нульові контролери для точок положення"),
+    ("layer.create", "Null Controllers for Path Points", "Нульові контролери для точок контуру"),
+    ("layer.create", "Nulls Following Path Points", "Нульові об’єкти, що слідують за точками контуру"),
+    ("layer.create", "Null Tracing Along Path", "Нульовий об’єкт, що рухається вздовж контуру"),
+    ("layer.create", "Create 3D Layer Instance", "Створити екземпляр шару 3D"),
+    ("", "Camera", "Камера"),
+    ("camera.fromView", "Create Camera from 3D View", "Створити камеру з вигляду 3D"),
+    ("camera.stereoRig", "Create Stereo 3D Rig", "Створити стереориг 3D"),
+    ("camera.orbitNull", "Create Orbit Null", "Створити нульовий об’єкт орбіти"),
+    ("camera.fromModel", "Create Cameras from 3D Model", "Створити камери з моделі 3D"),
+    ("camera.linkFocusToPoi", "Link Focus Distance to Point of Interest", "Прив’язати відстань фокусування до точки інтересу"),
+    ("camera.linkFocusToLayer", "Link Focus Distance to Layer", "Прив’язати відстань фокусування до шару"),
+    ("camera.setFocusToLayer", "Set Focus Distance to Layer", "Задати відстань фокусування до шару"),
+    ("layer.cameraSettings", "Camera Settings...", "Налаштування камери..."),
+    ("view.reset3DView", "Reset 3D View", "Скинути вигляд 3D"),
+    ("", "Light", "Світло"),
+    ("light.fromModel", "Create Lights from 3D Model", "Створити джерела світла з моделі 3D"),
+    ("light.controlWithCamera", "Control Light with Camera", "Керувати світлом за допомогою камери"),
+    ("light.environmentBackground", "Create Environment Light Background Layer", "Створити фоновий шар освітлення середовища"),
+    ("", "Material", "Матеріал"),
+    ("material.revealSource", "Reveal Material Source in Project", "Показати джерело матеріалу в проєкті"),
+    ("material.reset", "Reset Material", "Скинути матеріал"),
+    ("material.duplicateAssign", "Duplicate and Assign Material", "Дублювати та призначити матеріал"),
+    ("layer.autoTrace", "Auto-trace...", "Автоматичне трасування..."),
+    ("layer.precompose", "Pre-compose...", "Попередня композиція..."),
+    ("layer.sceneEditDetection", "Scene Edit Detection...", "Виявлення монтажних склейок..."),
+    ("", "Effect", "Ефект"),
+    ("window.panel", "Effect Controls", "Керування ефектами"),
+    ("effect.applyLast", "Last Effect", "Останній ефект"),
+    ("effect.removeAll", "Remove All", "Вилучити все"),
+    ("effect.manage", "Manage Effects...", "Керування ефектами..."),
+    ("effect.plugins.load", "Load Effect Plug-in...", "Завантажити плагін ефекту..."),
+    ("", "Animation", "Анімація"),
+    ("anim.savePreset", "Save Animation Preset...", "Зберегти набір анімації..."),
+    ("anim.applyPreset", "Apply Animation Preset...", "Застосувати набір анімації..."),
+    ("", "Recent Animation Presets", "Нещодавні набори анімації"),
+    ("anim.clearRecentPresets", "Clear Recent Presets", "Очистити список нещодавніх наборів"),
+    ("anim.browsePresets", "Browse Presets...", "Переглянути набори..."),
+    ("", "Text Animation Presets", "Набори анімації тексту"),
+    ("layer.applyTextPreset", "Typewriter", "Друкарська машинка"),
+    ("layer.applyTextPreset", "Fade Up Characters", "Поява символів"),
+    ("layer.applyTextPreset", "Bounce In Words", "Поява слів із відскоком"),
+    ("layer.applyTextPreset", "Tracking In", "Зменшення міжлітерного інтервалу"),
+    ("layer.applyTextPreset", "Scramble", "Перемішування"),
+    ("layer.applyTextPreset", "Blur In", "Поява з розмиття"),
+    ("layer.applyTextPreset", "Jitter", "Тремтіння"),
+    ("layer.applyTextPreset", "Drop In Lines", "Поява рядків згори"),
+    ("anim.addKeyframe", "Add Keyframe", "Додати ключовий кадр"),
+    ("keys.toggleHold", "Toggle Hold Keyframe", "Перемкнути утримання ключового кадру"),
+    ("keys.interpolation", "Keyframe Interpolation...", "Інтерполяція ключових кадрів..."),
+    ("keys.velocity", "Keyframe Velocity...", "Швидкість ключових кадрів..."),
+    ("", "Keyframe Assistant", "Помічник ключових кадрів"),
+    ("keys.audioToKeyframes", "Convert Audio to Keyframes", "Перетворити аудіо на ключові кадри"),
+    ("prop.convertExpressionToKeyframes", "Convert Expression to Keyframes", "Перетворити вираз на ключові кадри"),
+    ("keys.easyEase", "Easy Ease", "Плавне прискорення та сповільнення"),
+    ("keys.easyEaseIn", "Easy Ease In", "Плавне сповільнення"),
+    ("keys.easyEaseOut", "Easy Ease Out", "Плавне прискорення"),
+    ("keys.exponentialScale", "Exponential Scale", "Експоненційний масштаб"),
+    ("keys.rpfCameraImport", "RPF Camera Import", "Імпорт камери RPF"),
+    ("layer.sequence", "Sequence Layers...", "Розташувати шари послідовно..."),
+    ("keys.timeReverse", "Time-Reverse Keyframes", "Обернути час ключових кадрів"),
+    ("", "Animate Text", "Анімувати текст"),
+    ("layer.enablePerChar3D", "Enable Per-character 3D", "Увімкнути 3D для кожного символу"),
+    ("layer.addTextAnimator", "Anchor Point", "Опорна точка"),
+    ("layer.addTextAnimator", "Position", "Положення"),
+    ("layer.addTextAnimator", "Scale", "Масштаб"),
+    ("layer.addTextAnimator", "Skew", "Скіс"),
+    ("layer.addTextAnimator", "Rotation", "Обертання"),
+    ("layer.addTextAnimator", "Opacity", "Непрозорість"),
+    ("layer.addTextAnimator", "All Transform Properties", "Усі властивості трансформації"),
+    ("", "Fill Color", "Колір заливки"),
+    ("layer.addTextAnimator", "RGB", "RGB"),
+    ("layer.addTextAnimator", "Hue", "Колірний тон"),
+    ("layer.addTextAnimator", "Saturation", "Насиченість"),
+    ("layer.addTextAnimator", "Brightness", "Яскравість"),
+    ("", "Stroke Color", "Колір обведення"),
+    ("layer.addTextAnimator", "Stroke Width", "Товщина обведення"),
+    ("layer.addTextAnimator", "Tracking", "Міжлітерний інтервал"),
+    ("layer.addTextAnimator", "Line Anchor", "Опорна точка рядка"),
+    ("layer.addTextAnimator", "Line Spacing", "Міжрядковий інтервал"),
+    ("layer.addTextAnimator", "Character Offset", "Зсув символів"),
+    ("layer.addTextAnimator", "Character Value", "Код символу"),
+    ("layer.addTextAnimator", "Blur", "Розмиття"),
+    ("text.animatorFontAxes", "Variable Font Axes", "Осі змінного шрифту"),
+    ("", "Add Text Selector", "Додати селектор тексту"),
+    ("text.addSelector", "Range", "Діапазон"),
+    ("text.addSelector", "Wiggly", "Коливання"),
+    ("text.addSelector", "Expression", "Вираз"),
+    ("text.removeAllAnimators", "Remove All Text Animators", "Вилучити всі аніматори тексту"),
+    ("prop.setExpression", "Add Expression", "Додати вираз"),
+    ("essential.addProperty", "Add Property to Essential Graphics", "Додати властивість до основної графіки"),
+    ("prop.separateDimensions", "Separate Dimensions", "Розділити виміри"),
+    ("track.camera", "Track Camera", "Відстежувати камеру"),
+    ("track.warpStabilizer", "Warp Stabilizer VFX", "Стабілізатор деформації VFX"),
+    ("track.motion", "Track Motion", "Відстежувати рух"),
+    ("track.stabilize", "Stabilize Motion", "Стабілізувати рух"),
+    ("track.property", "Track this Property", "Відстежувати цю властивість"),
+    ("anim.reveal", "Reveal Properties with Keyframes", "Показати властивості з ключовими кадрами"),
+    ("anim.reveal", "Reveal Properties with Animation", "Показати властивості з анімацією"),
+    ("anim.reveal", "Reveal All Modified Properties", "Показати всі змінені властивості"),
+    ("", "View", "Перегляд"),
+    ("view.newViewer", "New Viewer", "Нове вікно перегляду"),
+    ("view.splitLockedViewer", "Split with New Locked Viewer", "Розділити з новим заблокованим вікном перегляду"),
+    ("view.zoomIn", "Zoom In", "Збільшити"),
+    ("view.zoomOut", "Zoom Out", "Зменшити"),
+    ("", "Resolution", "Роздільність"),
+    ("view.res.full", "Full", "Повна"),
+    ("view.res.half", "Half", "Половина"),
+    ("view.res.third", "Third", "Третина"),
+    ("view.res.quarter", "Quarter", "Чверть"),
+    ("view.res.custom", "Custom...", "Власна..."),
+    ("view.displayColorManagement", "Use Display Color Management", "Використовувати керування кольором дисплея"),
+    ("", "Simulate Output", "Імітувати виведення"),
+    ("view.simulateOutput", "No Output Simulation", "Без імітації виведення"),
+    ("view.simulateOutput", "HDTV (Rec. 709)", "HDTV (Rec. 709)"),
+    ("view.simulateOutput", "SDTV NTSC", "SDTV NTSC"),
+    ("view.simulateOutput", "SDTV PAL", "SDTV PAL"),
+    ("view.simulateOutput", "Legacy Macintosh RGB (Gamma 1.8)", "Застарілий Macintosh RGB (гама 1.8)"),
+    ("view.simulateOutput", "Internet Standard RGB (sRGB)", "Стандартний інтернет-RGB (sRGB)"),
+    ("view.simulateOutput", "UHDTV (Rec. 2020)", "UHDTV (Rec. 2020)"),
+    ("view.simulateOutput", "Display P3", "Display P3"),
+    ("view.simulateOutput", "Linear (1.0 Gamma)", "Лінійний (гама 1.0)"),
+    ("view.customRgb", "My Custom RGB...", "Мій власний RGB..."),
+    ("view.simulateOutput", "Custom...", "Власний..."),
+    ("view.rulers", "Show Rulers", "Показати лінійки"),
+    ("", "Panel Background Color", "Колір тла панелі"),
+    ("view.panelBackground", "Black", "Чорний"),
+    ("view.panelBackground", "Dark Gray", "Темно-сірий"),
+    ("view.panelBackground", "Medium Gray (Default)", "Середньо-сірий (типовий)"),
+    ("view.panelBackground", "Light Gray", "Світло-сірий"),
+    ("view.panelBackground", "White", "Білий"),
+    ("view.panelBackground", "Custom", "Власний"),
+    ("view.panelBackground", "Select Custom Background Color...", "Вибрати власний колір тла..."),
+    ("view.guides", "Show Guides", "Показати напрямні"),
+    ("view.snapToGuides", "Snap to Guides", "Прив’язувати до напрямних"),
+    ("view.lockGuides", "Lock Guides", "Заблокувати напрямні"),
+    ("view.addGuide", "Add Guide...", "Додати напрямну..."),
+    ("view.clearGuides", "Clear Guides", "Очистити напрямні"),
+    ("view.importGuides", "Import Guides...", "Імпортувати напрямні..."),
+    ("view.exportGuides", "Export Guides...", "Експортувати напрямні..."),
+    ("view.grid", "Show Grid", "Показати сітку"),
+    ("view.snapToGrid", "Snap to Grid", "Прив’язувати до сітки"),
+    ("view.snapping", "Snapping", "Прив’язування"),
+    ("view.options", "View Options...", "Параметри перегляду..."),
+    ("view.layerControls", "Show Layer Controls", "Показати елементи керування шаром"),
+    ("", "Switch View Layout", "Змінити компонування виглядів"),
+    ("view.layout", "1 View", "1 вигляд"),
+    ("view.layout", "2 Views", "2 вигляди"),
+    ("view.layout", "4 Views", "4 вигляди"),
+    ("view.shareViewOptions", "Share View Options", "Спільні параметри перегляду"),
+    ("", "Switch 3D View", "Змінити вигляд 3D"),
+    ("view.3d.activeCamera", "Active Camera", "Активна камера"),
+    ("view.3d.default", "Default", "Типовий"),
+    ("view.3d.front", "Front", "Спереду"),
+    ("view.3d.left", "Left", "Зліва"),
+    ("view.3d.top", "Top", "Згори"),
+    ("view.3d.back", "Back", "Ззаду"),
+    ("view.3d.right", "Right", "Справа"),
+    ("view.3d.bottom", "Bottom", "Знизу"),
+    ("view.3d.custom1", "Custom View 1", "Власний вигляд 1"),
+    ("view.3d.custom2", "Custom View 2", "Власний вигляд 2"),
+    ("view.3d.custom3", "Custom View 3", "Власний вигляд 3"),
+    ("", "Assign Shortcut to 3D View", "Призначити скорочення для вигляду 3D"),
+    ("view.3d.last", "Switch to Last 3D View", "Перейти до останнього вигляду 3D"),
+    ("view.lookAtSelected", "Look at Selected Layers", "Навести на виділені шари"),
+    ("view.lookAtAll", "Look at All Layers", "Навести на всі шари"),
+    ("time.set", "Go to Time...", "Перейти до часу..."),
+    ("view.fullScreen", "Enter Full Screen", "Перейти в повноекранний режим"),
+    ("", "Window", "Вікно"),
+    ("", "Workspace", "Робочий простір"),
+    ("window.workspace", "Default", "Типовий"),
+    ("window.workspace", "Review", "Рецензування"),
+    ("window.workspace", "Learn", "Навчання"),
+    ("window.workspace", "Small Screen", "Малий екран"),
+    ("window.workspace", "Standard", "Стандартний"),
+    ("window.workspace", "All Panels", "Усі панелі"),
+    ("window.workspace", "Animation", "Анімація"),
+    ("window.workspace", "Color", "Колір"),
+    ("window.workspace", "Effects", "Ефекти"),
+    ("window.workspace", "Essential Graphics", "Основна графіка"),
+    ("window.workspace", "Minimal", "Мінімальний"),
+    ("window.workspace", "Motion Tracking", "Відстеження руху"),
+    ("window.workspace", "Paint", "Малювання"),
+    ("window.workspace", "Text", "Текст"),
+    ("window.workspace", "Undocked Panels", "Відокремлені панелі"),
+    ("window.resetWorkspace", "Reset to Saved Layout", "Відновити збережене компонування"),
+    ("window.saveWorkspace", "Save Changes to this Workspace", "Зберегти зміни цього робочого простору"),
+    ("window.saveWorkspaceAs", "Save as New Workspace...", "Зберегти як новий робочий простір..."),
+    ("window.editWorkspaces", "Edit Workspaces...", "Редагувати робочі простори..."),
+    ("", "Assign Shortcut to Workspace", "Призначити скорочення для робочого простору"),
+    ("window.panel", "Align", "Вирівнювання"),
+    ("window.panel", "Audio", "Аудіо"),
+    ("window.panel", "Brushes", "Пензлі"),
+    ("window.panel", "Character", "Символ"),
+    ("window.panel", "Content-Aware Fill", "Заливка з урахуванням вмісту"),
+    ("window.panel", "Effects & Presets", "Ефекти та набори"),
+    ("window.panel", "Essential Graphics", "Основна графіка"),
+    ("window.panel", "Info", "Інформація"),
+    ("help.inAppTutorials", "Learn", "Навчання"),
+    ("window.panel", "Lumetri Scopes", "Вимірювачі Lumetri"),
+    ("window.panel", "Mask Interpolation", "Інтерполяція маски"),
+    ("window.panel", "Media Browser", "Браузер медіа"),
+    ("window.panel", "Metadata", "Метадані"),
+    ("window.panel", "Motion Sketch", "Ескіз руху"),
+    ("window.panel", "Paint", "Малювання"),
+    ("window.panel", "Paragraph", "Абзац"),
+    ("window.panel", "Preview", "Попередній перегляд"),
+    ("window.panel", "Progress", "Перебіг"),
+    ("window.panel", "Properties", "Властивості"),
+    ("window.panel", "Script Console", "Консоль скриптів"),
+    ("window.panel", "Smoother", "Згладжування"),
+    ("window.panel", "Tools", "Інструменти"),
+    ("window.panel", "Tracker", "Відстеження"),
+    ("window.panel", "Wiggler", "Коливання"),
+    ("window.panel", "Composition", "Композиція"),
+    ("window.panel", "Flowchart", "Блок-схема"),
+    ("window.panel", "Footage", "Матеріал"),
+    ("window.panel", "Layer", "Шар"),
+    ("window.panel", "Project", "Проєкт"),
+    ("window.panel", "Render Queue", "Черга рендерингу"),
+    ("window.panel", "Timeline", "Шкала часу"),
+    ("window.panel", "Create Nulls From Paths", "Створення нульових об’єктів із контурів"),
+    ("window.panel", "VR Comp Editor", "Редактор композицій VR"),
+    ("", "Help", "Довідка"),
+    ("help.docs", "EffectCraft Help...", "Довідка EffectCraft..."),
+    ("help.docs", "Scripting Help...", "Довідка зі скриптів..."),
+    ("help.docs", "Expression Reference...", "Довідник виразів..."),
+    ("help.docs", "Effect Reference...", "Довідник ефектів..."),
+    ("anim.browsePresets", "Animation Presets...", "Набори анімації..."),
+    ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Клавіатурні скорочення..."),
+    ("help.inAppTutorials", "In-App Tutorials...", "Уроки в програмі..."),
+    ("help.onlineTutorials", "Online Tutorials...", "Онлайн-уроки..."),
+    ("help.systemReport", "System Compatibility Report...", "Звіт про сумісність системи..."),
+    ("help.enableLogging", "Enable Logging", "Увімкнути журналювання"),
+    ("help.revealLogFile", "Reveal Logging File", "Показати файл журналу"),
+    ("help.discord", "Join the ArtCraft Discord...", "Приєднатися до Discord ArtCraft..."),
+    ("help.reportIssue", "Provide Feedback...", "Надіслати відгук..."),
+    ("help.website", "ArtCraft Website", "Вебсайт ArtCraft"),
+    ("help.appPage", "EffectCraft Home Page", "Домашня сторінка EffectCraft"),
+    ("help.github", "EffectCraft on GitHub", "EffectCraft на GitHub"),
+    ("file.openDemoProject", "Open Demo Project", "Відкрити демонстраційний проєкт"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2049,7 +2691,13 @@ mod tests {
         let mut japanese_keys = BTreeSet::new();
         let mut chinese_keys = BTreeSet::new();
         let mut traditional_keys = BTreeSet::new();
-        for (catalog, unique) in [(JAPANESE, &mut japanese_keys), (SIMPLIFIED_CHINESE, &mut chinese_keys), (TRADITIONAL_CHINESE, &mut traditional_keys)] {
+        let mut ukrainian_keys = BTreeSet::new();
+        for (catalog, unique) in [
+            (JAPANESE, &mut japanese_keys),
+            (SIMPLIFIED_CHINESE, &mut chinese_keys),
+            (TRADITIONAL_CHINESE, &mut traditional_keys),
+            (UKRAINIAN, &mut ukrainian_keys),
+        ] {
             for (command, en, translated) in catalog {
                 let key = (command.to_string(), en.to_string());
                 assert!(actual.contains(&key), "stale translation: {key:?}");
@@ -2072,6 +2720,7 @@ mod tests {
         // Every translated language covers exactly the same entries.
         assert_eq!(japanese_keys, chinese_keys, "the languages must translate the same entries");
         assert_eq!(chinese_keys, traditional_keys, "the languages must translate the same entries");
+        assert_eq!(japanese_keys, ukrainian_keys, "the languages must translate the same entries");
     }
 
     #[test]
@@ -2120,6 +2769,9 @@ mod tests {
             (Some("zh-HK"), "zh-hant"),
             (Some("zh-Hant-TW"), "zh-hant"),
             (Some("zh_MO.UTF-8"), "zh-hant"),
+            (Some("uk"), "uk"),
+            (Some("uk-UA"), "uk"),
+            (Some("UK_ua.UTF-8"), "uk"),
             (Some("en-US"), "en"),
             (Some("jv-ID"), "en"),
             (Some("de-DE"), "en"),
@@ -2145,8 +2797,8 @@ mod tests {
     }
 
     #[test]
-    fn every_chinese_entry_keeps_the_english_shape() {
-        for (code, catalog) in [("zh-hans", SIMPLIFIED_CHINESE), ("zh-hant", TRADITIONAL_CHINESE)] {
+    fn every_chinese_and_ukrainian_entry_keeps_the_english_shape() {
+        for (code, catalog) in [("zh-hans", SIMPLIFIED_CHINESE), ("zh-hant", TRADITIONAL_CHINESE), ("uk", UKRAINIAN)] {
             for (command, en, translated) in catalog {
                 assert_eq!(en.contains("..."), translated.contains("..."), "{code} {command} / {en}: {translated}");
                 let brackets = |s: &str| s.chars().filter(|c| *c == '(' || *c == ')').count();
@@ -2234,6 +2886,65 @@ mod tests {
         // A dynamic filename is never translated.
         app.session.prefs.push_recent("/tmp/File.ecproj");
         assert!(crate::native_menu::build(&app).items().iter().any(|i| i.command == "file.openRecent" && i.label == "File.ecproj"));
+    }
+
+    #[test]
+    fn ukrainian_translates_menus_without_changing_bindings_or_user_names() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"en"})).unwrap();
+        app.session.prefs.push_recent("/tmp/File.ecproj");
+        let en = crate::native_menu::build(&app);
+        let state = crate::native_menu::state_key(&app);
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"uk"})).unwrap();
+        let uk = crate::native_menu::build(&app);
+        assert_eq!(language(&app), "uk");
+        assert!(ukrainian(&app));
+        assert_ne!(state, crate::native_menu::state_key(&app));
+        let bindings = |menu: &crate::native_menu::NativeMenu| {
+            menu.items().into_iter().map(|i| (i.id.clone(), i.command.clone(), i.params.clone(), i.shortcut.clone(), i.enabled, i.checked)).collect::<Vec<_>>()
+        };
+        assert_eq!(bindings(&en), bindings(&uk));
+        assert!(uk.items().iter().any(|i| i.command == "comp.new" && i.label == "Нова композиція..."));
+        assert!(uk.items().iter().any(|i| i.command == "layer.newText" && i.label == "Текст"));
+        assert!(uk.items().iter().any(|i| i.command == "file.openRecent" && i.label == "File.ecproj"));
+        assert_eq!(label(&app, "", "File"), "Файл");
+        assert_eq!(label(&app, "", "Light"), "Світло");
+        assert_eq!(label(&app, "view.panelBackground", "Black"), "Чорний");
+        assert_eq!(label(&app, "layer.addTextAnimator", "Tracking"), "Міжлітерний інтервал");
+        assert_eq!(label(&app, "edit.purgeUndo", "Undo"), "Історія скасувань");
+        assert_eq!(label(&app, "unknown.command", "Text"), "Text");
+        let panel = MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None };
+        assert_eq!(entry(&app, &panel, "Layer: File".into()), "Шар: File");
+        assert_eq!(
+            submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “File Україна” Workspace".into()),
+            "Призначити скорочення для робочого простору «File Україна»"
+        );
+        assert_eq!(submenu(&app, "Assign Shortcut to 3D View", "Assign Shortcut to “Top”".into()), "Призначити скорочення для вигляду 3D «Top»");
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"en"})).unwrap();
+        assert_eq!(crate::native_menu::build(&app), en);
+    }
+
+    #[test]
+    fn ukrainian_undo_redo_keeps_history_labels_verbatim() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"uk"})).unwrap();
+        let undo = MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None };
+        let redo = MenuEntry { label: "Redo".into(), command: "edit.redo".into(), params: json!({}), shortcut: None };
+        assert_eq!(entry(&app, &undo, "Can't Undo".into()), "Немає дій для скасування");
+        assert_eq!(entry(&app, &redo, "Can't Redo".into()), "Немає дій для повторення");
+        app.session.history.undo.push(("File Україна".into(), app.session.project.clone()));
+        app.session.history.redo.push(("Text Україна".into(), app.session.project.clone()));
+        assert_eq!(entry(&app, &undo, "Undo File Україна".into()), "Скасувати File Україна");
+        assert_eq!(entry(&app, &redo, "Redo Text Україна".into()), "Повторити Text Україна");
+    }
+
+    #[test]
+    fn ukrainian_catalog_matches_the_settings_registry() {
+        let codes: Vec<_> = effectcraft_engine::prefs::LANGUAGES.iter().map(|(_, code)| *code).filter(|code| !matches!(*code, "system" | "en")).collect();
+        assert_eq!(codes, CATALOG_CODES);
+        assert!(effectcraft_engine::prefs::LANGUAGES.contains(&("Українська", "uk")));
+        assert_eq!(code("uk"), "uk");
+        assert_eq!(code("unknown"), "en");
     }
 
     #[test]

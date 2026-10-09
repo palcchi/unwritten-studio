@@ -19,20 +19,45 @@ fn settle(h: &mut Harness<'_, EffectcraftApp>) {
     }
 }
 
+/// egui_kittest's wgpu setup on the adapter the headless compositor picked (`name (Backend)`),
+/// like the desktop app's window. Left alone, egui_kittest prefers a CPU adapter, which on
+/// Windows is WARP on DirectX 12, where FXC fails to compile the compositor's kernels: the
+/// viewer would stay on the CPU and the comparison would never run.
+fn same_adapter(name: String) -> eframe::egui_wgpu::WgpuSetup {
+    let mut setup = egui_kittest::wgpu::default_wgpu_setup();
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(c) = &mut setup {
+        let fallback = c.native_adapter_selector.take();
+        c.native_adapter_selector = Some(std::sync::Arc::new(move |adapters, surface| {
+            let named = |a: &&eframe::wgpu::Adapter| format!("{} ({:?})", a.get_info().name, a.get_info().backend) == name;
+            match (adapters.iter().find(named), &fallback) {
+                (Some(a), _) => Ok(a.clone()),
+                (None, Some(f)) => f(adapters, surface),
+                (None, None) => adapters.first().cloned().ok_or_else(|| "No adapter found".to_owned()),
+            }
+        }));
+    }
+    setup
+}
+
 #[test]
 fn viewer_draws_gpu_frames_that_match_the_cpu() {
     let Some(probe) = effectcraft_gpu::Gpu::headless() else {
         eprintln!("no GPU adapter: skipping");
         return;
     };
-    eprintln!("headless compositor adapter: {}", effectcraft_engine::render::Accelerator::name(&probe));
+    let adapter = effectcraft_engine::render::Accelerator::name(&probe);
+    eprintln!("headless compositor adapter: {adapter}");
     // egui-wgpu creates its GL device with WebGL2's limits, which the compositor declines.
-    let gl = effectcraft_engine::render::Accelerator::name(&probe).ends_with("(Gl)");
+    let gl = adapter.ends_with("(Gl)");
     drop(probe);
     let mut s = Session::default();
     s.execute("file.openDemoProject", json!({})).unwrap();
     s.execute("time.set", json!({"time": 2.0})).unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).with_pixels_per_point(1.0).wgpu().build_eframe(|_| EffectcraftApp::new(s));
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .with_pixels_per_point(1.0)
+        .wgpu_setup(same_adapter(adapter))
+        .build_eframe(|_| EffectcraftApp::new(s));
     settle(&mut h);
     if gl && h.state().gpu_adapter().is_none() {
         eprintln!("egui-wgpu's GL device has WebGL2 limits: the viewer stays on the CPU, skipping");

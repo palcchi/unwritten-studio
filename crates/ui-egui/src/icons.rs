@@ -59,6 +59,8 @@ pub enum Icon {
     Keyframe,
     PickWhip,
     Flowchart,
+    /// The Timeline's composition marker bin: a marker tab resting in an open tray.
+    MarkerBin,
     // project items
     Folder,
     Comp,
@@ -411,6 +413,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             pen.rect(1.5, 2.5, 6.0, 6.5);
             pen.rect(10.0, 9.5, 14.5, 13.5);
             pen.line(&[(6.0, 4.5), (12.25, 4.5), (12.25, 9.5)]);
+        }
+        MarkerBin => {
+            pen.fill(&[(5.0, 2.0), (11.0, 2.0), (11.0, 7.5), (8.0, 10.5), (5.0, 7.5)]);
+            pen.line(&[(2.0, 9.0), (2.0, 14.0), (14.0, 14.0), (14.0, 9.0)]);
         }
         Folder => pen.closed(&[(1.5, 4.0), (6.0, 4.0), (7.5, 5.5), (14.5, 5.5), (14.5, 13.0), (1.5, 13.0)]),
         Comp => {

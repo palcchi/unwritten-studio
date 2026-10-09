@@ -19,6 +19,7 @@ pub mod gpu_failure;
 pub mod header;
 pub mod i18n;
 pub mod icons;
+pub mod menu_keys;
 pub mod menus;
 pub mod native_menu;
 pub mod panels;
@@ -372,6 +373,10 @@ impl EffectcraftApp {
         theme::apply_visuals(ctx, &self.tokens);
         let tips = p.general.show_tool_tips;
         ctx.all_styles_mut(|s| s.interaction.tooltip_delay = if tips { 0.5 } else { f32::INFINITY });
+        // Settings ▸ Appearance ▸ UI Scale (#284). egui's own Ctrl+= / Ctrl+- / Ctrl+0 zoom stays
+        // off: Ctrl+0 is Window ▸ Project, and the scale is a setting.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        ctx.set_zoom_factor(p.appearance.ui_scale as f32 / 100.0);
         self.ui.cache_when_idle = p.previews.cache_frames_when_idle;
         self.ui.viewer.fast_preview = p.previews.fast_previews;
         self.frames.set_budget(p.cache_budgets(self.session.sys_memory).preview);

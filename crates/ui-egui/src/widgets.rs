@@ -459,11 +459,25 @@ pub fn popup_list<R>(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, anchor: Rect, r
             egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height((est - 16.0).min(max_h)).show(ui, |ui| chosen = body(ui));
         });
     });
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.ctx().data_mut(|d| d.insert_temp(popup_list_pass_id(), pass));
     let outside = pressed_outside(ui.ctx(), &area.response) && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| anchor.contains(p));
     if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         ui.data_mut(|d| d.insert_temp(id.with("open"), false));
     }
     chosen
+}
+
+/// The pass a [`popup_list`] was last drawn in.
+fn popup_list_pass_id() -> egui::Id {
+    egui::Id::new("popup-list-pass")
+}
+
+/// Whether a menu, context menu or popup list is open, or the menu bar has the keyboard (as of
+/// the last frame): the app's keyboard shortcuts wait until it closes (#279).
+pub fn any_menu_open(ctx: &egui::Context) -> bool {
+    let list_pass: Option<u64> = ctx.data(|d| d.get_temp(popup_list_pass_id()));
+    egui::Popup::is_any_open(ctx) || crate::menu_keys::active(ctx) || list_pass.is_some_and(|p| p + 1 >= ctx.cumulative_pass_nr())
 }
 
 /// A menu's (or submenu's) entries, scrolling with a scroll bar when they are taller than the

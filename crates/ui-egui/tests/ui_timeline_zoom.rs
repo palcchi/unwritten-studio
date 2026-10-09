@@ -1,6 +1,6 @@
-//! Zooming the Timeline's time ruler with real input: Alt+wheel zooms out until the whole comp
-//! shows (#158); the Time Navigator's ends drag to zoom and `;` toggles frame level / the whole
-//! comp (#159).
+//! The Timeline's time ruler with real input: Alt+wheel zooms out until the whole comp shows
+//! (#158); the Time Navigator's ends drag to zoom and `;` toggles frame level / the whole comp
+//! (#159); markers dragged out of the composition marker bin (#275).
 
 use effectcraft_engine::Session;
 use effectcraft_ui_egui::EffectcraftApp;
@@ -89,7 +89,8 @@ fn drag_with(h: &mut Harness<'_, EffectcraftApp>, from: Pos2, to: Pos2, modifier
 fn visible(h: &Harness<'_, EffectcraftApp>) -> (f64, f64) {
     let e = h.state().auto.find("timeline.ruler").unwrap().clone();
     let (start, pps) = e.label.split_once(',').map(|(a, b)| (a.parse::<f64>().unwrap(), b.parse::<f64>().unwrap())).unwrap();
-    (start, start + (e.rect[2] - 16.0) as f64 / pps)
+    // (The time graph ends 18 px before the ruler, at the marker bin; it maps time from 6 px in.)
+    (start, start + (e.rect[2] - 24.0) as f64 / pps)
 }
 
 /// #159: dragging the navigator's end handles changes that side of the visible span; pulling
@@ -270,4 +271,43 @@ fn a_press_in_the_ruler_moves_the_current_time() {
     assert!((now - (start + 2.5)).abs() < 0.05, "{now}");
     h.event(Event::PointerButton { pos: at + vec2(100.0, 0.0), button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
     h.step();
+}
+
+/// #275: a marker dragged out of the composition marker bin, at the right end of the time ruler,
+/// adds a composition marker where it is dropped, as one undo step; dragged back onto the bin,
+/// none. Numpad * (typed `*`) adds one at the current time.
+#[test]
+fn dragging_out_of_the_marker_bin_adds_a_comp_marker() {
+    let (mut h, _) = harness();
+    h.state_mut().ui.timeline.pps = Some(200.0);
+    h.state_mut().ui.timeline.start = 10.0;
+    h.run_steps(2);
+    let markers = |h: &Harness<'_, EffectcraftApp>| -> Vec<f64> { h.state().session.active_comp().unwrap().markers.iter().map(|m| m.time.seconds()).collect() };
+    let bin = rect(&h, "timeline.markerBin");
+    let ruler = rect(&h, "timeline.ruler");
+    assert!(ruler.contains_rect(bin) && bin.max.x > ruler.max.x - 20.0, "at the ruler's right end: {bin:?} in {ruler:?}");
+    // Out to the ruler and back onto the bin: nothing.
+    let at = pos2(ruler.min.x + 6.0 + 600.0, ruler.center().y);
+    h.event(Event::PointerMoved(bin.center()));
+    h.step();
+    h.event(Event::PointerButton { pos: bin.center(), button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for p in [at, bin.center()] {
+        h.event(Event::PointerMoved(p));
+        h.step();
+    }
+    h.event(Event::PointerButton { pos: bin.center(), button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(2);
+    assert!(markers(&h).is_empty(), "dropped on the bin: {:?}", markers(&h));
+    // Dropped 3 s into the visible span (from 10 s at 200 px/s): a marker at 13 s.
+    let undo = h.state().session.history.undo.len();
+    drag(&mut h, bin.center(), at);
+    assert_eq!(markers(&h), vec![13.0]);
+    let history = &h.state().session.history.undo;
+    assert_eq!((history.len(), history.last().map(|u| u.0.as_str())), (undo + 1, Some("Add Marker")), "one undo step");
+    // Numpad * (it arrives as text): Add Marker at the current time.
+    h.state_mut().session.execute("time.set", json!({"time": 20.0})).unwrap();
+    h.event(Event::Text("*".into()));
+    h.run_steps(2);
+    assert_eq!(markers(&h), vec![13.0, 20.0]);
 }

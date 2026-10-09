@@ -4,15 +4,17 @@
 //! Gestures, as in After Effects: drag moves a marker (snapping to the current time, the work
 //! area and other markers), Alt-drag sets its duration, Cmd-click (Ctrl-click elsewhere)
 //! deletes it, double-click opens the Marker dialog, right-click offers Settings / Convert /
-//! Delete. Protected regions (Responsive Design) shade the timeline. Every change is a
-//! `markers.*` engine command, so it is undoable and agent-drivable.
+//! Delete. Protected regions (Responsive Design) shade the timeline. A marker dragged out of the
+//! composition marker bin, at the right end of the time ruler, adds a composition marker where it
+//! is dropped. Every change is an engine command, so it is undoable and agent-drivable.
 
 use effectcraft_engine::project::{Comp, Layer, Marker};
 use effectcraft_engine::time::Tick;
-use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
+use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
 
 use super::timeline::TMap;
+use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 use crate::{Dialog, EffectcraftApp};
 
@@ -253,6 +255,17 @@ fn snap(app: &EffectcraftApp, comp: &Comp, tm: TMap, t: f64, skip: MarkerRef) ->
     t
 }
 
+/// A marker's colour: its label's, pale yellow without one.
+fn marker_color(t: &Tokens, label: effectcraft_engine::color::Label) -> Color32 {
+    if label == effectcraft_engine::color::Label::None { Color32::from_rgb(0xd8, 0xd8, 0x60) } else { t.label(label) }
+}
+
+/// The marker glyph at `x` from `y0`, `h` points tall: a tab pointing down at the time.
+fn marker_shape(x: f32, y0: f32, h: f32) -> Vec<Pos2> {
+    let ym = y0 + h * 0.6;
+    vec![pos2(x - 4.0, y0), pos2(x + 4.0, y0), pos2(x + 4.0, ym), pos2(x, y0 + h), pos2(x - 4.0, ym)]
+}
+
 /// Draw one marker (triangle + duration bar + comment) at `x` in a strip `[y0, y1]` and handle
 /// its gestures. `comp_t` is the marker's comp time.
 #[allow(clippy::too_many_arguments)]
@@ -260,9 +273,8 @@ fn marker(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, comp: 
     let t = app.tokens;
     let ctx = ui.ctx().clone();
     let x = tm.x(comp_t);
-    let col = if m.label == effectcraft_engine::color::Label::None { Color32::from_rgb(0xd8, 0xd8, 0x60) } else { t.label(m.label) };
+    let col = marker_color(&t, m.label);
     let h = (y1 - y0).min(10.0);
-    let ym = y0 + h * 0.6;
     if m.duration > Tick(0) {
         let xe = tm.x(comp_t + m.duration.seconds());
         let bar = Rect::from_min_max(pos2(x, y0 + 1.0), pos2(xe, y0 + h - 1.0));
@@ -276,7 +288,7 @@ fn marker(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, comp: 
         }
         p.line_segment([pos2(xe, y0), pos2(xe, y0 + h)], Stroke::new(1.0, col));
     }
-    p.add(egui::Shape::convex_polygon(vec![pos2(x - 4.0, y0), pos2(x + 4.0, y0), pos2(x + 4.0, ym), pos2(x, y0 + h), pos2(x - 4.0, ym)], col, Stroke::NONE));
+    p.add(egui::Shape::convex_polygon(marker_shape(x, y0, h), col, Stroke::NONE));
     if !m.comment.is_empty() {
         p.text(pos2(x + 7.0, y0 + h / 2.0), Align2::LEFT_CENTER, m.comment.lines().next().unwrap_or_default(), Tokens::ui(10.0), t.text);
     }
@@ -365,6 +377,37 @@ pub(crate) fn comp_markers(app: &mut EffectcraftApp, ui: &mut egui::Ui, comp: &C
     }
 }
 
+/// The composition marker bin at the right end of the time ruler (`bin`), as in After Effects
+/// (#275): drag a marker out of it and it follows the pointer along the marker strip `strip`
+/// (snapping like a dragged marker); dropping it there adds a composition marker at that time,
+/// one undo step. Dropped back on the bin or outside the time graph's width, nothing is added.
+pub(crate) fn marker_bin(app: &mut EffectcraftApp, ui: &mut egui::Ui, comp: &Comp, tm: TMap, bin: Rect, strip: Rect) {
+    let t = app.tokens;
+    let resp = ui.interact(bin, egui::Id::new("marker-bin"), Sense::drag()).on_hover_text("Composition marker bin: drag a marker to the time ruler");
+    app.auto.add("timeline.markerBin", bin, "Composition marker bin");
+    let hot = resp.hovered() || resp.dragged();
+    if hot {
+        ui.ctx().set_cursor_icon(if resp.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+    }
+    icons::paint(ui.painter(), bin, Icon::MarkerBin, if hot { t.icon_active } else { t.icon });
+    let at = resp.interact_pointer_pos().filter(|p| p.x >= strip.min.x && p.x < strip.max.x).map(|p| {
+        let snapped = snap(app, comp, tm, tm.t(p.x), MarkerRef { layer: None, index: usize::MAX });
+        snapped.min(comp.duration.seconds())
+    });
+    let Some(at) = at else { return };
+    if resp.dragged() {
+        let h = strip.height().min(10.0);
+        let col = marker_color(&t, effectcraft_engine::color::Label::None);
+        let p = ui.painter().with_clip_rect(strip);
+        p.add(egui::Shape::convex_polygon(marker_shape(tm.x(at), strip.min.y, h), col, Stroke::NONE));
+    }
+    if resp.drag_stopped()
+        && let Err(e) = app.session.execute("comp.addMarker", json!({"time": at}))
+    {
+        app.ui.status = e.to_string();
+    }
+}
+
 /// Layer markers on a layer's row `r`; on a precomp layer, its comp's markers too (read-only,
 /// outlined: hover names them, a double-click opens the nested comp at the marker).
 pub(crate) fn layer_markers(app: &mut EffectcraftApp, ui: &mut egui::Ui, clip: Rect, comp: &Comp, layer: &Layer, tm: TMap, r: Rect) {
@@ -399,10 +442,8 @@ fn nested_markers(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter
     let (y0, h) = (r.min.y + 3.0, (r.height() - 6.0).min(10.0));
     for (ct, i, m) in list {
         let x = tm.x(ct.seconds());
-        let col = if m.label == effectcraft_engine::color::Label::None { Color32::from_rgb(0xd8, 0xd8, 0x60) } else { t.label(m.label) }.gamma_multiply(0.75);
-        let ym = y0 + h * 0.6;
-        let pts = vec![pos2(x - 4.0, y0), pos2(x + 4.0, y0), pos2(x + 4.0, ym), pos2(x, y0 + h), pos2(x - 4.0, ym)];
-        p.add(egui::Shape::closed_line(pts, Stroke::new(1.2, col)));
+        let col = marker_color(&t, m.label).gamma_multiply(0.75);
+        p.add(egui::Shape::closed_line(marker_shape(x, y0, h), Stroke::new(1.2, col)));
         if !m.comment.is_empty() {
             p.text(pos2(x + 7.0, y0 + h / 2.0), Align2::LEFT_CENTER, m.comment.lines().next().unwrap_or_default(), Tokens::ui(10.0), t.text_dim);
         }

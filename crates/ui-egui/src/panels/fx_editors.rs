@@ -16,6 +16,7 @@
 //! Every edit is a `prop.set` engine command (undoable; one drag = one undo step) and every
 //! handle registers an automation id.
 
+use crate::i18n::{tr, tr_args};
 use effectcraft_engine::effects::{ColoramaPalette, OffsetCurve};
 use effectcraft_engine::geom::Mat3;
 use effectcraft_engine::keyframe::Value;
@@ -110,7 +111,7 @@ fn tabs(
 fn reset_link(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, id: &str) -> bool {
     let t = app.tokens;
     let resp = ui.interact(r, egui::Id::new(id), Sense::click());
-    p.text(r.center(), Align2::CENTER_CENTER, "Reset", Tokens::ui(11.5), if resp.hovered() { t.hot_text } else { t.text_dim });
+    p.text(r.center(), Align2::CENTER_CENTER, tr("Reset"), Tokens::ui(11.5), if resp.hovered() { t.hot_text } else { t.text_dim });
     app.auto.add(id, r, "Reset");
     resp.clicked()
 }
@@ -196,7 +197,7 @@ fn rgb_curves(
     if let Some(np) = edit.changed {
         set_str(actions, layer, g, id, np.format(), Some(key));
     }
-    p.text(pos2(gr.min.x, gr.max.y + 11.0), Align2::LEFT_CENTER, "Click adds a point; drag one off to remove", Tokens::ui(10.5), t.text_faint);
+    p.text(pos2(gr.min.x, gr.max.y + 11.0), Align2::LEFT_CENTER, tr("Click adds a point; drag one off to remove"), Tokens::ui(10.5), t.text_faint);
 }
 
 /// A hue / saturation curve's points (`x,y` in 0..1, y = ½ neutral), any count (empty = flat).
@@ -394,7 +395,7 @@ fn huesat_curves(
     if reset_link(app, ui, p, Rect::from_min_size(pos2(gr.max.x - 44.0, gr.max.y + 4.0), vec2(44.0, 18.0)), &format!("{prefix}.reset")) {
         set_str(actions, layer, g, id, String::new(), None);
     }
-    p.text(pos2(gr.min.x, gr.max.y + 13.0), Align2::LEFT_CENTER, "Click adds a point (½ height = no change)", Tokens::ui(10.5), t.text_faint);
+    p.text(pos2(gr.min.x, gr.max.y + 13.0), Align2::LEFT_CENTER, tr("Click adds a point (½ height = no change)"), Tokens::ui(10.5), t.text_faint);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -458,7 +459,7 @@ fn colorama_wheel(
     let pal = if custom { ColoramaPalette::parse(&str_value(layer, ectx, g, "palette")) } else { None }.unwrap_or_else(|| ColoramaPalette::preset(preset));
     let x0 = r.min.x + 38.0;
     let label = if custom { "Custom palette" } else { effectcraft_engine::effects::COLORAMA_PRESETS.get(preset as usize).copied().unwrap_or("Preset") };
-    p.text(pos2(x0, r.min.y + 15.0), Align2::LEFT_CENTER, format!("Output Cycle: {label}"), Tokens::ui(11.5), t.text_dim);
+    p.text(pos2(x0, r.min.y + 15.0), Align2::LEFT_CENTER, tr_args("Output Cycle: {}", &[&label]), Tokens::ui(11.5), t.text_dim);
     let size = wheel_size(r.width());
     let c = pos2(x0 + size / 2.0, r.min.y + 30.0 + size / 2.0);
     let (outer, inner) = (size / 2.0 - 8.0, size / 2.0 - 26.0);
@@ -572,7 +573,13 @@ fn colorama_wheel(
             widgets::open_popup(ui, pop);
         }
         app.auto.add(&format!("{prefix}.color"), sr, "Stop color");
-        p.text(pos2(sr.max.x + 8.0, sr.center().y), Align2::LEFT_CENTER, format!("Stop {} at {:.0}°", sel + 1, ph * 360.0), Tokens::ui(11.0), t.text_dim);
+        p.text(
+            pos2(sr.max.x + 8.0, sr.center().y),
+            Align2::LEFT_CENTER,
+            tr_args("Stop {} at {}°", &[&(sel + 1), &format!("{:.0}", ph * 360.0)]),
+            Tokens::ui(11.0),
+            t.text_dim,
+        );
         let mut rgb = [col[0], col[1], col[2]];
         if crate::header::color_popup(ui, pop, sr.left_bottom(), &mut rgb) {
             let mut st = pal.stops.clone();
@@ -687,7 +694,7 @@ fn glow_map(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, laye
     }
     p.rect_stroke(strip, 0.0, Stroke::new(1.0, t.field_border), StrokeKind::Outside);
     app.auto.add(&format!("{prefix}.colorMap"), strip, "Glow colour map");
-    p.text(pos2(strip.max.x + 8.0, strip.center().y), Align2::LEFT_CENTER, "Colour map", Tokens::ui(10.5), t.text_faint);
+    p.text(pos2(strip.max.x + 8.0, strip.center().y), Align2::LEFT_CENTER, tr("Colour map"), Tokens::ui(10.5), t.text_faint);
     if mode != 2 {
         return;
     }
@@ -844,12 +851,12 @@ fn extractor_layers(
         None => "Custom".to_string(),
     };
     // Lined up with the parameter names and value popups below (Effect Controls' row layout).
-    p.text(pos2(r.min.x + 37.0, r.center().y), Align2::LEFT_CENTER, "Layer", Tokens::ui(12.0), t.text);
+    p.text(pos2(r.min.x + 37.0, r.center().y), Align2::LEFT_CENTER, tr("Layer"), Tokens::ui(12.0), t.text);
     let vx = (r.min.x + r.width() * 0.48).max(r.min.x + 161.0);
     let dr = Rect::from_min_size(pos2(vx, r.center().y - 9.0), vec2((r.max.x - vx - 56.0).clamp(80.0, 200.0), 18.0));
     let pop = egui::Id::new(("extractor-layers", euid));
     if widgets::dropdown(ui, dr, &label, &t, egui::Id::new(("extractor-layer", euid)))
-        .on_hover_text("The OpenEXR layer shown in red, green, blue and alpha")
+        .on_hover_text(tr("The OpenEXR layer shown in red, green, blue and alpha"))
         .clicked()
     {
         widgets::open_popup(ui, pop);

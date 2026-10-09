@@ -56,6 +56,8 @@ Commands (CLI, MCP, control channel):
 - `previews.fastPreviews`: Fast Previews (Draft 3D, Faster Effects)
 - `appearance.theme`: Theme
 - `appearance.brightness`: Brightness
+- `appearance.uiScale`: UI Scale, the size of the whole interface (75–200 %, on top of the
+  display's own scaling), applied as soon as it is chosen
 - `appearance.useLabelColorForHandles`: Use Label Color for Layer Handles and Paths
 - `grids.gridColor`: Color
 - `grids.gridSpacing`: Gridline Every

@@ -487,6 +487,12 @@ Extension points and the bundled extensions: [plugins.md](plugins.md).
 * `prop.pickWhip {layer, prop, target: {layer, prop, dimension?}}` links a property as its
   expression pick whip does; `dimension` picks one of the target's values (`position[0]`), as a
   drop on that value field does.
+* A property's menu (right-click its name; entries `timeline.prop.<uid>.menu.<entry>`): Reset
+  (`prop.reset`: no keyframes or expression, and the property's default value, an effect
+  parameter's or a Transform property's), Edit Value… (`prop.set {layer, prop}` without `value`
+  opens the value dialog), Separate Dimensions (Position: `prop.separateDimensions {layer,
+  value}`), Add / Remove Expression (`prop.setExpression {layer, prop}`) and Add Property to
+  Essential Graphics (`essential.addProperty`).
 
 ### History, puppet recording, plug-ins
 

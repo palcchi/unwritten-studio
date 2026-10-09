@@ -541,6 +541,25 @@ impl Frames {
         Some(img)
     }
 
+    /// The newest cached frame of `base`'s viewer series — its comp, frame, scale, view and render
+    /// options, whatever the comp content or revision: the last completed render. A drag (or a
+    /// property scrub) gives the comp a new content identity with every pointer move, so the
+    /// viewer falls back to this while the exact key's render is still in flight, and the picture
+    /// follows the pointer instead of freezing until it stops. `None` if the series has nothing
+    /// cached.
+    pub fn get_newest(&self, base: &FrameKey) -> Option<(FrameKey, FrameImage)> {
+        let mut c = self.cache.lock().ok()?;
+        let newest = c
+            .map
+            .keys()
+            .filter(|k| k.comp == base.comp && k.frame == base.frame && k.scale == base.scale && k.view == base.view && k.opts == base.opts)
+            .max_by_key(|k| k.revision)
+            .copied()?;
+        let img = c.map.get(&newest).cloned()?;
+        c.touch(&newest);
+        Some((newest, img))
+    }
+
     /// The [`comp_content`] identity of `comp` in `project` at `revision` (taken once per
     /// revision). The project is kept while frames of that identity are cached or rendering, so
     /// the comp addresses it hashes can't be reused by other comps meanwhile.

@@ -668,16 +668,22 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let frame = comp.frame_rate.frame_at(time);
     let key = app.frame_key(cid, frame, scale);
     app.request_frame_urgent(cid, frame, scale);
-    if let Some(img) = app.frames.get(&key) {
-        let stale = app.viewer_shown.as_ref().is_none_or(|(_, k)| *k != key);
+    // The frame on screen. While a drag or a property scrub is rendering, the exact key changes
+    // with every edit and its render is still in flight; showing the newest frame that is ready
+    // keeps the picture following the pointer (a render behind), where waiting for the exact key
+    // would freeze it until the pointer stops.
+    let interacting = app.ui.viewer.interacting || app.ui.viewer.property_interacting;
+    let shown = app.frames.get(&key).map(|img| (key, img)).or_else(|| interacting.then(|| app.frames.get_newest(&key)).flatten());
+    if let Some((k, img)) = shown {
+        let stale = app.viewer_shown.as_ref().is_none_or(|(_, s)| *s != k);
         // A CPU frame goes up again when the magnification calls for another factor.
         let minify = minify_factor(app.session.prefs.viewer_zoom_smooth(), scale, (zoom * ppp) as f64);
         let refit = !app.viewer_on_gpu() && app.viewer_tex.as_ref().is_some_and(|(_, _, m)| *m != minify);
         if stale || refit {
-            show_frame(app, &ctx, key, img, minify);
-        } else if let Some((_, k)) = app.viewer_shown.as_mut() {
+            show_frame(app, &ctx, k, img, minify);
+        } else if let Some((_, s)) = app.viewer_shown.as_mut() {
             // The same frame at a later revision (an edit elsewhere, an undo): it shows that one.
-            k.revision = key.revision;
+            s.revision = k.revision;
         }
     }
     if app.ui.viewer.transparency_grid {

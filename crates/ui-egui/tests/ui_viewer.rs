@@ -526,6 +526,43 @@ fn shape_drag_ghost_shows_where_the_shape_will_land() {
     assert_eq!(comp.layer(plate).unwrap().props.sub("masks").unwrap().groups().count(), 1, "the drag drew a mask");
 }
 
+/// Dragging a layer moves its picture while the button is still down. Every pointer move replaces
+/// the comp's content identity, so the exact frame on screen is re-rendered at every step: waiting
+/// for it would freeze the viewer on the last completed frame for the whole drag.
+#[test]
+fn a_layer_drag_moves_the_picture_while_the_button_is_down() {
+    let mut h = harness();
+    let box_ = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Box").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_.0]})).unwrap();
+    settle_viewer(&mut h);
+    let from = screen(&h, [320.0, 180.0]);
+    let to = screen(&h, [520.0, 180.0]);
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    // Where the layer is not (yet): the plate behind it.
+    let plate = px_at(&h.render().unwrap(), &h, [440.0, 200.0]);
+
+    // Drag in small steps, still holding the button, and give the renders a chance to land.
+    let mut moved = false;
+    for i in 1..=40 {
+        let p = from + (to - from) * (i as f32 / 40.0);
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        // 30 comp px behind the pointer: inside the layer, well away from its outline, its anchor
+        // icon and where it started.
+        let at = px_at(&h.render().expect("mid-drag frame"), &h, [320.0 + 200.0 * (i as f32 / 40.0) - 30.0, 200.0]);
+        if i >= 30 && delta(at, plate) > 30 {
+            moved = true;
+            break;
+        }
+    }
+    assert!(moved, "the layer's pixels did not follow the pointer while the button was down");
+    h.input_mut().events.push(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+}
+
 /// Clicking the word "Fill" opens Fill Options: a radial gradient in Multiply at 40% paints the
 /// next shape drawn (#227).
 #[test]

@@ -758,13 +758,9 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     if let Some(i) = browse
         && let Some(FieldKind::SavePath(value)) = f.fields.get_mut(i).map(|f| &mut f.kind)
     {
-        let default = std::path::Path::new(value.as_str()).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        match app.hooks.pick_save.as_ref() {
-            Some(pick) => {
-                if let Some(path) = pick(&default) {
-                    *value = path;
-                }
-            }
+        match app.hooks.save_dialog(value) {
+            Some(Some(path)) => *value = path,
+            Some(None) => {}
             None => app.ui.status = "no file dialog available: type the path".into(),
         }
     }

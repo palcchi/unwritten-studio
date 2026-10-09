@@ -1152,8 +1152,8 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
             f(exts).first().map(|s| json!(s))
         }
         Ask::Save(default) => {
-            let Some(f) = app.hooks.pick_save.as_ref() else { return Some(Err("no file dialog available (pass `path`)".into())) };
-            f(default).map(|s| json!(s))
+            let Some(picked) = app.hooks.save_dialog(default) else { return Some(Err("no file dialog available (pass `path`)".into())) };
+            picked.map(|s| json!(s))
         }
     };
     let Some(v) = picked else { return Some(Ok(Value::Null)) };
@@ -1707,6 +1707,47 @@ mod tests {
         let labels: Vec<String> = menu_items(&app).into_iter().filter(|i| i.id == "edit.label").map(|i| i.label).collect();
         assert!(labels.contains(&"Sunflower".to_string()), "{labels:?}");
         assert!(!labels.contains(&"Yellow".to_string()));
+    }
+
+    /// Saving anything but a project asks the save dialog for that file's extension (#293): the
+    /// project dialog, filtered to `.ecproj`, made macOS append `.ecproj` (`Frame.png.ecproj`).
+    /// Hosts with only the project dialog (the web) still get it, given the file name.
+    #[test]
+    fn save_dialogs_offer_the_file_extension() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("comp.new", json!({"name": "A", "width": 64, "height": 36, "frameRate": 30, "duration": 1})).unwrap();
+        let ctx = egui::Context::default();
+        let asked: Rc<RefCell<Vec<String>>> = Rc::default();
+        let (a, b) = (asked.clone(), asked.clone());
+        app.hooks.pick_save = Some(Box::new(move |name: &str| {
+            a.borrow_mut().push(format!("project {name}"));
+            None
+        }));
+        app.hooks.pick_save_file = Some(Box::new(move |name: &str, ext: &str| {
+            b.borrow_mut().push(format!("file {name} [{ext}]"));
+            None
+        }));
+        for id in ["comp.saveFrameAs", "render.saveCurrentPreview", "file.exportLottie", "file.saveCopyAsXml", "file.collectFiles", "file.saveAs"] {
+            invoke(&mut app, &ctx, id, json!({})).unwrap();
+        }
+        assert_eq!(
+            *asked.borrow(),
+            [
+                "file Frame.png [png]",
+                "file Preview.mp4 [mp4]",
+                "file Animation.json [json]",
+                "file Untitled Project.ecprojx [ecprojx]",
+                "file Collected Files []",
+                "project Untitled Project.ecproj",
+            ]
+        );
+        // Without the other dialog, the project one names any file.
+        app.hooks.pick_save_file = None;
+        asked.borrow_mut().clear();
+        invoke(&mut app, &ctx, "comp.saveFrameAs", json!({})).unwrap();
+        assert_eq!(*asked.borrow(), ["project Frame.png"]);
     }
 
     #[test]

@@ -5,7 +5,7 @@ use effectcraft_project::{GroupKind, ItemId, Layer, LayerId, Property, Uid};
 use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, b_p, bad, f_p, has_comp, has_keys, has_layers, layer_mut, layer_p, layers_p, merge_p, str_p};
+use super::{CommandSpec, b_p, bad, comp_id, f_p, has_comp, has_keys, has_layers, layer_mut, layer_p, layers_p, merge_p, selected_leaf_props, str_p};
 use crate::{EngineError, KeyRef, Result, Session, VertexRef, cmd, query};
 
 /// Resolve `{layer, path}` (or `{layer, prop: uid}`) to (comp, layer, prop uid).
@@ -233,8 +233,38 @@ fn toggle_transform_key(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Array(added))
 }
 
+/// Add, toggle or set one property's expression (`def` is the starting text of a new one).
+fn apply_expr(pr: &mut Property, text: &Option<String>, enabled: Option<bool>, def: &str) {
+    match (text, enabled) {
+        (Some(t), _) if t.trim().is_empty() => pr.expr = None,
+        (Some(t), e) => pr.expr = Some(effectcraft_project::Expression { text: t.clone(), enabled: e.unwrap_or(true) }),
+        (None, Some(e)) => {
+            if let Some(x) = &mut pr.expr {
+                x.enabled = e;
+            } else if e {
+                pr.expr = Some(effectcraft_project::Expression { text: def.to_string(), enabled: true });
+            }
+        }
+        (None, None) => {
+            pr.expr = if pr.expr.is_some() { None } else { Some(effectcraft_project::Expression { text: def.to_string(), enabled: true }) };
+        }
+    }
+}
+
+/// `{layer?, path|prop, ...}` for one property, or (Animation > Add Expression) no `path`/`prop`
+/// for the properties selected in the timeline, all in one undo step.
 fn set_expr(s: &mut Session, p: &Value) -> Result<Value> {
-    let (cid, lid, uid) = prop_ref(s, p, "prop.setExpression")?;
+    const C: &str = "prop.setExpression";
+    let explicit = p.get("path").is_some() || p.get("prop").is_some();
+    let targets: Vec<(ItemId, LayerId, Uid)> = if explicit {
+        vec![prop_ref(s, p, C)?]
+    } else {
+        let cid = comp_id(s, p)?;
+        selected_leaf_props(s).into_iter().map(|(l, u)| (cid, l, u)).collect()
+    };
+    if targets.is_empty() {
+        return Err(bad(C, "select a property in the timeline (or give `layer` and `path`)"));
+    }
     let text = p.get("expression").and_then(Value::as_str).map(str::to_string);
     let mut enabled = b_p(p, "enabled");
     // A syntax error keeps the text but disables the expression (AE shows the warning bar).
@@ -246,24 +276,22 @@ fn set_expr(s: &mut Session, p: &Value) -> Result<Value> {
         enabled = Some(false);
     }
     // Alt-click on a stopwatch starts with the property's own reference (`transform.opacity`).
-    let def = s.project.comp(cid).and_then(|c| c.layer(lid).and_then(|l| super::link::reference(c, l, l, uid, true))).unwrap_or_else(|| "value".into());
-    let r = with_prop(s, "Expression", merge_p(p), cid, lid, uid, |pr, _| {
-        match (&text, enabled) {
-            (Some(t), _) if t.trim().is_empty() => pr.expr = None,
-            (Some(t), e) => pr.expr = Some(effectcraft_project::Expression { text: t.clone(), enabled: e.unwrap_or(true) }),
-            (None, Some(e)) => {
-                if let Some(x) = &mut pr.expr {
-                    x.enabled = e;
-                } else if e {
-                    pr.expr = Some(effectcraft_project::Expression { text: def.clone(), enabled: true });
-                }
-            }
-            (None, None) => {
-                pr.expr = if pr.expr.is_some() { None } else { Some(effectcraft_project::Expression { text: def.clone(), enabled: true }) };
-            }
+    let defs: Vec<String> = targets
+        .iter()
+        .map(|(cid, lid, uid)| {
+            s.project.comp(*cid).and_then(|c| c.layer(*lid).and_then(|l| super::link::reference(c, l, l, *uid, true))).unwrap_or_else(|| "value".into())
+        })
+        .collect();
+    let results = s.edit("Expression", merge_p(p), |proj, _| {
+        let mut out = vec![];
+        for ((cid, lid, uid), def) in targets.iter().zip(&defs) {
+            let pr = layer_mut(proj, *cid, *lid)?.props.find_mut(*uid).ok_or_else(|| bad(C, "property vanished"))?;
+            apply_expr(pr, &text, enabled, def);
+            out.push(json!(pr.expr.as_ref().map(|e| e.text.clone())));
         }
-        Ok(json!(pr.expr.as_ref().map(|e| e.text.clone())))
+        Ok(out)
     })?;
+    let r = if explicit { results.into_iter().next().unwrap_or(Value::Null) } else { Value::Array(results) };
     if let Some(e) = error {
         s.toast(format!("Expression disabled: {e}"));
         return Ok(json!({"expression": r, "error": e}));
@@ -809,7 +837,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_layers,
             toggle_transform_key
         ),
-        cmd!("prop.setExpression", "Add Expression", ["Animation"], Some("Alt+Shift+="), "{layer?, path|prop, expression?, enabled?}", has_layers, set_expr),
+        cmd!(
+            "prop.setExpression",
+            "Add Expression",
+            ["Animation"],
+            Some("Alt+Shift+="),
+            "{layer?, path|prop?, expression?, enabled?} (no path/prop: the selected properties)",
+            has_layers,
+            set_expr
+        ),
         cmd!(
             "prop.reset",
             "Reset Property",

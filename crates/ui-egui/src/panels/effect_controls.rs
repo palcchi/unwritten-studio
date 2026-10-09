@@ -292,7 +292,9 @@ fn prop_row(
             if matches!(prop.ui, ParamUi::Point | ParamUi::Point3) {
                 let cr = Rect::from_center_size(pos2(x + 8.0, cy), vec2(18.0, 18.0));
                 let active = app.ui.fx_pick.as_ref().is_some_and(|k| k.prop == uid && k.kind == "point");
-                if fw::crosshair_button(ui, cr, active, egui::Id::new(("ec-xh", uid)), &t).on_hover_text("Click, then click in the Composition panel").clicked()
+                if fw::crosshair_button(ui, cr, active, egui::Id::new(("ec-xh", uid)), &t)
+                    .on_hover_text(crate::i18n::tr("Click, then click in the Composition panel"))
+                    .clicked()
                 {
                     toggle_pick(app, "point", layer, prop);
                 }
@@ -320,7 +322,7 @@ fn prop_row(
             let er = Rect::from_center_size(pos2(sr.max.x + 14.0, cy), vec2(18.0, 18.0));
             let active = app.ui.fx_pick.as_ref().is_some_and(|k| k.prop == uid && k.kind == "color");
             if fw::eyedropper_button(ui, er, active, egui::Id::new(("ec-eye", uid)), &t)
-                .on_hover_text("Eyedropper: click, then click in the Composition panel")
+                .on_hover_text(crate::i18n::tr("Eyedropper: click, then click in the Composition panel"))
                 .clicked()
             {
                 toggle_pick(app, "color", layer, prop);
@@ -724,7 +726,7 @@ fn channel_popup(
     auto: &str,
 ) -> Option<usize> {
     let t = app.tokens;
-    p.text(pos2(x, cy), Align2::LEFT_CENTER, "Channel:", Tokens::ui(12.0), t.text_dim);
+    p.text(pos2(x, cy), Align2::LEFT_CENTER, crate::i18n::tr("Channel:"), Tokens::ui(12.0), t.text_dim);
     let dr = Rect::from_min_size(pos2(x + 58.0, cy - 9.0), vec2(80.0, 18.0));
     let pop = id.with("pop");
     if widgets::dropdown(ui, dr, names.get(cur).copied().unwrap_or(""), &t, id).clicked() {
@@ -777,7 +779,7 @@ fn curves_editor(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
     };
     let rr = Rect::from_min_size(pos2(mr.max.x + 8.0, cy - 9.0), vec2(44.0, 18.0));
     let rresp = ui.interact(rr, egui::Id::new(("ec-creset", euid)), Sense::click());
-    p.text(rr.center(), Align2::CENTER_CENTER, "Reset", Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
+    p.text(rr.center(), Align2::CENTER_CENTER, crate::i18n::tr("Reset"), Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
     app.auto.add(&format!("effectControls.effect.{euid}.curves.reset"), rr, "Reset curve");
     if rresp.clicked() {
         actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": prop.uid, "value": fw::CurvePoints::identity().format()})));
@@ -846,7 +848,7 @@ fn levels_editor(
             app.ui.fx_levels_channel.insert(euid, n);
         }
     } else {
-        p.text(pos2(x0, cy), Align2::LEFT_CENTER, "Histogram", Tokens::ui(12.0), t.text_dim);
+        p.text(pos2(x0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Histogram"), Tokens::ui(12.0), t.text_dim);
     }
     let w = (r.width() - 72.0).clamp(120.0, 256.0);
     let hr = Rect::from_min_size(pos2(x0 + 8.0, r.min.y + 34.0), vec2(w, 80.0));
@@ -911,7 +913,7 @@ fn levels_editor(
 fn histogram_only(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, g: &PropGroup, r: Rect) {
     let t = app.tokens;
     let x0 = r.min.x + 30.0;
-    p.text(pos2(x0, r.min.y + 12.0), Align2::LEFT_CENTER, "Histogram", Tokens::ui(12.0), t.text_dim);
+    p.text(pos2(x0, r.min.y + 12.0), Align2::LEFT_CENTER, crate::i18n::tr("Histogram"), Tokens::ui(12.0), t.text_dim);
     let w = (r.width() - 72.0).clamp(120.0, 256.0);
     let hr = Rect::from_min_size(pos2(x0 + 8.0, r.min.y + 24.0), vec2(w, 80.0));
     match frame_histogram(app, ui.ctx()) {
@@ -934,7 +936,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let p = ui.painter().with_clip_rect(rect);
     let ctx = ui.ctx().clone();
     let Some(layer) = selected_layer(app) else {
-        p.text(rect.center(), Align2::CENTER_CENTER, "Select a layer to see its effects", Tokens::ui(12.0), t.text_faint);
+        p.text(rect.center(), Align2::CENTER_CENTER, crate::i18n::tr("Select a layer to see its effects"), Tokens::ui(12.0), t.text_faint);
         return;
     };
     let Some(cid) = app.session.active_comp_id() else { return };
@@ -1000,7 +1002,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add(&format!("effectControls.effect.{}.name", g.uid), name, &g.name);
         let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.min.y + 4.0), vec2(40.0, 18.0));
         let rresp = ui.interact(reset, egui::Id::new(("ec-reset", g.uid)), Sense::click());
-        bp.text(reset.center(), Align2::CENTER_CENTER, "Reset", Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
+        bp.text(reset.center(), Align2::CENTER_CENTER, crate::i18n::tr("Reset"), Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
         app.auto.add(&format!("effectControls.effect.{}.reset", g.uid), reset, "Reset");
         if rresp.clicked() {
             actions.push(("effect.reset".into(), json!({"layer": layer.id.0, "effect": g.uid})));
@@ -1008,7 +1010,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         // About…: the effect's name and category (AE's About dialog).
         let about = Rect::from_min_size(pos2(r.max.x - 50.0, r.min.y + 4.0), vec2(44.0, 18.0));
         let aresp = ui.interact(about, egui::Id::new(("ec-about", g.uid)), Sense::click());
-        bp.text(about.center(), Align2::CENTER_CENTER, "About...", Tokens::ui(11.5), if aresp.hovered() { t.hot_text } else { t.text_dim });
+        bp.text(about.center(), Align2::CENTER_CENTER, crate::i18n::tr("About..."), Tokens::ui(11.5), if aresp.hovered() { t.hot_text } else { t.text_dim });
         app.auto.add(&format!("effectControls.effect.{}.about", g.uid), about, "About");
         let apop = egui::Id::new(("ec-about-pop", g.uid));
         if aresp.clicked() {

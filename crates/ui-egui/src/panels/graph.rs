@@ -244,7 +244,13 @@ pub(crate) fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
         gv += step;
     }
     if cs.is_empty() {
-        p.text(plot.center(), Align2::CENTER_CENTER, "Select animated properties to show them in the Graph Editor", Tokens::ui(12.0), t.text_faint);
+        p.text(
+            plot.center(),
+            Align2::CENTER_CENTER,
+            crate::i18n::tr("Select animated properties to show them in the Graph Editor"),
+            Tokens::ui(12.0),
+            t.text_faint,
+        );
     }
 
     // Show Reference Graph: the other graph type, faint, scaled to the plot.

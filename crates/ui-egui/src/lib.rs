@@ -1579,6 +1579,7 @@ impl eframe::App for EffectcraftApp {
         // The CJK fallback fonts depend on the interface language, so they follow a change of
         // Settings ▸ General ▸ Language instead of only the first frame.
         let language = crate::i18n::language(self);
+        crate::i18n::set_current(language);
         if !self.styled || self.styled_language != language {
             theme::install(ctx, &self.tokens, language);
             self.styled_language = language;

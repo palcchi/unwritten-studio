@@ -579,27 +579,27 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         let footage = matches!(it.kind, ItemKind::Footage(_));
         resp.context_menu(|ui| {
-            if ui.button("Delete").clicked() {
+            if ui.button(crate::i18n::tr("Delete")).clicked() {
                 actions.push(("project.delete".into(), json!({"items": targets(app, *id, selected)})));
                 ui.close();
             }
-            if matches!(it.kind, ItemKind::Comp(_)) && ui.button("Open Composition").clicked() {
+            if matches!(it.kind, ItemKind::Comp(_)) && ui.button(crate::i18n::tr("Open Composition")).clicked() {
                 actions.push(("comp.open".into(), json!({"comp": id.0})));
                 ui.close();
             }
-            if ui.button("Rename").clicked() {
+            if ui.button(crate::i18n::tr("Rename")).clicked() {
                 ctx.data_mut(|d| d.insert_temp::<Editing>(edit_id(), (id.0, "name".into(), it.name.clone())));
                 ui.close();
             }
-            if it.parent.is_some() && ui.button("Move to Project Root").clicked() {
+            if it.parent.is_some() && ui.button(crate::i18n::tr("Move to Project Root")).clicked() {
                 actions.push(("project.move".into(), json!({"items": [id.0], "folder": null})));
                 ui.close();
             }
-            if !it.is_folder() && ui.button("Add to Composition").clicked() {
+            if !it.is_folder() && ui.button(crate::i18n::tr("Add to Composition")).clicked() {
                 actions.push(("layer.addItem".into(), json!({"item": id.0})));
                 ui.close();
             }
-            if ui.button("New Comp from Selection").clicked() {
+            if ui.button(crate::i18n::tr("New Comp from Selection")).clicked() {
                 if let Some((w, h)) = it.dimensions() {
                     let d = it.duration().map(|d| d.seconds()).unwrap_or(10.0);
                     actions.push(("comp.new".into(), json!({"name": format!("{} Comp", it.name), "width": w, "height": h, "duration": d})));
@@ -608,7 +608,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ui.close();
             }
             ui.separator();
-            ui.menu_button("Label", |ui| {
+            ui.menu_button(crate::i18n::tr("Label"), |ui| {
                 for l in Label::ALL {
                     if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), l == it.label, &t).clicked() {
                         actions.push(("project.setLabel".into(), json!({"items": targets(app, *id, selected), "label": label_index(l)})));
@@ -734,9 +734,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             actions.push(("file.cycleBitDepth".into(), json!({})));
         }
     }
-    dresp.on_hover_text("Project color depth: click to cycle 8/16/32 bpc, Alt-click for Project Settings");
+    dresp.on_hover_text(crate::i18n::tr("Project color depth: click to cycle 8/16/32 bpc, Alt-click for Project Settings"));
     let tr = Rect::from_min_size(pos2(foot.max.x - 30.0, foot.min.y + 3.0), vec2(22.0, 22.0));
-    if widgets::icon_button(ui, tr, Icon::Trash, false, &t, egui::Id::new("ptrash")).on_hover_text("Delete selected project items").clicked()
+    if widgets::icon_button(ui, tr, Icon::Trash, false, &t, egui::Id::new("ptrash")).on_hover_text(crate::i18n::tr("Delete selected project items")).clicked()
         && !app.session.state.project_selection.is_empty()
     {
         actions.push(("project.delete".into(), json!({})));
@@ -812,7 +812,7 @@ fn label_index(l: Label) -> usize {
 /// The column header's context menu: show or hide the optional columns.
 fn column_menu(app: &mut EffectcraftApp, resp: &egui::Response) {
     resp.context_menu(|ui| {
-        ui.label(egui::RichText::new("Columns").weak());
+        ui.label(egui::RichText::new(crate::i18n::tr("Columns")).weak());
         for (key, label, _) in COLUMNS {
             let mut on = app.ui.project_columns.iter().any(|c| c == key);
             if ui.checkbox(&mut on, label).changed() {

@@ -8,7 +8,7 @@
 
 use effectcraft_engine::color::BlendMode;
 use effectcraft_engine::keyframe::{Interp, Value};
-use effectcraft_engine::project::{Comp, GroupKind, Layer, LayerId, LayerSource, MatteKind, Node, ParamUi, PropGroup, Property};
+use effectcraft_engine::project::{Comp, GroupKind, ItemId, Layer, LayerId, LayerSource, MatteKind, Node, ParamUi, PropGroup, Property};
 use effectcraft_engine::render::EvalCtx;
 use effectcraft_engine::time::Tick;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
@@ -113,6 +113,20 @@ type PickWhip = (u8, u64, u64, Pos2);
 
 fn pick_whip_id() -> egui::Id {
     egui::Id::new("tl-pickwhip")
+}
+
+/// The text of an expression being edited when its pick whip was pressed, and the selection in
+/// it (characters): the pick whip's reference goes in there.
+type WhipInto = (String, [usize; 2]);
+
+fn whip_into_id(prop: u64) -> egui::Id {
+    egui::Id::new(("tl-pickwhip-into", prop))
+}
+
+/// After a pick whip into the expression being edited: its editor takes the focus back, the
+/// cursor this many characters before the end (just after the reference).
+fn expr_refocus_id(prop: u64) -> egui::Id {
+    egui::Id::new(("tl-expr-refocus", prop))
 }
 
 #[derive(Clone, Debug)]
@@ -980,8 +994,8 @@ fn key_drag_id() -> egui::Id {
     egui::Id::new("tl-key-drag")
 }
 
-/// A layer switch pressed and dragged over other layers: the switch, the state the press gave
-/// it, and the undo step the drag folds into.
+/// A switch pressed and dragged over other rows: the switch, the state the press gave it, and
+/// the undo step the drag folds into.
 #[derive(Clone, Debug)]
 struct SwitchDrag {
     switch: &'static str,
@@ -993,9 +1007,24 @@ fn switch_drag_id() -> egui::Id {
     egui::Id::new("tl-switch-drag")
 }
 
-/// A layer's switch (A/V Features and Switches columns) in `row`. Pressing it sets it, and
-/// dragging on gives the same switch of every layer the pointer passes the same new state, in
-/// one undo step (After Effects).
+/// The press-and-drag gesture of the Timeline's switches and stopwatches (`switch`, on `row`,
+/// now `on`, pressed through `resp`): the press gives it the opposite state, and dragging on
+/// gives every `switch` the pointer passes that same state, in one undo step, whatever its own
+/// (After Effects). The state to set and the undo step to fold it into, when it changes now.
+fn switch_gesture(ui: &egui::Ui, resp: &egui::Response, row: Rect, switch: &'static str, on: bool) -> Option<(bool, String)> {
+    if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+        let merge = format!("tl-switch-{}", ui.input(|i| i.time));
+        ui.data_mut(|d| d.insert_temp(switch_drag_id(), SwitchDrag { switch, value: !on, merge: merge.clone() }));
+        return Some((!on, merge));
+    }
+    let d = ui.data(|d| d.get_temp::<SwitchDrag>(switch_drag_id())).filter(|d| d.switch == switch && d.value != on)?;
+    // The heights the pointer moved over since the last frame, so a quick drag skips no row.
+    let (a, b) = ui.input(|i| i.pointer.interact_pos().map(|p| (p.y - i.pointer.delta().y, p.y)))?;
+    (a.min(b) < row.max.y && a.max(b) >= row.min.y).then_some((d.value, d.merge))
+}
+
+/// A layer's switch (A/V Features and Switches columns) in `row`, with the
+/// [`switch_gesture`].
 #[allow(clippy::too_many_arguments)]
 fn layer_switch(
     ui: &mut egui::Ui,
@@ -1010,25 +1039,34 @@ fn layer_switch(
     actions: &mut Vec<(String, serde_json::Value)>,
 ) {
     let resp = widgets::icon_toggle(ui, br, icon, on, t, id, Sense::click_and_drag());
-    let set = |actions: &mut Vec<(String, serde_json::Value)>, value: bool, merge: &str| {
-        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name, "value": value, "merge": merge})))
-    };
-    if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
-        let merge = format!("tl-switch-{}", ui.input(|i| i.time));
-        set(actions, !on, &merge);
-        ui.data_mut(|d| d.insert_temp(switch_drag_id(), SwitchDrag { switch: name, value: !on, merge }));
-    } else if let Some(d) = ui.data(|d| d.get_temp::<SwitchDrag>(switch_drag_id())).filter(|d| d.switch == name && d.value != on)
-        // The heights the pointer moved over since the last frame, so a quick drag skips no row.
-        && let Some((a, b)) = ui.input(|i| i.pointer.interact_pos().map(|p| (p.y - i.pointer.delta().y, p.y)))
-        && a.min(b) < row.max.y
-        && a.max(b) >= row.min.y
-    {
-        set(actions, d.value, &d.merge);
+    if let Some((value, merge)) = switch_gesture(ui, &resp, row, name, on) {
+        actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name, "value": value, "merge": merge})));
     } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
         // Keyboard or accessibility activation (a pointer press was handled above).
         actions.push(("layer.setSwitch".into(), json!({"layers": [layer], "switch": name})));
     }
 }
+
+fn anchor_id(comp: ItemId) -> egui::Id {
+    egui::Id::new(("timeline-selection-anchor", comp.0))
+}
+
+/// Remember `layer` as where the next Shift-click selection starts.
+fn set_anchor(ctx: &egui::Context, comp: ItemId, layer: LayerId) {
+    ctx.data_mut(|d| d.insert_temp(anchor_id(comp), layer));
+}
+
+/// The layers a Shift-click on `layer` (its name or its bar) selects: those from the last layer
+/// clicked (else the first selected) to it in stack order, but locked layers and layers the
+/// Timeline doesn't show. `None` without such a layer.
+fn shift_range(ctx: &egui::Context, cid: ItemId, comp: &Comp, rows: &[Row], selected: &[LayerId], layer: LayerId) -> Option<Vec<u64>> {
+    let anchor = ctx.data(|d| d.get_temp::<LayerId>(anchor_id(cid))).or_else(|| selected.first().copied())?;
+    let a = comp.layers.iter().position(|l| l.id == anchor)?;
+    let b = comp.layers.iter().position(|l| l.id == layer)?;
+    let span = comp.layers.get(a.min(b)..=a.max(b))?;
+    Some(span.iter().filter(|l| !l.switches.locked && rows.iter().any(|r| r.layer == l.id)).map(|l| l.id.0).collect())
+}
+
 /// Set on the frame the reorder drag is released.
 /// Where layers dropped at height `py` land among the visible layer rows: above the first row
 /// whose middle is below it (its index in `layer_rows`), else below the last row. Returns that
@@ -1320,9 +1358,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         s += secs_per_label;
     }
-    // Scrub in the ruler.
+    // Scrub in the ruler: the current time jumps to the pointer as soon as the button goes down
+    // (After Effects), then follows it.
     let rresp = ui.interact(Rect::from_min_max(pos2(graph_x0, ruler.min.y + 12.0), ruler.max), egui::Id::new("tl-ruler"), Sense::click_and_drag());
-    if (rresp.dragged() || rresp.clicked())
+    if ((rresp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down())) || rresp.clicked())
         && let Some(pt) = rresp.interact_pointer_pos()
     {
         let mut secs = tm.t(pt.x).max(0.0);
@@ -1620,27 +1659,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 app.auto.add(&format!("timeline.layer.{}.row", layer.id.0), left, &layer.name);
                 if row_resp.clicked() && !locked {
                     let m = ui.input(|i| i.modifiers);
-                    let anchor_key = egui::Id::new(("timeline-selection-anchor", cid.0));
-                    let anchor = ctx.data(|d| d.get_temp::<LayerId>(anchor_key)).or_else(|| selected.first().copied());
-                    let range = if m.shift {
-                        anchor.and_then(|a| comp.layers.iter().position(|l| l.id == a)).map(|a| {
-                            let b = comp.layers.iter().position(|l| l.id == layer.id).unwrap_or(a);
-                            comp.layers
-                                .get(a.min(b)..=a.max(b))
-                                .unwrap_or_default()
-                                .iter()
-                                .filter(|l| !l.switches.locked && rows.iter().any(|r| r.layer == l.id))
-                                .map(|l| l.id.0)
-                                .collect::<Vec<_>>()
-                        })
-                    } else {
-                        None
-                    };
-                    if let Some(layers) = range {
+                    if let Some(layers) = m.shift.then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {
                         actions.push(("layer.select".into(), json!({"layers": layers})));
                     } else {
                         actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "toggle": m.command})));
-                        ctx.data_mut(|d| d.insert_temp(anchor_key, layer.id));
+                        set_anchor(&ctx, cid, layer.id);
                     }
                 }
                 if row_resp.double_clicked() {
@@ -1841,8 +1864,18 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     if lin.hovered() || lout.hovered() || lin.dragged() || lout.dragged() {
                         ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                     }
-                    if (body.clicked() || body.drag_started()) && !is_sel {
-                        actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "add": ui.input(|i| i.modifiers.shift)})));
+                    let shift = ui.input(|i| i.modifiers.shift);
+                    if let Some(layers) = (body.clicked() && shift).then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {
+                        // Shift-click: the layers from the last one clicked to this one, as in
+                        // the layer outline.
+                        actions.push(("layer.select".into(), json!({"layers": layers})));
+                    } else {
+                        if (body.clicked() || body.drag_started()) && !is_sel {
+                            actions.push(("layer.select".into(), json!({"layers": [layer.id.0], "add": shift})));
+                        }
+                        if (body.clicked() || body.drag_started()) && !shift {
+                            set_anchor(&ctx, cid, layer.id);
+                        }
                     }
                     layer_context_menu(&body, layer, &mut actions);
                     let drag_key = format!("bar-{}", layer.id.0);
@@ -1977,7 +2010,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let wr = Rect::from_min_max(pos2(graph_x0, r.min.y), r.max);
                 gp.rect_filled(wr, 0.0, t.tl_bg);
                 app.auto.add(&format!("timeline.layer.{}.waveform", layer.id.0), wr, "Waveform");
-                match super::waveform::summary(app, &ctx, effectcraft_engine::project::ItemId(*item)) {
+                match super::waveform::summary(app, &ctx, ItemId(*item)) {
                     Some(s) => super::waveform::draw(&gp, wr.shrink2(vec2(0.0, 2.0)), &tm, layer, &s, Color32::from_rgb(0x5f, 0xc8, 0x8a)),
                     None => {
                         gp.text(
@@ -2017,6 +2050,25 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let pw = ui.interact(pw_rect, egui::Id::new(("expr-whip", uid)), Sense::drag()).on_hover_text("Expression pick whip: drag onto a property");
                 icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
                 app.auto.add(&format!("timeline.prop.{uid}.pickWhip"), pw_rect, "Expression pick whip");
+                if pw.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
+                    // Pressed while the expression is being edited (its text is buffered while
+                    // the editor has the focus): the reference will go in at the cursor,
+                    // replacing the selection (#284).
+                    let into = ctx.data(|d| d.get_temp::<String>(egui::Id::new(("expr-buf", uid)))).map(|buf| {
+                        let n = buf.chars().count();
+                        let sel = egui::text_edit::TextEditState::load(&ctx, egui::Id::new(("expr-edit", uid)))
+                            .and_then(|st| st.cursor.char_range())
+                            .map_or([n, n], |r| [r.primary.index.0.min(r.secondary.index.0).min(n), r.primary.index.0.max(r.secondary.index.0).min(n)]);
+                        (buf, sel)
+                    });
+                    ctx.data_mut(|d| {
+                        if let Some(into) = into {
+                            d.insert_temp(whip_into_id(*uid), into);
+                        } else {
+                            d.remove::<WhipInto>(whip_into_id(*uid));
+                        }
+                    });
+                }
                 if pw.drag_started() {
                     let pw_state: PickWhip = (1, layer.id.0, *uid, pw_rect.center());
                     ctx.data_mut(|d| d.insert_temp(pick_whip_id(), pw_state));
@@ -2070,19 +2122,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 gp.rect_filled(Rect::from_min_max(pos2(graph_x0, r.min.y), r.max), 0.0, Color32::from_rgb(0x1a, 0x1a, 0x1a));
                 let er = Rect::from_min_max(pos2(graph_x0 + 8.0, r.min.y + 3.0), pos2(rect.max.x - 14.0, r.max.y - 3.0));
                 let buf_id = egui::Id::new(("expr-buf", uid));
+                let edit_id = egui::Id::new(("expr-edit", uid));
                 let mut buf: String = ctx.data(|d| d.get_temp(buf_id)).unwrap_or_else(|| ex.text.clone());
+                if let Some(after) = ctx.data_mut(|d| d.remove_temp::<usize>(expr_refocus_id(*uid))) {
+                    // A pick whip just put a reference in: editing goes on in the new text,
+                    // the cursor after the reference.
+                    buf = ex.text.clone();
+                    let mut st = egui::text_edit::TextEditState::load(&ctx, edit_id).unwrap_or_default();
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(buf.chars().count().saturating_sub(after)))));
+                    st.store(&ctx, edit_id);
+                    ctx.memory_mut(|m| m.request_focus(edit_id));
+                }
                 // Settings ▸ Scripting & Expressions ▸ Expressions Editor.
                 let sp = app.session.prefs.scripting.clone();
-                let resp = super::expr_editor::editor(
-                    ui,
-                    egui::Id::new(("expr-edit", uid)),
-                    &mut buf,
-                    er,
-                    &sp,
-                    if ex.enabled { expr_col } else { t.text_dim },
-                    (*lines).clamp(1, 8),
-                    &t,
-                );
+                let resp = super::expr_editor::editor(ui, edit_id, &mut buf, er, &sp, if ex.enabled { expr_col } else { t.text_dim }, (*lines).clamp(1, 8), &t);
                 app.auto.add(&format!("timeline.prop.{uid}.expression"), er, &prop.name);
                 let commit = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && (i.modifiers.command || i.modifiers.ctrl));
                 if commit {
@@ -2145,10 +2198,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     app.auto.add(&format!("timeline.prop.{uid}.addKey"), mid, "Add or remove keyframe");
                 }
-                // Stopwatch.
+                // Stopwatch: Alt+click adds an expression; a press toggles the animation, and
+                // dragging on over other stopwatches gives them the same state (#284).
                 if !prop.static_only {
                     let swr = Rect::from_center_size(pos2(indent, cy), vec2(15.0, 15.0));
-                    let resp = ui.interact(swr, egui::Id::new(("stopwatch", uid)), Sense::click());
+                    let resp = ui.interact(swr, egui::Id::new(("stopwatch", uid)), Sense::click_and_drag());
                     let col = if prop.is_animated() {
                         t.hot_text
                     } else if resp.hovered() {
@@ -2158,12 +2212,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     };
                     icons::paint(&lp, swr, Icon::Stopwatch, col);
                     app.auto.add(&format!("timeline.prop.{uid}.stopwatch"), swr, &prop.name);
-                    if resp.clicked() {
-                        if ui.input(|i| i.modifiers.alt) {
+                    if ui.input(|i| i.modifiers.alt) {
+                        if resp.clicked() {
                             actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid})));
-                        } else {
-                            actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
                         }
+                    } else if let Some((value, merge)) = switch_gesture(ui, &resp, r, "stopwatch", prop.is_animated()) {
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "value": value, "merge": merge})));
+                    } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
+                        // Keyboard or accessibility activation.
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
                     }
                 }
                 let name_x = indent + 12.0;
@@ -2232,7 +2289,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             // Roving keys: a small dot (their time follows their neighbours).
                             gp.circle_filled(c, 2.5, kcol);
                         } else {
-                            icons::keyframe(&gp, c, 11.0, icon.left, icon.right, kcol, Color32::from_black_alpha(200));
+                            icons::keyframe(&gp, c, 11.0, icon.left, icon.right, kcol);
                         }
                         let kr = Rect::from_center_size(c, vec2(12.0, 14.0));
                         let kresp = ui.interact(kr, egui::Id::new(("key", uid, k.time.0)), Sense::click_and_drag());
@@ -2420,12 +2477,21 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         if ctx.input(|i| !i.pointer.any_down()) {
             ctx.data_mut(|d| d.remove::<PickWhip>(pick_whip_id()));
+            let into = (kind == 1).then(|| ctx.data_mut(|d| d.remove_temp::<WhipInto>(whip_into_id(src_prop)))).flatten();
             match (kind, target) {
                 (0, Some((_, row))) if row.layer.0 != src_layer => {
                     actions.push(("layer.setParent".into(), json!({"layers": [src_layer], "parent": row.layer.0})));
                 }
                 (1, Some((_, Row { layer, kind: RowKind::Prop { uid }, .. }))) if uid != src_prop => {
-                    actions.push(("prop.pickWhip".into(), json!({"layer": src_layer, "prop": src_prop, "target": {"layer": layer.0, "prop": uid}})));
+                    let mut params = json!({"layer": src_layer, "prop": src_prop, "target": {"layer": layer.0, "prop": uid}});
+                    if let Some((text, [a, b])) = into {
+                        // Into the expression being edited, which goes on being edited.
+                        params["expression"] = json!(text);
+                        params["range"] = json!([a, b]);
+                        let after = text.chars().count().saturating_sub(b);
+                        ctx.data_mut(|d| d.insert_temp(expr_refocus_id(src_prop), after));
+                    }
+                    actions.push(("prop.pickWhip".into(), params));
                 }
                 _ => {}
             }

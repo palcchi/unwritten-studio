@@ -325,6 +325,12 @@ fn texture_roi(ctx: &egui::Context) -> Option<[f64; 4]> {
     ctx.data(|d| d.get_temp::<Option<[f64; 4]>>(egui::Id::new("viewer-tex-roi"))).flatten()
 }
 
+/// The comp area ([x, y, w, h], comp pixels) the shown frame covers: its region of interest or
+/// Extended Viewer area, else the whole `comp` (width, height).
+pub(crate) fn shown_region(ctx: &egui::Context, comp: [f32; 2]) -> [f64; 4] {
+    texture_roi(ctx).unwrap_or([0.0, 0.0, comp[0] as f64, comp[1] as f64])
+}
+
 /// Show Snapshot: the stored snapshot is on screen (button or F5 held).
 pub(crate) fn showing_snapshot(app: &EffectcraftApp, ctx: &egui::Context) -> bool {
     let f5 = ctx.input(|i| i.key_down(egui::Key::F5)) && !ctx.egui_wants_keyboard_input();

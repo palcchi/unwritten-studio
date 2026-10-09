@@ -187,6 +187,8 @@ impl Tokens {
                 tl_ruler_bg: Color32::from_rgb(0xe2, 0xe2, 0xe2),
                 tl_ruler_text: Color32::from_rgb(0x50, 0x50, 0x50),
                 pasteboard: Color32::from_rgb(0xa8, 0xa8, 0xa8),
+                // Keyframes have no outline: dark enough to stand out on the light time graph.
+                keyframe: Color32::from_rgb(0x6c, 0x6c, 0x6c),
                 ..dark
             },
         }

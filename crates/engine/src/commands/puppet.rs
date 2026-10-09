@@ -87,11 +87,7 @@ fn add_pin(s: &mut Session, p: &Value) -> Result<Value> {
             if want_mesh.is_some_and(|w| w != *uid) || mesh.tris.is_empty() {
                 continue;
             }
-            let inside = mesh.tris.iter().any(|tr| {
-                let (a, b, c) = (def[tr[0]], def[tr[1]], def[tr[2]]);
-                let cr = |o: [f64; 2], u: [f64; 2], v: [f64; 2]| (u[0] - o[0]) * (v[1] - o[1]) - (u[1] - o[1]) * (v[0] - o[0]);
-                cr(a, b, at) >= 0.0 && cr(b, c, at) >= 0.0 && cr(c, a, at) >= 0.0
-            });
+            let inside = puppet::contains(mesh, def, at);
             let near = def.iter().map(|v| (v[0] - at[0]).hypot(v[1] - at[1])).fold(f64::MAX, f64::min) < 12.0;
             if inside || near || want_mesh.is_some() {
                 target = Some((*uid, puppet::unmap(mesh, def, at)));

@@ -293,3 +293,43 @@ fn clicking_an_ease_preset_eases_the_selected_keys_and_handles_edit_the_curve() 
     assert!((applied * 100.0 - out).abs() < 1e-9, "{applied} vs {out}");
     assert_eq!(h.state().session.history.undo.len(), steps + 2);
 }
+
+/// #284: in the Graph Editor, dragging the handle of one selected key moves the same handle of
+/// every selected key with it (After Effects), in one undo step.
+#[test]
+fn a_graph_handle_drag_moves_the_handles_of_every_selected_key() {
+    let (mut h, id, uid) = harness();
+    let s = &mut h.state_mut().session;
+    s.execute("prop.addKey", json!({"layer": id.0, "path": "transform/opacity", "time": 2.0, "value": 0.0})).unwrap();
+    s.execute("prop.select", json!({"layer": id.0, "prop": uid})).unwrap();
+    s.execute("keys.selectAll", json!({})).unwrap();
+    s.execute("keys.easyEase", json!({})).unwrap();
+    h.state_mut().ui.timeline.graph_editor = true;
+    h.run_steps(4);
+    // (in, out) influence of each key.
+    let influences = |h: &Harness<'_, EffectcraftApp>| -> Vec<(f64, f64)> {
+        let l = h.state().session.active_comp().unwrap().layer(id).unwrap().clone();
+        let keys = l.props.prop("transform/opacity").unwrap().keys.clone();
+        keys.iter().map(|k| (k.in_ease.first().map_or(0.0, |e| e.influence), k.out_ease.first().map_or(0.0, |e| e.influence))).collect()
+    };
+    let before = influences(&h);
+    let handle = |h: &Harness<'_, EffectcraftApp>, key: usize| {
+        let e = h.state().auto.find(&format!("timeline.graph.handle.{uid}.0.{key}.out")).unwrap_or_else(|| panic!("no handle {key}")).clone();
+        pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0)
+    };
+    let px_per_s = {
+        let at = |i: usize| h.state().auto.find(&format!("timeline.graph.key.{uid}.0.{i}")).unwrap().rect[0];
+        at(1) - at(0)
+    };
+    let (k0, k1) = (handle(&h, 0), handle(&h, 1));
+    let undo = h.state().session.history.undo.len();
+    // Key 1's out handle 0.2 s further out (the keys are 1 s apart): key 0's goes along.
+    drag(&mut h, k1, k1 + egui::vec2(px_per_s * 0.2, 0.0), Default::default());
+    let after = influences(&h);
+    for i in [0, 1] {
+        assert!((after[i].1 - before[i].1 - 0.2).abs() < 0.01, "key {i}: {:?} → {:?}", before[i], after[i]);
+    }
+    assert_eq!((after[1].0, after[2].0), (before[1].0, before[2].0), "the in handles stay");
+    assert_eq!(h.state().session.history.undo.len(), undo + 1, "one undo step");
+    assert!((handle(&h, 0).x - k0.x - px_per_s * 0.2).abs() < 2.0, "key 0's handle moved on screen");
+}

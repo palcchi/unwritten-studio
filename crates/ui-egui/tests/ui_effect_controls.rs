@@ -167,6 +167,28 @@ fn crosshair_and_eyedropper_pick_from_the_viewer() {
     assert_eq!(c[3], 1.0);
 }
 
+/// #284: with a Region of Interest the shown frame covers only that region; the eyedropper
+/// samples the composite under the pointer there (it read the frame as if it covered the whole
+/// comp, so it sampled somewhere else).
+#[test]
+fn the_eyedropper_samples_under_the_pointer_in_a_region_of_interest() {
+    let (mut app, x) = app();
+    app.session.execute("view.setRegionOfInterest", json!({"rect": [0.0, 0.0, 320.0, 180.0]})).unwrap();
+    // (Not the red it will pick.)
+    app.session.execute("prop.set", json!({"layer": x.small, "prop": x.color, "value": [0.0, 0.0, 1.0, 1.0]})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    settle(&mut h);
+    h.state_mut().ui.fx_pick = Some(FxPick { kind: "color".into(), layer: x.small, prop: x.color, name: "Color".into() });
+    h.step();
+    // (200, 150) is on the red layer (it covers 120..520 × 80..280); read as a frame of the
+    // whole comp, the green background at (100, 75).
+    let pos = effectcraft_ui_egui::panels::viewer::comp_to_screen(&h.ctx, [200.0, 150.0]).unwrap();
+    click(&mut h, pos);
+    let v = layer(&h.state().session, x.small).effects().unwrap().find(x.color).unwrap().value.clone();
+    let KV::Color(c) = v else { panic!("{v:?}") };
+    assert!(c[0] > 0.98 && c[1] < 0.02 && c[2] < 0.02, "{c:?}");
+}
+
 /// Key Light's Screen Colour eyedropper picks from the effect's input: the shown frame is
 /// already keyed (the default screen colour takes most of a green), so sampling it would miss.
 #[test]

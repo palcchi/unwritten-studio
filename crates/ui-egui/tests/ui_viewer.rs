@@ -891,6 +891,43 @@ fn placing_a_pin_opens_its_groups_on_a_twirled_open_layer() {
     assert_eq!(timeline_keys(&h, pin_keys(&h, id, pin).0).len(), 1, "the new pin's Position key shows");
 }
 
+/// #284: the Puppet tools stay on the layer being rigged: a pin goes on its mesh where the
+/// deformation has stretched it past the layer's own bounds (over another layer), and a click on
+/// another layer neither selects it nor rigs it.
+#[test]
+fn puppet_pins_go_on_the_deformed_mesh_and_the_tool_stays_on_the_rigged_layer() {
+    let mut h = harness();
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": ["Box"]})).unwrap();
+    let (boxl, plate) = (s.state.selected_layers[0], s.active_comp().unwrap().layers[1].id);
+    s.execute("puppet.addPin", json!({"layer": boxl.0, "position": [10, 40]})).unwrap();
+    let right = s.execute("puppet.addPin", json!({"layer": boxl.0, "position": [70, 40]})).unwrap()["pin"].as_u64().unwrap();
+    // Stretch the Box to the right: its right edge (layer x 80, comp x 360) moves well past 400.
+    s.execute("puppet.movePin", json!({"layer": boxl.0, "pin": right, "position": [140, 40]})).unwrap();
+    h.state_mut().ui.tool = Tool::Puppet;
+    h.run_steps(3);
+    let pins = |h: &mut Harness<'_, EffectcraftApp>| {
+        let info = h.state_mut().session.execute("puppet.info", json!({"layer": boxl.0})).unwrap();
+        info["meshes"].as_array().unwrap().iter().map(|m| m["pins"].as_array().unwrap().len()).sum::<usize>()
+    };
+    let rigged = |h: &Harness<'_, EffectcraftApp>, l: LayerId| {
+        h.state().session.active_comp().unwrap().layer(l).unwrap().effects().is_some_and(|f| f.groups().next().is_some())
+    };
+    // Comp (380, 180) is layer (100, 40): past the Box's own edge, over the Plate, on the
+    // stretched mesh.
+    let at = screen(&h, [380.0, 180.0]);
+    click(&mut h, at);
+    assert_eq!(pins(&mut h), 3, "the pin went on the deformed mesh");
+    assert_eq!(h.state().session.state.selected_layers, vec![boxl]);
+    assert!(!rigged(&h, plate), "the Plate got no Puppet");
+    // Far from the Box, on the Plate only: nothing.
+    let at = screen(&h, [40.0, 40.0]);
+    click(&mut h, at);
+    assert_eq!(pins(&mut h), 3);
+    assert_eq!(h.state().session.state.selected_layers, vec![boxl], "the tool stays on the Box");
+    assert!(!rigged(&h, plate));
+}
+
 /// Filled circles painted this frame (flattening nested shape lists).
 fn circles(h: &Harness<'_, EffectcraftApp>) -> Vec<egui::epaint::CircleShape> {
     fn walk(s: &egui::Shape, out: &mut Vec<egui::epaint::CircleShape>) {

@@ -428,6 +428,19 @@ fn parenting_keeps_the_layer_in_place() {
     assert!(s.active_comp().unwrap().layer(effectcraft_project::LayerId(child)).unwrap().parent.is_some());
 }
 
+/// #284: toggling stopwatches with one `merge` key (dragging over them) is one undo step.
+#[test]
+fn stopwatch_toggles_with_a_merge_key_are_one_undo_step() {
+    let (mut s, l) = setup();
+    let steps = s.history.undo.len();
+    for path in ["transform/position", "transform/scale", "transform/opacity"] {
+        s.execute("prop.toggleAnimation", json!({"layer": l, "path": path, "value": true, "merge": "drag"})).unwrap();
+    }
+    assert_eq!(s.history.undo.len(), steps + 1);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(["transform/position", "transform/scale", "transform/opacity"].iter().all(|p| !prop(&s, l, p).is_animated()));
+}
+
 #[test]
 fn pick_whip_generates_ae_reference_expressions() {
     let (mut s, l) = setup();
@@ -451,6 +464,33 @@ fn pick_whip_generates_ae_reference_expressions() {
     s.execute("edit.undo", json!({})).unwrap();
     assert_ne!(prop(&s, l, "transform/position").expr.map(|e| e.text), Some("thisComp.layer(\"Other\").transform.position".into()));
     assert!(s.execute("prop.pickWhip", json!({"layer": l, "path": "transform/opacity", "target": {"layer": l, "path": "transform/opacity"}})).is_err());
+}
+
+/// #284: with the expression being edited, the pick whip puts the reference at the cursor,
+/// replacing the selected characters (After Effects), in one undo step.
+#[test]
+fn pick_whip_inserts_into_the_expression_being_edited() {
+    let (mut s, l) = setup();
+    let o = s.execute("layer.newSolid", json!({"name": "Ö", "color": "#00ff00"})).unwrap()["layer"].as_u64().unwrap();
+    let whip = |s: &mut Session, base: &str, range: Value| {
+        let mut p = json!({"layer": l, "path": "transform/opacity", "target": {"layer": o, "path": "transform/rotation"}, "expression": base});
+        if !range.is_null() {
+            p["range"] = range;
+        }
+        s.execute("prop.pickWhip", p)
+    };
+    let r = "thisComp.layer(\"Ö\").transform.rotation";
+    // Characters, not bytes: "é" before the cursor.
+    assert_eq!(whip(&mut s, "é + 5", json!([1, 1])).unwrap(), json!(format!("é{r} + 5")));
+    assert_eq!(prop(&s, l, "transform/opacity").expr.unwrap().text, format!("é{r} + 5"));
+    // A selection (either way round) is replaced; no range: at the end.
+    assert_eq!(whip(&mut s, "a*2+b", json!([4, 2])).unwrap(), json!(format!("a*{r}b")));
+    assert_eq!(whip(&mut s, "x + ", Value::Null).unwrap(), json!(format!("x + {r}")));
+    // Past the end clamps; a malformed range is an error.
+    assert_eq!(whip(&mut s, "7", json!([9, 99])).unwrap(), json!(format!("7{r}")));
+    assert!(whip(&mut s, "7", json!([1])).is_err());
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(prop(&s, l, "transform/opacity").expr.unwrap().text, format!("x + {r}"));
 }
 
 /// Outer comp (4 s) containing a precomp whose 10×10 white solid moves x = 10 + 20·t (t in s).

@@ -96,3 +96,51 @@ fn dragging_over_layer_switches_sets_them_all() {
     assert_eq!(states(&h, &ids, motion_blur), [false, true, true, true]);
     assert_eq!(states(&h, &ids, video), [false, true, false, true], "other switches untouched");
 }
+
+/// #284: pressing a stopwatch and dragging over the stopwatches below gives every property the
+/// state the first one got (animated or not), in one undo step; Alt+click still adds an
+/// expression and a click toggles one property.
+#[test]
+fn dragging_over_stopwatches_sets_them_all() {
+    let (mut h, ids) = harness();
+    // Layer A twirled open to its Transform properties.
+    let (layer, uids) = {
+        let comp = h.state().session.active_comp().unwrap();
+        let l = comp.layer(LayerId(ids[0])).unwrap();
+        let tr = l.props.sub("transform").unwrap();
+        let uids: Vec<u64> = ["anchor", "position", "scale", "rotation", "opacity"].iter().map(|m| tr.get(m).unwrap().uid).collect();
+        (l.id, (tr.uid, uids))
+    };
+    let (group, uids) = uids;
+    h.state_mut().ui.timeline.open_layers.insert(layer.0);
+    h.state_mut().ui.timeline.open_groups.insert(group);
+    h.run_steps(3);
+    let animated = |h: &Harness<'_, EffectcraftApp>| -> Vec<bool> {
+        let comp = h.state().session.active_comp().unwrap();
+        let l = comp.layer(layer).unwrap();
+        uids.iter().map(|u| l.props.find(*u).unwrap().is_animated()).collect()
+    };
+    let sw = |h: &Harness<'_, EffectcraftApp>, i: usize| rect(h, &format!("timeline.prop.{}.stopwatch", uids[i])).center();
+    let steps = h.state().session.history.undo.len();
+
+    // Scale animated first; from Anchor Point down to Opacity: all animated, one undo step.
+    h.state_mut().session.execute("prop.toggleAnimation", json!({"layer": layer.0, "prop": uids[2]})).unwrap();
+    h.run_steps(2);
+    let steps = steps + 1;
+    let (a, o) = (sw(&h, 0), sw(&h, 4));
+    drag(&mut h, a, o, 10);
+    assert_eq!(animated(&h), [true; 5]);
+    assert_eq!(h.state().session.history.undo.len(), steps + 1, "one undo step");
+    // From Rotation (animated → not) up to Position, quickly: those three stop animating.
+    let (r, p) = (sw(&h, 3), sw(&h, 1));
+    drag(&mut h, r, p, 2);
+    assert_eq!(animated(&h), [true, false, false, false, true]);
+    // A click toggles only that property.
+    let s = sw(&h, 2);
+    drag(&mut h, s, s, 1);
+    assert_eq!(animated(&h), [true, false, true, false, true]);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    assert_eq!(animated(&h), [true; 5], "each drag was one step");
+}

@@ -52,6 +52,10 @@ the 168 live AE samples.
 
 ## Still unmeasured
 
+Rendered frame comparisons now have a deterministic `effectcraft_effects::fidelity::compare_frames`
+helper. Corpus runners can use it with locally generated host/reference frames and fail on either a
+mean or maximum channel error without committing proprietary renders.
+
 Mixed interpolation sides, non-unit durations, automatic/continuous Bezier, spatial speeds and paths,
 time remapping, expressions, actual rendered motion and other effects need separate corpus cases.
 The initial probe makes no claim about those features.

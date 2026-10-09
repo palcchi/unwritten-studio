@@ -615,7 +615,7 @@ mod tests {
     fn long_press_type_keeps_the_tool_until_vertical_is_selected() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
         let ctx = egui::Context::default();
-        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
         frame(&mut app, &ctx, 0.0, vec![]);
         frame(&mut app, &ctx, 0.1, vec![]);
         let center = |element: &crate::automation::Element| {

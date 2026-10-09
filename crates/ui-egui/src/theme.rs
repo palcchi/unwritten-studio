@@ -316,8 +316,8 @@ fn install_cjk_fallbacks(family_fonts: &mut FontDefinitions, language: &str) -> 
         use effectcraft_text::fonts;
         // Kana is unambiguously Japanese; Han ideographs are shared, so the order decides which
         // language's face draws them.
-        const KANA: (char, &'static str) = ('あ', "japanese-system");
-        const HAN: (char, &'static str) = ('文', "chinese-system");
+        const KANA: (char, &str) = ('あ', "japanese-system");
+        const HAN: (char, &str) = ('文', "chinese-system");
         // Han text follows the interface language, not the operating system's locale.
         fonts::set_cjk_locale(cjk_locale(language));
         let base = fonts::resolve("Inter", "Regular").face;

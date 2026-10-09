@@ -171,6 +171,10 @@ pub async fn export_async(job: &Job<'_>, progress: &mut dyn FnMut(&Progress) -> 
     let t0 = Instant::now();
     let cx = Cx::new(job);
     let mut r = export_with(&cx, progress, t0).await;
+    if matches!(r, Err(ExportError::Cancelled)) {
+        cx.remove_cancelled_outputs()?;
+        return r;
+    }
     let log = cx.write_log(&r, t0.elapsed().as_secs_f64());
     if let Ok(rep) = &mut r {
         rep.log = log;
@@ -263,7 +267,7 @@ async fn sequence(cx: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut State<'_>) 
                 write_still(cx, &mut buf, fmt, &img, comp, channels, w, h, cx.output.quality)?;
                 let data = buf.into_inner();
                 let path = cx.place(&path, data.len() as u64);
-                let mut f = out::create(cx.sink, &path)?;
+                let mut f = cx.create(&path)?;
                 std::io::Write::write_all(&mut f, &data).map_err(io)?;
                 f.finish()
             })
@@ -350,7 +354,7 @@ async fn gif_export(job: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut State<'_
         return Err(ExportError::Unsupported("GIF frames are limited to 65535 px".into()));
     }
     let path = job.place(job.path, 1);
-    let mut file = out::create(job.sink, &path)?;
+    let mut file = job.create(&path)?;
     let mut enc = gif::Encoder::new(&mut file, w as u16, h as u16, &[]).map_err(|e| ExportError::Encode(e.to_string()))?;
     enc.set_repeat(if job.output.gif_loop { gif::Repeat::Infinite } else { gif::Repeat::Finite(0) }).map_err(|e| ExportError::Encode(e.to_string()))?;
     let rate = job.settings.rate(comp);

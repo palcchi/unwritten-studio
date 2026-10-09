@@ -327,3 +327,61 @@ fn wav_and_aiff_channels_and_formats() {
     assert_eq!(&d[8..12], b"AIFF");
     assert_eq!(u16::from_be_bytes([d[26], d[27]]), 24, "sample size");
 }
+
+#[test]
+fn cancelled_export_removes_only_files_it_opened() {
+    use effectcraft_export::ExportError;
+    let dir = std::env::temp_dir().join(format!("ec-cancel-owned-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (p, cid) = project(FrameRate::new(25, 1), |_, _| {});
+    struct Overflow;
+    impl StorageQuota for Overflow {
+        fn has_room(&self, path: &str, _: u64) -> bool {
+            path.contains("overflow")
+        }
+    }
+    for overflow in [false, true] {
+        let output_dir = if overflow { dir.join("overflow") } else { dir.clone() };
+        std::fs::create_dir_all(&output_dir).unwrap();
+        let settings = RenderSettings { skip_existing: true, storage_overflow: overflow, ..Default::default() };
+        for format in [OutputFormat::PngSequence, OutputFormat::H264] {
+            let om = OutputModule::for_format(format);
+            let path = dir.join(if format.is_sequence() { "clip_[#####].png" } else { "clip.mp4" });
+            let path = path.to_str().unwrap();
+            let decoys = ["clip.aep", "clip2.psd", "clip000.mp4", "clip_99999.png", "clip_00000.png", "clip.txt", "clip_RenderLog.txt"];
+            for name in decoys {
+                std::fs::write(output_dir.join(name), b"keep").unwrap();
+            }
+            // Skip-existing checks the primary destination even when the new frames overflow.
+            std::fs::write(dir.join("clip_00000.png"), b"keep").unwrap();
+            let result = export(
+                &Job {
+                    project: &p,
+                    footage: &NoFootage,
+                    expr: None,
+                    accel: None,
+                    comp: cid,
+                    settings: &settings,
+                    output: &om,
+                    path,
+                    sink: None,
+                    nested_switches: true,
+                    options: JobOptions {
+                        log: RenderLog::PlusPerFrameInfo,
+                        storage: Some(&Overflow),
+                        overflow: vec![output_dir.to_string_lossy().into_owned()],
+                        ..Default::default()
+                    },
+                },
+                &mut |progress| progress.done == 0,
+            );
+            assert!(matches!(result, Err(ExportError::Cancelled)), "{result:?}");
+            for name in decoys {
+                assert_eq!(std::fs::read(output_dir.join(name)).unwrap(), b"keep", "{name}");
+            }
+            let remaining: Vec<_> = std::fs::read_dir(&output_dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            assert_eq!(remaining.len(), decoys.len(), "partial files remain: {remaining:?}");
+        }
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

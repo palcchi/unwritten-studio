@@ -113,8 +113,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // Canvas.
     let area = Rect::from_min_max(pos2(rect.min.x, top.max.y), pos2(rect.max.x, canvas_bottom));
     p.rect_filled(area, 0.0, t.pasteboard);
-    let (w, h) = effectcraft_engine::render::source_size(&app.session.project, &layer);
-    let (lw, lh) = if w == 0 { (comp.width as f64, comp.height as f64) } else { (w as f64, h as f64) };
+    // The layer's effect bounds, in effect space (where paint and Roto Brush strokes are).
+    let [lw, lh] = effectcraft_engine::render::effect_bounds(&app.session.project, &comp, &layer).0;
     let zoom = ((area.width() - 40.0) as f64 / lw).min((area.height() - 40.0) as f64 / lh).max(0.01);
     let origin = area.center() - vec2((lw * zoom / 2.0) as f32, (lh * zoom / 2.0) as f32);
     let to_screen = |q: [f64; 2]| pos2(origin.x + (q[0] * zoom) as f32, origin.y + (q[1] * zoom) as f32);

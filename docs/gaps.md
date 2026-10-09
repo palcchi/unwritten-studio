@@ -108,6 +108,15 @@ The most important missing piece: it turns every other estimate here into a meas
 - Regression evidence for the Turbulent Displace, Wave Warp and Bulge pinning of #227:
   `edge_pinning_displaces_all_of_a_centred_shape_layer` (render) and
   `edge_pinning_on_a_shape_layer` (GPU against CPU).
+- Regression evidence for the effect points of #227 (shape and text layers measure effect points
+  from the top-left of their comp-sized bounds, so Twirl, Bulge, CC Lens, Ripple and Turbulent
+  Displace's Offset default to the layer centre): `default_effect_points_sit_at_the_centre_of_a_shape_layer`
+  and `layer_parameters_see_a_whole_shape_layer` (render), `effect_points_on_a_shape_layer` (GPU
+  against CPU), and the schema 1 → 2 conversion in
+  `opening_a_schema_1_project_moves_shape_layer_effect_points_into_effect_space` (engine) and
+  `effect_points_move_into_effect_space_unless_left_at_their_default` /
+  `puppet_paint_liquify_and_roto_data_move_into_effect_space` (effects); see
+  [architecture.md](architecture.md) §3 for what the conversion keeps.
 - Regression evidence for the interface items of [#227](https://github.com/storytold/effectcraft/issues/227),
   checked headlessly on Windows: `spacebar_taps_preview_and_held_spacebar_pans_the_viewer` and
   `spacebar_drag_scrolls_the_time_graph` (Spacebar previews on its release, held it is the Hand

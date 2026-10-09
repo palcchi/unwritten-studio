@@ -1183,13 +1183,15 @@ pub fn viewer_hook(
             && let Some(pos) = resp.interact_pointer_pos()
         {
             let c = map.to_comp(pos);
+            // Effect points and the keyer's input are in effect space.
+            let m = super::viewer::from_effect_space(ectx, &layer, l2c(ectx, &layer));
             if pick.kind == "point" {
-                if let Some(lp) = fw::comp_to_layer(&l2c(ectx, &layer), c) {
+                if let Some(lp) = fw::comp_to_layer(&m, c) {
                     actions.push(("prop.set".into(), json!({"layer": pick.layer, "prop": pick.prop, "value": [lp[0], lp[1]]})));
                 }
             } else if let Some(fx) = keyer {
                 // Ctrl/Cmd+click averages the 5 × 5 pixels around the point.
-                if let Some(lp) = fw::comp_to_layer(&l2c(ectx, &layer), c) {
+                if let Some(lp) = fw::comp_to_layer(&m, c) {
                     let average = ui.input(|i| i.modifiers.command);
                     actions.push((
                         "effect.pickColor".into(),
@@ -1215,6 +1217,8 @@ pub fn viewer_hook(
         for layer in ectx.comp.layers.iter().filter(|l| selected.contains(&l.id) && l.is_active_at(ectx.time)) {
             let Some(fx) = layer.effects() else { continue };
             let m = l2c(ectx, layer);
+            // Masks are in layer space, effect points in effect space.
+            let fm = super::viewer::from_effect_space(ectx, layer, m);
             for g in fx.groups().filter(|g| g.enabled && sel.iter().any(|(l, u)| *l == layer.id && *u == g.uid)) {
                 if matches!(&g.kind, GroupKind::Effect { effect } if effect == super::fx_editors::RESHAPE) {
                     super::fx_editors::reshape_overlay(app, ui, painter, map, ectx, layer, g, &m, &mut actions);
@@ -1224,7 +1228,7 @@ pub fn viewer_hook(
                     .iter()
                     .map(|pr| {
                         let v = ectx.value(layer, pr).as_vec2();
-                        map.to_screen(fw::layer_to_comp(&m, v))
+                        map.to_screen(fw::layer_to_comp(&fm, v))
                     })
                     .collect();
                 // Gradient Ramp and friends: a guide between start and end points.
@@ -1245,7 +1249,7 @@ pub fn viewer_hook(
                     }
                     if resp.dragged()
                         && let Some(pos) = resp.interact_pointer_pos()
-                        && let Some(lp) = fw::comp_to_layer(&m, map.to_comp(pos))
+                        && let Some(lp) = fw::comp_to_layer(&fm, map.to_comp(pos))
                     {
                         let key = gesture_key(ui, id, resp.drag_started());
                         actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": pr.uid, "value": [lp[0], lp[1]], "merge": key})));

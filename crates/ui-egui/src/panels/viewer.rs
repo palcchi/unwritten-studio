@@ -159,7 +159,7 @@ enum Gesture {
         start: Pos2,
     },
     /// Puppet tool Record mode (⌘/Ctrl-drag a pin): the drag is sampled in real time (seconds
-    /// since it began, layer space) and becomes keyframes on release (`puppet.recordPin`); the
+    /// since it began, effect space) and becomes keyframes on release (`puppet.recordPin`); the
     /// current time runs along while recording.
     PuppetRecord {
         layer: LayerId,
@@ -243,6 +243,18 @@ pub(crate) fn l2c(ctx: &EvalCtx, layer: &Layer) -> (Mat3, f64) {
         Some(cam) if layer.is_3d() => (three_d::layer_to_view(ctx, layer, &cam), 0.0),
         _ => ctx.layer_to_comp(layer),
     }
+}
+
+/// `l2c` (layer → comp) applied from effect space instead: effect points and Puppet pins,
+/// measured from the top-left of the layer's effect bounds (see `effect_bounds`).
+pub(crate) fn from_effect_space(ctx: &EvalCtx, layer: &Layer, l2c: Mat3) -> Mat3 {
+    let o = ctx.effect_bounds(layer).1;
+    l2c * Mat3::translate(gv2(o[0], o[1]))
+}
+
+/// Effect space → comp (viewer) matrix through the current 3D view.
+pub(crate) fn fx2c(ctx: &EvalCtx, layer: &Layer) -> Mat3 {
+    from_effect_space(ctx, layer, l2c(ctx, layer).0)
 }
 
 /// Layer → comp matrix and its bounds quad (in comp pixels).
@@ -1150,7 +1162,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     PinPart::Center => {}
                 }
                 let l = comp.layer(h.layer)?;
-                let inv = l2c(&ectx, l).0.inverse()?;
+                let inv = fx2c(&ectx, l).inverse()?;
                 if mods.command {
                     let lp = inv.apply(gv2(cpt[0], cpt[1]));
                     let began = ui.input(|i| i.time);
@@ -1571,7 +1583,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     // Click selects the pin; Shift-click adds or removes it.
                     let _ = app.session.execute("puppet.selectPins", json!({"layer": h.layer.0, "pins": [h.pin], "toggle": mods.shift}));
                 } else if let Some(l) = puppet_layer(app, cpt).and_then(|l| comp.layer(l))
-                    && let Some(inv) = l2c(&ectx, l).0.inverse()
+                    && let Some(inv) = fx2c(&ectx, l).inverse()
                 {
                     let lp = inv.apply(gv2(cpt[0], cpt[1]));
                     match app.session.execute("puppet.addPin", json!({"layer": l.id.0, "kind": t.puppet_kind(), "position": [lp.x, lp.y]})) {

@@ -200,8 +200,9 @@ mod tests {
         let info = crate::fonts::face(face).info.clone();
         // An axis that moves the advance: `wdth` and `wght` usually do, but a monospaced family
         // keeps its advances fixed along `wght` (Google Sans Code does) and moves them along its
-        // own axis instead, so try the axes in order, take the first one that moves, and skip a
-        // machine whose variable faces never do.
+        // own axis instead, so try the axes in order and take the first one that moves. A face
+        // with no axis carrying a range is the only case that skips: a variation path that broke
+        // completely moves neither the advances nor the outlines, and that has to fail below.
         let st = |a: &FontAxis, v: f32| crate::TextStyle {
             family: info.family.clone(),
             style: info.style.clone(),
@@ -209,28 +210,40 @@ mod tests {
             variations: vec![(a.tag.clone(), v)],
             ..Default::default()
         };
+        let ranged: Vec<&FontAxis> = axes.iter().filter(|a| a.max > a.min).collect();
+        if ranged.is_empty() {
+            eprintln!("no variable axis installed here carries a range: skipped");
+            return;
+        }
         let mut moving = None;
-        for a in axes.iter().filter(|a| a.max > a.min) {
+        for a in &ranged {
             let (lo, hi) = (crate::layout::measure("Hamburgefonts", &st(a, a.min)), crate::layout::measure("Hamburgefonts", &st(a, a.max)));
             if (lo - hi).abs() > 1.0 {
-                moving = Some((a.clone(), lo, hi));
+                moving = Some(((*a).clone(), lo, hi));
                 break;
             }
         }
-        let Some((a, lo, hi)) = moving else {
-            eprintln!("no variable axis installed here moves the advance: skipped");
-            return;
-        };
         if crate::resolve(&info.family, &info.style).face != face {
             eprintln!("variable face not reachable by family/style: skipped");
             return;
         }
-        // The axis was picked because it moves the advance; the outline has to follow it too.
-        assert!((lo - hi).abs() > 1.0, "{} {}..{}: advances {lo} vs {hi}", a.tag, a.min, a.max);
-        let ink = |v: f32| {
-            let l = crate::layout::layout("H", &st(&a, v), &crate::ParagraphStyle::default());
+        let ink = |a: &FontAxis, v: f32| {
+            let l = crate::layout::layout("H", &st(a, v), &crate::ParagraphStyle::default());
             l.glyphs.iter().map(|g| crate::glyph_outline(g).area().abs()).sum::<f64>()
         };
-        assert!((ink(a.min) - ink(a.max)).abs() > 1.0, "{} {}..{}: outlines do not move", a.tag, a.min, a.max);
+        if let Some((a, lo, hi)) = moving {
+            // The axis was picked because it moves the advance; the outline has to follow it too.
+            assert!((lo - hi).abs() > 1.0, "{} {}..{}: advances {lo} vs {hi}", a.tag, a.min, a.max);
+            let (i_lo, i_hi) = (ink(&a, a.min), ink(&a, a.max));
+            assert!((i_lo - i_hi).abs() > 1.0, "{} {}..{}: outlines do not move", a.tag, a.min, a.max);
+        } else {
+            // Nothing here moves an advance. Holding the advances is what a monospaced family does
+            // on purpose, but it is also what a broken variation path does, so this case still has
+            // to fail rather than skip: the outline must move along `wght`, or, on a face without
+            // one, along the first axis that carries a range.
+            let a = axes.iter().find(|a| a.tag == "wght" && a.max > a.min).unwrap_or(ranged[0]);
+            let (i_lo, i_hi) = (ink(a, a.min), ink(a, a.max));
+            assert!((i_lo - i_hi).abs() > 1.0, "{} {}..{}: neither the advances nor the outlines move, so variation support looks broken", a.tag, a.min, a.max);
+        }
     }
 }

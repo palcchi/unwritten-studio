@@ -1711,7 +1711,7 @@ pub(crate) fn submenu_at(app: &mut EffectcraftApp, ui: &mut egui::Ui, path: &[&s
         found = Some(n);
     }
     if let Some(n) = found {
-        menu_nodes(app, ui, std::slice::from_ref(n), clicked);
+        menu_nodes(app, ui, std::slice::from_ref(n), clicked, &mut crate::menu_keys::Nav::default(), 0);
     }
     if let Some((_, p)) = clicked.as_mut()
         && p.is_null()

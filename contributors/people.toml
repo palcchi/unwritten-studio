@@ -29,3 +29,6 @@ sync_github_name = false
 
 [people.jonassneu]
 sync_github_name = true
+
+[people.cjcwwww]
+display_name = "ShirokoWaWu"

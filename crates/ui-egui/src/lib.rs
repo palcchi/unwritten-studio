@@ -1471,6 +1471,8 @@ impl EffectcraftApp {
         header::show(self, ui, header);
         let body = egui::Rect::from_min_max(egui::pos2(full.min.x + 4.0, header.max.y + 2.0), egui::pos2(full.max.x - 4.0, full.max.y - 4.0));
         self.dock_area(ui, body);
+        #[cfg(not(target_arch = "wasm32"))]
+        prefs_live::dropped_files(self, ui, full);
         panels::precomp::mini_flowchart(self, &ctx);
         panels::home::capture_thumbnail(self);
         panels::dialogs::show(self, &ctx);

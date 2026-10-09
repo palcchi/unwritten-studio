@@ -486,7 +486,9 @@ fn popup(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: &str, anchor: Rect, it
                 ui.separator();
                 continue;
             }
-            let r = ui.selectable_label(*on, label.as_str());
+            // The item is the English source: the drawn text is looked up in the catalog, while
+            // the automation label stays English for scripts and tests.
+            let r = ui.selectable_label(*on, crate::i18n::tr(label));
             app.auto.add(&format!("viewer.{auto}.{i}"), r.rect, label);
             if r.clicked() {
                 chosen = Some(i);
@@ -520,10 +522,10 @@ pub(crate) fn resolution_label(res: Resolution, scale: f64) -> String {
             } else {
                 "Quarter"
             };
-            format!("({r})")
+            format!("({})", crate::i18n::tr(r))
         }
-        Resolution::Custom(n) => format!("Custom ({n})"),
-        r => r.label().to_string(),
+        Resolution::Custom(n) => format!("{} ({n})", crate::i18n::tr("Custom")),
+        r => crate::i18n::tr(r.label()).to_string(),
     }
 }
 
@@ -602,7 +604,9 @@ pub(crate) fn bottom_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui, bar: Rect,
 
     let tog = |ui: &mut egui::Ui, auto: &mut crate::automation::Registry, x: &mut f32, icon: Icon, on: bool, id: &str, tip: &str| -> (bool, Rect) {
         let r = Rect::from_min_size(pos2(*x, cy - 11.0), vec2(22.0, 22.0));
-        let resp = widgets::icon_button(ui, r, icon, on, &t, egui::Id::new(("vw-btn", id))).on_hover_text(tip);
+        // The tip is the English source: the tooltip is looked up in the catalog, while the
+        // automation label stays English for scripts and tests.
+        let resp = widgets::icon_button(ui, r, icon, on, &t, egui::Id::new(("vw-btn", id))).on_hover_text(crate::i18n::tr(tip));
         auto.add(&format!("viewer.{id}"), r, tip);
         *x += 24.0;
         (resp.clicked(), r)
@@ -632,7 +636,7 @@ pub(crate) fn bottom_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui, bar: Rect,
     }
     let v = &app.ui.viewer;
     let items = vec![
-        ("Title/Action Safe".to_string(), v.safe_margins),
+        ("Title/action safe".to_string(), v.safe_margins),
         ("Proportional Grid".to_string(), v.proportional_grid),
         ("Grid".to_string(), v.grid),
         ("Guides".to_string(), v.guides),

@@ -418,8 +418,8 @@ fn solid(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         if editing.is_some() {
             ui.add_space(8.0);
             let r = ui
-                .add_enabled(shared, egui::Checkbox::new(&mut affect_all, "Affect all layers that use this solid"))
-                .on_disabled_hover_text("Only this layer uses this solid.");
+                .add_enabled(shared, egui::Checkbox::new(&mut affect_all, tr("Affect all layers that use this solid")))
+                .on_disabled_hover_text(tr("Only this layer uses this solid."));
             auto.add("dialog.solid.affectAll", r.rect, "Affect all layers that use this solid");
             if shared && !affect_all {
                 ui.label(egui::RichText::new(tr("This change will create a new solid for this layer.")).color(t.text_dim).size(11.0));

@@ -479,6 +479,77 @@ fn motion_path_key_drag_edits_that_key() {
     assert_eq!(k[0].value.as_vec3(), [100.0, 100.0, 0.0]);
 }
 
+/// The first mask path of layer `name`.
+fn mask_path(h: &Harness<'_, EffectcraftApp>, name: &str) -> effectcraft_engine::keyframe::ShapePath {
+    let l = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == name).unwrap().clone();
+    l.masks().unwrap().groups().next().unwrap().get("path").unwrap().value.as_path().unwrap().clone()
+}
+
+/// Drawing a mask with the Pen, moving a point and undoing take one action back per undo; a
+/// double-click on a point selects all of them in a free-transform box, and dragging inside it
+/// (or, once the box is gone, dragging a point) moves the whole mask (#290).
+#[test]
+fn pen_mask_undoes_step_by_step_and_double_click_moves_the_whole_mask() {
+    let mut h = harness();
+    let plate = layer_id(&h, "Plate");
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(2);
+    let corners = [[100.0, 60.0], [500.0, 60.0], [500.0, 300.0], [100.0, 300.0]];
+    for p in corners.iter().chain([&corners[0]]) {
+        let at = screen(&h, [p[0] as f32, p[1] as f32]);
+        click(&mut h, at);
+    }
+    let drawn = mask_path(&h, "Plate");
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1.0 && (a[1] - b[1]).abs() < 1.0;
+    assert!(drawn.closed && drawn.vertices.len() == 4 && drawn.vertices.iter().zip(&corners).all(|(v, c)| near(*v, *c)), "{drawn:?}");
+    h.state_mut().ui.tool = Tool::Selection;
+    h.run_steps(2);
+    // Move one point: one undo step puts it back, the next reopens the path, the next removes the
+    // last point.
+    let (from, to) = (screen(&h, [500.0, 60.0]), screen(&h, [520.0, 80.0]));
+    drag(&mut h, from, to);
+    let moved = mask_path(&h, "Plate");
+    assert!(near(moved.vertices[1], [520.0, 80.0]) && moved.vertices[0] == drawn.vertices[0], "{moved:?}");
+    let undo = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+        h.run_steps(2);
+        mask_path(h, "Plate")
+    };
+    assert_eq!(undo(&mut h), drawn);
+    assert!(!undo(&mut h).closed);
+    assert_eq!(undo(&mut h).vertices.len(), 3);
+    for _ in 0..3 {
+        h.state_mut().session.execute("edit.redo", json!({})).unwrap();
+    }
+    h.run_steps(2);
+    // Double-click a point: all of them selected, in a free-transform box.
+    let at = screen(&h, [100.0, 300.0]);
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false, true, false] {
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+    }
+    h.run_steps(3);
+    assert_eq!(h.state().session.state.selected_vertices.len(), 4);
+    assert!(h.state().auto.find("viewer.freeTransform.handle.0").is_some(), "the free-transform box is up");
+    // Dragging inside the box moves the whole mask.
+    let (from, to) = (screen(&h, [300.0, 120.0]), screen(&h, [310.0, 130.0]));
+    drag(&mut h, from, to);
+    let path = mask_path(&h, "Plate");
+    assert!(path.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, [c[0] + 10.0, c[1] + 10.0])), "{path:?}");
+    // A click away ends the box; the points stay selected and dragging one moves them all.
+    let away = screen(&h, [600.0, 340.0]);
+    click(&mut h, away);
+    h.run_steps(2);
+    assert!(h.state().auto.find("viewer.freeTransform.handle.0").is_none());
+    let (from, to) = (screen(&h, [110.0, 310.0]), screen(&h, [100.0, 300.0]));
+    drag(&mut h, from, to);
+    let back = mask_path(&h, "Plate");
+    assert!(back.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, *c)), "{back:?}");
+}
+
 /// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
 /// one pulls the path into a curve (#290).
 #[test]

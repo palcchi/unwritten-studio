@@ -1603,8 +1603,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && let Some(pos) = resp.interact_pointer_pos()
         && let Some((l, m)) = vertex_at(pos, false).map(|h| (h.layer, h.mask)).or_else(|| ov::segment_at(&paths, &map, pos, 6.0).map(|s| (s.0, s.1)))
     {
-        // Double-click a path: free transform its points (Layer ▸ Mask and Shape Path ▸ Free
-        // Transform Points).
+        // Double-click a path: all its points selected in a free-transform box (Layer ▸ Mask and
+        // Shape Path ▸ Free Transform Points), so dragging any of them, or inside the box, moves
+        // the whole path (After Effects).
+        if let Some(p) = paths.iter().find(|p| p.layer == l && p.uid == m) {
+            let all: Vec<serde_json::Value> = (0..p.sp.vertices.len()).map(|index| json!({"layer": l.0, "mask": m, "index": index})).collect();
+            let _ = app.session.execute("mask.selectVertices", json!({"vertices": all}));
+        }
         ov::begin_free_transform(&ctx, l, m);
     } else if resp.double_clicked()
         && !text_owns

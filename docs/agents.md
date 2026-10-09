@@ -495,6 +495,11 @@ Extension points and the bundled extensions: [plugins.md](plugins.md).
 * `prop.pickWhip {layer, prop, target: {layer, prop, dimension?}}` links a property as its
   expression pick whip does; `dimension` picks one of the target's values (`position[0]`), as a
   drop on that value field does.
+* Every property row has a property pick whip in the Parent & Link column
+  (`timeline.prop.<uid>.propertyPickWhip`; the expression row's is `timeline.prop.<uid>.pickWhip`).
+  Dragged onto another property's name or value, in the Timeline or Effect Controls
+  (`effectControls.prop.<uid>.value[.<d>]`), it runs `prop.pickWhip`: the reference replaces the
+  property's expression, or is added as one, and the expression is enabled.
 * A property's menu (right-click its name; entries `timeline.prop.<uid>.menu.<entry>`): Reset
   (`prop.reset`: no keyframes or expression, and the property's default value, an effect
   parameter's or a Transform property's), Edit Value… (`prop.set {layer, prop}` without `value`

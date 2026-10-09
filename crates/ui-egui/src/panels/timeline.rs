@@ -139,11 +139,62 @@ fn with_expr_rows(rows: Vec<Row>, comp: &Comp, tl: &crate::state::TimelineState,
     out
 }
 
-/// A pick-whip drag in progress: (parent = 0 / property = 1, layer, prop uid, start point).
+/// A pick-whip drag in progress: (kind, layer, prop uid, start point). The kinds are the
+/// layer's parent pick whip, an expression's and a property's (Parent & Link column).
 type PickWhip = (u8, u64, u64, Pos2);
+const WHIP_PARENT: u8 = 0;
+const WHIP_EXPR: u8 = 1;
+const WHIP_PROP: u8 = 2;
 
 fn pick_whip_id() -> egui::Id {
     egui::Id::new("tl-pickwhip")
+}
+
+/// A pick whip at `rect`: dragging it starts a pick whip of `kind` from `layer`'s `prop` (0 for
+/// the layer's own), drawn and dropped at the end of [`show`].
+#[allow(clippy::too_many_arguments)]
+fn pick_whip(
+    app: &mut EffectcraftApp,
+    ui: &egui::Ui,
+    p: &egui::Painter,
+    rect: Rect,
+    (kind, layer, prop): (u8, u64, u64),
+    auto: &str,
+    label: &str,
+    hint: &str,
+) -> egui::Response {
+    let resp = ui.interact(rect, egui::Id::new(("pick-whip", kind, layer, prop)), Sense::drag()).on_hover_text(hint);
+    icons::paint(p, rect.shrink(1.0), Icon::PickWhip, if resp.hovered() || resp.dragged() { app.tokens.text } else { app.tokens.text_dim });
+    app.auto.add(auto, rect, label);
+    if resp.drag_started() {
+        let state: PickWhip = (kind, layer, prop, rect.center());
+        ui.ctx().data_mut(|d| d.insert_temp(pick_whip_id(), state));
+    }
+    resp
+}
+
+/// Properties shown outside the Timeline (Effect Controls) that a pick whip can be dropped on:
+/// (row, layer, prop uid, its value fields per dimension), and the pass they were shown in.
+type WhipTargets = (u64, Vec<(Rect, u64, u64, Vec<Rect>)>);
+
+fn whip_targets_id() -> egui::Id {
+    egui::Id::new("tl-pickwhip-targets")
+}
+
+/// While a pick whip is being dragged, `layer`'s property `prop` shown at `row` in another panel
+/// is a target too; `dims` are its value fields, one per dimension.
+pub(crate) fn whip_target(ctx: &egui::Context, row: Rect, layer: u64, prop: u64, dims: Vec<Rect>) {
+    if ctx.data(|d| d.get_temp::<PickWhip>(pick_whip_id())).is_none() {
+        return;
+    }
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        let targets = d.get_temp_mut_or_default::<WhipTargets>(whip_targets_id());
+        if targets.0 != pass {
+            *targets = (pass, vec![]);
+        }
+        targets.1.push((row, layer, prop, dims));
+    });
 }
 
 /// Autoscroll speed (points per second, up negative) of a drag held at height `y` within
@@ -1846,16 +1897,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 // Parent.
                 if vis.parent {
-                    let pw_rect = Rect::from_center_size(pos2(cw.parent + 9.0, cy), vec2(15.0, 15.0));
-                    let pw = ui
-                        .interact(pw_rect, egui::Id::new(("parent-whip", layer.id.0)), Sense::drag())
-                        .on_hover_text(crate::i18n::tr("Parent pick whip: drag onto a layer"));
-                    icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
-                    app.auto.add(&format!("timeline.layer.{}.pickWhip", layer.id.0), pw_rect, "Parent pick whip");
-                    if pw.drag_started() {
-                        let pw_state: PickWhip = (0, layer.id.0, 0, pw_rect.center());
-                        ctx.data_mut(|d| d.insert_temp(pick_whip_id(), pw_state));
-                    }
+                    pick_whip(
+                        app,
+                        ui,
+                        &lp,
+                        Rect::from_center_size(pos2(cw.parent + 9.0, cy), vec2(15.0, 15.0)),
+                        (WHIP_PARENT, layer.id.0, 0),
+                        &format!("timeline.layer.{}.pickWhip", layer.id.0),
+                        "Parent pick whip",
+                        crate::i18n::tr("Parent pick whip: drag onto a layer"),
+                    );
                     let pr_rect = Rect::from_min_size(pos2(cw.parent + 20.0, cy - 9.0), vec2(94.0, 18.0));
                     let plabel = layer.parent.and_then(|p| comp.layer(p)).map(|l| format!("{}. {}", idx_of(l.id), l.name)).unwrap_or_else(|| "None".into());
                     let presp = widgets::dropdown(ui, pr_rect, &plabel, &t, egui::Id::new(("parent", layer.id.0)));
@@ -2143,12 +2194,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 if en.clicked() {
                     actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid, "enabled": !ex.enabled})));
                 }
-                let pw_rect = Rect::from_center_size(pos2(cw.switches + 30.0, cy), vec2(15.0, 15.0));
-                let pw = ui
-                    .interact(pw_rect, egui::Id::new(("expr-whip", uid)), Sense::drag())
-                    .on_hover_text(crate::i18n::tr("Expression pick whip: drag onto a property"));
-                icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
-                app.auto.add(&format!("timeline.prop.{uid}.pickWhip"), pw_rect, "Expression pick whip");
+                let pw = pick_whip(
+                    app,
+                    ui,
+                    &lp,
+                    Rect::from_center_size(pos2(cw.switches + 30.0, cy), vec2(15.0, 15.0)),
+                    (WHIP_EXPR, layer.id.0, *uid),
+                    &format!("timeline.prop.{uid}.pickWhip"),
+                    "Expression pick whip",
+                    crate::i18n::tr("Expression pick whip: drag onto a property"),
+                );
                 if pw.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
                     // Pressed while the expression is being edited (its text is buffered while
                     // the editor has the focus): the reference will go in at the cursor,
@@ -2167,10 +2222,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             d.remove::<WhipInto>(whip_into_id(*uid));
                         }
                     });
-                }
-                if pw.drag_started() {
-                    let pw_state: PickWhip = (1, layer.id.0, *uid, pw_rect.center());
-                    ctx.data_mut(|d| d.insert_temp(pick_whip_id(), pw_state));
                 }
                 // Syntax errors: warning in the outline (the expression is disabled).
                 if let Some(check) = app.session.expr_check
@@ -2363,6 +2414,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let dims = value_editor(app, ui, &lp, layer, prop, &value, pos2(vx, cy), &mut actions);
                 if !dims.is_empty() {
                     dim_hits.push((*uid, dims));
+                }
+                // The property pick whip (Parent & Link column, AE CC 2018 and later): dropped on
+                // a property it links this one to it, adding the expression if there is none.
+                if vis.parent && !prop.static_only {
+                    pick_whip(
+                        app,
+                        ui,
+                        &lp,
+                        Rect::from_center_size(pos2(cw.parent + 9.0, cy), vec2(15.0, 15.0)),
+                        (WHIP_PROP, layer.id.0, *uid),
+                        &format!("timeline.prop.{uid}.propertyPickWhip"),
+                        "Property pick whip",
+                        crate::i18n::tr("Property pick whip: drag onto a property"),
+                    );
                 }
                 ui.set_clip_rect(right_clip);
                 // Expression text row hint.
@@ -2576,27 +2641,50 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             .collect();
         actions.push(("layer.select".into(), json!({"layers": layers, "add": ui.input(|i| i.modifiers.shift || i.modifiers.command)})));
     }
-    // Pick whips: a line follows the pointer; releasing over a row links to it.
+    // Pick whips: a line follows the pointer; releasing over a row links to it (an expression's
+    // or a property's, also over a property in Effect Controls).
     if let Some((kind, src_layer, src_prop, start)) = ctx.data(|d| d.get_temp::<PickWhip>(pick_whip_id())) {
         let ptr = ctx.input(|i| i.pointer.latest_pos()).unwrap_or(start);
         let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("tl-pickwhip-line")));
         fg.line_segment([start, ptr], Stroke::new(1.5, t.accent));
         fg.circle_stroke(ptr, 4.0, Stroke::new(1.5, t.accent));
         let target = hit_rows.iter().find(|(r, _)| r.contains(ptr)).map(|(r, row)| (*r, row.clone()));
+        // Shown this pass or the last one (Effect Controls may draw after the Timeline).
+        let pass = ctx.cumulative_pass_nr();
+        let elsewhere = (target.is_none() && kind != WHIP_PARENT)
+            .then(|| ctx.data(|d| d.get_temp::<WhipTargets>(whip_targets_id())))
+            .flatten()
+            .filter(|(p, _)| p.saturating_add(1) >= pass)
+            .and_then(|(_, targets)| targets.into_iter().find(|(r, ..)| r.contains(ptr)));
         if let Some((tr, _)) = &target {
             fg.rect_stroke(Rect::from_min_max(tr.min, pos2(graph_x0 - 1.0, tr.max.y)), 0.0, Stroke::new(1.0, t.accent), StrokeKind::Inside);
+        } else if let Some((tr, ..)) = &elsewhere {
+            fg.rect_stroke(*tr, 0.0, Stroke::new(1.0, t.accent), StrokeKind::Inside);
         }
         if ctx.input(|i| !i.pointer.any_down()) {
-            ctx.data_mut(|d| d.remove::<PickWhip>(pick_whip_id()));
-            let into = (kind == 1).then(|| ctx.data_mut(|d| d.remove_temp::<WhipInto>(whip_into_id(src_prop)))).flatten();
-            match (kind, target) {
-                (0, Some((_, row))) if row.layer.0 != src_layer => {
+            ctx.data_mut(|d| {
+                d.remove::<PickWhip>(pick_whip_id());
+                d.remove::<WhipTargets>(whip_targets_id());
+            });
+            let into = (kind == WHIP_EXPR).then(|| ctx.data_mut(|d| d.remove_temp::<WhipInto>(whip_into_id(src_prop)))).flatten();
+            // The property dropped on, and the value (dimension) if on one of them: `position[0]`.
+            let dim = |fields: &[Rect]| fields.iter().position(|r| r.contains(ptr));
+            let prop_target = match (&target, elsewhere) {
+                (Some((_, Row { layer, kind: RowKind::Prop { uid }, .. })), _) => {
+                    Some((layer.0, *uid, dim_hits.iter().find(|(u, _)| u == uid).and_then(|(_, rs)| dim(rs))))
+                }
+                (None, Some((_, l, u, fields))) => Some((l, u, dim(&fields))),
+                _ => None,
+            };
+            match (kind, target, prop_target) {
+                (WHIP_PARENT, Some((_, row)), _) if row.layer.0 != src_layer => {
                     actions.push(("layer.setParent".into(), json!({"layers": [src_layer], "parent": row.layer.0})));
                 }
-                (1, Some((_, Row { layer, kind: RowKind::Prop { uid }, .. }))) if uid != src_prop => {
-                    let mut params = json!({"layer": src_layer, "prop": src_prop, "target": {"layer": layer.0, "prop": uid}});
-                    // On one of its values: that dimension (`position[0]`).
-                    if let Some(d) = dim_hits.iter().find(|(u, _)| *u == uid).and_then(|(_, rs)| rs.iter().position(|r| r.contains(ptr))) {
+                // The property pick whip replaces the expression with the reference (or adds one),
+                // as the expression pick whip does when its expression isn't being edited.
+                (WHIP_EXPR | WHIP_PROP, _, Some((tl, tu, d))) if tu != src_prop => {
+                    let mut params = json!({"layer": src_layer, "prop": src_prop, "target": {"layer": tl, "prop": tu}});
+                    if let Some(d) = d {
                         params["target"]["dimension"] = json!(d);
                     }
                     if let Some((text, [a, b])) = into {

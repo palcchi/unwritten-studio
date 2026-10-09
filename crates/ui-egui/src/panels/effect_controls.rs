@@ -146,7 +146,8 @@ fn toggle_pick(app: &mut EffectcraftApp, kind: &str, layer: &Layer, prop: &Prope
     }
 }
 
-/// One property row: stopwatch, name, value control (and the keyframe navigator).
+/// One property row: stopwatch, name, value control (and the keyframe navigator). Returns the
+/// value fields of a vector, one per dimension, for the pick whip.
 #[allow(clippy::too_many_arguments)]
 fn prop_row(
     app: &mut EffectcraftApp,
@@ -159,8 +160,9 @@ fn prop_row(
     r: Rect,
     indent: f32,
     actions: &mut Actions,
-) {
+) -> Vec<Rect> {
     let t = app.tokens;
+    let mut dims = vec![];
     let cy = r.center().y;
     let uid = prop.uid;
     let swr = Rect::from_center_size(pos2(r.min.x + indent, cy), vec2(14.0, 14.0));
@@ -304,6 +306,7 @@ fn prop_row(
             for d in 0..n.min(c.len()) {
                 let (vr, nv, _) = widgets::hot_number_at(ui, pos2(x, cy - 9.0), egui::Id::new(("ec-v", uid, d)), c[d], 1.0, (-1e9, 1e9), 1, "", &t);
                 app.auto.add(&format!("effectControls.prop.{uid}.value.{d}"), vr, &prop.name);
+                dims.push(vr);
                 if let Some(nv) = nv {
                     let mut nc = c.clone();
                     nc[d] = nv;
@@ -408,6 +411,7 @@ fn prop_row(
         }
         _ => {}
     }
+    dims
 }
 
 /// How many of a vector parameter's values show (a 3D point's Z only on a 3D layer).
@@ -550,7 +554,9 @@ fn group_rows(
                 let visible = !(r.max.y < rect.min.y || r.min.y > rect.max.y);
                 if visible {
                     app.auto.add(&format!("effectControls.row.{}", pr.uid), r, &pr.name);
-                    prop_row(app, ui, p, layer, g, pr, ectx, r, indent, actions);
+                    let dims = prop_row(app, ui, p, layer, g, pr, ectx, r, indent, actions);
+                    // A Timeline pick whip can be dropped here (After Effects).
+                    super::timeline::whip_target(ui.ctx(), r.intersect(rect), layer.id.0, pr.uid, dims);
                 }
                 if app.ui.fx_slider_open.contains(&pr.uid) {
                     if matches!(pr.ui, ParamUi::Angle) {

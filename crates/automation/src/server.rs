@@ -161,8 +161,13 @@ impl McpServer {
                         content.push(json!({"type": "text", "text": format!("Warning: {e}. Use save_project with a writable path before disconnecting.")}));
                     }
                 }
-                if self.autosave.is_some() {
-                    result["_meta"]["effectcraftAutoSave"] = self.autosave_info();
+                if self.autosave.is_some()
+                    && let Some(obj) = result.as_object_mut()
+                {
+                    let meta = obj.entry("_meta").or_insert_with(|| json!({}));
+                    if let Some(meta) = meta.as_object_mut() {
+                        meta.insert("effectcraftAutoSave".into(), self.autosave_info());
+                    }
                 }
                 if self.autosave.is_some()
                     && name == "get_project"

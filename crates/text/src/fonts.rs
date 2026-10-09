@@ -214,6 +214,22 @@ impl Face {
     pub fn has_char(&self, c: char) -> bool {
         self.font().is_some_and(|f| covers(&f, c))
     }
+    /// Horizontal advance and vertical origin above the baseline, in pixels.
+    pub(crate) fn vertical_origin(&self, gid: u32, px: f32) -> Option<(f64, f64)> {
+        use skrifa::raw::TableProvider;
+        let font = self.font()?;
+        let glyph = skrifa::GlyphId::new(gid);
+        let metrics = font.glyph_metrics(Size::unscaled(), LocationRef::default());
+        let origin = match font.vorg() {
+            Ok(table) => f32::from(table.vertical_origin_y(glyph)),
+            Err(_) => metrics.bounds(glyph)?.y_max + f32::from(font.vmtx().ok()?.side_bearing(glyph)?),
+        };
+        let scale = f64::from(px / self.units_per_em());
+        let width = f64::from(metrics.advance_width(glyph)?) * scale;
+        let top = f64::from(origin) * scale;
+        (width.is_finite() && top.is_finite() && top.abs() < f64::from(px) * 4.0).then_some((width, top))
+    }
+
     pub fn metrics(&self, px: f32) -> VMetrics {
         let Some(f) = self.font() else {
             return VMetrics {

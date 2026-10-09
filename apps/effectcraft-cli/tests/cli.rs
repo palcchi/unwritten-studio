@@ -247,3 +247,52 @@ fn script_file_and_eval() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains(".jsxbin scripts are not supported: run the .jsx source") && !err.contains("SyntaxError"), "{err}");
 }
+
+/// `render --out` (#300): a relative path is relative to the working directory like `--project`,
+/// not to the project's folder (which doubled a path that already named it).
+#[test]
+fn render_out_is_relative_to_the_working_directory() {
+    let root = tmp("render-out");
+    let _ = std::fs::remove_dir_all(&root);
+    let (proj, elsewhere) = (root.join("proj"), root.join("elsewhere"));
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let project = proj.join("x.ecproj");
+    let p = project.to_str().unwrap();
+    ok_json(&[
+        "run",
+        "comp.new",
+        r#"{"name":"T","width":64,"height":36,"duration":1}"#,
+        "layer.newSolid",
+        r#"{"width":64,"height":36}"#,
+        "--empty",
+        "--save-as",
+        p,
+    ]);
+    assert!(project.exists());
+    let render = |cwd: &std::path::Path, project: &str, out: &str| {
+        let o = bin()
+            .current_dir(cwd)
+            .args(["render", "--project", project, "--format", "gif", "--start", "0", "--end", "0.1", "--resolution", "quarter", "--out", out, "--json"])
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{out}: {}", String::from_utf8_lossy(&o.stderr));
+        let v: Value = serde_json::from_slice(&o.stdout).unwrap();
+        PathBuf::from(v["rendered"][0]["output"].as_str().unwrap())
+    };
+    // A path that already names the project folder is not doubled.
+    let done = render(&root, "proj/x.ecproj", "proj/out/d.gif");
+    assert_eq!(done, root.join("proj/out/d.gif"));
+    assert!(done.exists() && !proj.join("proj").exists());
+    // Another working directory: the file lands there, not beside the project.
+    let done = render(&elsewhere, project.to_str().unwrap(), "out/card.gif");
+    assert_eq!(done, elsewhere.join("out/card.gif"));
+    assert!(done.exists() && !proj.join("out/card.gif").exists());
+    // `./f.gif` too.
+    assert_eq!(render(&elsewhere, project.to_str().unwrap(), "./f.gif"), elsewhere.join("./f.gif"));
+    // An absolute path is unchanged.
+    let abs = root.join("abs.gif");
+    assert_eq!(render(&elsewhere, project.to_str().unwrap(), abs.to_str().unwrap()), abs);
+    assert!(abs.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}

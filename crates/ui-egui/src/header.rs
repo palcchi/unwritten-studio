@@ -43,6 +43,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     x += 6.0;
 
     // Tool slots (with group separators after camera tools and pan-behind).
+    let held_id = egui::Id::new("tool-slot-held");
+    if ui.input(|i| i.pointer.any_pressed()) {
+        ui.data_mut(|d| d.remove::<egui::Id>(held_id));
+    }
     for (si, slot) in Tool::SLOTS.iter().enumerate() {
         let cur = app.ui.slot_tools.get(si).copied().unwrap_or(slot[0]);
         let r = Rect::from_min_size(pos2(x, cy - 13.0), vec2(26.0, 26.0));
@@ -63,7 +67,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             None => cur.label().to_string(),
         };
         let resp = resp.on_hover_text(tip);
-        if resp.clicked() {
+        let held = ui.data(|d| d.get_temp::<egui::Id>(held_id)) == Some(id);
+        if resp.clicked() && !held {
             app.ui.tool = cur;
         }
         // Ctrl+double-click Pan Behind: Center Anchor Point in Layer Content.
@@ -75,11 +80,33 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.ui.status = e;
         }
         if slot.len() > 1 {
-            resp.context_menu(|ui| {
+            let held_for = resp.is_pointer_button_down_on().then(|| ui.input(|i| i.pointer.press_start_time().map(|s| i.time - s))).flatten();
+            if let Some(seconds) = held_for
+                && seconds < 0.35
+            {
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(0.35 - seconds));
+            }
+            let long_press = held_for.is_some_and(|seconds| seconds >= 0.35) && !held;
+            let command = if resp.secondary_clicked() || long_press {
+                if long_press {
+                    ui.data_mut(|d| d.insert_temp(held_id, id));
+                }
+                Some(egui::SetOpenCommand::Bool(true))
+            } else if resp.clicked() && !held {
+                Some(egui::SetOpenCommand::Bool(false))
+            } else {
+                None
+            };
+            let close_behavior = if held && resp.clicked() { egui::PopupCloseBehavior::IgnoreClicks } else { egui::PopupCloseBehavior::CloseOnClickOutside };
+            egui::Popup::menu(&resp).open_memory(command).close_behavior(close_behavior).show(|ui| {
                 for tool in slot.iter() {
-                    if ui.selectable_label(app.ui.tool == *tool, tool.label()).clicked() {
+                    let row = ui.selectable_label(app.ui.tool == *tool, tool.label());
+                    app.auto.add(&format!("tools.select.{tool:?}"), row.rect, tool.label());
+                    if row.clicked() {
                         app.ui.tool = *tool;
-                        app.ui.slot_tools[si] = *tool;
+                        if let Some(saved) = app.ui.slot_tools.get_mut(si) {
+                            *saved = *tool;
+                        }
                         ui.close();
                     }
                 }
@@ -566,5 +593,48 @@ pub fn paint_logo(p: &egui::Painter, r: Rect) {
     });
     if let Some(t) = tex {
         p.image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(app: &mut EffectcraftApp, ctx: &egui::Context, time: f64, events: Vec<egui::Event>) {
+        app.auto.begin_frame();
+        let mut out = ctx.run_ui(
+            egui::RawInput { time: Some(time), events, screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 500.0))), ..Default::default() },
+            |ui| {
+                show(app, ui, Rect::from_min_size(egui::Pos2::ZERO, vec2(1400.0, 40.0)));
+            },
+        );
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn long_press_type_keeps_the_tool_until_vertical_is_selected() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx, &app.tokens);
+        frame(&mut app, &ctx, 0.0, vec![]);
+        frame(&mut app, &ctx, 0.1, vec![]);
+        let center = |element: &crate::automation::Element| {
+            let [x, y, w, h] = element.rect;
+            egui::pos2(x + w / 2.0, y + h / 2.0)
+        };
+        let at = center(app.auto.elements.iter().find(|w| w.id == "tools.Type").unwrap());
+        let pointer = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut app, &ctx, 1.0, vec![egui::Event::PointerMoved(at), pointer(at, true)]);
+        frame(&mut app, &ctx, 1.36, vec![]);
+        frame(&mut app, &ctx, 1.4, vec![pointer(at, false)]);
+        frame(&mut app, &ctx, 1.45, vec![]);
+        assert_eq!(app.ui.tool, Tool::Selection);
+        let row = center(app.auto.elements.iter().find(|w| w.id == "tools.select.TypeVertical").unwrap());
+        frame(&mut app, &ctx, 2.0, vec![egui::Event::PointerMoved(row), pointer(row, true)]);
+        frame(&mut app, &ctx, 2.05, vec![pointer(row, false)]);
+        assert_eq!(app.ui.tool, Tool::TypeVertical);
+        assert_eq!(app.ui.slot_tools[10], Tool::TypeVertical);
+        frame(&mut app, &ctx, 2.1, vec![]);
+        assert!(!app.auto.elements.iter().any(|w| w.id == "tools.select.TypeVertical"));
     }
 }

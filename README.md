@@ -190,6 +190,16 @@ Windows on ARM, without x64 emulation. CI installs that MSI on Windows 11 ARM64 
 both programs are ARM64 and runs the command-line tool there, but it doesn't open the app's window
 or run the test suite natively on ARM64 yet, so please report anything that behaves differently.
 
+On Gentoo, the community [::snakebyte overlay](https://github.com/switch87/snakebyte-overlay) packages
+the Linux release as `media-video/effectcraft-bin` (not maintained by the EffectCraft team):
+
+```sh
+eselect repository add snakebyte git https://github.com/switch87/snakebyte-overlay.git
+emaint sync -r snakebyte
+echo 'media-video/effectcraft-bin ~amd64' >> /etc/portage/package.accept_keywords/effectcraft
+emerge --ask media-video/effectcraft-bin
+```
+
 To build it yourself you need [Rust](https://rustup.rs/) 1.95 or newer.
 
 ```sh

@@ -194,7 +194,7 @@ mod tests {
     fn gallery_lists_renders_and_opens_templates() {
         let mut app = app_with_store();
         let ctx = egui::Context::default();
-        crate::theme::install(&ctx, &app.tokens, &app.session.prefs.general.language);
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
         // File ▸ New ▸ New Project from Template… opens the Templates tab.
         let ev = app.session.execute("file.newFromTemplate", json!({})).unwrap();
         assert_eq!(ev["frontend"], "file.newFromTemplate");
@@ -250,7 +250,7 @@ mod tests {
     fn my_custom_rgb_dialog() {
         let mut app = app_with_store();
         let ctx = egui::Context::default();
-        crate::theme::install(&ctx, &app.tokens, &app.session.prefs.general.language);
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
         // Menu check marks follow the active comp's viewer.
         app.session.execute("comp.new", json!({"name": "C", "width": 64, "height": 48})).unwrap();
         let item = crate::menus::menu_items(&app).into_iter().find(|m| m.id == "view.customRgb").expect("menu item");

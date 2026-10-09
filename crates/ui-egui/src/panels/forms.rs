@@ -844,7 +844,7 @@ mod tests {
     fn premiere_export_dialog() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
         let ctx = egui::Context::default();
-        crate::theme::install(&ctx, &app.tokens, &app.session.prefs.general.language);
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
         app.session.execute("comp.new", json!({"name": "Spot", "width": 64, "height": 36, "frameRate": 25, "duration": 1})).unwrap();
         app.session.execute("layer.newSolid", json!({"color": "#ff0000"})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "file.exportTimeline", json!({})).unwrap();

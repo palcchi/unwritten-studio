@@ -170,7 +170,7 @@ mod tests {
     fn app() -> (EffectcraftApp, egui::Context) {
         let ctx = egui::Context::default();
         let app = EffectcraftApp::new(effectcraft_engine::Session::default());
-        crate::theme::install(&ctx, &app.tokens, &app.session.prefs.general.language);
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
         (app, ctx)
     }
 

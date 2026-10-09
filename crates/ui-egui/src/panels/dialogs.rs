@@ -548,7 +548,7 @@ mod tests {
     fn app() -> (EffectcraftApp, egui::Context) {
         let ctx = egui::Context::default();
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
-        crate::theme::install(&ctx, &app.tokens, &app.session.prefs.general.language);
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(app));
         app.session.execute("comp.new", json!({"name": "Main", "width": 640, "height": 360})).unwrap();
         (app, ctx)
     }

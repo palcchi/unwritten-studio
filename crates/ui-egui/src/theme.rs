@@ -274,9 +274,12 @@ static INTER_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-SemiB
 static JETBRAINS_MONO: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
 
 /// Install fonts (Inter, Inter Medium/SemiBold, JetBrains Mono) and egui visuals. `language` is the
-/// stored `general.language` value (`en`, `ja`, `zh-hans`, `zh-hant` or `system`): the CJK fallback
-/// that draws the interface's own script is registered first, so a Chinese interface is drawn by a
-/// Chinese face and a Japanese one by a Japanese face.
+/// resolved interface language from [`crate::i18n::language`] (`en`, `ja`, `zh-hans` or `zh-hant`),
+/// not the stored `general.language` preference: `system` is already resolved there, so a Chinese
+/// system draws Chinese with the default setting. The CJK fallback that draws the interface's own
+/// script is registered first, so a Chinese interface is drawn by a Chinese face and a Japanese one
+/// by a Japanese face. `install` is called again when the language changes (see the `EffectcraftApp`
+/// frame loop), so the fonts do not need a restart.
 pub fn install(ctx: &egui::Context, t: &Tokens, language: &str) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert("inter".into(), Arc::new(FontData::from_static(INTER_REGULAR)));
@@ -425,7 +428,7 @@ mod japanese_font_tests {
             return;
         }
         let ctx = egui::Context::default();
-        super::install(&ctx, &super::Tokens::for_kind(super::ThemeKind::Dark));
+        super::install(&ctx, &super::Tokens::for_kind(super::ThemeKind::Dark), "ja");
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
         // No renderer here: drop the frame's texture uploads (egui asserts on unhandled ones in debug).
         out.textures_delta.clear();

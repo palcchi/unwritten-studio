@@ -576,7 +576,8 @@ static REQUESTED_CJK_LOCALE: RwLock<Option<String>> = RwLock::new(None);
 /// environment, so a Chinese interface is drawn with a Chinese face on a machine whose locale is
 /// Japanese (and the other way round). The interface sets this from its language setting; an empty
 /// tag, `c` or `posix` clears the request and returns to the environment. Process-global, like the
-/// environment it replaces.
+/// environment it replaces: every layout in the process follows it, so composition text is drawn
+/// with the same language's Han forms as the interface, not only the interface chrome.
 pub fn set_cjk_locale(tag: &str) {
     let tag = tag.trim().to_ascii_lowercase();
     let requested = if tag.is_empty() || tag == "c" || tag == "posix" { None } else { Some(tag) };

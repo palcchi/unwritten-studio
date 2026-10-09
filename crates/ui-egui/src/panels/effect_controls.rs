@@ -567,8 +567,6 @@ fn group_rows(
                         }
                     }
                 }
-                // Expanded sliders/dials belong to their parameter; separate after the whole block.
-                widgets::parameter_separator(p, Rect::from_min_max(r.min, pos2(r.max.x, *y)), &t);
             }
             Node::Group(sg) => {
                 // Paint strokes live in the Timeline only (AE's Paint shows Paint on Transparent).
@@ -577,7 +575,6 @@ fn group_rows(
                 }
                 *y += ROW;
                 let open = !app.ui.fx_closed.contains(&sg.uid);
-                widgets::parameter_separator(p, r, &t);
                 let tw = Rect::from_center_size(pos2(r.min.x + PARAM_NAME_X - 12.0 + TREE_INDENT * depth as f32, r.center().y), vec2(12.0, 12.0));
                 if r.max.y >= rect.min.y && r.min.y <= rect.max.y {
                     app.auto.add(&format!("effectControls.row.{}", sg.uid), r, &sg.name);

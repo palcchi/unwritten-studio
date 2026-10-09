@@ -524,3 +524,36 @@ fn comp_preserves_nested_frame_rate_and_resolution() {
     let (_, c) = comp_named(&s, "Nested");
     assert!(c.preserve_frame_rate && c.preserve_resolution);
 }
+
+/// Probes every file as a 64x32 still (the media layer's single-file probe).
+struct Stills;
+impl effectcraft_engine::Importer for Stills {
+    fn probe(&self, path: &str) -> Result<effectcraft_engine::project::Footage, String> {
+        use effectcraft_engine::project::{Footage, FootageKind};
+        Ok(Footage { path: path.into(), kind: FootageKind::Still, width: 64, height: 32, has_video: true, codec: "PNG".into(), ..Default::default() })
+    }
+}
+
+/// `importFile(new ImportOptions(file))` imports just the picked file unless `sequence` is set (#475).
+#[test]
+fn import_options_sequence_picks_one_still_or_the_run() {
+    use effectcraft_engine::project::{FootageKind, ItemKind};
+    let dir = std::env::temp_dir().join(format!("ec-script-seq-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in ["shot_0001.png", "shot_0002.png", "shot_0003.png"] {
+        std::fs::write(dir.join(n), b"").unwrap();
+    }
+    let pick = dir.join("shot_0002.png").to_string_lossy().replace('\\', "/");
+    let mut s = session();
+    s.importer = Some(Arc::new(Stills));
+    let kind_of = |s: &Session, name: &str| {
+        let it = s.project.items.values().find(|i| i.name == name).unwrap_or_else(|| panic!("no item {name}"));
+        let ItemKind::Footage(f) = &it.kind else { panic!("footage") };
+        f.kind
+    };
+    ok(&mut s, &format!("var io = new ImportOptions(new File('{pick}')); app.project.importFile(io);"));
+    assert_eq!(kind_of(&s, "shot_0002.png"), FootageKind::Still);
+    ok(&mut s, &format!("var io = new ImportOptions(new File('{pick}')); io.sequence = true; app.project.importFile(io);"));
+    assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
+    let _ = std::fs::remove_dir_all(&dir);
+}

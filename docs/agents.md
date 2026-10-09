@@ -137,6 +137,31 @@ Short recipes; every step is one tool call.
 
 The desktop app checks footage in the background after every open (a "Checking footage" job in
 the Progress panel, `jobs.list`); headless sessions run `footage.check` when they want it.
+
+### Pitfalls
+
+Things that tripped up a long agent-driven session (a multi-scene 3D piece built entirely over MCP).
+
+- **Layer time vs comp time.** `add_keyframe`, `set_property` with `time`, `prop.addKey`,
+  `keys.select` and `keys.set` take layer time; `get_property` and `render_frame` take comp time;
+  `run_script`'s `setValueAtTime` and `keyTime` use comp time, as in After Effects. On a layer that
+  doesn't start at 0, such as a nested comp placed later, subtract the layer's start time from the
+  comp time before keying (unstretched layers), or set the keys from `run_script`
+  ([#257](https://github.com/storytold/effectcraft/issues/257)).
+- **Moving a layer in time.** `execute_command layer.timing {"layers":["Scene 2"],"start":5.1}` sets
+  the start time in comp seconds and moves the in and out points with it.
+- **Loops in scripts.** `run_script` can call any engine command with `app.run(id, params)`, for
+  example `app.run("layer.new3dPrimitive", {kind: "cube", position: [x, y, z]})` inside a loop. A
+  script that throws keeps the edits it already made: wrap it in `app.beginUndoGroup()` /
+  `app.endUndoGroup()` so one `undo {}` removes them all. (`batch` rolls back on its own.)
+- **Save early in headless mode.** The headless server keeps the project in memory only. If the
+  client restarts the server, unsaved work is gone, so call `save_project {"path": …}` after each
+  milestone ([#258](https://github.com/storytold/effectcraft/issues/258)).
+- **Environment light.** `layer.newLight` also accepts `"kind":"Environment"`: an equirectangular
+  image that metallic surfaces reflect. Set its `lightOptions/source` to a footage, comp or solid
+  layer by layer id; with no source it uses the comp's Environment Layer (`layer.environment`)
+  ([#261](https://github.com/storytold/effectcraft/issues/261)).
+
 ### Cookbook (from end-to-end QA)
 
 The scenarios in `crates/automation/tests/qa/` and `apps/effectcraft-cli/tests/qa_template.rs`

@@ -380,6 +380,11 @@ fn prop_row(
                 }
             }
         }
+        // EXtractoR's red / green / blue / alpha: a popup of the footage's OpenEXR channels (#295).
+        Value::Str(s) if super::fx_editors::is_extractor_channel(group, prop) => {
+            let dr = Rect::from_min_size(pos2(vx, cy - 9.0), vec2((r.max.x - vx - 56.0).clamp(80.0, 200.0), 18.0));
+            super::fx_editors::channel_popup(app, ui, layer, prop, s, dr, actions);
+        }
         Value::Gradient(g) => {
             let gr = Rect::from_min_size(pos2(vx, cy - 7.0), vec2((r.max.x - vx - 56.0).clamp(60.0, 180.0), 14.0));
             let n = 48;
@@ -652,7 +657,7 @@ fn roto_editor(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, l
 /// Height of the custom editor shown under an effect's header (0 when none).
 fn editor_height(effect: &str, g: &PropGroup, width: f32) -> f32 {
     match effect {
-        super::fx_editors::GLOW | super::fx_editors::RESHAPE => super::fx_editors::header_height(effect, g, width),
+        super::fx_editors::GLOW | super::fx_editors::RESHAPE | super::fx_editors::EXTRACTOR => super::fx_editors::header_height(effect, g, width),
         "ec.color.curves" => 34.0 + curves_size(width) + 26.0,
         effectcraft_engine::effects::warp_stab::ID => 50.0,
         effectcraft_engine::effects::camera_tracker::ID => super::camera_tracker_ui::EDITOR_HEIGHT,
@@ -1050,7 +1055,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         effectcraft_engine::effects::camera_tracker::ID => super::camera_tracker_ui::editor(app, ui, &bp, &layer, g, er, &mut actions),
                         effectcraft_engine::effects::roto::ID => roto_editor(app, ui, &bp, &layer, g, er, &mut actions),
                         "ec.color.levels" | "ec.color.levelsic" => levels_editor(app, ui, &bp, &layer, g, effect, &ectx, er, &mut actions),
-                        super::fx_editors::GLOW | super::fx_editors::RESHAPE => {
+                        super::fx_editors::GLOW | super::fx_editors::RESHAPE | super::fx_editors::EXTRACTOR => {
                             super::fx_editors::header_editor(app, ui, &bp, &layer, g, effect, &ectx, er, &mut actions)
                         }
                         _ => histogram_only(app, ui, &bp, g, er),

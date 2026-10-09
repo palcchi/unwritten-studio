@@ -594,7 +594,11 @@ impl Inner {
                 if let Some(img) = crate::layered::decode(path, &bytes, footage, op)? {
                     return Ok(img);
                 }
-                let img = image::load_from_memory(&bytes).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
+                let img = match image::load_from_memory(&bytes) {
+                    Ok(img) => img,
+                    // A multi-layer OpenEXR file without an unnamed RGB layer: its colour layer.
+                    Err(e) => crate::exr_channels::layered_image(&bytes).ok_or_else(|| MediaError::Decode(format!("{path}: {e}")))?,
+                };
                 Ok(dynamic_to_image(&img, op))
             }
             Some(mt) => {

@@ -415,9 +415,36 @@ fn list(_: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!(v))
 }
 
+impl Session {
+    /// The named channels of layer `lid` in the active comp at the current time: its
+    /// multi-layer OpenEXR footage's layers and channels (`diffuse.R`, `depth.Z`, …), which
+    /// EXtractoR and the 3D Channel effects read. `None` for other layers.
+    pub fn layer_channels(&self, lid: LayerId) -> Option<std::sync::Arc<effectcraft_raster::AuxChannels>> {
+        let layer = self.active_comp()?.layer(lid)?;
+        let effectcraft_project::LayerSource::Footage { item } = layer.source else { return None };
+        let effectcraft_project::ItemKind::Footage(f) = &self.project.item(item)?.kind else { return None };
+        self.footage.aux(item, f, layer.layer_time(self.time()))
+    }
+}
+
+/// `layer.channels`: the layers and channels of a layer's multi-layer OpenEXR footage, and
+/// what each layer shows in red, green, blue and alpha (EXtractoR's popups).
+fn channels(s: &mut Session, p: &Value) -> Result<Value> {
+    let (_, lid) = super::layer_p(s, p, "layer.channels")?;
+    let Some(aux) = s.layer_channels(lid) else { return Ok(json!({"channels": [], "layers": []})) };
+    let layers: Vec<Value> = aux.layers().into_iter().map(|l| json!({"name": l, "rgba": aux.layer_rgba(l)})).collect();
+    Ok(json!({"channels": aux.names(), "layers": layers}))
+}
+
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("effect.apply", "Apply Effect", [], None, "{effect: id|name (e.g. Gaussian Blur), layers?}", has_layers, apply),
+        crate::query!(
+            "layer.channels",
+            "Layer Channels",
+            "{layer?} → {channels: [name], layers: [{name, rgba: [r, g, b, a channel]}]} — a multi-layer OpenEXR layer's channels (EXtractoR's red / green / blue / alpha take these names)",
+            channels
+        ),
         cmd!(
             "effect.pickColor",
             "Pick Effect Colour",

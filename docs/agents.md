@@ -207,6 +207,10 @@ build real projects through these interfaces; they are worked examples of everyt
   `{"colors":[[0,"#0080ff"],[1,[1,1,0]]],"opacities":[[0,1],[1,0.5]]}`.
 * **Image sequences** import at 30 fps (Settings ▸ Import); `file.interpretFootage {"items":[id],
   "frameRate":12}` conforms them (the item and layers that ran to its end get the new length).
+* **Multi-layer OpenEXR**: `layer.channels {layer}` lists a footage layer's EXR layers and
+  channels (`{"layers":[{"name":"diffuse","rgba":["diffuse.R","diffuse.G","diffuse.B",""]}]}`);
+  EXtractoR shows them when its `red` / `green` / `blue` / `alpha` are set to those names
+  (`prop.set {"path":"effects/#1/red","value":"depth.Z"}`). Effect Controls offers them as popups.
 * **Masks**: `layer.addMask {layer, shape: rect|ellipse, rect}` first, then `layer.mask.set
   {field: feather|expansion|opacity, value}`.
 * **Renders**: `renderQueue.add {comp, format: h264|prores|webm|png…, channels: rgba,

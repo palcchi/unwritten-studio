@@ -357,3 +357,70 @@ fn right_click_in_effect_controls_shows_the_effect_menu() {
     assert_eq!(names(&h, a), ["Gaussian Blur"], "every selected layer gets it");
     assert!(h.query_by_label(category).is_none(), "the menu closed");
 }
+
+/// #295: EXtractoR on a multi-layer OpenEXR layer offers the file's layers (a Layer popup that
+/// sets red, green, blue and alpha in one undo step) and its channels (a popup per colour);
+/// there was no way to pick any.
+#[test]
+fn extractor_offers_the_exr_layers_and_channels() {
+    use exr::prelude::*;
+    let (w, hh) = (8usize, 4usize);
+    let ch = |n: &str, v: f32| AnyChannel::new(n, FlatSamples::F32(vec![v; w * hh]));
+    let channels = AnyChannels::sort(
+        vec![ch("diffuse.R", 1.0), ch("diffuse.G", 0.5), ch("diffuse.B", 0.0), ch("spec.R", 0.0), ch("spec.G", 0.0), ch("spec.B", 1.0), ch("depth.Z", 0.25)]
+            .into(),
+    );
+    let path = std::env::temp_dir().join(format!("ec-ui-exr-layers-{}.exr", std::process::id()));
+    Image::from_layer(exr::prelude::Layer::new((w, hh), LayerAttributes::default(), Encoding::FAST_LOSSLESS, channels)).write().to_file(&path).unwrap();
+
+    let mut s = effectcraft_host::session();
+    let item = s.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap()["items"][0].clone();
+    s.execute("comp.new", json!({"name": "EXR", "width": 8, "height": 4, "frameRate": 24, "duration": 1})).unwrap();
+    let l = s.execute("layer.addItem", json!({"item": item})).unwrap()["layer"].as_u64().unwrap();
+    let fx = s.execute("effect.apply", json!({"layers": [l], "effect": "EXtractoR"})).unwrap()["effects"][0].as_u64().unwrap();
+    let uid = |s: &Session, id: &str| layer(s, l).effects().and_then(|f| f.groups().find(|g| g.uid == fx)).and_then(|g| g.get(id)).map(|p| p.uid).unwrap();
+    let red = uid(&s, "red");
+    s.state.selected_layers = vec![LayerId(l)];
+    let mut app = EffectcraftApp::new(s);
+    app.show_panel(PanelKind::EffectControls);
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    settle(&mut h);
+    let values = |h: &Harness<'_, EffectcraftApp>| -> Vec<String> {
+        let l = layer(&h.state().session, l);
+        let g = l.effects().and_then(|f| f.groups().find(|g| g.uid == fx)).unwrap();
+        ["red", "green", "blue", "alpha"]
+            .iter()
+            .map(|id| {
+                g.get(id)
+                    .map(|p| match &p.value {
+                        KV::Str(s) => s.clone(),
+                        _ => String::new(),
+                    })
+                    .unwrap_or_default()
+            })
+            .collect()
+    };
+    assert_eq!(values(&h), ["R", "G", "B", "A"]);
+
+    // Layer ▸ spec: its channels in red, green and blue (no alpha channel: none).
+    let at = rect_of(&h, &format!("effectControls.effect.{fx}.extractor.layer")).center();
+    click(&mut h, at);
+    for name in ["depth", "diffuse", "spec"] {
+        assert!(h.query_by_label(name).is_some(), "the file's layer {name}");
+    }
+    h.get_by_label("spec").click();
+    h.run_steps(3);
+    assert_eq!(values(&h), ["spec.R", "spec.G", "spec.B", ""]);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(values(&h), ["R", "G", "B", "A"], "one undo step");
+    h.run_steps(2);
+
+    // Red ▸ depth.Z: every channel of the file is listed.
+    let at = rect_of(&h, &format!("effectControls.prop.{red}.value")).center();
+    click(&mut h, at);
+    assert!(h.query_by_label("diffuse.G").is_some() && h.query_by_label("(none)").is_some());
+    h.get_by_label("depth.Z").click();
+    h.run_steps(3);
+    assert_eq!(values(&h)[0], "depth.Z");
+    let _ = std::fs::remove_file(path);
+}

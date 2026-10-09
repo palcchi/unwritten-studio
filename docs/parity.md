@@ -412,6 +412,9 @@ Fixes from measured reports:
   Stroke) blend onto the layer's colour inside its alpha, so an anti-aliased edge no longer shows
   a rim of the layer's own fill (#416). Not yet: Inner Bevel still shades an anti-aliased edge
   over the layer's own colour.
+- Text layers are always rasterised at their on-screen scale, sharp at any Scale as in After
+  Effects, and an unscaled layer at a fractional position is no longer rasterised a quarter octave
+  too large (#390).
 
 ## Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 

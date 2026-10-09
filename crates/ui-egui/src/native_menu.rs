@@ -190,6 +190,8 @@ pub fn build(app: &EffectcraftApp) -> NativeMenu {
                                     "服务"
                                 } else if crate::i18n::traditional(app) {
                                     "服務"
+                                } else if crate::i18n::spanish(app) {
+                                    "Servicios"
                                 } else {
                                     "Services"
                                 }

@@ -29,3 +29,8 @@ sync_github_name = false
 
 [people.jonassneu]
 sync_github_name = true
+
+[people.llopjulen]
+real_name = "Julen Llop"
+display_name = "Julen Llop"
+sync_github_name = false

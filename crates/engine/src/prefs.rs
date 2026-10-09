@@ -23,7 +23,8 @@ pub const PREFS_VERSION: u32 = 2;
 pub const PREFS_FILE: &str = "prefs.json";
 
 /// Settings ▸ General ▸ Language: (label, `general.language` value).
-pub const LANGUAGES: &[(&str, &str)] = &[("Match System", "system"), ("English", "en"), ("日本語", "ja"), ("简体中文", "zh-hans"), ("繁體中文", "zh-hant")];
+pub const LANGUAGES: &[(&str, &str)] =
+    &[("Match System", "system"), ("English", "en"), ("日本語", "ja"), ("简体中文", "zh-hans"), ("繁體中文", "zh-hant"), ("Español", "es")];
 
 /// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).
 pub const WINDOW_GRAPHICS: &[(&str, &str)] = &[("Automatic", "auto"), ("OpenGL (compatibility)", "gl")];

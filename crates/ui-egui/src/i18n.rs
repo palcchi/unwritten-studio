@@ -7,7 +7,7 @@ use crate::EffectcraftApp;
 use effectcraft_engine::menus::MenuEntry;
 
 /// Every language with a catalog, in the order Settings ▸ General ▸ Language lists them.
-const CATALOG_CODES: [&str; 3] = ["ja", "zh-hans", "zh-hant"];
+const CATALOG_CODES: [&str; 4] = ["ja", "zh-hans", "zh-hant", "es"];
 
 /// The active interface language: the stored preference when it names a catalog, otherwise `en`
 /// (English is the source of every label and needs no lookup).
@@ -38,6 +38,11 @@ pub(crate) fn traditional(app: &EffectcraftApp) -> bool {
     language(app) == "zh-hant"
 }
 
+/// The UI is in Spanish.
+pub(crate) fn spanish(app: &EffectcraftApp) -> bool {
+    language(app) == "es"
+}
+
 /// Settings ▸ General ▸ Language ▸ Match System: the operating system's interface language
 /// where EffectCraft has it, else English (#229), as After Effects installs in the system's
 /// language. The browser build stays in English: it has no Japanese font of its own.
@@ -53,7 +58,7 @@ fn system_language() -> &'static str {
 }
 
 /// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`, `zh-Hans-CN` → `zh-hans`,
-/// `zh-TW` → `zh-hant`).
+/// `zh-TW` → `zh-hant`, `es-ES` → `es`).
 fn supported(locale: Option<&str>) -> &'static str {
     let Some(locale) = locale else { return "en" };
     let mut parts = locale.split(['-', '_']);
@@ -61,6 +66,7 @@ fn supported(locale: Option<&str>) -> &'static str {
     let rest: Vec<String> = parts.map(|p| p.to_ascii_lowercase()).collect();
     match primary.as_str() {
         "ja" => "ja",
+        "es" => "es",
         "zh" => {
             let traditional = rest.iter().any(|p| p.starts_with("hant") || p.starts_with("tw") || p.starts_with("hk") || p.starts_with("mo"));
             if traditional { "zh-hant" } else { "zh-hans" }
@@ -74,6 +80,7 @@ pub(crate) fn label<'a>(app: &EffectcraftApp, command: &str, source: &'a str) ->
         "ja" => lookup(JAPANESE, command, source),
         "zh-hans" => lookup(SIMPLIFIED_CHINESE, command, source),
         "zh-hant" => lookup(TRADITIONAL_CHINESE, command, source),
+        "es" => lookup(SPANISH, command, source),
         _ => source,
     }
 }
@@ -91,6 +98,7 @@ pub(crate) fn entry(app: &EffectcraftApp, e: &MenuEntry, shown: String) -> Strin
         "ja" => ("取り消し", "取り消しできません", "やり直し", "やり直しできません"),
         "zh-hans" => ("撤销", "无可撤销的操作", "重做", "无可重做的操作"),
         "zh-hant" => ("復原", "沒有可復原的操作", "重做", "沒有可重做的操作"),
+        "es" => ("Deshacer", "No se puede deshacer", "Rehacer", "No se puede rehacer"),
         _ => return shown,
     };
     match e.command.as_str() {
@@ -144,6 +152,17 @@ pub(crate) fn submenu(app: &EffectcraftApp, source: &str, shown: String) -> Stri
                 && let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix('”'))
             {
                 return format!("為 3D 檢視“{name}”指定快速鍵");
+            }
+        }
+        "es" => {
+            if source == "Assign Shortcut to Workspace" {
+                if let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix("” Workspace")) {
+                    return format!("Asignar método abreviado al espacio de trabajo “{name}”");
+                }
+            } else if source == "Assign Shortcut to 3D View"
+                && let Some(name) = shown.strip_prefix("Assign Shortcut to “").and_then(|s| s.strip_suffix('”'))
+            {
+                return format!("Asignar método abreviado a la vista 3D “{name}”");
             }
         }
         _ => {}
@@ -2021,6 +2040,631 @@ const JAPANESE: &[(&str, &str, &str)] = &[
     ("file.openDemoProject", "Open Demo Project", "デモプロジェクトを開く"),
 ];
 
+/// Spanish (es): the same (command, English label) keys as `JAPANESE`, one entry per fixed menu
+/// row of the engine's menu tree.
+/// Wording follows Adobe's Spanish After Effects documentation (helpx.adobe.com/es) where it
+/// names the feature, and macOS Spanish for the app menu.
+const SPANISH: &[(&str, &str, &str)] = &[
+    ("", "EffectCraft", "EffectCraft"),
+    ("app.about", "About EffectCraft...", "Acerca de EffectCraft..."),
+    ("", "Settings...", "Ajustes..."),
+    ("app.settings", "General...", "General..."),
+    ("app.settings", "Startup & Repair...", "Inicio y reparación..."),
+    ("app.settings", "Project...", "Proyecto..."),
+    ("app.settings", "Composition...", "Composición..."),
+    ("app.settings", "Previews...", "Previsualizaciones..."),
+    ("app.settings", "Appearance...", "Apariencia..."),
+    ("app.settings", "Grids & Guides...", "Cuadrículas y guías..."),
+    ("app.settings", "Labels...", "Etiquetas..."),
+    ("app.settings", "Type...", "Texto..."),
+    ("app.settings", "Import...", "Importar..."),
+    ("app.settings", "Export...", "Exportar..."),
+    ("app.settings", "Audio...", "Audio..."),
+    ("app.settings", "Disk...", "Disco..."),
+    ("app.settings", "Memory & CPU...", "Memoria y CPU..."),
+    ("app.settings", "Video...", "Vídeo..."),
+    ("app.settings", "3D...", "3D..."),
+    ("app.settings", "Scripting & Expressions...", "Scripts y expresiones..."),
+    ("app.hide", "Hide EffectCraft", "Ocultar EffectCraft"),
+    ("app.hideOthers", "Hide Others", "Ocultar otros"),
+    ("app.showAll", "Show All", "Mostrar todo"),
+    ("app.quit", "Quit EffectCraft", "Salir de EffectCraft"),
+    ("", "File", "Archivo"),
+    ("", "New", "Nuevo"),
+    ("file.newProject", "New Project", "Nuevo proyecto"),
+    ("file.newFromTemplate", "New Project from Template...", "Nuevo proyecto a partir de plantilla..."),
+    ("project.newFolder", "New Folder", "Nueva carpeta"),
+    ("file.open", "Open Project...", "Abrir proyecto..."),
+    ("", "Open Recent", "Abrir proyecto reciente"),
+    ("file.clearRecent", "Clear Recent Projects", "Borrar proyectos recientes"),
+    ("file.close", "Close", "Cerrar"),
+    ("file.closeProject", "Close Project", "Cerrar proyecto"),
+    ("file.save", "Save", "Guardar"),
+    ("", "Save As", "Guardar como"),
+    ("file.saveAs", "Save As...", "Guardar como..."),
+    ("file.saveCopy", "Save a Copy...", "Guardar una copia..."),
+    ("file.saveCopyAsXml", "Save a Copy As XML...", "Guardar una copia como XML..."),
+    ("templates.saveAs", "Save as Template...", "Guardar como plantilla..."),
+    ("file.incrementAndSave", "Increment and Save", "Incrementar y guardar"),
+    ("file.revert", "Revert", "Revertir"),
+    ("", "Import", "Importar"),
+    ("file.import", "File...", "Archivo..."),
+    ("file.importMultiple", "Multiple Files...", "Varios archivos..."),
+    ("file.importTimeline", "Adobe Premiere Pro Project...", "Proyecto de Adobe Premiere Pro..."),
+    ("file.importPlaceholder", "Placeholder...", "Marcador de posición..."),
+    ("file.importSolid", "Solid...", "Sólido..."),
+    ("file.importLottie", "Lottie...", "Lottie..."),
+    ("file.importVanishingPoint", "Vanishing Point (.vpe)...", "Punto de fuga (.vpe)..."),
+    ("essential.importTemplate", "Essential Graphics Template...", "Plantilla de Gráficos esenciales..."),
+    ("", "Import Recent Footage", "Importar material de archivo reciente"),
+    ("file.clearRecentFootage", "Clear Recent Footage", "Borrar material de archivo reciente"),
+    ("", "Export", "Exportar"),
+    ("renderQueue.add", "Add to Render Queue", "Añadir a la cola de procesamiento"),
+    ("file.exportTimeline", "Adobe Premiere Pro Project...", "Proyecto de Adobe Premiere Pro..."),
+    ("file.exportLottie", "Lottie JSON...", "JSON de Lottie..."),
+    ("essential.exportTemplate", "Essential Graphics Template...", "Plantilla de Gráficos esenciales..."),
+    ("app.find", "Find", "Buscar"),
+    ("layer.addItem", "Add Footage to Comp", "Añadir material de archivo a la composición"),
+    ("file.newCompFromSelection", "New Comp from Selection...", "Nueva composición a partir de la selección..."),
+    ("", "Dependencies", "Dependencias"),
+    ("file.collectFiles", "Collect Files...", "Recopilar archivos..."),
+    ("file.consolidateFootage", "Consolidate All Footage", "Consolidar todo el material de archivo"),
+    ("file.removeUnusedFootage", "Remove Unused Footage", "Eliminar material de archivo no utilizado"),
+    ("file.reduceProject", "Reduce Project", "Reducir proyecto"),
+    ("file.findMissing", "Find Missing Effects", "Buscar efectos que faltan"),
+    ("file.findMissing", "Find Missing Fonts", "Buscar fuentes que faltan"),
+    ("file.findMissing", "Find Missing Footage", "Buscar material de archivo que falta"),
+    ("file.watchFolder", "Watch Folder...", "Observar carpeta..."),
+    ("", "Scripts", "Scripts"),
+    ("file.installScript", "Install Script File...", "Instalar archivo de script..."),
+    ("file.installScriptUIPanel", "Install ScriptUI Panel...", "Instalar panel de ScriptUI..."),
+    ("file.runScript", "Run Script File...", "Ejecutar archivo de script..."),
+    ("", "Create Proxy", "Crear proxy"),
+    ("file.createProxy", "Still...", "Imagen fija..."),
+    ("file.createProxy", "Movie...", "Película..."),
+    ("", "Set Proxy", "Definir proxy"),
+    ("file.setProxy", "File...", "Archivo..."),
+    ("file.setProxyNone", "None", "Ninguno"),
+    ("", "Interpret Footage", "Interpretar material de archivo"),
+    ("file.interpretFootage", "Main...", "Principal..."),
+    ("file.interpretProxy", "Proxy...", "Proxy..."),
+    ("file.rememberInterpretation", "Remember Interpretation", "Recordar interpretación"),
+    ("file.applyInterpretation", "Apply Interpretation", "Aplicar interpretación"),
+    ("", "Replace Footage", "Sustituir material de archivo"),
+    ("file.replaceFootage", "File...", "Archivo..."),
+    ("file.replaceWithPlaceholder", "Placeholder...", "Marcador de posición..."),
+    ("file.replaceWithSolid", "Solid...", "Sólido..."),
+    ("file.replaceWithLayeredComp", "With Layered Comp", "Con composición en capas"),
+    ("file.reloadFootage", "Reload Footage", "Volver a cargar material de archivo"),
+    ("file.revealInFinder", "Reveal in Finder", "Mostrar en el Finder"),
+    ("file.projectSettings", "Project Settings...", "Configuración del proyecto..."),
+    ("app.quit", "Exit", "Salir"),
+    ("", "Edit", "Edición"),
+    ("edit.undo", "Undo", "Deshacer"),
+    ("edit.redo", "Redo", "Rehacer"),
+    ("", "History", "Historial"),
+    ("app.commandPalette", "Quick Apply...", "Aplicación rápida..."),
+    ("edit.cut", "Cut", "Cortar"),
+    ("edit.copy", "Copy", "Copiar"),
+    ("edit.copyWithPropertyLinks", "Copy with Property Links", "Copiar con vínculos de propiedades"),
+    ("edit.copyWithRelativePropertyLinks", "Copy with Relative Property Links", "Copiar con vínculos de propiedades relativos"),
+    ("edit.copyExpressionOnly", "Copy Expression Only", "Copiar solo la expresión"),
+    ("edit.paste", "Paste", "Pegar"),
+    ("edit.pasteReversedKeyframes", "Paste Reversed Keyframes", "Pegar fotogramas clave invertidos"),
+    ("edit.pasteTextMatchFormatting", "Paste Text and Match Formatting", "Pegar texto y ajustar formato"),
+    ("edit.pasteTextFormattingOnly", "Paste Text Formatting Only", "Pegar solo el formato del texto"),
+    ("edit.clear", "Clear", "Borrar"),
+    ("edit.duplicate", "Duplicate", "Duplicar"),
+    ("edit.splitLayer", "Split Layer", "Dividir capa"),
+    ("edit.liftWorkArea", "Lift Work Area", "Elevar área de trabajo"),
+    ("edit.extractWorkArea", "Extract Work Area", "Extraer área de trabajo"),
+    ("edit.selectAll", "Select All", "Seleccionar todo"),
+    ("edit.deselectAll", "Deselect All", "Anular selección de todo"),
+    ("", "Label", "Etiqueta"),
+    ("edit.selectLabelGroup", "Select Label Group", "Seleccionar grupo de etiquetas"),
+    ("edit.label", "None", "Ninguna"),
+    ("edit.label", "Red", "Rojo"),
+    ("edit.label", "Yellow", "Amarillo"),
+    ("edit.label", "Aqua", "Agua"),
+    ("edit.label", "Pink", "Rosa"),
+    ("edit.label", "Lavender", "Lavanda"),
+    ("edit.label", "Peach", "Melocotón"),
+    ("edit.label", "Sea Foam", "Espuma de mar"),
+    ("edit.label", "Blue", "Azul"),
+    ("edit.label", "Green", "Verde"),
+    ("edit.label", "Purple", "Morado"),
+    ("edit.label", "Orange", "Naranja"),
+    ("edit.label", "Brown", "Marrón"),
+    ("edit.label", "Fuchsia", "Fucsia"),
+    ("edit.label", "Cyan", "Cian"),
+    ("edit.label", "Sandstone", "Arenisca"),
+    ("edit.label", "Dark Green", "Verde oscuro"),
+    ("app.settings", "Edit Label Colors...", "Editar colores de etiqueta..."),
+    ("", "Select Keyframe Label Group", "Seleccionar grupo de etiquetas de fotogramas clave"),
+    ("keys.selectLabelGroup", "On Selected Layers", "En las capas seleccionadas"),
+    ("keys.selectLabelGroup", "On All Layers", "En todas las capas"),
+    ("keys.selectLabelGroup", "Visible Keyframes on Selected Layers", "Fotogramas clave visibles en las capas seleccionadas"),
+    ("keys.selectLabelGroup", "Visible Keyframes on All Layers", "Fotogramas clave visibles en todas las capas"),
+    ("", "Purge", "Purgar"),
+    ("edit.purge", "All Cache...", "Toda la caché..."),
+    ("edit.purge", "All Memory & Disk Cache...", "Toda la memoria y la caché de disco..."),
+    ("edit.purge", "All Memory", "Toda la memoria"),
+    ("edit.purge", "All Disk Cache...", "Toda la caché de disco..."),
+    ("edit.purge", "All 3D Cache...", "Toda la caché 3D..."),
+    ("edit.purgeUndo", "Undo", "Deshacer"),
+    ("edit.purge", "Image Cache Memory", "Memoria de caché de imágenes"),
+    ("edit.purge", "Snapshot", "Instantánea"),
+    ("edit.editOriginal", "Edit Original...", "Editar original..."),
+    ("", "Templates", "Plantillas"),
+    ("app.templates", "Render Settings...", "Configuración de procesamiento..."),
+    ("app.templates", "Output Module...", "Módulo de salida..."),
+    ("app.keyboardShortcuts", "Keyboard Shortcuts", "Métodos abreviados de teclado"),
+    ("", "Preferences", "Preferencias"),
+    ("", "Composition", "Composición"),
+    ("comp.new", "New Composition...", "Nueva composición..."),
+    ("comp.settings", "Composition Settings...", "Configuración de la composición..."),
+    ("comp.setPosterTime", "Set Poster Time", "Establecer tiempo de póster"),
+    ("comp.trimToWorkArea", "Trim Comp to Work Area", "Recortar composición al área de trabajo"),
+    ("comp.cropToRegionOfInterest", "Crop Comp to Region of Interest", "Recortar composición a la región de interés"),
+    ("comp.cropToLayerBounds", "Crop Comp to Selected Layer(s) Bounds", "Recortar composición a los límites de las capas (seleccionadas)"),
+    ("render.addOutputModule", "Add Output Module", "Añadir módulo de salida"),
+    ("", "Preview", "Previsualización"),
+    ("playback.toggle", "Play Current Preview", "Reproducir la previsualización actual"),
+    ("playback.cacheWhenIdle", "Cache Frames When Idle", "Almacenar fotogramas en caché en reposo"),
+    ("playback.audio", "Audio", "Audio"),
+    ("", "Save Frame As", "Guardar fotograma como"),
+    ("comp.saveFrameAs", "File...", "Archivo..."),
+    ("comp.saveFrameAsPsd", "Photoshop Layers...", "Capas de Photoshop..."),
+    ("comp.saveFrameAsExr", "ProEXR...", "ProEXR..."),
+    ("render.preRender", "Pre-render...", "Preprocesar..."),
+    ("render.saveCurrentPreview", "Save Current Preview...", "Guardar la previsualización actual..."),
+    ("comp.openInEssentialGraphics", "Open in Essential Graphics", "Abrir en Gráficos esenciales"),
+    ("", "Responsive Design — Time", "Diseño adaptable — Tiempo"),
+    ("comp.responsiveTime", "Create Intro", "Crear introducción"),
+    ("comp.responsiveTime", "Create Outro", "Crear cierre"),
+    ("comp.responsiveTime", "Create Protected Region from Work Area", "Crear región protegida a partir del área de trabajo"),
+    ("comp.flowchart", "Composition Flowchart", "Diagrama de flujo de la composición"),
+    ("comp.miniFlowchart", "Composition Mini-Flowchart", "Minidiagrama de flujo de la composición"),
+    ("", "VR", "RV"),
+    ("comp.vr.createEnvironment", "Create VR Environment...", "Crear entorno de RV..."),
+    ("comp.vr.extractCubemap", "Extract Cubemap...", "Extraer mapa cúbico..."),
+    ("", "Layer", "Capa"),
+    ("layer.newText", "Text", "Texto"),
+    ("layer.newSolid", "Solid...", "Sólido..."),
+    ("layer.newLight", "Light...", "Luz..."),
+    ("layer.newCamera", "Camera...", "Cámara..."),
+    ("layer.newNull", "Null Object", "Objeto nulo"),
+    ("layer.newShape", "Shape Layer", "Capa de forma"),
+    ("layer.newAdjustment", "Adjustment Layer", "Capa de ajuste"),
+    ("layer.newContentAwareFill", "Content-Aware Fill Layer...", "Capa de relleno según el contenido..."),
+    ("layer.new3dPrimitive", "Cube", "Cubo"),
+    ("layer.new3dPrimitive", "Sphere", "Esfera"),
+    ("layer.new3dPrimitive", "Plane", "Plano"),
+    ("layer.new3dPrimitive", "Torus", "Toroide"),
+    ("layer.new3dPrimitive", "Cone", "Cono"),
+    ("layer.new3dPrimitive", "Cylinder", "Cilindro"),
+    ("layer.settings", "Layer Settings...", "Configuración de la capa..."),
+    ("layer.openLayer", "Open Layer", "Abrir capa"),
+    ("layer.openSource", "Open Layer Source", "Abrir origen de la capa"),
+    ("layer.revealInFinder", "Reveal in Finder", "Mostrar en el Finder"),
+    ("", "Mask", "Máscara"),
+    ("layer.addMask", "New Mask", "Nueva máscara"),
+    ("layer.mask.shape", "Mask Shape...", "Forma de máscara..."),
+    ("layer.mask.set", "Mask Feather...", "Calado de máscara..."),
+    ("layer.mask.set", "Mask Opacity...", "Opacidad de máscara..."),
+    ("layer.mask.set", "Mask Expansion...", "Expansión de máscara..."),
+    ("layer.mask.reset", "Reset Mask", "Restablecer máscara"),
+    ("layer.mask.remove", "Remove Mask", "Quitar máscara"),
+    ("layer.mask.removeAll", "Remove All Masks", "Quitar todas las máscaras"),
+    ("track.mask", "Track Mask", "Seguir máscara"),
+    ("", "Mode", "Modo"),
+    ("layer.mask.mode", "None", "Ninguno"),
+    ("layer.mask.mode", "Add", "Añadir"),
+    ("layer.mask.mode", "Subtract", "Restar"),
+    ("layer.mask.mode", "Intersect", "Intersecar"),
+    ("layer.mask.mode", "Lighten", "Aclarar"),
+    ("layer.mask.mode", "Darken", "Oscurecer"),
+    ("layer.mask.mode", "Difference", "Diferencia"),
+    ("layer.mask.invert", "Inverted", "Invertida"),
+    ("layer.mask.lock", "Locked", "Bloqueada"),
+    ("", "Motion Blur", "Desenfoque de movimiento"),
+    ("layer.mask.motionBlur", "Same As Layer", "Igual que la capa"),
+    ("layer.mask.motionBlur", "On", "Activado"),
+    ("layer.mask.motionBlur", "Off", "Desactivado"),
+    ("", "Feather Falloff", "Atenuación del calado"),
+    ("layer.mask.featherFalloff", "Smooth", "Suave"),
+    ("layer.mask.featherFalloff", "Linear", "Lineal"),
+    ("layer.mask.unlockAll", "Unlock All Masks", "Desbloquear todas las máscaras"),
+    ("layer.mask.lockOthers", "Lock Other Masks", "Bloquear las demás máscaras"),
+    ("layer.mask.hideLocked", "Hide Locked Masks", "Ocultar máscaras bloqueadas"),
+    ("", "Mask and Shape Path", "Trazado de máscara y de forma"),
+    ("path.rotoBezier", "RotoBezier", "RotoBezier"),
+    ("mask.setClosed", "Closed", "Cerrado"),
+    ("path.convertToBezier", "Convert To Bezier Path", "Convertir en trazado Bézier"),
+    ("path.setFirstVertex", "Set First Vertex", "Establecer primer vértice"),
+    ("path.freeTransform", "Free Transform Points", "Transformar puntos libremente"),
+    ("", "Quality", "Calidad"),
+    ("layer.quality", "Best", "Máxima"),
+    ("layer.quality", "Draft", "Borrador"),
+    ("layer.quality", "Wireframe", "Estructura alámbrica"),
+    ("layer.sampling", "Bilinear", "Bilineal"),
+    ("layer.sampling", "Bicubic", "Bicúbico"),
+    ("", "Switches", "Conmutadores"),
+    ("layer.hideOtherVideo", "Hide Other Video", "Ocultar el resto del vídeo"),
+    ("layer.showAllVideo", "Show All Video", "Mostrar todo el vídeo"),
+    ("layer.unlockAll", "Unlock All Layers", "Desbloquear todas las capas"),
+    ("layer.expressions", "Enable Expressions", "Habilitar expresiones"),
+    ("layer.expressions", "Disable Expressions", "Deshabilitar expresiones"),
+    ("layer.setSwitch", "Shy", "Ocultar"),
+    ("layer.setSwitch", "Lock", "Bloquear"),
+    ("layer.setSwitch", "Audio", "Audio"),
+    ("layer.setSwitch", "Video", "Vídeo"),
+    ("layer.setSwitch", "Solo", "Solo"),
+    ("layer.setSwitch", "Effect", "Efecto"),
+    ("layer.setSwitch", "Collapse", "Contraer"),
+    ("layer.setSwitch", "Motion Blur", "Desenfoque de movimiento"),
+    ("layer.setSwitch", "Adjustment Layer", "Capa de ajuste"),
+    ("", "Transform", "Transformar"),
+    ("layer.transform", "Reset", "Restablecer"),
+    ("layer.setTransform", "Anchor Point...", "Punto de anclaje..."),
+    ("layer.setTransform", "Position...", "Posición..."),
+    ("layer.setTransform", "Scale...", "Escala..."),
+    ("layer.setTransform", "Orientation...", "Orientación..."),
+    ("layer.setTransform", "Rotation...", "Rotación..."),
+    ("layer.setTransform", "Opacity...", "Opacidad..."),
+    ("layer.transform", "Flip Horizontal", "Voltear horizontalmente"),
+    ("layer.transform", "Flip Vertical", "Voltear verticalmente"),
+    ("layer.transform", "Center In View", "Centrar en la vista"),
+    ("layer.centerAnchor", "Center Anchor Point in Layer Content", "Centrar el punto de anclaje en el contenido de la capa"),
+    ("layer.transform", "Fit to Comp", "Ajustar a la composición"),
+    ("layer.transform", "Fit to Comp Width", "Ajustar al ancho de la composición"),
+    ("layer.transform", "Fit to Comp Height", "Ajustar al alto de la composición"),
+    ("layer.autoOrient", "Auto-Orient...", "Orientación automática..."),
+    ("", "Time", "Tiempo"),
+    ("layer.enableTimeRemap", "Enable Time Remapping", "Habilitar reasignación de tiempo"),
+    ("layer.timeReverse", "Time-Reverse Layer", "Invertir el tiempo de la capa"),
+    ("layer.timeStretch", "Time Stretch...", "Estirar el tiempo..."),
+    ("layer.freezeFrame", "Freeze Frame", "Congelar fotograma"),
+    ("layer.freezeOnLastFrame", "Freeze On Last Frame", "Congelar en el último fotograma"),
+    ("layer.alignVideoToData", "Align Video to Data", "Alinear el vídeo con los datos"),
+    ("", "Frame Blending", "Fusión de fotogramas"),
+    ("layer.frameBlending", "Off", "Desactivada"),
+    ("layer.frameBlending", "Frame Mix", "Mezcla de fotogramas"),
+    ("layer.frameBlending", "Pixel Motion", "Movimiento de píxeles"),
+    ("layer.setSwitch", "3D Layer", "Capa 3D"),
+    ("layer.setSwitch", "Guide Layer", "Capa guía"),
+    ("layer.environment", "Environment Layer", "Capa de entorno"),
+    ("", "Markers", "Marcadores"),
+    ("layer.addMarker", "Add Marker", "Añadir marcador"),
+    ("layer.updateMarkersFromSource", "Update Markers From Source", "Actualizar marcadores desde el origen"),
+    ("layer.markersLock", "Lock Markers", "Bloquear marcadores"),
+    ("layer.deleteAllMarkers", "Delete All Markers", "Eliminar todos los marcadores"),
+    ("layer.setSwitch", "Preserve Transparency", "Conservar transparencia"),
+    ("", "Blending Mode", "Modo de fusión"),
+    ("layer.setBlendMode", "Normal", "Normal"),
+    ("layer.setBlendMode", "Dissolve", "Disolver"),
+    ("layer.setBlendMode", "Dancing Dissolve", "Disolver con variación"),
+    ("layer.setBlendMode", "Darken", "Oscurecer"),
+    ("layer.setBlendMode", "Multiply", "Multiplicar"),
+    ("layer.setBlendMode", "Color Burn", "Subexposición de color"),
+    ("layer.setBlendMode", "Classic Color Burn", "Subexposición de color clásico"),
+    ("layer.setBlendMode", "Linear Burn", "Subexposición lineal"),
+    ("layer.setBlendMode", "Darker Color", "Color más oscuro"),
+    ("layer.setBlendMode", "Add", "Añadir"),
+    ("layer.setBlendMode", "Lighten", "Aclarar"),
+    ("layer.setBlendMode", "Screen", "Pantalla"),
+    ("layer.setBlendMode", "Color Dodge", "Sobreexposición de color"),
+    ("layer.setBlendMode", "Classic Color Dodge", "Sobreexposición de color clásico"),
+    ("layer.setBlendMode", "Linear Dodge", "Sobreexposición lineal"),
+    ("layer.setBlendMode", "Lighter Color", "Color más claro"),
+    ("layer.setBlendMode", "Overlay", "Superponer"),
+    ("layer.setBlendMode", "Soft Light", "Luz suave"),
+    ("layer.setBlendMode", "Hard Light", "Luz fuerte"),
+    ("layer.setBlendMode", "Linear Light", "Luz lineal"),
+    ("layer.setBlendMode", "Vivid Light", "Luz intensa"),
+    ("layer.setBlendMode", "Pin Light", "Luz focal"),
+    ("layer.setBlendMode", "Hard Mix", "Mezcla dura"),
+    ("layer.setBlendMode", "Difference", "Diferencia"),
+    ("layer.setBlendMode", "Classic Difference", "Diferencia clásica"),
+    ("layer.setBlendMode", "Exclusion", "Exclusión"),
+    ("layer.setBlendMode", "Subtract", "Restar"),
+    ("layer.setBlendMode", "Divide", "Dividir"),
+    ("layer.setBlendMode", "Hue", "Tono"),
+    ("layer.setBlendMode", "Saturation", "Saturación"),
+    ("layer.setBlendMode", "Color", "Color"),
+    ("layer.setBlendMode", "Luminosity", "Luminosidad"),
+    ("layer.setBlendMode", "Stencil Alpha", "Esténcil alfa"),
+    ("layer.setBlendMode", "Stencil Luma", "Esténcil luminancia"),
+    ("layer.setBlendMode", "Silhouette Alpha", "Silueta alfa"),
+    ("layer.setBlendMode", "Silhouette Luma", "Silueta luminancia"),
+    ("layer.setBlendMode", "Alpha Add", "Adición de alfa"),
+    ("layer.setBlendMode", "Luminescent Premul", "Premul luminescente"),
+    ("layer.setBlendMode", "Next Blending Mode", "Modo de fusión siguiente"),
+    ("layer.setBlendMode", "Previous Blending Mode", "Modo de fusión anterior"),
+    ("", "Track Matte", "Mate de seguimiento"),
+    ("layer.trackMatte", "No Track Matte", "Sin mate de seguimiento"),
+    ("layer.trackMatte", "Alpha Matte", "Mate alfa"),
+    ("layer.trackMatte", "Alpha Inverted Matte", "Mate alfa invertido"),
+    ("layer.trackMatte", "Luma Matte", "Mate de luminancia"),
+    ("layer.trackMatte", "Luma Inverted Matte", "Mate de luminancia invertido"),
+    ("layer.trackMatte", "Matte with Layer Above", "Mate con la capa superior"),
+    ("layer.trackMatte", "Matte with Layer Below", "Mate con la capa inferior"),
+    ("", "Layer Styles", "Estilos de capa"),
+    ("layer.style.options", "Layer Style Options...", "Opciones de estilo de capa..."),
+    ("layer.style.convertToEditable", "Convert to Editable Styles", "Convertir en estilos editables"),
+    ("layer.style.showAll", "Show All", "Mostrar todo"),
+    ("layer.style.removeAll", "Remove All", "Quitar todo"),
+    ("layer.style.dropShadow", "Drop Shadow", "Sombra paralela"),
+    ("layer.style.innerShadow", "Inner Shadow", "Sombra interior"),
+    ("layer.style.outerGlow", "Outer Glow", "Resplandor exterior"),
+    ("layer.style.innerGlow", "Inner Glow", "Resplandor interior"),
+    ("layer.style.bevelEmboss", "Bevel and Emboss", "Bisel y relieve"),
+    ("layer.style.satin", "Satin", "Satinado"),
+    ("layer.style.colorOverlay", "Color Overlay", "Superposición de color"),
+    ("layer.style.gradientOverlay", "Gradient Overlay", "Superposición de degradado"),
+    ("layer.style.stroke", "Stroke", "Trazo"),
+    ("path.groupShapes", "Group Shapes", "Agrupar formas"),
+    ("path.ungroupShapes", "Ungroup Shapes", "Desagrupar formas"),
+    ("", "Arrange", "Organizar"),
+    ("layer.arrange", "Bring Layer to Front", "Traer capa al frente"),
+    ("layer.arrange", "Bring Layer Forward", "Subir capa"),
+    ("layer.arrange", "Send Layer Backward", "Bajar capa"),
+    ("layer.arrange", "Send Layer to Back", "Enviar capa al fondo"),
+    ("", "Reveal", "Mostrar"),
+    ("layer.revealSource", "Reveal Layer Source in Project", "Mostrar el origen de la capa en el proyecto"),
+    ("comp.flowchart", "Reveal Layer in Project Flowchart", "Mostrar la capa en el diagrama de flujo del proyecto"),
+    ("comp.revealInProject", "Reveal Composition in Project", "Mostrar la composición en el proyecto"),
+    ("layer.revealExpressionErrors", "Reveal Expression Errors", "Mostrar errores de expresión"),
+    ("", "Create", "Crear"),
+    ("layer.create", "Convert to Editable Text", "Convertir en texto editable"),
+    ("layer.create", "Create Shapes from Text", "Crear formas a partir de texto"),
+    ("layer.create", "Create Masks from Text", "Crear máscaras a partir de texto"),
+    ("layer.create", "Create Shapes from Vector Layer", "Crear formas a partir de capa vectorial"),
+    ("layer.create", "Create Keyframes from Data", "Crear fotogramas clave a partir de datos"),
+    ("layer.create", "Null Controllers for Positional Points", "Controladores nulos para puntos de posición"),
+    ("layer.create", "Null Controllers for Path Points", "Controladores nulos para puntos de trazado"),
+    ("layer.create", "Nulls Following Path Points", "Nulos que siguen los puntos del trazado"),
+    ("layer.create", "Null Tracing Along Path", "Rastreo nulo a lo largo del trazado"),
+    ("layer.create", "Create 3D Layer Instance", "Crear instancia de capa 3D"),
+    ("", "Camera", "Cámara"),
+    ("camera.fromView", "Create Camera from 3D View", "Crear cámara a partir de la vista 3D"),
+    ("camera.stereoRig", "Create Stereo 3D Rig", "Crear plataforma 3D estéreo"),
+    ("camera.orbitNull", "Create Orbit Null", "Crear nulo orbital"),
+    ("camera.fromModel", "Create Cameras from 3D Model", "Crear cámaras a partir de modelo 3D"),
+    ("camera.linkFocusToPoi", "Link Focus Distance to Point of Interest", "Vincular la distancia de enfoque al punto de interés"),
+    ("camera.linkFocusToLayer", "Link Focus Distance to Layer", "Vincular la distancia de enfoque a la capa"),
+    ("camera.setFocusToLayer", "Set Focus Distance to Layer", "Establecer la distancia de enfoque en la capa"),
+    ("layer.cameraSettings", "Camera Settings...", "Configuración de la cámara..."),
+    ("view.reset3DView", "Reset 3D View", "Restablecer vista 3D"),
+    ("", "Light", "Luz"),
+    ("light.fromModel", "Create Lights from 3D Model", "Crear luces a partir de modelo 3D"),
+    ("light.controlWithCamera", "Control Light with Camera", "Controlar la luz con la cámara"),
+    ("light.environmentBackground", "Create Environment Light Background Layer", "Crear capa de fondo de luz de entorno"),
+    ("", "Material", "Material"),
+    ("material.revealSource", "Reveal Material Source in Project", "Mostrar el origen del material en el proyecto"),
+    ("material.reset", "Reset Material", "Restablecer material"),
+    ("material.duplicateAssign", "Duplicate and Assign Material", "Duplicar y asignar material"),
+    ("layer.autoTrace", "Auto-trace...", "Autotrazado..."),
+    ("layer.precompose", "Pre-compose...", "Precomponer..."),
+    ("layer.sceneEditDetection", "Scene Edit Detection...", "Detección de edición de escena..."),
+    ("", "Effect", "Efecto"),
+    ("window.panel", "Effect Controls", "Controles de efectos"),
+    ("effect.applyLast", "Last Effect", "Último efecto"),
+    ("effect.removeAll", "Remove All", "Quitar todo"),
+    ("effect.manage", "Manage Effects...", "Administrar efectos..."),
+    ("effect.plugins.load", "Load Effect Plug-in...", "Cargar complemento de efecto..."),
+    ("", "Animation", "Animación"),
+    ("anim.savePreset", "Save Animation Preset...", "Guardar ajuste preestablecido de animación..."),
+    ("anim.applyPreset", "Apply Animation Preset...", "Aplicar ajuste preestablecido de animación..."),
+    ("", "Recent Animation Presets", "Ajustes preestablecidos de animación recientes"),
+    ("anim.clearRecentPresets", "Clear Recent Presets", "Borrar ajustes preestablecidos recientes"),
+    ("anim.browsePresets", "Browse Presets...", "Examinar ajustes preestablecidos..."),
+    ("", "Text Animation Presets", "Ajustes preestablecidos de animación de texto"),
+    ("layer.applyTextPreset", "Typewriter", "Máquina de escribir"),
+    ("layer.applyTextPreset", "Fade Up Characters", "Aparición de caracteres hacia arriba"),
+    ("layer.applyTextPreset", "Bounce In Words", "Entrada de palabras con rebote"),
+    ("layer.applyTextPreset", "Tracking In", "Entrada de espaciado"),
+    ("layer.applyTextPreset", "Scramble", "Mezclar"),
+    ("layer.applyTextPreset", "Blur In", "Entrada con desenfoque"),
+    ("layer.applyTextPreset", "Jitter", "Vibración"),
+    ("layer.applyTextPreset", "Drop In Lines", "Entrada de líneas cayendo"),
+    ("anim.addKeyframe", "Add Keyframe", "Añadir fotograma clave"),
+    ("keys.toggleHold", "Toggle Hold Keyframe", "Conmutar mantener fotograma clave"),
+    ("keys.interpolation", "Keyframe Interpolation...", "Interpolación de fotogramas clave..."),
+    ("keys.velocity", "Keyframe Velocity...", "Velocidad de fotogramas clave..."),
+    ("", "Keyframe Assistant", "Asistente de fotogramas clave"),
+    ("keys.audioToKeyframes", "Convert Audio to Keyframes", "Convertir audio en fotogramas clave"),
+    ("prop.convertExpressionToKeyframes", "Convert Expression to Keyframes", "Convertir expresión en fotogramas clave"),
+    ("keys.easyEase", "Easy Ease", "Suavizado"),
+    ("keys.easyEaseIn", "Easy Ease In", "Suavizado de entrada"),
+    ("keys.easyEaseOut", "Easy Ease Out", "Suavizado de salida"),
+    ("keys.exponentialScale", "Exponential Scale", "Escala exponencial"),
+    ("keys.rpfCameraImport", "RPF Camera Import", "Importación de cámara RPF"),
+    ("layer.sequence", "Sequence Layers...", "Secuenciar capas..."),
+    ("keys.timeReverse", "Time-Reverse Keyframes", "Invertir el tiempo de los fotogramas clave"),
+    ("", "Animate Text", "Animar texto"),
+    ("layer.enablePerChar3D", "Enable Per-character 3D", "Habilitar 3D por carácter"),
+    ("layer.addTextAnimator", "Anchor Point", "Punto de anclaje"),
+    ("layer.addTextAnimator", "Position", "Posición"),
+    ("layer.addTextAnimator", "Scale", "Escala"),
+    ("layer.addTextAnimator", "Skew", "Inclinación"),
+    ("layer.addTextAnimator", "Rotation", "Rotación"),
+    ("layer.addTextAnimator", "Opacity", "Opacidad"),
+    ("layer.addTextAnimator", "All Transform Properties", "Todas las propiedades de transformación"),
+    ("", "Fill Color", "Color de relleno"),
+    ("layer.addTextAnimator", "RGB", "RGB"),
+    ("layer.addTextAnimator", "Hue", "Tono"),
+    ("layer.addTextAnimator", "Saturation", "Saturación"),
+    ("layer.addTextAnimator", "Brightness", "Brillo"),
+    ("", "Stroke Color", "Color de trazo"),
+    ("layer.addTextAnimator", "Stroke Width", "Ancho de trazo"),
+    ("layer.addTextAnimator", "Tracking", "Espaciado"),
+    ("layer.addTextAnimator", "Line Anchor", "Anclaje de línea"),
+    ("layer.addTextAnimator", "Line Spacing", "Interlineado"),
+    ("layer.addTextAnimator", "Character Offset", "Desplazamiento de caracteres"),
+    ("layer.addTextAnimator", "Character Value", "Valor de carácter"),
+    ("layer.addTextAnimator", "Blur", "Desenfoque"),
+    ("text.animatorFontAxes", "Variable Font Axes", "Ejes de fuente variable"),
+    ("", "Add Text Selector", "Añadir selector de texto"),
+    ("text.addSelector", "Range", "Rango"),
+    ("text.addSelector", "Wiggly", "Ondulante"),
+    ("text.addSelector", "Expression", "Expresión"),
+    ("text.removeAllAnimators", "Remove All Text Animators", "Quitar todos los animadores de texto"),
+    ("prop.setExpression", "Add Expression", "Añadir expresión"),
+    ("essential.addProperty", "Add Property to Essential Graphics", "Añadir propiedad a Gráficos esenciales"),
+    ("prop.separateDimensions", "Separate Dimensions", "Separar dimensiones"),
+    ("track.camera", "Track Camera", "Seguir cámara"),
+    ("track.warpStabilizer", "Warp Stabilizer VFX", "Estabilizador de deformación VFX"),
+    ("track.motion", "Track Motion", "Seguir movimiento"),
+    ("track.stabilize", "Stabilize Motion", "Estabilizar movimiento"),
+    ("track.property", "Track this Property", "Seguir esta propiedad"),
+    ("anim.reveal", "Reveal Properties with Keyframes", "Mostrar propiedades con fotogramas clave"),
+    ("anim.reveal", "Reveal Properties with Animation", "Mostrar propiedades con animación"),
+    ("anim.reveal", "Reveal All Modified Properties", "Mostrar todas las propiedades modificadas"),
+    ("", "View", "Ver"),
+    ("view.newViewer", "New Viewer", "Nuevo visor"),
+    ("view.splitLockedViewer", "Split with New Locked Viewer", "Dividir con nuevo visor bloqueado"),
+    ("view.zoomIn", "Zoom In", "Acercar"),
+    ("view.zoomOut", "Zoom Out", "Alejar"),
+    ("", "Resolution", "Resolución"),
+    ("view.res.full", "Full", "Completa"),
+    ("view.res.half", "Half", "Mitad"),
+    ("view.res.third", "Third", "Tercio"),
+    ("view.res.quarter", "Quarter", "Cuarto"),
+    ("view.res.custom", "Custom...", "Personalizada..."),
+    ("view.displayColorManagement", "Use Display Color Management", "Usar gestión del color de la pantalla"),
+    ("", "Simulate Output", "Simular salida"),
+    ("view.simulateOutput", "No Output Simulation", "Sin simulación de salida"),
+    ("view.simulateOutput", "HDTV (Rec. 709)", "HDTV (Rec. 709)"),
+    ("view.simulateOutput", "SDTV NTSC", "SDTV NTSC"),
+    ("view.simulateOutput", "SDTV PAL", "SDTV PAL"),
+    ("view.simulateOutput", "Legacy Macintosh RGB (Gamma 1.8)", "RGB de Macintosh heredado (gamma 1,8)"),
+    ("view.simulateOutput", "Internet Standard RGB (sRGB)", "RGB estándar de Internet (sRGB)"),
+    ("view.simulateOutput", "UHDTV (Rec. 2020)", "UHDTV (Rec. 2020)"),
+    ("view.simulateOutput", "Display P3", "Display P3"),
+    ("view.simulateOutput", "Linear (1.0 Gamma)", "Lineal (gamma 1,0)"),
+    ("view.customRgb", "My Custom RGB...", "Mi RGB personalizado..."),
+    ("view.simulateOutput", "Custom...", "Personalizada..."),
+    ("view.rulers", "Show Rulers", "Mostrar reglas"),
+    ("", "Panel Background Color", "Color de fondo del panel"),
+    ("view.panelBackground", "Black", "Negro"),
+    ("view.panelBackground", "Dark Gray", "Gris oscuro"),
+    ("view.panelBackground", "Medium Gray (Default)", "Gris medio (predeterminado)"),
+    ("view.panelBackground", "Light Gray", "Gris claro"),
+    ("view.panelBackground", "White", "Blanco"),
+    ("view.panelBackground", "Custom", "Personalizado"),
+    ("view.panelBackground", "Select Custom Background Color...", "Seleccionar color de fondo personalizado..."),
+    ("view.guides", "Show Guides", "Mostrar guías"),
+    ("view.snapToGuides", "Snap to Guides", "Ajustar a las guías"),
+    ("view.lockGuides", "Lock Guides", "Bloquear guías"),
+    ("view.addGuide", "Add Guide...", "Añadir guía..."),
+    ("view.clearGuides", "Clear Guides", "Borrar guías"),
+    ("view.importGuides", "Import Guides...", "Importar guías..."),
+    ("view.exportGuides", "Export Guides...", "Exportar guías..."),
+    ("view.grid", "Show Grid", "Mostrar cuadrícula"),
+    ("view.snapToGrid", "Snap to Grid", "Ajustar a la cuadrícula"),
+    ("view.snapping", "Snapping", "Ajuste"),
+    ("view.options", "View Options...", "Opciones de vista..."),
+    ("view.layerControls", "Show Layer Controls", "Mostrar controles de capa"),
+    ("", "Switch View Layout", "Cambiar diseño de vista"),
+    ("view.layout", "1 View", "1 vista"),
+    ("view.layout", "2 Views", "2 vistas"),
+    ("view.layout", "4 Views", "4 vistas"),
+    ("view.shareViewOptions", "Share View Options", "Compartir opciones de vista"),
+    ("", "Switch 3D View", "Cambiar vista 3D"),
+    ("view.3d.activeCamera", "Active Camera", "Cámara activa"),
+    ("view.3d.default", "Default", "Predeterminada"),
+    ("view.3d.front", "Front", "Frontal"),
+    ("view.3d.left", "Left", "Izquierda"),
+    ("view.3d.top", "Top", "Superior"),
+    ("view.3d.back", "Back", "Posterior"),
+    ("view.3d.right", "Right", "Derecha"),
+    ("view.3d.bottom", "Bottom", "Inferior"),
+    ("view.3d.custom1", "Custom View 1", "Vista personalizada 1"),
+    ("view.3d.custom2", "Custom View 2", "Vista personalizada 2"),
+    ("view.3d.custom3", "Custom View 3", "Vista personalizada 3"),
+    ("", "Assign Shortcut to 3D View", "Asignar método abreviado a la vista 3D"),
+    ("view.3d.last", "Switch to Last 3D View", "Cambiar a la última vista 3D"),
+    ("view.lookAtSelected", "Look at Selected Layers", "Mirar las capas seleccionadas"),
+    ("view.lookAtAll", "Look at All Layers", "Mirar todas las capas"),
+    ("time.set", "Go to Time...", "Ir a tiempo..."),
+    ("view.fullScreen", "Enter Full Screen", "Entrar en pantalla completa"),
+    ("", "Window", "Ventana"),
+    ("", "Workspace", "Espacio de trabajo"),
+    ("window.workspace", "Default", "Predeterminado"),
+    ("window.workspace", "Review", "Revisión"),
+    ("window.workspace", "Learn", "Aprendizaje"),
+    ("window.workspace", "Small Screen", "Pantalla pequeña"),
+    ("window.workspace", "Standard", "Estándar"),
+    ("window.workspace", "All Panels", "Todos los paneles"),
+    ("window.workspace", "Animation", "Animación"),
+    ("window.workspace", "Color", "Color"),
+    ("window.workspace", "Effects", "Efectos"),
+    ("window.workspace", "Essential Graphics", "Gráficos esenciales"),
+    ("window.workspace", "Minimal", "Mínimo"),
+    ("window.workspace", "Motion Tracking", "Seguimiento de movimiento"),
+    ("window.workspace", "Paint", "Pintura"),
+    ("window.workspace", "Text", "Texto"),
+    ("window.workspace", "Undocked Panels", "Paneles no acoplados"),
+    ("window.resetWorkspace", "Reset to Saved Layout", "Restablecer al diseño guardado"),
+    ("window.saveWorkspace", "Save Changes to this Workspace", "Guardar cambios en este espacio de trabajo"),
+    ("window.saveWorkspaceAs", "Save as New Workspace...", "Guardar como nuevo espacio de trabajo..."),
+    ("window.editWorkspaces", "Edit Workspaces...", "Editar espacios de trabajo..."),
+    ("", "Assign Shortcut to Workspace", "Asignar método abreviado al espacio de trabajo"),
+    ("window.panel", "Align", "Alinear"),
+    ("window.panel", "Audio", "Audio"),
+    ("window.panel", "Brushes", "Pinceles"),
+    ("window.panel", "Character", "Carácter"),
+    ("window.panel", "Content-Aware Fill", "Relleno según el contenido"),
+    ("window.panel", "Effects & Presets", "Efectos y ajustes preestablecidos"),
+    ("window.panel", "Essential Graphics", "Gráficos esenciales"),
+    ("window.panel", "Info", "Información"),
+    ("help.inAppTutorials", "Learn", "Aprender"),
+    ("window.panel", "Lumetri Scopes", "Ámbitos de Lumetri"),
+    ("window.panel", "Mask Interpolation", "Interpolación de máscara"),
+    ("window.panel", "Media Browser", "Navegador de medios"),
+    ("window.panel", "Metadata", "Metadatos"),
+    ("window.panel", "Motion Sketch", "Boceto de movimiento"),
+    ("window.panel", "Paint", "Pintura"),
+    ("window.panel", "Paragraph", "Párrafo"),
+    ("window.panel", "Preview", "Previsualización"),
+    ("window.panel", "Progress", "Progreso"),
+    ("window.panel", "Properties", "Propiedades"),
+    ("window.panel", "Script Console", "Consola de scripts"),
+    ("window.panel", "Smoother", "Suavizador"),
+    ("window.panel", "Tools", "Herramientas"),
+    ("window.panel", "Tracker", "Rastreador"),
+    ("window.panel", "Wiggler", "Oscilador"),
+    ("window.panel", "Composition", "Composición"),
+    ("window.panel", "Flowchart", "Diagrama de flujo"),
+    ("window.panel", "Footage", "Material de archivo"),
+    ("window.panel", "Layer", "Capa"),
+    ("window.panel", "Project", "Proyecto"),
+    ("window.panel", "Render Queue", "Cola de procesamiento"),
+    ("window.panel", "Timeline", "Cronología"),
+    ("window.panel", "Create Nulls From Paths", "Crear nulos a partir de trazados"),
+    ("window.panel", "Ease Presets", "Ajustes preestablecidos de suavizado"),
+    ("window.panel", "VR Comp Editor", "Editor de composición de RV"),
+    ("", "Help", "Ayuda"),
+    ("help.docs", "EffectCraft Help...", "Ayuda de EffectCraft..."),
+    ("help.docs", "Scripting Help...", "Ayuda de scripts..."),
+    ("help.docs", "Expression Reference...", "Referencia de expresiones..."),
+    ("help.docs", "Effect Reference...", "Referencia de efectos..."),
+    ("anim.browsePresets", "Animation Presets...", "Ajustes preestablecidos de animación..."),
+    ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Métodos abreviados de teclado..."),
+    ("help.inAppTutorials", "In-App Tutorials...", "Tutoriales en la aplicación..."),
+    ("help.onlineTutorials", "Online Tutorials...", "Tutoriales en línea..."),
+    ("help.systemReport", "System Compatibility Report...", "Informe de compatibilidad del sistema..."),
+    ("help.enableLogging", "Enable Logging", "Habilitar registro"),
+    ("help.revealLogFile", "Reveal Logging File", "Mostrar archivo de registro"),
+    ("help.discord", "Join the ArtCraft Discord...", "Unirse al Discord de ArtCraft..."),
+    ("help.reportIssue", "Provide Feedback...", "Enviar comentarios..."),
+    ("help.website", "ArtCraft Website", "Sitio web de ArtCraft"),
+    ("help.appPage", "EffectCraft Home Page", "Página de inicio de EffectCraft"),
+    ("help.github", "EffectCraft on GitHub", "EffectCraft en GitHub"),
+    ("file.openDemoProject", "Open Demo Project", "Abrir proyecto de demostración"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2052,7 +2696,13 @@ mod tests {
         let mut japanese_keys = BTreeSet::new();
         let mut chinese_keys = BTreeSet::new();
         let mut traditional_keys = BTreeSet::new();
-        for (catalog, unique) in [(JAPANESE, &mut japanese_keys), (SIMPLIFIED_CHINESE, &mut chinese_keys), (TRADITIONAL_CHINESE, &mut traditional_keys)] {
+        let mut spanish_keys = BTreeSet::new();
+        for (catalog, unique) in [
+            (JAPANESE, &mut japanese_keys),
+            (SIMPLIFIED_CHINESE, &mut chinese_keys),
+            (TRADITIONAL_CHINESE, &mut traditional_keys),
+            (SPANISH, &mut spanish_keys),
+        ] {
             for (command, en, translated) in catalog {
                 let key = (command.to_string(), en.to_string());
                 assert!(actual.contains(&key), "stale translation: {key:?}");
@@ -2075,6 +2725,7 @@ mod tests {
         // Every translated language covers exactly the same entries.
         assert_eq!(japanese_keys, chinese_keys, "the languages must translate the same entries");
         assert_eq!(chinese_keys, traditional_keys, "the languages must translate the same entries");
+        assert_eq!(traditional_keys, spanish_keys, "the languages must translate the same entries");
     }
 
     #[test]
@@ -2123,6 +2774,10 @@ mod tests {
             (Some("zh-HK"), "zh-hant"),
             (Some("zh-Hant-TW"), "zh-hant"),
             (Some("zh_MO.UTF-8"), "zh-hant"),
+            (Some("es-ES"), "es"),
+            (Some("es"), "es"),
+            (Some("es_MX.UTF-8"), "es"),
+            (Some("es-419"), "es"),
             (Some("en-US"), "en"),
             (Some("jv-ID"), "en"),
             (Some("de-DE"), "en"),
@@ -2135,6 +2790,7 @@ mod tests {
         assert_eq!(japanese(&app), system_language() == "ja");
         assert_eq!(simplified(&app), system_language() == "zh-hans");
         assert_eq!(traditional(&app), system_language() == "zh-hant");
+        assert_eq!(spanish(&app), system_language() == "es");
         app.session.execute("prefs.set", json!({"key":"general.language", "value":"ja"})).unwrap();
         assert!(japanese(&app));
         app.session.execute("prefs.set", json!({"key":"general.language", "value":"zh-hans"})).unwrap();
@@ -2145,11 +2801,16 @@ mod tests {
         assert!(traditional(&app));
         assert!(!simplified(&app));
         assert!(!japanese(&app));
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"es"})).unwrap();
+        assert!(spanish(&app));
+        assert!(!traditional(&app));
+        assert!(!simplified(&app));
+        assert!(!japanese(&app));
     }
 
     #[test]
-    fn every_chinese_entry_keeps_the_english_shape() {
-        for (code, catalog) in [("zh-hans", SIMPLIFIED_CHINESE), ("zh-hant", TRADITIONAL_CHINESE)] {
+    fn every_translated_entry_keeps_the_english_shape() {
+        for (code, catalog) in [("zh-hans", SIMPLIFIED_CHINESE), ("zh-hant", TRADITIONAL_CHINESE), ("es", SPANISH)] {
             for (command, en, translated) in catalog {
                 assert_eq!(en.contains("..."), translated.contains("..."), "{code} {command} / {en}: {translated}");
                 let brackets = |s: &str| s.chars().filter(|c| *c == '(' || *c == ')').count();
@@ -2234,6 +2895,51 @@ mod tests {
         assert!(zh.items().iter().any(|i| i.command == "comp.new" && i.label == "新增合成..."));
         assert!(zh.items().iter().any(|i| i.command == "layer.newText" && i.label == "文字"));
         assert!(zh.items().iter().any(|i| i.command == "keys.easyEase" && i.label == "緩動"));
+        // A dynamic filename is never translated.
+        app.session.prefs.push_recent("/tmp/File.ecproj");
+        assert!(crate::native_menu::build(&app).items().iter().any(|i| i.command == "file.openRecent" && i.label == "File.ecproj"));
+    }
+
+    #[test]
+    fn es_translates_labels_computed_titles_and_keeps_names_verbatim() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key":"general.language", "value":"es"})).unwrap();
+        assert_eq!(language(&app), "es");
+        assert!(spanish(&app));
+        assert!(!traditional(&app));
+        assert!(!simplified(&app));
+        assert!(!japanese(&app));
+        // Fixed menu rows come from the catalog.
+        assert_eq!(label(&app, "", "Composition"), "Composición");
+        assert_eq!(label(&app, "", "Effect"), "Efecto");
+        assert_eq!(label(&app, "comp.new", "New Composition..."), "Nueva composición...");
+        assert_eq!(label(&app, "layer.newText", "Text"), "Texto");
+        assert_eq!(label(&app, "layer.setBlendMode", "Color Burn"), "Subexposición de color");
+        // Untranslated keys and dynamic labels stay verbatim.
+        assert_eq!(label(&app, "unknown.command", "Text"), "Text");
+        assert_eq!(
+            entry(&app, &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None }, "Undo Comp1".into()),
+            "No se puede deshacer"
+        );
+        assert_eq!(
+            entry(
+                &app,
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                "Layer: File".into()
+            ),
+            "Capa: File"
+        );
+        // The submenu titles that name the current workspace / view.
+        assert_eq!(
+            submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “Default” Workspace".into()),
+            "Asignar método abreviado al espacio de trabajo “Default”"
+        );
+        assert_eq!(submenu(&app, "Assign Shortcut to 3D View", "Assign Shortcut to “Top”".into()), "Asignar método abreviado a la vista 3D “Top”");
+        // The menu tree carries the same commands and shortcuts with the Spanish labels.
+        let es = crate::native_menu::build(&app);
+        assert!(es.items().iter().any(|i| i.command == "comp.new" && i.label == "Nueva composición..."));
+        assert!(es.items().iter().any(|i| i.command == "layer.newText" && i.label == "Texto"));
+        assert!(es.items().iter().any(|i| i.command == "keys.easyEase" && i.label == "Suavizado"));
         // A dynamic filename is never translated.
         app.session.prefs.push_recent("/tmp/File.ecproj");
         assert!(crate::native_menu::build(&app).items().iter().any(|i| i.command == "file.openRecent" && i.label == "File.ecproj"));

@@ -171,6 +171,11 @@ options (Draft / Fast Previews, shadows, nested switches), so frames rendered un
 options are never shown. When the budget (Settings ▸ Memory & CPU) is full the least recently
 shown frames go first, and frames of an older revision are dropped as soon as the project
 changes. The timeline's green bar counts the frames of exactly what the viewer shows.
+Resolution Auto renders the pixels the magnification needs, as in After Effects (Full above
+50 %, Half down to 33.3 %, Third down to 25 %, then Quarter). Below 100 % the viewer averages
+instead of skipping pixels (Viewer Zoom Quality More Accurate): GPU frames carry a mip chain
+sampled trilinearly, CPU frames go up averaged down by the whole factor that leaves about one
+texel per screen pixel.
 
 A persistent **disk cache** (`render::disk_cache`, Settings ▸ Media & Disk Cache) backs both
 the layer cache and the viewer's RAM preview: layer buffers that were slow to render and every

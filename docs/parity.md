@@ -415,6 +415,10 @@ Fixes from measured reports:
 - Text layers are always rasterised at their on-screen scale, sharp at any Scale as in After
   Effects, and an unscaled layer at a fractional position is no longer rasterised a quarter octave
   too large (#390).
+- The viewer's Auto resolution renders the pixels the magnification needs (Full above 50 %), and
+  frames shown below 100 % are averaged (GPU frames through mip levels, CPU frames by a whole
+  factor) instead of minified bilinearly (#417). Not yet: the viewer resolution and magnification
+  are not remembered between launches.
 
 ## Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 

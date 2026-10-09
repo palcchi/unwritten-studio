@@ -669,8 +669,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     app.request_frame_urgent(cid, frame, scale);
     if let Some(img) = app.frames.get(&key) {
         let stale = app.viewer_shown.as_ref().is_none_or(|(_, k)| *k != key);
-        if stale {
-            show_frame(app, &ctx, key, img);
+        // A CPU frame goes up again when the magnification calls for another factor.
+        let minify = minify_factor(app.session.prefs.viewer_zoom_smooth(), scale, (zoom * ppp) as f64);
+        let refit = !app.viewer_on_gpu() && app.viewer_tex.as_ref().is_some_and(|(_, _, m)| *m != minify);
+        if stale || refit {
+            show_frame(app, &ctx, key, img, minify);
         } else if let Some((_, k)) = app.viewer_shown.as_mut() {
             // The same frame at a later revision (an edit elsewhere, an undo): it shows that one.
             k.revision = key.revision;
@@ -1989,6 +1992,34 @@ pub(crate) fn zoom_texture_options(smooth: bool) -> egui::TextureOptions {
     if smooth { egui::TextureOptions::LINEAR } else { egui::TextureOptions::NEAREST }
 }
 
+/// The sampler GPU frames (mipmapped display textures) are drawn with: More Accurate filters
+/// bilinearly within and between mip levels, so a frame shown below 100 % is averaged instead of
+/// skipping pixels (#417); Faster takes the nearest pixel of the full-size frame.
+pub(crate) fn zoom_sampler(smooth: bool) -> eframe::wgpu::SamplerDescriptor<'static> {
+    use eframe::wgpu::{FilterMode, MipmapFilterMode, SamplerDescriptor};
+    let label = Some("viewer frame");
+    if smooth {
+        SamplerDescriptor {
+            label,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            ..Default::default()
+        }
+    } else {
+        SamplerDescriptor { label, lod_max_clamp: 0.0, ..Default::default() }
+    }
+}
+
+/// The whole factor a CPU frame is averaged down by for its texture when `pixels` of it are drawn
+/// over `screen` screen pixels: about one texel per screen pixel, so bilinear filtering never
+/// skips frame pixels — the CPU frames' counterpart of the GPU frames' mip levels (#417). Faster
+/// keeps every pixel.
+pub(crate) fn minify_factor(smooth: bool, pixels: f64, screen: f64) -> usize {
+    let k = (pixels / screen + 1e-3).floor();
+    if smooth && k >= 1.0 { k.min(256.0) as usize } else { 1 }
+}
+
 pub(crate) fn hex_rgb(s: &str) -> Option<[u8; 3]> {
     let h = s.trim().trim_start_matches('#');
     if h.len() != 6 || !h.is_ascii() {
@@ -2026,26 +2057,27 @@ fn rect_of(map: &ViewerMap, r: Option<[f64; 4]>) -> Rect {
     Rect::from_min_max(map.to_screen([x, y]), map.to_screen([x + w, y + h]))
 }
 
-/// Put a rendered frame on screen: CPU pixels go into an egui texture; GPU frames are drawn
-/// straight from their wgpu texture (registered with egui-wgpu, no readback).
-fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames::FrameKey, img: crate::frames::FrameImage) {
+/// Put a rendered frame on screen: CPU pixels go into an egui texture, averaged down by `minify`
+/// (see [`minify_factor`]); GPU frames are drawn straight from their wgpu texture (registered with
+/// egui-wgpu, no readback).
+fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames::FrameKey, img: crate::frames::FrameImage, minify: usize) {
     use crate::frames::FrameImage;
     // Settings ▸ Previews ▸ Viewer Zoom Quality.
     let smooth = app.session.prefs.viewer_zoom_smooth();
     let opts = zoom_texture_options(smooth);
     match img {
         FrameImage::Cpu(img) => {
-            // Frames wider or taller than the GPU's texture limit go up averaged down (#201).
+            // Frames wider or taller than the GPU's texture limit go up averaged down too (#201).
             let max = crate::frames::max_texture_side(ctx);
-            let fitted = crate::frames::fit_texture((*img).clone(), max);
+            let fitted = crate::frames::fit_texture_by((*img).clone(), max, minify);
             match &mut app.viewer_tex {
-                Some((tex, k)) if tex.size() == fitted.size => {
+                Some((tex, k, m)) if tex.size() == fitted.size => {
                     tex.set(fitted, opts);
-                    *k = key;
+                    (*k, *m) = (key, minify);
                 }
-                _ => app.viewer_tex = Some((ctx.load_texture("viewer-frame", fitted, opts), key)),
+                _ => app.viewer_tex = Some((ctx.load_texture("viewer-frame", fitted, opts), key, minify)),
             }
-            app.viewer_shown = app.viewer_tex.as_ref().map(|(t, k)| (t.id(), *k));
+            app.viewer_shown = app.viewer_tex.as_ref().map(|(t, k, _)| (t.id(), *k));
             app.viewer_image = Some(img);
             vt::set_texture_roi(ctx, app.session.state.region_of_interest.or(app.ui.viewer.extended));
         }
@@ -2053,13 +2085,12 @@ fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames:
             let Some(rs) = &app.wgpu else { return };
             let view = f.texture.create_view(&Default::default());
             let mut ren = rs.renderer.write();
-            let filter = if smooth { eframe::wgpu::FilterMode::Linear } else { eframe::wgpu::FilterMode::Nearest };
             let id = match &app.viewer_native {
                 Some((id, _, _)) => {
-                    ren.update_egui_texture_from_wgpu_texture(&rs.device, &view, filter, *id);
+                    ren.update_egui_texture_from_wgpu_texture_with_sampler_options(&rs.device, &view, zoom_sampler(smooth), *id);
                     *id
                 }
-                None => ren.register_native_texture(&rs.device, &view, filter),
+                None => ren.register_native_texture_with_sampler_options(&rs.device, &view, zoom_sampler(smooth)),
             };
             drop(ren);
             app.viewer_native = Some((id, key, f));

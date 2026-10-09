@@ -112,6 +112,14 @@ pub fn select_all(ctx: &egui::Context, id: egui::Id, text: &str) {
     state.store(ctx, id);
 }
 
+/// A parameter boundary. It only paints: row layout owns both drawing and hit testing.
+pub fn parameter_separator(p: &egui::Painter, r: Rect, t: &Tokens) {
+    let y = r.max.y - 0.5;
+    if t.parameter_separators && p.clip_rect().y_range().contains(y) {
+        p.line_segment([pos2(r.min.x, y), pos2(r.max.x, y)], Stroke::new(1.0, t.app_bg));
+    }
+}
+
 /// A colour swatch; returns the response (click opens the picker in the caller).
 pub fn swatch(ui: &mut Ui, rect: Rect, c: [f32; 4], id: egui::Id, t: &Tokens) -> Response {
     let resp = ui.interact(rect, id, Sense::click());

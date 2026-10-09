@@ -75,6 +75,7 @@ pub struct Tokens {
     pub gap: f32,
     pub tab_h: f32,
     pub row_h: f32,
+    pub parameter_separators: bool,
     /// Settings ▸ Appearance ▸ Use Gradients: panel tab strips and buttons get a soft vertical
     /// gradient (off: flat fills).
     pub gradients: bool,
@@ -146,6 +147,7 @@ impl Tokens {
             gap: 4.0,
             tab_h: 30.0,
             row_h: 19.0,
+            parameter_separators: true,
             gradients: true,
         };
         match kind {
@@ -216,6 +218,7 @@ impl Tokens {
     pub fn from_prefs(p: &effectcraft_engine::prefs::Prefs) -> Tokens {
         let kind = ThemeKind::from_name(&p.appearance.theme).unwrap_or_default();
         let mut t = Tokens::for_kind(kind).with_brightness(p.appearance.brightness as f32);
+        t.parameter_separators = p.appearance.parameter_row_separators;
         for (i, l) in effectcraft_color::Label::ALL.iter().enumerate() {
             let [r, g, b] = p.label_rgb(*l);
             t.labels[i] = Color32::from_rgb(r, g, b);

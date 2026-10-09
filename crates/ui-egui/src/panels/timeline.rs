@@ -2196,6 +2196,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
             RowKind::Prop { uid } => {
                 let Some(prop) = layer.props.find(*uid) else { continue };
+                app.auto.add(&format!("timeline.prop.{uid}.row"), r, &prop.name);
                 let sel_prop = app.session.state.selected_props.contains(&(layer.id, *uid));
                 lp.rect_filled(
                     left,
@@ -2450,6 +2451,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                 }
             }
+        }
+        if !matches!(row.kind, RowKind::Layer) {
+            widgets::parameter_separator(&lp, left, &t);
+            widgets::parameter_separator(&gp, Rect::from_min_max(pos2(graph_x0, r.min.y), r.max), &t);
         }
     }
     ui.set_clip_rect(full_clip);

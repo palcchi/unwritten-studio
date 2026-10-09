@@ -219,7 +219,9 @@ build real projects through these interfaces; they are worked examples of everyt
   colour bars, as in After Effects. `file.interpretFootage {"items":[id], "frameRate":12,
   "startTimecode":1001}` conforms them and sets Override Start (the item and layers that ran to its end get the new
   length). See [footage.md](footage.md).
-* **Multi-layer OpenEXR**: `layer.channels {layer}` lists a footage layer's EXR layers and
+* **Multi-layer OpenEXR**: the footage shows the beauty pass (an unnamed RGBA layer, else
+  Combined / Beauty / Image / RGBA…, never Cryptomatte or depth). `layer.channels {layer}`
+  lists a footage layer's EXR layers and
   channels (`{"layers":[{"name":"diffuse","rgba":["diffuse.R","diffuse.G","diffuse.B",""]}]}`);
   EXtractoR shows them when its `red` / `green` / `blue` / `alpha` are set to those names
   (`prop.set {"path":"effects/#1/red","value":"depth.Z"}`). Effect Controls offers them as popups.

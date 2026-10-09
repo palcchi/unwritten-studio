@@ -74,6 +74,16 @@ Agents: `file.interpretFootage {"items": [id], "frameRate": 24, "alpha": "premul
 "startTimecode": 1001}` (timecode or a frame number; `"overrideStart": false` goes back to Use
 Source File Timecode).
 
+## Multi-layer OpenEXR
+
+Float OpenEXR renders hold linear light; EffectCraft sRGB-encodes them as they are read, like
+After Effects with Interpret As Linear Light for 32 bpc.
+A multi-layer file shows its main RGBA channels, as in After Effects. Renders that keep every
+pass in named layers (Blender's `ViewLayer.Combined`, its compositor's File Output `Image`,
+Nuke's `beauty`) show the beauty pass: the layer named Combined, Beauty, Image, RGBA, RGB or
+Color, else the first colour layer that isn't a data pass. Cryptomatte, depth, mist, normals,
+vectors, positions and IDs are never the picture. EXtractoR reads every other layer and channel.
+
 ## Replacing and reloading
 
 - **File ▸ Replace Footage ▸ File…** (Ctrl+H) points the item at another file. Pick a numbered

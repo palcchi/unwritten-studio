@@ -681,6 +681,7 @@ pub const PARAM_GROUPS: &[(&str, &str)] = &[
     ("sourceCrops", "Source Crops"),
     // Simulation.
     ("extras", "Extras"),
+    ("effectCamera", "Effect Camera"),
     ("wiggle", "Wiggle"),
     ("light", "Light"),
     ("shading", "Shading"),
@@ -1107,6 +1108,11 @@ pub const GPU_EFFECTS: &[&str] = &[
     "ec.obsolete.basictext",
     "ec.obsolete.pathtext",
 ];
+
+/// Effects that can read [`EffectHost::comp_scene`] (the comp camera or the first comp light):
+/// their output changes when the camera, the lights or the layer's own transform move, so the
+/// renderer's layer cache folds the comp scene into the key for these.
+pub const READS_COMP_SCENE: &[&str] = &["ec.sim.carddance", "ec.sim.shatter", "ec.transition.cardwipe", "ec.sim.caustics", "ec.sim.ccparticleworld"];
 
 /// Effects whose output depends on [`EffectCtx::time`] directly (not only through animated
 /// parameters). The renderer's layer cache folds the layer time into the key for these.

@@ -1123,7 +1123,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add(&format!("effectControls.effect.{}.twirl", g.uid), tw, &g.name);
         let rename_id = egui::Id::new(("ec-rename", g.uid));
         let editing: Option<String> = ctx.data(|d| d.get_temp(rename_id));
-        let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.min.y + 4.0), vec2(40.0, 18.0));
+        let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.center().y - 9.0), vec2(40.0, 18.0));
         if let Some(mut value) = editing.as_ref().cloned() {
             let name_rect = Rect::from_min_max(pos2(tw.max.x + 6.0, r.min.y + 2.0), pos2(reset.min.x - 6.0, r.max.y - 2.0));
             let response = ui.put(name_rect, egui::TextEdit::singleline(&mut value).id(rename_id.with("field")).font(Tokens::semibold(12.0)));
@@ -1157,7 +1157,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             actions.push(("effect.reset".into(), json!({"layer": layer.id.0, "effect": g.uid})));
         }
         // About…: the effect's name and category (AE's About dialog).
-        let about = Rect::from_min_size(pos2(r.max.x - 50.0, r.min.y + 4.0), vec2(44.0, 18.0));
+        let about = Rect::from_min_size(pos2(r.max.x - 50.0, r.center().y - 9.0), vec2(44.0, 18.0));
         let aresp = ui.interact(about, egui::Id::new(("ec-about", g.uid)), Sense::click());
         bp.text(about.center(), Align2::CENTER_CENTER, crate::i18n::tr("About..."), Tokens::ui(11.5), if aresp.hovered() { t.hot_text } else { t.text_dim });
         app.auto.add(&format!("effectControls.effect.{}.about", g.uid), about, "About");

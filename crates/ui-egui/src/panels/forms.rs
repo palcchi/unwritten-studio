@@ -4,6 +4,7 @@
 //! Keyboard Shortcuts: `shortcut_editor`). Every form runs an engine command with the collected parameters, so whatever a
 //! dialog does an agent can do with one `engine.execute`.
 
+use crate::i18n::tr;
 use egui::{Color32, vec2};
 use serde_json::{Map, Value, json};
 
@@ -684,7 +685,7 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                     FieldKind::Path { value, .. } => {
                         ui.horizontal(|ui| {
                             let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0)).rect;
-                            let b = ui.button("Browse…");
+                            let b = ui.button(tr("Browse…"));
                             regs.push((format!("form.field.{}.browse", fl.key), b.rect, "Browse…".into()));
                             if b.clicked() {
                                 browse = Some(i);
@@ -696,7 +697,7 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                     FieldKind::SavePath(value) => {
                         ui.horizontal(|ui| {
                             let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0)).rect;
-                            let b = ui.button("Browse…");
+                            let b = ui.button(tr("Browse…"));
                             regs.push((format!("form.field.{}.browse", fl.key), b.rect, "Browse…".into()));
                             if b.clicked() {
                                 browse = Some(i);
@@ -727,12 +728,12 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         });
         ui.add_space(14.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let b = ui.add(egui::Button::new(egui::RichText::new("   OK   ").color(Color32::WHITE)).fill(t.accent));
+            let b = ui.add(egui::Button::new(egui::RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent));
             regs.push(("form.ok".into(), b.rect, "OK".into()));
             if b.clicked() {
                 ok = true;
             }
-            let c = ui.button("Cancel");
+            let c = ui.button(tr("Cancel"));
             regs.push(("form.cancel".into(), c.rect, "Cancel".into()));
             if c.clicked() {
                 close = true;
@@ -786,7 +787,7 @@ pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         ui.label(body);
         ui.add_space(16.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add(egui::Button::new(egui::RichText::new("   OK   ").color(Color32::WHITE)).fill(t.accent)).clicked() {
+            if ui.add(egui::Button::new(egui::RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent)).clicked() {
                 close = true;
             }
         });
@@ -800,16 +801,16 @@ pub fn show_view_options(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Toke
     let mut close = false;
     super::dialogs::modal(ctx, "View Options", vec2(360.0, 330.0), t, |ui| {
         let v = &mut app.ui.viewer;
-        ui.checkbox(&mut v.show_layer_controls, "Layer controls");
-        ui.checkbox(&mut v.show_masks, "Masks");
-        ui.checkbox(&mut v.rulers, "Rulers");
-        ui.checkbox(&mut v.guides, "Guides");
-        ui.checkbox(&mut v.grid, "Grid");
-        ui.checkbox(&mut v.safe_margins, "Title/action safe");
-        ui.checkbox(&mut v.transparency_grid, "Transparency grid");
+        ui.checkbox(&mut v.show_layer_controls, tr("Layer controls"));
+        ui.checkbox(&mut v.show_masks, tr("Masks"));
+        ui.checkbox(&mut v.rulers, tr("Rulers"));
+        ui.checkbox(&mut v.guides, tr("Guides"));
+        ui.checkbox(&mut v.grid, tr("Grid"));
+        ui.checkbox(&mut v.safe_margins, tr("Title/action safe"));
+        ui.checkbox(&mut v.transparency_grid, tr("Transparency grid"));
         ui.add_space(12.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.add(egui::Button::new(egui::RichText::new("   OK   ").color(Color32::WHITE)).fill(t.accent)).clicked() {
+            if ui.add(egui::Button::new(egui::RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent)).clicked() {
                 close = true;
             }
         });

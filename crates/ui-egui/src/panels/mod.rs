@@ -57,6 +57,7 @@ pub mod viewer_tools;
 pub mod viewers;
 pub mod waveform;
 
+use crate::i18n::tr;
 use effectcraft_engine::Session;
 use effectcraft_engine::project::Comp;
 use effectcraft_engine::time::Tick;
@@ -140,17 +141,17 @@ pub fn panel_menu_popup(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.set_min_width(200.0);
-            if ui.button("Close Panel").clicked() {
+            if ui.button(tr("Close Panel")).clicked() {
                 app.close_panel(panel);
                 close = true;
             }
             let floating = app.ui.floating.iter().any(|f| f.panels.contains(&panel));
-            if !floating && ui.button("Undock Panel").clicked() {
+            if !floating && ui.button(tr("Undock Panel")).clicked() {
                 let r = crate::dock_ui::default_float_rect(ui.ctx().content_rect());
                 app.edit_layout(|l| l.float(panel, r));
                 close = true;
             }
-            if !floating && ui.button(if app.ui.maximized == Some(panel) { "Restore Panel Size" } else { "Maximize Panel" }).clicked() {
+            if !floating && ui.button(if app.ui.maximized == Some(panel) { tr("Restore Panel Size") } else { tr("Maximize Panel") }).clicked() {
                 app.toggle_maximize(panel);
                 close = true;
             }
@@ -168,7 +169,7 @@ pub fn panel_menu_popup(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
                             close = true;
                         }
                     }
-                    if ui.button("Composition Settings…").clicked() {
+                    if ui.button(tr("Composition Settings…")).clicked() {
                         let _ = dialogs::open_comp_settings(app);
                         close = true;
                     }

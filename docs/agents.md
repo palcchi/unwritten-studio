@@ -222,6 +222,9 @@ build real projects through these interfaces; they are worked examples of everyt
 * **Colour of footage**: `file.interpretFootage {"items":[id], "preserveRgb":true}` is Interpret
   Footage ▸ Preserve RGB: the file's values unconverted (float EXRs stay linear), for a
   per-layer OCIO conversion or data passes.
+* **OCIO effects**: with Configuration ▸ Custom, `configFile` is a `.ocio` path or the config's
+  text; `effect.warning {layer, effect}` says what Effect Controls warns about (a config it
+  can't read, a colour space it lacks, transforms that pass colours through) or `null`.
 * **Multi-layer OpenEXR**: the footage shows the beauty pass (an unnamed RGBA layer, else
   Combined / Beauty / Image / RGBA…, never Cryptomatte or depth). `layer.channels {layer}`
   lists a footage layer's EXR layers and

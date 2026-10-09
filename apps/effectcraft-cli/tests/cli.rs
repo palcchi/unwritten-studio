@@ -28,7 +28,9 @@ fn ok_json(args: &[&str]) -> Value {
 fn tmp(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("ec-cli-test-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
-    d.join(name)
+    // macOS's `/var` is a symlink to `/private/var`: a child process resolves its working
+    // directory through `current_dir()`, which is canonical, so compare canonical paths.
+    std::fs::canonicalize(&d).unwrap_or(d).join(name)
 }
 
 #[test]

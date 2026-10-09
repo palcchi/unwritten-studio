@@ -80,7 +80,17 @@ fn supported(locale: Option<&str>) -> &'static str {
 }
 
 pub(crate) fn label<'a>(app: &EffectcraftApp, command: &str, source: &'a str) -> &'a str {
-    match language(app) {
+    let language = language(app);
+    // The engine names the platform's file manager before the catalog sees the label. These
+    // two commands keep their ids, but on Windows/Linux their source is no longer "Finder".
+    if language == "uk" && matches!(command, "file.revealInFinder" | "layer.revealInFinder") {
+        match source {
+            "Reveal in Explorer" => return "Показати у Провіднику",
+            "Reveal in File Manager" => return "Показати у файловому менеджері",
+            _ => {}
+        }
+    }
+    match language {
         "ja" => lookup(JAPANESE, command, source),
         "zh-hans" => lookup(SIMPLIFIED_CHINESE, command, source),
         "zh-hant" => lookup(TRADITIONAL_CHINESE, command, source),
@@ -2725,6 +2735,30 @@ mod tests {
         assert_eq!(japanese_keys, chinese_keys, "the languages must translate the same entries");
         assert_eq!(chinese_keys, traditional_keys, "the languages must translate the same entries");
         assert_eq!(japanese_keys, ukrainian_keys, "the languages must translate the same entries");
+    }
+
+    /// Exercise each engine spelling on every host: a macOS-only run must still catch a
+    /// Windows/Linux catalog miss, while filenames and unrelated commands stay untouched.
+    #[test]
+    fn ukrainian_reveal_labels_follow_the_platform_file_manager() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("prefs.set", json!({"key": "general.language", "value": "uk"})).unwrap();
+        for command in ["file.revealInFinder", "layer.revealInFinder"] {
+            for (source, translated) in [
+                ("Reveal in Finder", "Показати у Finder"),
+                ("Reveal in Explorer", "Показати у Провіднику"),
+                ("Reveal in File Manager", "Показати у файловому менеджері"),
+            ] {
+                let e = MenuEntry { label: source.into(), command: command.into(), params: json!({"item": "My file.mp4"}), shortcut: None };
+                assert_eq!(label(&app, command, source), translated);
+                assert_eq!(entry(&app, &e, source.into()), translated);
+                assert_eq!(label(&app, "file.openRecent", source), source);
+            }
+            assert_eq!(label(&app, command, "My file.mp4"), "My file.mp4");
+        }
+        app.session.execute("prefs.set", json!({"key": "general.language", "value": "en"})).unwrap();
+        assert_eq!(label(&app, "file.revealInFinder", "Reveal in Explorer"), "Reveal in Explorer");
+        assert_eq!(label(&app, "layer.revealInFinder", "Reveal in File Manager"), "Reveal in File Manager");
     }
 
     #[test]

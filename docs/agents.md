@@ -46,6 +46,33 @@ Desktop, Cursor and the like) take the same `command` and `args`.
 The server speaks JSON-RPC 2.0 over stdio, one message per line, and supports MCP protocol versions
 2025-06-18, 2025-03-26 and 2024-11-05 (`initialize`, `ping`, `tools/list`, `tools/call`).
 
+### Keeping headless work across restarts
+
+Start `effectcraft-cli mcp --autosave` (MCP args `["mcp", "--autosave"]`) to preserve
+unsaved headless work. Each tool call that changes a dirty project writes a checkpoint before
+its reply is sent, so even killing the server after that reply leaves the work on disk. EOF
+and transport errors also flush outstanding changes. Queries do not rotate the saved versions.
+A failed checkpoint adds a warning to the tool reply; the edit remains in memory and the next
+call retries. Use `save_project {path}` to a writable location before disconnecting if warned.
+
+Each server has its own folder under `<config directory>/EffectCraft Auto-Save/MCP/` (or
+`<custom Auto-Save folder>/MCP/`). The maximum-version setting applies within that folder.
+`--autosave` enables these checkpoints regardless of the desktop's Auto-Save toggle and interval;
+it reads settings without writing desktop preferences, shortcuts or crash-recovery state.
+`EFFECTCRAFT_CONFIG_DIR` overrides the platform config directory. Session folders are retained
+for recovery; remove old folders once their work is saved elsewhere.
+
+`initialize` instructions and `_meta.effectcraftAutoSave` list the current folder and up to five
+previous dirty sessions; `get_project.autosave` also reports the latest checkpoint and errors.
+Recover explicitly with `open_project {"path":"<checkpoint .ecproj>"}`, then
+`save_project {"path":"Recovered.ecproj"}`. Prior sessions may still be running and are never
+opened automatically. Replacing a dirty project with `open_project` or `file.newProject` discards
+it intentionally; save it first. The metadata describes the current project in each session.
+
+Without `--autosave`, headless work is in memory until explicitly saved. The flag is headless
+only; a bridged desktop app owns its auto-saves. An edit interrupted before its reply is received
+may be absent from the last checkpoint.
+
 ### Tools
 
 | Tool | What it does |

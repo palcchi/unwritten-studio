@@ -396,6 +396,9 @@ pub struct Session {
     pub shortcut_table: std::sync::OnceLock<shortcuts::ShortcutTable>,
     /// Auto-save bookkeeping.
     pub autosave: autosave::AutoSaveState,
+    /// Host-owned isolation for all auto-saves (e.g. one MCP session). Independent of settings
+    /// and project bookkeeping, so opening/saving a project or changing preferences keeps it.
+    pub autosave_folder_override: Option<std::path::PathBuf>,
     /// The viewer snapshot (Take Snapshot / Show Snapshot).
     pub snapshot: Option<viewer::Snapshot>,
     /// The JavaScript scripting engine (set by the host that links `effectcraft-script`):
@@ -504,6 +507,7 @@ impl Default for Session {
             ui_commands: vec![],
             shortcut_table: std::sync::OnceLock::new(),
             autosave: autosave::AutoSaveState::default(),
+            autosave_folder_override: None,
             snapshot: None,
             script: None,
             plugin_loader: None,

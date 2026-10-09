@@ -479,6 +479,34 @@ fn motion_path_key_drag_edits_that_key() {
     assert_eq!(k[0].value.as_vec3(), [100.0, 100.0, 0.0]);
 }
 
+/// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
+/// one pulls the path into a curve (#290).
+#[test]
+fn a_straight_motion_path_has_handles_to_curve_it() {
+    let mut h = harness();
+    let box_id: LayerId = h.state().session.active_comp().unwrap().layers[0].id;
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 0.0, "value": [100, 100, 0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 2.0, "value": [400, 100, 0]})).unwrap();
+    s.execute("view.snapping", json!({"value": false})).unwrap();
+    s.set_time(effectcraft_engine::time::Tick::from_seconds_f64(1.0));
+    h.run_steps(3);
+    let (out0, in1) = (format!("viewer.motionPath.{}.0.out", box_id.0), format!("viewer.motionPath.{}.1.in", box_id.0));
+    assert!(h.state().auto.find(&in1).is_some(), "the second key has a handle");
+    // The first key's handle lies a third of the way along the path: drag it down 150 px.
+    let from = rect(&h, &out0).center();
+    assert!(from.distance(screen(&h, [200.0, 100.0])) < 2.0, "{from:?}");
+    let to = screen(&h, [200.0, 250.0]);
+    drag(&mut h, from, to);
+    let p = h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().clone();
+    assert!(!p.keys[0].spatial_auto);
+    let t = p.keys[0].spatial_out;
+    assert!((t[0] - 100.0).abs() < 2.0 && (t[1] - 150.0).abs() < 2.0, "{t:?}");
+    let mid = p.value_at(effectcraft_engine::time::Tick::from_seconds_f64(1.0)).as_vec3();
+    assert!(mid[1] > 130.0, "the path curves: {mid:?}");
+}
+
 #[test]
 fn graph_editor_transform_box_scales_selected_keys_in_time() {
     let mut h = harness();

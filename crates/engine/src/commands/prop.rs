@@ -589,7 +589,8 @@ fn interpolation(s: &mut Session, p: &Value) -> Result<Value> {
     let roving = b_p(p, "roving");
     edit_keys(s, "Keyframe Interpolation", None, move |keys, i, _| {
         if let Some(sp) = spatial.as_deref() {
-            let (tin, tout) = effectcraft_keyframe::spatial_tangents(keys, i);
+            // (Bezier keeps the current handles, with handles where the path left straight.)
+            let (tin, tout) = effectcraft_keyframe::spatial_handles(keys, i);
             let k = &mut keys[i];
             match sp {
                 "linear" => {

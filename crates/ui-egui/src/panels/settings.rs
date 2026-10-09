@@ -459,7 +459,9 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             });
             ui.separator();
             ui.vertical(|ui| {
-                ui.set_width(590.0);
+                // The rest of the dialog's width: a fixed width ran past it, so the whole
+                // dialog scrolled sideways a little (#284).
+                ui.set_width(ui.available_width());
                 let p = &all[idx];
                 ui.label(RichText::new(p.title).font(Tokens::semibold(14.0)).color(t.tab_text_active));
                 ui.add_space(6.0);

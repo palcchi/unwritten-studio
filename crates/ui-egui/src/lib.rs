@@ -1573,6 +1573,8 @@ impl eframe::App for EffectcraftApp {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_gpu_failure(ctx);
+        // The panels read the interface language from here (see `crate::i18n::ui`).
+        crate::i18n::set_current(crate::i18n::language(self));
         if !self.styled {
             theme::install(ctx, &self.tokens);
             fit_window(ctx);

@@ -165,9 +165,15 @@ pub(crate) fn still_footage(path: &str, w: u32, h: u32, fmt: image::ImageFormat,
 fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Result<Footage> {
     use image::ImageDecoder;
     let reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), fmt);
-    let dec = reader.into_decoder().map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
-    let (w, h) = dec.dimensions();
-    let has_alpha = dec.color_type().has_alpha();
+    let (w, h, has_alpha) = match reader.into_decoder() {
+        Ok(dec) => (dec.dimensions().0, dec.dimensions().1, dec.color_type().has_alpha()),
+        Err(e) => {
+            // A multi-layer OpenEXR file without an unnamed RGB layer.
+            let img = (fmt == image::ImageFormat::OpenExr).then(|| crate::exr_channels::layered_image(bytes)).flatten();
+            let img = img.ok_or_else(|| MediaError::Decode(format!("{path}: {e}")))?;
+            (img.width(), img.height(), img.color().has_alpha())
+        }
+    };
     Ok(still_footage(path, w, h, fmt, has_alpha))
 }
 

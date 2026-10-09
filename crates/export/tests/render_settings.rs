@@ -319,10 +319,27 @@ fn wav_and_aiff_channels_and_formats() {
     let d = files.lock().unwrap()[0].1.clone();
     let u16_at = |o: usize| u16::from_le_bytes([d[o], d[o + 1]]);
     assert_eq!((u16_at(20), u16_at(22), u16_at(32), u16_at(34)), (3, 2, 8, 32), "IEEE float stereo");
-    // AIFF has no float: 24-bit.
+    // Plain AIFF has no float: 32-bit float is AIFF-C with `fl32` samples (#317).
     let mut aiff = OutputModule::for_format(OutputFormat::Aiff);
     aiff.audio_format = AudioFormat::F32;
     let files = run(&p, cid, &s, &aiff, "/w/c.aif");
+    let d = files.lock().unwrap()[0].1.clone();
+    let u32_at = |o: usize| u32::from_be_bytes([d[o], d[o + 1], d[o + 2], d[o + 3]]);
+    assert_eq!((&d[..4], u32_at(4) as usize + 8, &d[8..12]), (&b"FORM"[..], d.len(), &b"AIFC"[..]));
+    assert_eq!((&d[12..16], u32_at(16), u32_at(20)), (&b"FVER"[..], 4, 0xA280_5140));
+    assert_eq!(&d[24..28], b"COMM");
+    let comm = 32;
+    assert_eq!(u32_at(28) as usize, 18 + 4 + 22, "COMM: AIFF fields, compression type, name");
+    assert_eq!(u16::from_be_bytes([d[comm], d[comm + 1]]), 2, "stereo");
+    assert_eq!(u32_at(comm + 2), 24_000, "half a second at 48 kHz");
+    assert_eq!(u16::from_be_bytes([d[comm + 6], d[comm + 7]]), 32, "sample size");
+    assert_eq!(&d[comm + 18..comm + 22], b"fl32");
+    assert_eq!(&d[comm + 22..comm + 44], b"\x1532-bit floating point");
+    let ssnd = comm + 44;
+    assert_eq!((&d[ssnd..ssnd + 4], u32_at(ssnd + 4) as usize), (&b"SSND"[..], 8 + 24_000 * 2 * 4));
+    // 16- and 24-bit stay plain AIFF.
+    aiff.audio_format = AudioFormat::S24;
+    let files = run(&p, cid, &s, &aiff, "/w/d.aif");
     let d = files.lock().unwrap()[0].1.clone();
     assert_eq!(&d[8..12], b"AIFF");
     assert_eq!(u16::from_be_bytes([d[26], d[27]]), 24, "sample size");

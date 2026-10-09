@@ -911,41 +911,7 @@ fn replace_with_solid(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn reload(s: &mut Session, p: &Value) -> Result<Value> {
     let items = items_p(s, p);
-    if s.importer.is_none() {
-        return Err(EngineError::Other("media import is not available in this build".into()));
-    }
-    let mut updates = vec![];
-    for i in &items {
-        if let Some(ItemKind::Footage(f)) = s.project.item(*i).map(|x| &x.kind) {
-            // An image sequence picks up frames added to (or removed from) its run.
-            let mut nf = match s.probe_footage(&f.path) {
-                Ok(n) => n,
-                Err(_) => Footage { missing: true, ..f.clone() },
-            };
-            // Keep the interpretation.
-            nf.alpha = f.alpha;
-            nf.loop_count = f.loop_count;
-            nf.pixel_aspect = f.pixel_aspect;
-            nf.start_timecode = f.start_timecode;
-            if nf.kind == FootageKind::Sequence && f.kind == FootageKind::Sequence {
-                nf.frame_rate = f.frame_rate;
-                nf.native_rate = f.native_rate;
-                nf.alphabetical = f.alphabetical;
-                nf.sync_sequence_duration();
-            }
-            updates.push((*i, nf));
-        }
-    }
-    let n = updates.len();
-    s.edit("Reload Footage", None, |proj, _| {
-        for (i, f) in updates {
-            if let Some(it) = proj.item_mut(i) {
-                it.kind = ItemKind::Footage(f);
-            }
-        }
-        Ok(())
-    })?;
-    s.events.push(crate::Event::PurgeCaches);
+    let n = crate::footage_reload::reload_items(s, &items)?;
     Ok(json!({"reloaded": n}))
 }
 
@@ -1008,6 +974,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{items?: [id], wait?} — look for every footage file (in the background unless `wait`) and flag missing items",
             has_items,
             crate::footage_check::command
+        ),
+        cmd!(
+            "footage.reloadChanged",
+            "Reload Changed Footage",
+            [],
+            None,
+            "{} — reload the footage whose file changed on disk since it was last seen (size or modification time; Settings ▸ Import ▸ Reload Footage Changed on Disk runs this in the background); files seen for the first time are only remembered. Returns {files, reloaded}",
+            has_items,
+            crate::footage_reload::command
         ),
         cmd!(
             "file.runScript",

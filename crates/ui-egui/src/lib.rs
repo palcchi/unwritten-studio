@@ -1544,6 +1544,34 @@ impl EffectcraftApp {
             }
             ctx.request_repaint_after(std::time::Duration::from_secs(10));
         }
+        self.tick_footage_reload(ctx, now);
+    }
+
+    /// Settings ▸ Import ▸ Reload Footage Changed on Disk: every two seconds, and as soon as the
+    /// window comes back to the front (after saving in another app), stamp the footage files on a
+    /// worker thread and reload the ones that changed.
+    fn tick_footage_reload(&mut self, ctx: &egui::Context, now: f64) {
+        use effectcraft_engine::footage_reload;
+        if let Some(Err(e)) = footage_reload::poll_scan(&mut self.session) {
+            self.ui.status = e.to_string();
+        }
+        let (last_key, focus_key) = (egui::Id::new("footageReload.lastScan"), egui::Id::new("footageReload.focused"));
+        let focused = ctx.input(|i| i.focused);
+        let was_focused: bool = ctx.data(|d| d.get_temp(focus_key)).unwrap_or(focused);
+        ctx.data_mut(|d| d.insert_temp(focus_key, focused));
+        if !self.session.prefs.import.reload_changed_footage || self.session.project.items.is_empty() {
+            return;
+        }
+        let last: f64 = ctx.data(|d| d.get_temp(last_key)).unwrap_or(0.0);
+        if now - last >= 2.0 || (focused && !was_focused) {
+            ctx.data_mut(|d| d.insert_temp(last_key, now));
+            footage_reload::start_scan(&mut self.session);
+        }
+        if self.session.footage_scan.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        } else {
+            ctx.request_repaint_after(std::time::Duration::from_secs(2));
+        }
     }
 
     /// Take the pending synthetic input (from `ui.click`, `ui.key`, …). Hosts that don't call

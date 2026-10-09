@@ -61,6 +61,10 @@ pub trait FootageSource: Send + Sync {
     /// Drop the decoded frames it keeps (Edit ▸ Purge ▸ All Memory / Image Cache Memory): the
     /// next reads decode again. Sources without a cache ignore it.
     fn purge(&self) {}
+    /// The file at `path` changed on disk (Reload Footage): drop what it keeps of it (decoded
+    /// frames, open decoders, parsed models), so the next reads see the new contents. Sources
+    /// without a cache ignore it.
+    fn forget(&self, _path: &str) {}
     /// Settings ▸ Disk ▸ Conformed Audio Folder: where decoded audio is kept between reads
     /// (`None` = off); sources that don't decode audio ignore it.
     fn set_conform_folder(&self, _folder: Option<std::path::PathBuf>) {}

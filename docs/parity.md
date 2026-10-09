@@ -814,7 +814,10 @@ are pinned bit for bit by golden hashes (`crates/effects/tests/particle_golden.r
   packed into one atlas), CC Ball Action, CC Pixel Polly and CC Scatterize (their plans read the
   frame back once: the particles take the layer's colours and, for Ball Action's twist, its
   luminance). Plans too large for one item table draw in several passes, each over the previous
-  one, with the same per-pixel arithmetic.
+  one, with the same per-pixel arithmetic. Since #397 CC Particle World sees its particles
+  through the comp's active camera layer, as After Effects does, and through Extras ▸ Effect
+  Camera (Distance, Rotation X / Y / Z, FOV) when there is none; both compositors draw the same
+  plan, and the layer cache keys the effects that read the comp camera or lights by them.
 - **Curl Noise**: the fBm potential, its curl and the streamline trace as three kernels.
 - **Former fallbacks**: Shatter's wireframe views (the default view) draw their lines as
   sprites; Foam's User Defined texture, Environment Map and flow-map preview draw over the

@@ -482,6 +482,8 @@ Extension points and the bundled extensions: [plugins.md](plugins.md).
   step (separated X/Y/Z Position; Orientation and X/Y/Z Rotation on 3D layers).
 * Rename a layer with Enter (or double-click a name): the whole name is selected, Enter or a
   click elsewhere commits, Escape cancels; `layer.rename {layer, name}` does it directly.
+* Ctrl/Cmd-click on the current-time display (Timeline or Composition panel) toggles the Time
+  Display Style between Timecode and Frames: `file.projectSettings {"timeDisplay": "frames"}`.
 
 ### History, puppet recording, plug-ins
 

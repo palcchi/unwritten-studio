@@ -32,6 +32,20 @@ fn click(h: &mut Harness<'_, EffectcraftApp>, p: Pos2, times: usize) {
     h.run_steps(3);
 }
 
+/// A primary-button drag from `from` to `to`, in steps.
+fn drag(h: &mut Harness<'_, EffectcraftApp>, from: Pos2, to: Pos2) {
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for k in 1..=8 {
+        h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
+        h.step();
+    }
+    h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(3);
+}
+
 fn key(h: &mut Harness<'_, EffectcraftApp>, key: Key) {
     h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
     h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::NONE });
@@ -96,16 +110,7 @@ fn the_expression_pick_whip_inserts_at_the_cursor_while_editing() {
     };
     let whip = |h: &mut Harness<'_, EffectcraftApp>| {
         let (from, to) = (center(h, &format!("timeline.prop.{opacity}.pickWhip")), center(h, &format!("timeline.prop.{rotation}.name")));
-        h.input_mut().events.push(Event::PointerMoved(from));
-        h.step();
-        h.input_mut().events.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
-        h.step();
-        for k in 1..=8 {
-            h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
-            h.step();
-        }
-        h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
-        h.run_steps(3);
+        drag(h, from, to);
     };
     // Editing: the cursor at the end after typing " * ".
     let p = center(&h, &format!("timeline.prop.{opacity}.expression"));
@@ -149,21 +154,63 @@ fn the_expression_pick_whip_picks_the_dimension_it_is_dropped_on() {
     };
     let whip_to = |h: &mut Harness<'_, EffectcraftApp>, target: &str| {
         let (from, to) = (center(h, &format!("timeline.prop.{opacity}.pickWhip")), center(h, target));
-        h.input_mut().events.push(Event::PointerMoved(from));
-        h.step();
-        h.input_mut().events.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
-        h.step();
-        for k in 1..=8 {
-            h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
-            h.step();
-        }
-        h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
-        h.run_steps(3);
+        drag(h, from, to);
     };
     whip_to(&mut h, &format!("timeline.prop.{position}.value.1"));
     assert_eq!(expr(&h), "transform.position[1]");
     whip_to(&mut h, &format!("timeline.prop.{position}.name"));
     assert_eq!(expr(&h), "transform.position[0]", "the whole Position into one value: its first, as before");
+}
+
+/// #363: every property has a pick whip in the Parent & Link column (After Effects CC 2018 and
+/// later). Dropped on another property's name or one of its values, in the Timeline or in Effect
+/// Controls, it gives the property an expression referencing it; one it already has is replaced
+/// by the reference, and a disabled one is enabled.
+#[test]
+fn the_property_pick_whip_links_a_property_to_another() {
+    let (mut h, _) = harness();
+    let (layer, opacity, rotation, position, transform) = {
+        let s = &mut h.state_mut().session;
+        let l = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.select", json!({"layers": [l]})).unwrap();
+        for fx in ["Slider Control", "Point Control"] {
+            s.execute("effect.apply", json!({"layers": [l], "effect": fx})).unwrap();
+        }
+        let tr = s.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(l)).unwrap().props.sub("transform").unwrap().clone();
+        (l, tr.get("opacity").unwrap().uid, tr.get("rotation").unwrap().uid, tr.get("position").unwrap().uid, tr.uid)
+    };
+    h.state_mut().ui.timeline.open_layers.insert(layer);
+    h.state_mut().ui.timeline.open_groups.insert(transform);
+    h.state_mut().show_panel(effectcraft_ui_egui::dock::PanelKind::EffectControls);
+    h.run_steps(3);
+    let props =
+        |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(layer)).unwrap().props.clone();
+    let expr = |h: &Harness<'_, EffectcraftApp>| props(h).find(opacity).unwrap().expr.clone().map(|e| (e.text, e.enabled));
+    let whip_to = |h: &mut Harness<'_, EffectcraftApp>, target: &str| {
+        let (from, to) = (center(h, &format!("timeline.prop.{opacity}.propertyPickWhip")), center(h, target));
+        drag(h, from, to);
+    };
+    assert_eq!(expr(&h), None);
+    // Onto another property's name: no expression yet, one is added.
+    whip_to(&mut h, &format!("timeline.prop.{rotation}.name"));
+    assert_eq!(expr(&h), Some(("transform.rotation".into(), true)));
+    // Onto one of a property's values: that dimension.
+    whip_to(&mut h, &format!("timeline.prop.{position}.value.1"));
+    assert_eq!(expr(&h), Some(("transform.position[1]".into(), true)));
+    // A disabled expression is replaced by the reference, and enabled.
+    h.state_mut().session.execute("prop.setExpression", json!({"layer": layer, "prop": opacity, "expression": "50 + 1", "enabled": false})).unwrap();
+    h.run_steps(3);
+    whip_to(&mut h, &format!("timeline.prop.{rotation}.name"));
+    assert_eq!(expr(&h), Some(("transform.rotation".into(), true)));
+    // Onto an effect's property in Effect Controls: its value, then one of a point's values.
+    let (slider, point) = (props(&h).prop("effects/#1/slider").unwrap().uid, props(&h).prop("effects/#2/point").unwrap().uid);
+    whip_to(&mut h, &format!("effectControls.prop.{slider}.value"));
+    assert_eq!(expr(&h), Some(("effect(\"Slider Control\")(\"Slider\")".into(), true)));
+    whip_to(&mut h, &format!("effectControls.prop.{point}.value.1"));
+    assert_eq!(expr(&h), Some(("effect(\"Point Control\")(\"Point\")[1]".into(), true)));
+    // Onto itself: nothing changes.
+    whip_to(&mut h, &format!("timeline.prop.{opacity}.name"));
+    assert_eq!(expr(&h), Some(("effect(\"Point Control\")(\"Point\")[1]".into(), true)));
 }
 
 /// #362: an expression pick whip held near the bottom or top of the Timeline's layers scrolls

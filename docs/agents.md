@@ -484,6 +484,9 @@ Extension points and the bundled extensions: [plugins.md](plugins.md).
   click elsewhere commits, Escape cancels; `layer.rename {layer, name}` does it directly.
 * Ctrl/Cmd-click on the current-time display (Timeline or Composition panel) toggles the Time
   Display Style between Timecode and Frames: `file.projectSettings {"timeDisplay": "frames"}`.
+* `prop.pickWhip {layer, prop, target: {layer, prop, dimension?}}` links a property as its
+  expression pick whip does; `dimension` picks one of the target's values (`position[0]`), as a
+  drop on that value field does.
 
 ### History, puppet recording, plug-ins
 

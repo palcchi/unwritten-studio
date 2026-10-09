@@ -9,7 +9,7 @@
 //! then mesh points 33 → 263), and reports a presence score. The landmark indices in
 //! [`TOPOLOGY`] are points of MediaPipe's canonical face mesh.
 
-use crate::face::{Face, FaceModel, Roi, Topology, crop, sigmoid};
+use crate::face::{Border, Face, FaceModel, Roi, Topology, crop, sigmoid};
 use crate::tflite::Model;
 use crate::{FACE_LANDMARKER, ModelInfo, Result};
 
@@ -166,7 +166,7 @@ impl FaceLandmarker {
 
     /// Faces in the square `roi` of a frame (frame pixels), best first.
     pub fn detect(&self, rgb: &[[f32; 3]], w: usize, h: usize, roi: &Roi) -> Result<Vec<Detection>> {
-        let x = crop(rgb, w, h, roi, DET_SIZE, [-1.0, 1.0]);
+        let x = crop(rgb, w, h, roi, DET_SIZE, [-1.0, 1.0], Border::Zero);
         let out = self.detector.run(&[&x])?;
         let (Some(reg), Some(cls)) = (out.first(), out.get(1)) else { return Err("face detector: missing outputs".into()) };
         let s = DET_SIZE as f32;
@@ -192,7 +192,7 @@ impl FaceLandmarker {
 
     /// The face mesh in `roi`: 478 points (frame pixels) and the presence score.
     pub fn mesh(&self, rgb: &[[f32; 3]], w: usize, h: usize, roi: &Roi) -> Result<Face> {
-        let x = crop(rgb, w, h, roi, MESH_SIZE, [0.0, 1.0]);
+        let x = crop(rgb, w, h, roi, MESH_SIZE, [0.0, 1.0], Border::Replicate);
         let out = self.mesh.run(&[&x])?;
         let (Some(pts), Some(flag)) = (out.first(), out.get(1).and_then(|f| f.first())) else { return Err("face mesh: missing outputs".into()) };
         let s = MESH_SIZE as f32;

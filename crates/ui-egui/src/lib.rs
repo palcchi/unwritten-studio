@@ -19,6 +19,7 @@ pub mod gpu_failure;
 pub mod header;
 pub mod i18n;
 pub mod icons;
+pub mod menu_keys;
 pub mod menus;
 pub mod native_menu;
 pub mod panels;

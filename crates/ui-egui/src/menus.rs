@@ -1480,7 +1480,9 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
     if ctx.input(|i| i.pointer.any_down()) || ctx.egui_wants_keyboard_input() {
         ctx.data_mut(|d| d.remove::<bool>(space_tap_id()));
     }
-    if ctx.egui_wants_keyboard_input() {
+    // While a menu or popup list is open, keys go to it, not to the app (Space must not start a
+    // preview behind the menu, #279).
+    if ctx.egui_wants_keyboard_input() || crate::widgets::any_menu_open(ctx) {
         return;
     }
     // Text editing in the viewer takes the clipboard events itself.
@@ -1581,6 +1583,7 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
 pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let mut clicked: Option<(String, Value)> = None;
+    let mut nav = crate::menu_keys::Nav::default();
     ui.horizontal_centered(|ui| {
         ui.add_space(6.0);
         egui::MenuBar::new().ui(ui, |ui| {
@@ -1588,13 +1591,15 @@ pub fn menu_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
                 if let MenuNode::Submenu { label, children } = node {
                     let r = ui.menu_button(crate::i18n::label(app, "", label), |ui| {
                         ui.set_min_width(if label == "Effect" { 200.0 } else { 280.0 });
-                        crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, &mut clicked));
+                        crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, &mut clicked, &mut nav, 0));
                     });
+                    nav.top(&r.response);
                     app.auto.add(&format!("menu.{label}"), r.response.rect, label);
                 }
             }
         });
     });
+    crate::menu_keys::handle(&ctx, &nav);
     if let Some((id, params)) = clicked
         && let Err(e) = invoke(app, &ctx, &id, if params.is_null() { json!({}) } else { params })
     {
@@ -1609,12 +1614,20 @@ pub(crate) fn menu_contents(app: &mut EffectcraftApp, ui: &mut egui::Ui, name: &
     if let Some(MenuNode::Submenu { children, .. }) =
         effectcraft_engine::menus::menu_bar().iter().find(|n| matches!(n, MenuNode::Submenu { label, .. } if label == name))
     {
-        menu_nodes(app, ui, children, &mut clicked);
+        menu_nodes(app, ui, children, &mut clicked, &mut crate::menu_keys::Nav::default(), 0);
     }
     clicked.map(|(id, params)| (id, if params.is_null() { json!({}) } else { params }))
 }
 
-fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], clicked: &mut Option<(String, Value)>) {
+/// The entries `nodes` of a menu `depth` submenus deep, registered with `nav` for the keyboard.
+fn menu_nodes(
+    app: &mut EffectcraftApp,
+    ui: &mut egui::Ui,
+    nodes: &[MenuNode],
+    clicked: &mut Option<(String, Value)>,
+    nav: &mut crate::menu_keys::Nav,
+    depth: usize,
+) {
     for n in nodes {
         match n {
             MenuNode::Separator => {
@@ -1644,6 +1657,7 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
                         None => r,
                     };
                     app.auto.add(&format!("menu.{name}.{i}"), r.rect, &e.label);
+                    nav.entry(ui, depth, &r, false);
                     if r.clicked() {
                         *clicked = Some((e.command.clone(), e.params.clone()));
                         ui.close();
@@ -1653,13 +1667,19 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
             MenuNode::Submenu { label, children } => {
                 let ws = app.ui.workspace.clone();
                 let shown = crate::i18n::submenu(app, label, effectcraft_engine::menus::submenu_label(&app.session, label, &dyn_ctx(&ws, &[])));
-                ui.menu_button((gutter(false), shown.as_str()), |ui| {
+                let r = ui.menu_button((gutter(false), shown.as_str()), |ui| {
                     ui.set_min_width(if children.len() > 30 { 200.0 } else { 240.0 });
-                    crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, clicked));
+                    crate::widgets::menu_scroll(ui, |ui| menu_nodes(app, ui, children, clicked, nav, depth + 1));
                 });
+                nav.entry(ui, depth, &r.response, true);
+                if r.inner.is_some() {
+                    nav.opened(depth, &r.response);
+                }
             }
             MenuNode::Item(e) => {
-                if menu_entry(app, ui, e) {
+                let r = menu_entry(app, ui, e);
+                nav.entry(ui, depth, &r, false);
+                if r.clicked() {
                     *clicked = Some((e.command.clone(), e.params.clone()));
                     ui.close();
                 }
@@ -1693,7 +1713,7 @@ pub(crate) fn submenu_at(app: &mut EffectcraftApp, ui: &mut egui::Ui, path: &[&s
 /// The menu bar's entry for `command` in a panel's context menu (see [`submenu_at`]).
 pub(crate) fn entry_for(app: &EffectcraftApp, ui: &mut egui::Ui, command: &str, clicked: &mut Option<(String, Value)>) {
     if let Some((_, e)) = effectcraft_engine::menus::entries().into_iter().find(|(_, e)| e.command == command)
-        && menu_entry(app, ui, e)
+        && menu_entry(app, ui, e).clicked()
     {
         *clicked = Some((e.command.clone(), e.params_or_empty()));
         ui.close();
@@ -1711,7 +1731,7 @@ fn gutter(checked: bool) -> egui::Atom<'static> {
     (if checked { "✔" } else { "" }).atom_size(egui::vec2(14.0, 14.0))
 }
 
-fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> bool {
+fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> egui::Response {
     let (label, check, enabled) = (entry_label(app, e), gutter(entry_checked(app, e) == Some(true)), entry_enabled(app, e));
     // Edit ▸ Label's entries show the label's colour before its name.
     if e.command == "edit.label"
@@ -1719,13 +1739,13 @@ fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> bool {
     {
         let out = ui.add_enabled_ui(enabled, |ui| egui::Button::new((check, crate::widgets::label_swatch(), label)).atom_ui(ui)).inner;
         crate::widgets::paint_label_swatch(ui, &out, l, &app.tokens);
-        return out.response.clicked();
+        return out.response;
     }
     let mut b = egui::Button::new((check, label));
     if let Some(s) = entry_shortcut(app, e) {
         b = b.shortcut_text(shortcut_text(&s));
     }
-    ui.add_enabled(enabled, b).clicked()
+    ui.add_enabled(enabled, b)
 }
 
 #[cfg(test)]

@@ -1512,6 +1512,16 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
             })
             .collect()
     });
+    // Numpad * (or `*` typed with Shift+8): Add Marker (#275). egui has no key for it, so it
+    // comes as text.
+    if clipboard && app.dialog.is_none() && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "*"))) {
+        let bound = app.session.shortcuts().bindings().into_iter().find(|(k, _)| *k == "Num*").map(|(_, b)| (b.command.clone(), b.params.clone()));
+        if let Some((id, params)) = bound
+            && let Err(e) = invoke(app, ctx, &id, if params.is_null() { json!({}) } else { params })
+        {
+            app.ui.status = e;
+        }
+    }
     if events.is_empty() {
         return;
     }

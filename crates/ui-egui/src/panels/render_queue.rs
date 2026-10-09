@@ -396,12 +396,10 @@ fn output_to_menu(it: &RenderQueueItem) -> Vec<(String, Value)> {
 }
 
 /// Output To's save dialog, as After Effects' Output Movie To: it opens at the current output
-/// (folder and name) and offers the output format's extension. `None` when the host has no
-/// save dialog for other file kinds; `Some(None)` when the dialog was cancelled.
+/// (folder and name, which ends in the format's extension) and offers that extension. `None`
+/// when the host has no save dialog; `Some(None)` when the dialog was cancelled.
 fn pick_output(app: &EffectcraftApp, it: &RenderQueueItem) -> Option<Option<String>> {
-    let pick = app.hooks.pick_save_file.as_ref()?;
-    let default = app.session.resolve_output(it).unwrap_or_default();
-    Some(pick(&default, it.output.format.extension()))
+    app.hooks.save_dialog(&app.session.resolve_output(it).unwrap_or_default())
 }
 
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
@@ -697,13 +695,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let olabels: Vec<String> = omenu.iter().map(|(l, _)| l.clone()).collect();
             if let Some(i) = widgets::popup_menu(ui, oid, odd.left_bottom(), &olabels, None) {
                 if omenu[i].1.get("choose").is_some() {
-                    // The web has no folders to choose from: its save "dialog" only names the file.
-                    let picked = pick_output(app, it).or_else(|| {
-                        let default = app.session.resolve_output(it).unwrap_or_default();
-                        let name = std::path::Path::new(&default).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                        app.hooks.pick_save.as_ref().map(|f| f(&name))
-                    });
-                    match picked {
+                    match pick_output(app, it) {
                         Some(Some(path)) => actions.push(("renderQueue.setOutput", json!({"item": it.id, "path": path}))),
                         Some(None) => {}
                         None => editing = Some((it.id, it.output.output.clone())),

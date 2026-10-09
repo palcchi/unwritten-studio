@@ -321,7 +321,8 @@ impl Session {
             .unwrap_or_else(|| "Untitled Project".into())
     }
 
-    /// The output path of a queue item: template tokens expanded, relative paths resolved against
+    /// The output path of a queue item: template tokens expanded, ending in the format's
+    /// extension exactly once ([`OutputFormat::with_extension`]), relative paths resolved against
     /// the project's folder (or the working directory). `None` when the comp is gone or the
     /// output is empty ("Needs Output").
     pub fn resolve_output(&self, item: &RenderQueueItem) -> Option<String> {
@@ -338,7 +339,8 @@ impl Session {
         let pname = self.project_name();
         let vars =
             TemplateVars { comp_name: &name, project_name: &pname, width: w, height: h, frame_rate: rate.as_f64(), start_frame: f0, end_frame: f0 + n - 1 };
-        let p = expand_template(tpl, item.output.format, &vars);
+        // The format's extension exactly once, whatever the name or a save dialog added (#293).
+        let p = item.output.format.with_extension(&expand_template(tpl, item.output.format, &vars));
         let path = std::path::Path::new(&p);
         if path.is_absolute() {
             return Some(p);

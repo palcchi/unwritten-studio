@@ -103,14 +103,32 @@ pub struct Hooks {
     pub audio_devices: Option<Box<dyn Fn() -> Vec<String>>>,
     /// Picks a folder (Settings paths).
     pub pick_folder: Option<Box<dyn Fn() -> Option<String>>>,
-    /// Save dialog for other file kinds: (default name or path, extension). A default path opens
-    /// the dialog in its folder.
+    /// Save dialog for other file kinds: (default name or path, extension; empty: no filter). A
+    /// default path opens the dialog in its folder.
     pub pick_save_file: Option<Box<dyn Fn(&str, &str) -> Option<String>>>,
     /// The system clipboard's text (native menu Edit ▸ Paste into a text field).
     pub clipboard_text: Option<Box<dyn Fn() -> Option<String>>>,
     /// Application actions the OS performs (`app.hide`, `app.hideOthers`, `app.showAll` on
     /// macOS). Returns false when the host doesn't handle the id.
     pub app_action: Option<Box<dyn Fn(&str) -> bool>>,
+}
+
+impl Hooks {
+    /// The host's save dialog for `default` (a file name or path), offering its extension: the
+    /// project dialog for project files, else [`Hooks::pick_save_file`]. The project dialog is
+    /// the fallback for hosts without that (the web, whose dialog only names the file): on macOS
+    /// a dialog filtered to projects appends `.ecproj` to any other name (#293). `None` when the
+    /// host has no save dialog; `Some(None)` when it was cancelled.
+    pub fn save_dialog(&self, default: &str) -> Option<Option<String>> {
+        let path = std::path::Path::new(default);
+        let ext = path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        match (&self.pick_save_file, &self.pick_save) {
+            (Some(pick), _) if !ext.eq_ignore_ascii_case("ecproj") => Some(pick(default, &ext)),
+            (_, Some(pick)) => Some(pick(&path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
+            (Some(pick), None) => Some(pick(default, &ext)),
+            (None, None) => None,
+        }
+    }
 }
 
 #[derive(Default)]

@@ -1499,11 +1499,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     hresp.context_menu(|ui| {
         let under: &str = ctx.data(|d| d.get_temp(egui::Id::new("tl-colhdr-under"))).unwrap_or("");
-        if !under.is_empty() && under != "name" && ui.button("Hide This").clicked() {
+        if !under.is_empty() && under != "name" && ui.button(crate::i18n::tr("Hide This")).clicked() {
             actions.push(("timeline.column".into(), json!({"column": under, "visible": false})));
             ui.close();
         }
-        ui.menu_button("Columns", |ui| {
+        ui.menu_button(crate::i18n::tr("Columns"), |ui| {
             for (id, label) in COLUMNS {
                 let label = if id == "name" { if app.ui.timeline.source_name { "Source Name" } else { "Layer Name" } } else { label };
                 let on = column_visible(&app.ui.timeline, id);
@@ -1513,7 +1513,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             }
         });
-        if ui.button(if app.ui.timeline.source_name { "Show Layer Name" } else { "Show Source Name" }).clicked() {
+        if ui.button(if app.ui.timeline.source_name { crate::i18n::tr("Show Layer Name") } else { crate::i18n::tr("Show Source Name") }).clicked() {
             actions.push(("timeline.sourceName".into(), json!({})));
             ui.close();
         }
@@ -1799,8 +1799,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 // Parent.
                 if vis.parent {
                     let pw_rect = Rect::from_center_size(pos2(cw.parent + 9.0, cy), vec2(15.0, 15.0));
-                    let pw =
-                        ui.interact(pw_rect, egui::Id::new(("parent-whip", layer.id.0)), Sense::drag()).on_hover_text("Parent pick whip: drag onto a layer");
+                    let pw = ui
+                        .interact(pw_rect, egui::Id::new(("parent-whip", layer.id.0)), Sense::drag())
+                        .on_hover_text(crate::i18n::tr("Parent pick whip: drag onto a layer"));
                     icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
                     app.auto.add(&format!("timeline.layer.{}.pickWhip", layer.id.0), pw_rect, "Parent pick whip");
                     if pw.drag_started() {
@@ -1870,7 +1871,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             if gr.width() < 2.0 {
                                 continue;
                             }
-                            let gresp = ui.interact(gr, egui::Id::new(("ghost", side, layer.id.0)), Sense::drag()).on_hover_text("Drag to slip the source");
+                            let gresp = ui
+                                .interact(gr, egui::Id::new(("ghost", side, layer.id.0)), Sense::drag())
+                                .on_hover_text(crate::i18n::tr("Drag to slip the source"));
                             app.auto.add(&format!("timeline.layer.{}.source{}", layer.id.0, side), gr, "Slip");
                             if gresp.hovered() || gresp.dragged() {
                                 ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -1999,9 +2002,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 text_anim_popups(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
                 shape_add_popup(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
                 if *uid == GEOM_BIT | layer.id.0 {
-                    let lr = lp.text(pos2(cw.switches + 6.0, cy), Align2::LEFT_CENTER, "Change Renderer…", Tokens::ui(11.5), t.accent);
-                    let resp =
-                        ui.interact(lr, egui::Id::new(("tl-change-renderer", layer.id.0)), Sense::click()).on_hover_text("Composition Settings ▸ 3D Renderer");
+                    let lr = lp.text(pos2(cw.switches + 6.0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Change Renderer…"), Tokens::ui(11.5), t.accent);
+                    let resp = ui
+                        .interact(lr, egui::Id::new(("tl-change-renderer", layer.id.0)), Sense::click())
+                        .on_hover_text(crate::i18n::tr("Composition Settings ▸ 3D Renderer"));
                     if resp.hovered() {
                         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
@@ -2028,7 +2032,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     if widgets::checkbox(ui, ir, inverted, &t, egui::Id::new(("minv", uid))).clicked() {
                         actions.push(("layer.setMask".into(), json!({"layer": layer.id.0, "mask": uid, "inverted": !inverted})));
                     }
-                    lp.text(pos2(ir.max.x + 4.0, cy), Align2::LEFT_CENTER, "Inverted", Tokens::ui(11.0), t.text_dim);
+                    lp.text(pos2(ir.max.x + 4.0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Inverted"), Tokens::ui(11.0), t.text_dim);
                 }
                 let gr_rect = Rect::from_min_max(pos2(indent + 8.0, r.min.y), pos2(cw.switches, r.max.y));
                 let gr = ui.interact(gr_rect, egui::Id::new(("grow", uid)), Sense::click());
@@ -2072,11 +2076,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let Some(ex) = prop.expr.clone() else { continue };
                 lp.rect_filled(left, 0.0, t.row_alt);
                 let indent = cw.name + 6.0 + 14.0 * row.depth as f32;
-                lp.text(pos2(indent + 12.0, cy), Align2::LEFT_CENTER, "Expression:", Tokens::ui(11.5), t.text_dim);
+                lp.text(pos2(indent + 12.0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Expression:"), Tokens::ui(11.5), t.text_dim);
                 lp.text(pos2(indent + 82.0, cy), Align2::LEFT_CENTER, &prop.name, Tokens::ui(11.5), t.text);
                 // "=" enable switch and the property pick whip (AE's expression controls).
                 let en_r = Rect::from_center_size(pos2(cw.switches + 10.0, cy), vec2(16.0, 16.0));
-                let en = ui.interact(en_r, egui::Id::new(("expr-en", uid)), Sense::click()).on_hover_text("Enable Expression");
+                let en = ui.interact(en_r, egui::Id::new(("expr-en", uid)), Sense::click()).on_hover_text(crate::i18n::tr("Enable Expression"));
                 lp.rect_stroke(en_r.shrink(1.0), 2.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
                 let expr_col = Color32::from_rgb(0xe8, 0x7c, 0x5c);
                 lp.text(
@@ -2091,7 +2095,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid, "enabled": !ex.enabled})));
                 }
                 let pw_rect = Rect::from_center_size(pos2(cw.switches + 30.0, cy), vec2(15.0, 15.0));
-                let pw = ui.interact(pw_rect, egui::Id::new(("expr-whip", uid)), Sense::drag()).on_hover_text("Expression pick whip: drag onto a property");
+                let pw = ui
+                    .interact(pw_rect, egui::Id::new(("expr-whip", uid)), Sense::drag())
+                    .on_hover_text(crate::i18n::tr("Expression pick whip: drag onto a property"));
                 icons::paint(&lp, pw_rect.shrink(1.0), Icon::PickWhip, if pw.hovered() || pw.dragged() { t.text } else { t.text_dim });
                 app.auto.add(&format!("timeline.prop.{uid}.pickWhip"), pw_rect, "Expression pick whip");
                 if pw.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_pressed()) {
@@ -2127,7 +2133,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 // ⓕ: the Expression Language menu inserts at the cursor.
                 let lang_r = Rect::from_center_size(pos2(cw.switches + 70.0, cy), vec2(16.0, 16.0));
-                let lang = ui.interact(lang_r, egui::Id::new(("expr-lang", uid)), Sense::click()).on_hover_text("Expression Language Menu");
+                let lang = ui.interact(lang_r, egui::Id::new(("expr-lang", uid)), Sense::click()).on_hover_text(crate::i18n::tr("Expression Language Menu"));
                 lp.circle_stroke(lang_r.center(), 6.5, Stroke::new(1.0, if lang.hovered() { t.text } else { t.text_dim }));
                 lp.text(lang_r.center(), Align2::CENTER_CENTER, "f", Tokens::semibold(10.0), if lang.hovered() { t.text } else { t.text_dim });
                 app.auto.add(&format!("timeline.prop.{uid}.exprLanguage"), lang_r, "Expression Language Menu");
@@ -2396,7 +2402,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             ] {
                                 if lbl == "Select All Keyframes" {
                                     // Keyframe colour labels.
-                                    ui.menu_button("Label", |ui| {
+                                    ui.menu_button(crate::i18n::tr("Label"), |ui| {
                                         for (i, l) in effectcraft_engine::color::Label::ALL.into_iter().enumerate() {
                                             if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), k.label as usize == i, &t).clicked() {
                                                 if !ks {
@@ -2459,7 +2465,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     for (response, area) in [(&outline_empty, "outline"), (&empty, "graph")] {
         response.context_menu(|ui| {
-            let menu = ui.menu_button("New", |ui| {
+            let menu = ui.menu_button(crate::i18n::tr("New"), |ui| {
                 for (key, label, command, params) in [
                     ("text", "Text", "layer.newText", json!({"text": "Text"})),
                     ("solid", "Solid…", "layer.newSolid", json!({})),
@@ -2478,7 +2484,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             });
             app.auto.add(&format!("timeline.context.{area}.new"), menu.response.rect, "New");
-            let response = ui.button("Composition Settings…");
+            let response = ui.button(crate::i18n::tr("Composition Settings…"));
             app.auto.add(&format!("timeline.context.{area}.settings"), response.rect, "Composition Settings…");
             if response.clicked() {
                 actions.push(("comp.settings".into(), json!({})));
@@ -2697,13 +2703,25 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     }
     let tgl = Rect::from_min_size(pos2(footer.min.x + 10.0, footer.min.y + 3.0), vec2(150.0, 18.0));
     let tresp = ui.interact(tgl, egui::Id::new("tl-toggle-modes"), Sense::click());
-    p.text(tgl.left_center(), Align2::LEFT_CENTER, "Toggle Switches / Modes", Tokens::ui(11.0), if tresp.hovered() { t.text } else { t.text_dim });
+    p.text(
+        tgl.left_center(),
+        Align2::LEFT_CENTER,
+        crate::i18n::tr("Toggle Switches / Modes"),
+        Tokens::ui(11.0),
+        if tresp.hovered() { t.text } else { t.text_dim },
+    );
     app.auto.add("timeline.toggleSwitchesModes", tgl, "Toggle Switches / Modes");
     if tresp.clicked() {
         app.ui.timeline.show_modes = !app.ui.timeline.show_modes;
     }
     let ms = app.frames.last_ms.lock().map(|v| *v).unwrap_or(0.0);
-    p.text(pos2(graph_x0 - 12.0, footer.center().y), Align2::RIGHT_CENTER, format!("Frame Render Time  {ms:.0}ms"), Tokens::ui(11.0), t.text_faint);
+    p.text(
+        pos2(graph_x0 - 12.0, footer.center().y),
+        Align2::RIGHT_CENTER,
+        crate::i18n::tr_args("Frame Render Time  {}ms", &[&format!("{ms:.0}")]),
+        Tokens::ui(11.0),
+        t.text_faint,
+    );
     // Zoom slider.
     let zs = Rect::from_min_max(pos2(graph_x0 + 30.0, footer.center().y - 2.0), pos2((graph_x0 + 230.0).min(rect.max.x - 30.0), footer.center().y + 2.0));
     icons::paint(&p, Rect::from_center_size(pos2(zs.min.x - 14.0, footer.center().y), vec2(14.0, 14.0)), Icon::MountainSmall, t.text_dim);
@@ -2891,7 +2909,7 @@ fn layer_cells(
                 ctx.data_mut(|d| d.insert_temp(edit_id, (el, buf)));
             }
         } else {
-            let resp = ui.interact(cr, egui::Id::new(("tl-comment", lid)), Sense::click()).on_hover_text("Double-click to edit the comment");
+            let resp = ui.interact(cr, egui::Id::new(("tl-comment", lid)), Sense::click()).on_hover_text(crate::i18n::tr("Double-click to edit the comment"));
             lp.with_clip_rect(cr.intersect(lp.clip_rect())).text(pos2(cr.min.x + 2.0, cy), Align2::LEFT_CENTER, &layer.comment, Tokens::ui(11.5), t.text_dim);
             if resp.double_clicked() {
                 ctx.data_mut(|d| d.insert_temp(edit_id, (lid, layer.comment.clone())));
@@ -2910,7 +2928,7 @@ fn layer_cells(
         }
         let cr = Rect::from_min_max(pos2(x + 2.0, r.min.y + 1.0), pos2(x + TIME_W - 2.0, r.max.y - 1.0));
         let tc = crate::panels::timecode(&app.session, comp, Tick::from_seconds_f64(secs) - if kind == "duration" { comp.display_start } else { Tick(0) });
-        let resp = ui.interact(cr, egui::Id::new(("tl-cell", kind, lid)), Sense::drag()).on_hover_text("Drag to change");
+        let resp = ui.interact(cr, egui::Id::new(("tl-cell", kind, lid)), Sense::drag()).on_hover_text(crate::i18n::tr("Drag to change"));
         lp.text(pos2(cr.min.x + 4.0, cy), Align2::LEFT_CENTER, &tc, Tokens::mono(11.0), if resp.hovered() || resp.dragged() { t.hot_text } else { t.timecode });
         app.auto.add(&format!("timeline.layer.{lid}.{kind}"), cr, &tc);
         if resp.hovered() || resp.dragged() {
@@ -2941,7 +2959,7 @@ fn layer_cells(
     if cw.vis.stretch {
         let cr = Rect::from_min_max(pos2(cw.stretch + 2.0, r.min.y + 1.0), pos2(cw.stretch + STRETCH_W - 2.0, r.max.y - 1.0));
         let label = format!("{:.1}%", layer.stretch * 100.0);
-        let resp = ui.interact(cr, egui::Id::new(("tl-stretch", lid)), Sense::click()).on_hover_text("Time Stretch…");
+        let resp = ui.interact(cr, egui::Id::new(("tl-stretch", lid)), Sense::click()).on_hover_text(crate::i18n::tr("Time Stretch…"));
         lp.text(pos2(cr.min.x + 4.0, cy), Align2::LEFT_CENTER, &label, Tokens::ui(11.5), if resp.hovered() { t.hot_text } else { t.text });
         app.auto.add(&format!("timeline.layer.{lid}.stretch"), cr, &label);
         if resp.clicked() {
@@ -3041,9 +3059,10 @@ fn shape_add_popup(
         return;
     }
     let t = app.tokens;
-    p.text(pos2(x + 6.0, cy), Align2::LEFT_CENTER, "Add:", Tokens::ui(11.5), t.text_dim);
+    p.text(pos2(x + 6.0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Add:"), Tokens::ui(11.5), t.text_dim);
     let br = Rect::from_center_size(pos2(x + 40.0, cy), vec2(16.0, 16.0));
-    let resp = ui.interact(br, egui::Id::new(("tl-shapeadd", uid)), Sense::click()).on_hover_text("Add a shape, fill, stroke or path operation");
+    let resp =
+        ui.interact(br, egui::Id::new(("tl-shapeadd", uid)), Sense::click()).on_hover_text(crate::i18n::tr("Add a shape, fill, stroke or path operation"));
     icons::paint(p, br.shrink(3.0), Icon::ChevronRight, if resp.hovered() { t.text } else { t.text_dim });
     app.auto.add(&format!("timeline.group.{uid}.add"), br, "Add:");
     let pop = egui::Id::new(("tl-shapeadd-pop", uid));
@@ -3174,7 +3193,7 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], actions: &mut Vec<(S
             ui.close();
         }
     };
-    ui.menu_button("New", |ui| {
+    ui.menu_button(crate::i18n::tr("New"), |ui| {
         item(ui, "Text", "layer.newText", json!({"text": "Text"}));
         item(ui, "Solid…", "app.solidSettings", json!({}));
         item(ui, "Light…", "layer.newLight", json!({}));
@@ -3185,24 +3204,24 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], actions: &mut Vec<(S
     });
     item(ui, "Layer Settings…", "layer.settings", json!({}));
     ui.separator();
-    ui.menu_button("Masks", |ui| {
+    ui.menu_button(crate::i18n::tr("Masks"), |ui| {
         item(ui, "New Mask", "layer.addMask", json!({"layer": id}));
     });
-    ui.menu_button("Transform", |ui| {
+    ui.menu_button(crate::i18n::tr("Transform"), |ui| {
         item(ui, "Reset", "layer.transform", json!({"layers": layers, "op": "reset"}));
         item(ui, "Center In View", "layer.transform", json!({"layers": layers, "op": "center"}));
         item(ui, "Fit to Comp", "layer.transform", json!({"layers": layers, "op": "fit"}));
         item(ui, "Flip Horizontal", "layer.transform", json!({"layers": layers, "op": "flipH"}));
         item(ui, "Flip Vertical", "layer.transform", json!({"layers": layers, "op": "flipV"}));
     });
-    ui.menu_button("Time", |ui| {
+    ui.menu_button(crate::i18n::tr("Time"), |ui| {
         item(ui, "Enable Time Remapping", "layer.enableTimeRemap", json!({"layers": layers}));
         item(ui, "Time-Reverse Layer", "layer.timeReverse", json!({"layers": layers}));
         item(ui, "Time Stretch…", "layer.timeStretch", json!({}));
         item(ui, "Freeze Frame", "layer.freezeFrame", json!({"layers": layers}));
         item(ui, "Freeze on Last Frame", "layer.freezeOnLastFrame", json!({"layers": layers}));
     });
-    ui.menu_button("Blending Mode", |ui| {
+    ui.menu_button(crate::i18n::tr("Blending Mode"), |ui| {
         widgets::menu_scroll(ui, |ui| {
             for m in BlendMode::ALL {
                 item(ui, m.label(), "layer.setBlendMode", json!({"layers": layers, "mode": m.label()}));
@@ -3212,7 +3231,7 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], actions: &mut Vec<(S
             }
         })
     });
-    ui.menu_button("Arrange", |ui| {
+    ui.menu_button(crate::i18n::tr("Arrange"), |ui| {
         item(ui, "Bring Layer to Front", "layer.arrange", json!({"layers": layers, "to": "front"}));
         item(ui, "Bring Layer Forward", "layer.arrange", json!({"layers": layers, "to": "forward"}));
         item(ui, "Send Layer Backward", "layer.arrange", json!({"layers": layers, "to": "backward"}));
@@ -3304,7 +3323,7 @@ fn value_editor(
             let linked = linkable && !app.ui.timeline.unlinked.contains(&uid);
             if linkable {
                 let lr = Rect::from_center_size(pos2(x + 7.0, at.y), vec2(14.0, 14.0));
-                let resp = ui.interact(lr, egui::Id::new(("tl-link", uid)), Sense::click()).on_hover_text("Constrain Proportions");
+                let resp = ui.interact(lr, egui::Id::new(("tl-link", uid)), Sense::click()).on_hover_text(crate::i18n::tr("Constrain Proportions"));
                 icons::paint(p, lr, Icon::Link, if linked { t.accent } else { t.text_faint });
                 app.auto.add(&format!("timeline.prop.{uid}.link"), lr, "Constrain Proportions");
                 if resp.clicked() && !app.ui.timeline.unlinked.remove(&uid) {
@@ -3379,14 +3398,20 @@ fn value_editor(
             }
         }
         Value::Path(_) => {
-            p.text(pos2(x, at.y), Align2::LEFT_CENTER, "Shape…", Tokens::ui(12.0), t.hot_text);
+            p.text(pos2(x, at.y), Align2::LEFT_CENTER, crate::i18n::tr("Shape…"), Tokens::ui(12.0), t.hot_text);
         }
         Value::Text(_) => {}
         Value::Layer(l) => {
-            p.text(pos2(x, at.y), Align2::LEFT_CENTER, l.map(|l| format!("Layer {l}")).unwrap_or("None".into()), Tokens::ui(12.0), t.hot_text);
+            p.text(
+                pos2(x, at.y),
+                Align2::LEFT_CENTER,
+                l.map(|l| crate::i18n::tr_args("Layer {}", &[&l])).unwrap_or(crate::i18n::tr("None").into()),
+                Tokens::ui(12.0),
+                t.hot_text,
+            );
         }
         Value::Gradient(_) => {
-            p.text(pos2(x, at.y), Align2::LEFT_CENTER, "Edit Gradient…", Tokens::ui(12.0), t.hot_text);
+            p.text(pos2(x, at.y), Align2::LEFT_CENTER, crate::i18n::tr("Edit Gradient…"), Tokens::ui(12.0), t.hot_text);
         }
         Value::Str(s) => {
             p.text(pos2(x, at.y), Align2::LEFT_CENTER, s.chars().take(30).collect::<String>(), Tokens::ui(12.0), t.text_dim);

@@ -293,6 +293,7 @@ fn write_still<W: std::io::Write + std::io::Seek>(
     match fmt {
         OutputFormat::ExrSequence => {
             // Linear light, premultiplied (the EXR convention); RGB keeps alpha = 1 over the background.
+            // Colour is floored at 0 but not capped at 1: a 32 bpc frame's over-range values survive (#339).
             let lin = |v: f32| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
             let mut data = Vec::with_capacity((w * h * 4) as usize);
             for y in 0..h {
@@ -305,12 +306,12 @@ fn write_still<W: std::io::Write + std::io::Seek>(
                         }
                         Channels::Rgba => {
                             let a = p[3].clamp(0.0, 1.0);
-                            let s = |c: f32| if a > 0.0 { lin((c / a).clamp(0.0, 1.0)) * a } else { 0.0 };
+                            let s = |c: f32| if a > 0.0 { lin((c / a).max(0.0)) * a } else { 0.0 };
                             ([s(p[0]), s(p[1]), s(p[2])], a)
                         }
                         Channels::Rgb => {
                             let k = 1.0 - p[3].clamp(0.0, 1.0);
-                            let c = |i: usize| lin((p[i] + comp.background[i] * k).clamp(0.0, 1.0));
+                            let c = |i: usize| lin((p[i] + comp.background[i] * k).max(0.0));
                             ([c(0), c(1), c(2)], 1.0)
                         }
                     };

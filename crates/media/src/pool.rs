@@ -37,7 +37,9 @@ fn colour_bars(w: u32, h: u32) -> Image {
 struct Key {
     path: Arc<str>,
     frame: i64,
-    alpha: u8,
+    /// The alpha interpretation (bits 0–1) and Preserve RGB (bit 2): they change the decoded
+    /// pixels.
+    interp: u8,
     matte: [u32; 3],
 }
 
@@ -516,8 +518,9 @@ impl Inner {
             AlphaMode::Premultiplied => 1,
             AlphaMode::Ignore => 2,
         };
+        let interp = alpha | (u8::from(footage.preserve_rgb) << 2);
         let matte = if footage.alpha == AlphaMode::Premultiplied { footage.premul_color.map(f32::to_bits) } else { [0; 3] };
-        let key = |path: &str, frame| Key { path: path.into(), frame, alpha, matte };
+        let key = |path: &str, frame| Key { path: path.into(), frame, interp, matte };
         match footage.kind {
             FootageKind::Sequence if !footage.sequence.is_empty() => {
                 let i = Self::frame_index(footage.frame_rate, t, footage.sequence_frames(), footage.loop_count);
@@ -607,7 +610,7 @@ impl Inner {
     fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick) {}
 
     fn decode(&self, loc: &Loc, footage: &Footage) -> Result<Image> {
-        let op = AlphaOp::new(footage.alpha, footage.premul_color);
+        let op = AlphaOp::of(footage);
         let path = &loc.key.path;
         match loc.media_t {
             None if &**path == PLACEHOLDER => Ok(colour_bars(footage.width, footage.height)),
@@ -759,7 +762,7 @@ mod tests {
     fn lru_respects_budget_and_recycles() {
         let mut c = Lru::default();
         let img = || Arc::new(Image::new(16, 16)); // 4 KiB + overhead
-        let k = |i| Key { path: "a".into(), frame: i, alpha: 0, matte: [0; 3] };
+        let k = |i| Key { path: "a".into(), frame: i, interp: 0, matte: [0; 3] };
         let budget = 3 * (4096 + 64);
         for i in 0..10 {
             c.insert(k(i), img(), budget);
@@ -773,5 +776,28 @@ mod tests {
         assert_eq!(c.spare.len(), MAX_SPARE);
         assert_eq!(c.take_spare(256).len(), 256);
         assert!(c.take_spare(17).is_empty());
+    }
+
+    /// #411: Interpret Footage ▸ Preserve RGB reads a float OpenEXR's values as the file stores
+    /// them (no automatic linear → sRGB encode), so an OCIO effect is the only conversion; the
+    /// default interpretation still encodes. Both interpretations of one file decode separately.
+    #[test]
+    fn preserve_rgb_reads_float_exr_values_unconverted() {
+        use exr::prelude::*;
+        let (w, h) = (2usize, 2usize);
+        let ch = |n: &str, v: f32| AnyChannel::new(n, FlatSamples::F32(vec![v; w * h]));
+        let channels = AnyChannels::sort(vec![ch("R", 0.18), ch("G", 0.5), ch("B", 2.0), ch("A", 1.0)].into());
+        let image = exr::image::Image::from_layer(Layer::new((w, h), LayerAttributes::default(), Encoding::FAST_LOSSLESS, channels));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let b: Arc<[u8]> = bytes.into_inner().into();
+        let pool = MediaPool::new();
+        pool.add_bytes("/render.exr", b.clone());
+        let f = crate::probe_bytes("/render.exr", b).unwrap();
+        let encoded = pool.frame_at(&f, Tick::ZERO).unwrap().get(0, 0);
+        assert!((encoded[0] - 0.4613).abs() < 1e-3 && (encoded[1] - 0.7354).abs() < 1e-3 && encoded[2] > 1.3, "sRGB-encoded: {encoded:?}");
+        let raw = pool.frame_at(&Footage { preserve_rgb: true, ..f.clone() }, Tick::ZERO).unwrap().get(0, 0);
+        assert_eq!(raw, [0.18, 0.5, 2.0, 1.0]);
+        assert_eq!(pool.frame_at(&f, Tick::ZERO).unwrap().get(0, 0), encoded, "the default interpretation is cached apart");
     }
 }

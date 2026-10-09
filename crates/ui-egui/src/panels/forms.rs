@@ -458,6 +458,7 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
                     ],
                     f.color_profile.map_or(0, |c| 1 + effectcraft_engine::project::ColorSpace::ALL.iter().position(|x| *x == c).unwrap_or(0)),
                 ),
+                Field::bool("preserveRgb", "Preserve RGB", f.preserve_rgb),
                 Field::bool("linearLight", "Interpret As Linear Light", f.linear_light),
             ];
             // After Frame Rate: an image sequence's frames (missing ones show colour bars, as in

@@ -1056,6 +1056,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             item(ui, "Move Up", fi > 0, "effect.reorder", json!({"layer": lid, "effect": g.uid, "index": fi.max(1)}));
             item(ui, "Move Down", fi + 1 < fx.len(), "effect.reorder", json!({"layer": lid, "effect": g.uid, "index": fi + 2}));
         });
+        // What the effect can't render as asked (an OCIO config it can't read, transforms it
+        // passes through), under its name.
+        if let Some(w) = effectcraft_engine::effects::warning(g, &mut |pr| ectx.value(&layer, pr)) {
+            let galley = bp.layout(format!("⚠ {w}"), Tokens::ui(11.0), t.warning, (body.width() - 20.0).max(60.0));
+            let wr = Rect::from_min_size(pos2(body.min.x + 10.0, y + 3.0), galley.size());
+            bp.galley(wr.min, galley, t.warning);
+            app.auto.add(&format!("effectControls.effect.{}.warning", g.uid), wr, &w);
+            y += wr.height() + 6.0;
+        }
         if open {
             let eh = editor_height(effect, g, body.width());
             if eh > 0.0 {

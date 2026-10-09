@@ -1089,7 +1089,7 @@ impl<'a> Renderer<'a> {
                     let k = self.raster_scale(ctx, layer);
                     if let Some(img) = self.footage.vector_frame(*item, f, k) {
                         let mut buf = Buf { img: (*img).clone(), offset: [0.0; 2], scale: k };
-                        if let Some(c) = self.pipe.media_in(f.color_profile) {
+                        if let Some(c) = self.pipe.media_in(f) {
                             color::convert(&mut buf.img, &c);
                         }
                         return Some(buf);
@@ -1127,7 +1127,7 @@ impl<'a> Renderer<'a> {
         } else {
             Buf { img: img.clone(), offset: [0.0; 2], scale: 1.0 / k }
         };
-        if let Some(c) = self.pipe.media_in(f.color_profile) {
+        if let Some(c) = self.pipe.media_in(f) {
             color::convert(&mut buf.img, &c);
         }
         buf
@@ -1156,7 +1156,7 @@ impl<'a> Renderer<'a> {
             return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f)));
         }
         let img = self.footage_frame_raw(ctx, layer, item, f, t)?;
-        if f.invert_alpha || f.linear_light { Some(Arc::new(interpret_pixels(&img, f))) } else { Some(img) }
+        if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f))) } else { Some(img) }
     }
 
     fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick) -> Option<Arc<Image>> {
@@ -2024,7 +2024,8 @@ pub fn field_frame(img: &Image, parity: usize) -> Image {
 /// Interpret Footage ▸ Invert Alpha and Interpret As Linear Light on decoded (premultiplied)
 /// pixels.
 pub fn interpret_pixels(img: &Image, f: &Footage) -> Image {
-    if !f.invert_alpha && !f.linear_light {
+    let linear = f.linear_light_applies();
+    if !f.invert_alpha && !linear {
         return img.clone();
     }
     let space = f.color_profile.unwrap_or(effectcraft_color::ColorSpace::Srgb);
@@ -2032,7 +2033,7 @@ pub fn interpret_pixels(img: &Image, f: &Footage) -> Image {
     for p in out.data.iter_mut() {
         let a = p[3];
         let mut c = if a > 1e-6 { [p[0] / a, p[1] / a, p[2] / a] } else { [0.0; 3] };
-        if f.linear_light {
+        if linear {
             // The file's values are linear light: encode them like the rest of the footage.
             c = c.map(|v| space.encode(v));
         }

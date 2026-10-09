@@ -922,6 +922,19 @@ mod tests {
     }
 
     #[test]
+    fn bundled_ui_fonts_cover_the_ukrainian_alphabet() {
+        const ALPHABET: &str = "АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯабвгґдеєжзиіїйклмнопрстуфхцчшщьюя’«»";
+        for (name, bytes) in
+            [("Inter Regular", INTER_REGULAR), ("Inter Medium", INTER_MEDIUM), ("Inter SemiBold", INTER_SEMIBOLD), ("JetBrains Mono", JETBRAINS_MONO_REGULAR)]
+        {
+            let font = FontRef::new(bytes).unwrap();
+            for c in ALPHABET.chars() {
+                assert!(covers(&font, c), "{name} cannot draw {c}");
+            }
+        }
+    }
+
+    #[test]
     fn metrics_and_coverage() {
         let f = face(resolve("Inter", "Regular").face);
         let m = f.metrics(100.0);

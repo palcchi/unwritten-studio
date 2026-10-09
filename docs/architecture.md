@@ -164,12 +164,16 @@ its evaluated inputs, excluding the transform. Static and transform-only layers 
 editing one layer re-renders only that layer. Effects that read the clock directly are declared in
 `effects::TIME_DEPENDENT`, and a test checks every registered effect against that list.
 
-The viewer's **RAM preview** (`ui-egui/src/frames.rs`) keeps finished frames keyed by project
-revision, comp, frame, scale, 3D view / region of interest and a hash of the other render
-options (Draft / Fast Previews, shadows, nested switches), so frames rendered under other
-options are never shown. When the budget (Settings ▸ Memory & CPU) is full the least recently
-shown frames go first, and frames of an older revision are dropped as soon as the project
-changes. The timeline's green bar counts the frames of exactly what the viewer shows.
+The viewer's **RAM preview** (`ui-egui/src/frames.rs`) keeps finished frames keyed by comp
+content, frame, scale, 3D view / region of interest and a hash of the other render options
+(Draft / Fast Previews, shadows, nested switches). Edits preserve unaffected comps' frames,
+and undo can reuse earlier content. During rapid edits at the same time and view, the viewer
+shows the newest completed revision while the exact requested revision renders; out-of-order
+completions cannot move it backwards. This avoids freezing until a slider or layer drag stops.
+Frames at other times or with other render options are never substituted. Obsolete queued jobs
+are dropped; running jobs finish into the cache. When the budget (Settings ▸ Memory & CPU) is
+full the least recently shown frames go first. The timeline's green bar counts cached frames
+of the current content and viewer settings.
 
 A persistent **disk cache** (`render::disk_cache`, Settings ▸ Media & Disk Cache) backs both
 the layer cache and the viewer's RAM preview: layer buffers that were slow to render and every

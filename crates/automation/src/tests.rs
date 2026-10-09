@@ -1053,3 +1053,14 @@ fn panicked_render_worker_finishes_with_an_error() {
     let reply: Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(reply["result"]["isError"], true, "{reply}");
 }
+
+/// `id` is an accepted alias of `command` (#365 made unknown keys an error).
+#[test]
+fn command_tools_accept_id_as_an_alias() {
+    let mut s = server();
+    let d = call_json(&mut s, "describe_command", json!({"id": "comp.new"}));
+    assert_eq!(d["id"], "comp.new", "{d}");
+    call_json(&mut s, "execute_command", json!({"id": "comp.new", "params": {"name": "Alias", "width": 64, "height": 36}}));
+    let (_, err) = call(&mut s, "execute_command", json!({}));
+    assert!(err, "neither key is an error");
+}

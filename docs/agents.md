@@ -80,8 +80,8 @@ See [MCP conventions](mcp.md) for core tools, resources, strict arguments, and r
 | Tool | What it does |
 |---|---|
 | `list_commands {filter?, enabled_only?, schemas?}` | Discover command ids, their param docs (and, with `schemas`, a JSON Schema each), and whether each can run now. |
-| `describe_command {command}` | One command in full: label, menu, shortcut, params doc, JSON `schema`, enabled / `why`. |
-| `execute_command {command, params?}` | Run any command (undoable). Unknown parameter keys are rejected with the accepted list. |
+| `describe_command {command \| id}` | One command in full: label, menu, shortcut, params doc, JSON `schema`, enabled / `why`. |
+| `execute_command {command \| id, params?}` | Run any command (undoable). Unknown parameter keys are rejected with the accepted list. |
 | `get_state` | Editor state (active comp, time, selections, tool) plus `app`: version, command and effect counts, export formats, parity summary. |
 | `run_script {code, name?}` | Run JavaScript with the After Effects-style scripting object model (`app.project`, `comp.layers.addText(…)`, `layer.property("ADBE Transform Group").property("ADBE Position").setValueAtTime(…)`…). Returns `{ok, result, output, error: {message, line, column}}`; edits are undoable. |
 | `get_project` / `get_comp {comp?}` | Project items, comp settings and layers. |

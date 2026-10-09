@@ -537,7 +537,12 @@ static TOOLS: &[ToolDef] = &[
         name: "describe_command",
         description: "One command in full: id, label, menu path, shortcut, the `params` doc, a JSON Schema of its parameters (`schema`: properties, required, additionalProperties) and whether it can run now (`why` if not). Use before execute_command when unsure of the parameters; execute_command rejects unknown keys.",
         bridge_only: false,
-        schema: || schema(json!({"command": {"type": "string", "description": "Command id, e.g. `layer.newText`."}}), &["command"]),
+        schema: || {
+            schema(
+                json!({"command": {"type": "string", "description": "Command id, e.g. `layer.newText`."}, "id": {"type": "string", "description": "Alias of `command`."}}),
+                &[],
+            )
+        },
         run: describe_command,
     },
     ToolDef {
@@ -548,9 +553,10 @@ static TOOLS: &[ToolDef] = &[
             schema(
                 json!({
                     "command": {"type": "string", "description": "Command id, e.g. `comp.new`, `layer.newText`, `effect.apply` (see list_commands)."},
+                    "id": {"type": "string", "description": "Alias of `command`."},
                     "params": {"type": "object", "description": "Command parameters as documented by list_commands.", "additionalProperties": true}
                 }),
-                &["command"],
+                &[],
             )
         },
         run: execute_command,

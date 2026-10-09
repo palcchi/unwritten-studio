@@ -684,9 +684,10 @@ fn read_stereo(src: &SharedSource, path: &str, s0: i64, frames: usize, rate: u32
         }
     };
     let (Some(l), Some(r)) = (buf.channels.first(), buf.channels.get(1).or(buf.channels.first())) else { return out };
-    for (o, (a, b)) in out[skip * 2..].chunks_exact_mut(2).zip(l.iter().zip(r)) {
-        o[0] = *a;
-        o[1] = *b;
+    let Some(dst) = skip.checked_mul(2).and_then(|i| out.get_mut(i..)) else { return out };
+    for ([o0, o1], (a, b)) in dst.as_chunks_mut::<2>().0.iter_mut().zip(l.iter().zip(r)) {
+        *o0 = *a;
+        *o1 = *b;
     }
     out
 }

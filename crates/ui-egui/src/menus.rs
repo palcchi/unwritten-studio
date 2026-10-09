@@ -35,6 +35,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("view.fit", "Fit", [], Some("Shift+/")),
     uic!("view.actualSize", "100%", [], Some("/")),
     uic!("view.res.auto", "Resolution: Auto", [], None),
+    uic!("viewer.nudge.up", "Move Selected Layers Up 1 Pixel at Current Magnification", [], Some("ArrowUp")),
+    uic!("viewer.nudge.down", "Move Selected Layers Down 1 Pixel at Current Magnification", [], Some("ArrowDown")),
+    uic!("viewer.nudge.left", "Move Selected Layers Left 1 Pixel at Current Magnification", [], Some("ArrowLeft")),
+    uic!("viewer.nudge.right", "Move Selected Layers Right 1 Pixel at Current Magnification", [], Some("ArrowRight")),
+    uic!("viewer.nudge.up10", "Move Selected Layers Up 10 Pixels at Current Magnification", [], Some("Shift+ArrowUp")),
+    uic!("viewer.nudge.down10", "Move Selected Layers Down 10 Pixels at Current Magnification", [], Some("Shift+ArrowDown")),
+    uic!("viewer.nudge.left10", "Move Selected Layers Left 10 Pixels at Current Magnification", [], Some("Shift+ArrowLeft")),
+    uic!("viewer.nudge.right10", "Move Selected Layers Right 10 Pixels at Current Magnification", [], Some("Shift+ArrowRight")),
     uic!("view.safeMargins", "Title/Action Safe", [], None),
     uic!("view.transparencyGrid", "Transparency Grid", [], None),
     uic!("view.fastPreviews", "Fast Previews", [], None),
@@ -229,6 +237,33 @@ fn reveal_targets(app: &EffectcraftApp) -> Vec<u64> {
     }
 }
 
+/// The arrow keys over the Composition panel or the Timeline: move the selected layers 1 pixel
+/// at the viewer's magnification (`up`, `down`, `left`, `right`), 10 with Shift (`up10`…), as
+/// After Effects does, so zoomed in they move by fractions of a comp pixel. Not while typing,
+/// or with mask points selected.
+fn nudge(app: &mut EffectcraftApp, ctx: &egui::Context, dir: &str) -> Result<Value, String> {
+    let (side, n) = match dir.strip_suffix("10") {
+        Some(side) => (side, 10.0),
+        None => (dir, 1.0),
+    };
+    let (x, y) = match side {
+        "up" => (0.0, -n),
+        "down" => (0.0, n),
+        "left" => (-n, 0.0),
+        "right" => (n, 0.0),
+        _ => return Err(format!("unknown nudge `{dir}`")),
+    };
+    let st = &app.session.state;
+    let over = matches!(app.ui.focused, PanelKind::Composition | PanelKind::Viewer(_) | PanelKind::Timeline);
+    if !over || st.selected_layers.is_empty() || st.text_edit.is_some() || !st.selected_vertices.is_empty() {
+        return Ok(Value::Null);
+    }
+    // Screen pixels per comp pixel.
+    let zoom = (app.ui.viewer.zoom.unwrap_or_else(|| crate::panels::viewer::last_fit(ctx)) * ctx.pixels_per_point()) as f64;
+    let k = if zoom.is_finite() && zoom > 1e-6 { 1.0 / zoom } else { 1.0 };
+    run_engine(app, ctx, "layer.nudge", json!({"x": x * k, "y": y * k}))
+}
+
 fn no_params(p: &Value) -> bool {
     p.as_object().is_none_or(|m| m.is_empty())
 }
@@ -335,6 +370,9 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         let tool = Tool::from_name(t).ok_or_else(|| format!("unknown tool `{t}`"))?;
         app.ui.tool = tool;
         return Ok(json!({"tool": tool}));
+    }
+    if let Some(dir) = id.strip_prefix("viewer.nudge.") {
+        return nudge(app, ctx, dir);
     }
     if let Some(k) = id.strip_prefix("timeline.reveal.") {
         if k == "animated" {
@@ -1456,7 +1494,11 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
             .iter()
             .filter_map(|e| match e {
                 egui::Event::Key { key, pressed: true, modifiers, repeat, .. }
-                    if !*repeat || matches!(key, egui::Key::PageUp | egui::Key::PageDown | egui::Key::ArrowLeft | egui::Key::ArrowRight) =>
+                    if !*repeat
+                        || matches!(
+                            key,
+                            egui::Key::PageUp | egui::Key::PageDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown
+                        ) =>
                 {
                     Some((*key, *modifiers, true))
                 }
@@ -1626,6 +1668,38 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
     }
 }
 
+/// The menu bar's submenu at `path` (`["File", "Interpret Footage"]`) in a panel's context menu,
+/// with the menu bar's labels, shortcuts and enabled state; a chosen entry goes to `clicked`.
+pub(crate) fn submenu_at(app: &mut EffectcraftApp, ui: &mut egui::Ui, path: &[&str], clicked: &mut Option<(String, Value)>) {
+    let mut nodes = effectcraft_engine::menus::menu_bar();
+    let mut found = None;
+    for label in path {
+        let Some(n) = nodes.iter().find(|n| matches!(n, MenuNode::Submenu { label: l, .. } if l == label)) else { return };
+        if let MenuNode::Submenu { children, .. } = n {
+            nodes = children;
+        }
+        found = Some(n);
+    }
+    if let Some(n) = found {
+        menu_nodes(app, ui, std::slice::from_ref(n), clicked);
+    }
+    if let Some((_, p)) = clicked.as_mut()
+        && p.is_null()
+    {
+        *p = json!({});
+    }
+}
+
+/// The menu bar's entry for `command` in a panel's context menu (see [`submenu_at`]).
+pub(crate) fn entry_for(app: &EffectcraftApp, ui: &mut egui::Ui, command: &str, clicked: &mut Option<(String, Value)>) {
+    if let Some((_, e)) = effectcraft_engine::menus::entries().into_iter().find(|(_, e)| e.command == command)
+        && menu_entry(app, ui, e)
+    {
+        *clicked = Some((e.command.clone(), e.params_or_empty()));
+        ui.close();
+    }
+}
+
 /// Frontend state for dynamic menus (the current workspace and the saved ones).
 pub(crate) fn dyn_ctx<'a>(workspace: &'a str, saved_workspaces: &'a [String]) -> effectcraft_engine::menus::DynCtx<'a> {
     effectcraft_engine::menus::DynCtx { workspace: Some(workspace), saved_workspaces }
@@ -1638,12 +1712,20 @@ fn gutter(checked: bool) -> egui::Atom<'static> {
 }
 
 fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> bool {
-    let label = entry_label(app, e);
-    let mut b = egui::Button::new((gutter(entry_checked(app, e) == Some(true)), label));
+    let (label, check, enabled) = (entry_label(app, e), gutter(entry_checked(app, e) == Some(true)), entry_enabled(app, e));
+    // Edit ▸ Label's entries show the label's colour before its name.
+    if e.command == "edit.label"
+        && let Some(l) = e.params.get("label").and_then(Value::as_str).and_then(effectcraft_engine::color::Label::from_name)
+    {
+        let out = ui.add_enabled_ui(enabled, |ui| egui::Button::new((check, crate::widgets::label_swatch(), label)).atom_ui(ui)).inner;
+        crate::widgets::paint_label_swatch(ui, &out, l, &app.tokens);
+        return out.response.clicked();
+    }
+    let mut b = egui::Button::new((check, label));
     if let Some(s) = entry_shortcut(app, e) {
         b = b.shortcut_text(shortcut_text(&s));
     }
-    ui.add_enabled(entry_enabled(app, e), b).clicked()
+    ui.add_enabled(enabled, b).clicked()
 }
 
 #[cfg(test)]

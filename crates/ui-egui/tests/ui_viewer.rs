@@ -479,6 +479,105 @@ fn motion_path_key_drag_edits_that_key() {
     assert_eq!(k[0].value.as_vec3(), [100.0, 100.0, 0.0]);
 }
 
+/// The first mask path of layer `name`.
+fn mask_path(h: &Harness<'_, EffectcraftApp>, name: &str) -> effectcraft_engine::keyframe::ShapePath {
+    let l = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == name).unwrap().clone();
+    l.masks().unwrap().groups().next().unwrap().get("path").unwrap().value.as_path().unwrap().clone()
+}
+
+/// Drawing a mask with the Pen, moving a point and undoing take one action back per undo; a
+/// double-click on a point selects all of them in a free-transform box, and dragging inside it
+/// (or, once the box is gone, dragging a point) moves the whole mask (#290).
+#[test]
+fn pen_mask_undoes_step_by_step_and_double_click_moves_the_whole_mask() {
+    let mut h = harness();
+    let plate = layer_id(&h, "Plate");
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.state_mut().ui.tool = Tool::Pen;
+    h.run_steps(2);
+    let corners = [[100.0, 60.0], [500.0, 60.0], [500.0, 300.0], [100.0, 300.0]];
+    for p in corners.iter().chain([&corners[0]]) {
+        let at = screen(&h, [p[0] as f32, p[1] as f32]);
+        click(&mut h, at);
+    }
+    let drawn = mask_path(&h, "Plate");
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1.0 && (a[1] - b[1]).abs() < 1.0;
+    assert!(drawn.closed && drawn.vertices.len() == 4 && drawn.vertices.iter().zip(&corners).all(|(v, c)| near(*v, *c)), "{drawn:?}");
+    h.state_mut().ui.tool = Tool::Selection;
+    h.run_steps(2);
+    // Move one point: one undo step puts it back, the next reopens the path, the next removes the
+    // last point.
+    let (from, to) = (screen(&h, [500.0, 60.0]), screen(&h, [520.0, 80.0]));
+    drag(&mut h, from, to);
+    let moved = mask_path(&h, "Plate");
+    assert!(near(moved.vertices[1], [520.0, 80.0]) && moved.vertices[0] == drawn.vertices[0], "{moved:?}");
+    let undo = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+        h.run_steps(2);
+        mask_path(h, "Plate")
+    };
+    assert_eq!(undo(&mut h), drawn);
+    assert!(!undo(&mut h).closed);
+    assert_eq!(undo(&mut h).vertices.len(), 3);
+    for _ in 0..3 {
+        h.state_mut().session.execute("edit.redo", json!({})).unwrap();
+    }
+    h.run_steps(2);
+    // Double-click a point: all of them selected, in a free-transform box.
+    let at = screen(&h, [100.0, 300.0]);
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false, true, false] {
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+    }
+    h.run_steps(3);
+    assert_eq!(h.state().session.state.selected_vertices.len(), 4);
+    assert!(h.state().auto.find("viewer.freeTransform.handle.0").is_some(), "the free-transform box is up");
+    // Dragging inside the box moves the whole mask.
+    let (from, to) = (screen(&h, [300.0, 120.0]), screen(&h, [310.0, 130.0]));
+    drag(&mut h, from, to);
+    let path = mask_path(&h, "Plate");
+    assert!(path.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, [c[0] + 10.0, c[1] + 10.0])), "{path:?}");
+    // A click away ends the box; the points stay selected and dragging one moves them all.
+    let away = screen(&h, [600.0, 340.0]);
+    click(&mut h, away);
+    h.run_steps(2);
+    assert!(h.state().auto.find("viewer.freeTransform.handle.0").is_none());
+    let (from, to) = (screen(&h, [110.0, 310.0]), screen(&h, [100.0, 300.0]));
+    drag(&mut h, from, to);
+    let back = mask_path(&h, "Plate");
+    assert!(back.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, *c)), "{back:?}");
+}
+
+/// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
+/// one pulls the path into a curve (#290).
+#[test]
+fn a_straight_motion_path_has_handles_to_curve_it() {
+    let mut h = harness();
+    let box_id: LayerId = h.state().session.active_comp().unwrap().layers[0].id;
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 0.0, "value": [100, 100, 0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 2.0, "value": [400, 100, 0]})).unwrap();
+    s.execute("view.snapping", json!({"value": false})).unwrap();
+    s.set_time(effectcraft_engine::time::Tick::from_seconds_f64(1.0));
+    h.run_steps(3);
+    let (out0, in1) = (format!("viewer.motionPath.{}.0.out", box_id.0), format!("viewer.motionPath.{}.1.in", box_id.0));
+    assert!(h.state().auto.find(&in1).is_some(), "the second key has a handle");
+    // The first key's handle lies a third of the way along the path: drag it down 150 px.
+    let from = rect(&h, &out0).center();
+    assert!(from.distance(screen(&h, [200.0, 100.0])) < 2.0, "{from:?}");
+    let to = screen(&h, [200.0, 250.0]);
+    drag(&mut h, from, to);
+    let p = h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().clone();
+    assert!(!p.keys[0].spatial_auto);
+    let t = p.keys[0].spatial_out;
+    assert!((t[0] - 100.0).abs() < 2.0 && (t[1] - 150.0).abs() < 2.0, "{t:?}");
+    let mid = p.value_at(effectcraft_engine::time::Tick::from_seconds_f64(1.0)).as_vec3();
+    assert!(mid[1] > 130.0, "the path curves: {mid:?}");
+}
+
 #[test]
 fn graph_editor_transform_box_scales_selected_keys_in_time() {
     let mut h = harness();
@@ -1432,6 +1531,36 @@ fn handle_drags_snap_to_the_comp_edges() {
     drag_path(&mut h, &path, egui::Modifiers::SHIFT);
     let s = scale(&h, wide);
     assert!(close(s, [100.0, 100.0]), "{s:?}");
+}
+
+/// The arrow keys over the Composition panel nudge the selected layer 1 pixel at the viewer's
+/// magnification (half a comp pixel at 200 %), Shift+arrow 10, one undo step each (#290).
+#[test]
+fn arrow_keys_nudge_the_selected_layer_at_the_viewer_magnification() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id;
+    h.state_mut().session.execute("prop.set", json!({"layer": box_id.0, "path": "transform/position", "value": [100, 100, 0]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.run_steps(2);
+    let at = screen(&h, [100.0, 100.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_layers, vec![box_id]);
+    let pos = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().value.as_vec3()
+    };
+    let ppp = h.ctx.pixels_per_point();
+    h.state_mut().ui.viewer.zoom = Some(1.0 / ppp);
+    h.run_steps(2);
+    let undo = h.state().session.history.undo.len();
+    key(&mut h, egui::Key::ArrowRight, egui::Modifiers::NONE);
+    key(&mut h, egui::Key::ArrowDown, egui::Modifiers::SHIFT);
+    assert_eq!(pos(&h), [101.0, 110.0, 0.0]);
+    assert_eq!(h.state().session.history.undo.len(), undo + 2, "one undo step per press");
+    h.state_mut().ui.viewer.zoom = Some(2.0 / ppp);
+    h.run_steps(2);
+    key(&mut h, egui::Key::ArrowLeft, egui::Modifiers::NONE);
+    key(&mut h, egui::Key::ArrowUp, egui::Modifiers::NONE);
+    assert_eq!(pos(&h), [100.5, 109.5, 0.0], "sub-pixel steps when zoomed in");
 }
 
 /// A comp wider than the GPU's texture limit at Full resolution shows its frame (averaged down

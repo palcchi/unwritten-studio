@@ -365,6 +365,61 @@ pub fn check_label(on: bool, label: &str) -> String {
     if on { format!("✓ {label}") } else { format!("   {label}") }
 }
 
+fn label_swatch_id() -> egui::Id {
+    egui::Id::new("label-swatch")
+}
+
+/// The colour swatch of a Label menu row, as an atom for its button: Label menus show each
+/// label's colour before its name (After Effects), so a label is picked by its colour. Paint it
+/// with [`paint_label_swatch`] once the button is laid out.
+pub fn label_swatch() -> egui::Atom<'static> {
+    egui::Atom::custom(label_swatch_id(), vec2(12.0, 12.0))
+}
+
+/// Paint the [`label_swatch`] of a laid-out button: label `l`'s colour, an empty box for None.
+pub fn paint_label_swatch(ui: &Ui, out: &egui::AtomLayoutResponse, l: effectcraft_engine::color::Label, t: &Tokens) {
+    let Some(r) = out.rect(label_swatch_id()) else { return };
+    let r = Rect::from_center_size(r.center(), vec2(11.0, 11.0));
+    if l == effectcraft_engine::color::Label::None {
+        ui.painter().rect_stroke(r, 2.0, Stroke::new(1.0, t.text_dim), StrokeKind::Inside);
+    } else {
+        ui.painter().rect_filled(r, 2.0, t.label(l));
+    }
+}
+
+/// A Label menu row: label `l`'s swatch then `name`, highlighted when it is the `current` label.
+pub fn label_entry(ui: &mut Ui, l: effectcraft_engine::color::Label, name: &str, current: bool, t: &Tokens) -> Response {
+    let out = egui::Button::selectable(current, (label_swatch(), name)).atom_ui(ui);
+    paint_label_swatch(ui, &out, l, t);
+    out.response
+}
+
+/// The open label menu `id` at `pos` (open it with [`open_popup`]): every label's swatch and its
+/// name from Settings ▸ Labels (`name`). Returns the chosen label.
+pub fn label_popup(
+    ui: &mut Ui,
+    id: egui::Id,
+    pos: egui::Pos2,
+    current: effectcraft_engine::color::Label,
+    name: impl Fn(effectcraft_engine::color::Label) -> String,
+    t: &Tokens,
+) -> Option<effectcraft_engine::color::Label> {
+    if !popup_is_open(ui, id) {
+        return None;
+    }
+    let labels = effectcraft_engine::color::Label::ALL;
+    popup_list(ui, id, pos, Rect::NOTHING, labels.len(), 0, |ui| {
+        ui.set_min_width(160.0);
+        let mut chosen = None;
+        for l in labels {
+            if label_entry(ui, l, &name(l), l == current, t).clicked() {
+                chosen = Some(l);
+            }
+        }
+        chosen
+    })
+}
+
 /// Show a popup menu anchored at `pos` with string options; returns the chosen index.
 pub fn popup_menu(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, options: &[String], current: Option<usize>) -> Option<usize> {
     if !popup_is_open(ui, id) {

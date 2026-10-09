@@ -1,12 +1,15 @@
 //! Timeline layer switches with real pointer input (egui_kittest): pressing a switch and
 //! dragging over other layers gives them all the state the first one got, in one undo step, as
-//! in After Effects (#227).
+//! in After Effects (#227); stopwatches the same way (#284). Also the label swatch's menu and the
+//! layer bar past its source (#290).
 
 use effectcraft_engine::Session;
+use effectcraft_engine::color::Label;
 use effectcraft_engine::project::LayerId;
 use effectcraft_ui_egui::EffectcraftApp;
-use egui::{Event, Modifiers, Pos2, Rect, pos2, vec2};
+use egui::{Color32, Event, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use serde_json::json;
 
 /// Comp "Main" with solids A (top) to D (bottom); returns their ids top to bottom.
@@ -143,4 +146,57 @@ fn dragging_over_stopwatches_sets_them_all() {
     h.state_mut().session.execute("edit.undo", json!({})).unwrap();
     h.run_steps(2);
     assert_eq!(animated(&h), [true; 5], "each drag was one step");
+}
+
+/// A swatch (a small rect filled with `col`) painted this frame in the left half of `row`.
+fn swatch_in(h: &Harness<'_, EffectcraftApp>, row: Rect, col: Color32) -> bool {
+    fn walk(s: &egui::Shape, row: Rect, col: Color32) -> bool {
+        match s {
+            egui::Shape::Rect(r) => r.fill == col && r.rect.width() < 16.0 && row.contains(r.rect.center()) && r.rect.center().x < row.center().x,
+            egui::Shape::Vec(v) => v.iter().any(|s| walk(s, row, col)),
+            _ => false,
+        }
+    }
+    h.output().shapes.iter().any(|c| walk(&c.shape, row, col))
+}
+
+/// Clicking a layer's label swatch opens the label menu, which shows each label's colour before
+/// its name, so a label is picked by its colour (#290).
+#[test]
+fn the_label_swatch_menu_shows_the_label_colours() {
+    let (mut h, ids) = harness();
+    let green = h.state().session.prefs.label_name(Label::Green);
+    let at = rect(&h, &format!("timeline.layer.{}.label", ids[1])).center();
+    drag(&mut h, at, at, 1);
+    let entry = h.query_by_label(&green).expect("the label menu is open").rect();
+    for l in [Label::Green, Label::SeaFoam, Label::Purple] {
+        let e = h.query_by_label(&h.state().session.prefs.label_name(l)).unwrap().rect();
+        assert!(swatch_in(&h, e, h.state().tokens.label(l)), "no {l:?} swatch");
+    }
+    let undo = h.state().session.history.undo.len();
+    drag(&mut h, entry.center(), entry.center(), 1);
+    assert_eq!(h.state().session.active_comp().unwrap().layer(LayerId(ids[1])).unwrap().label, Label::Green);
+    assert_eq!(h.state().session.history.undo.len(), undo + 1);
+    assert!(h.query_by_label(&green).is_none(), "the menu closed after the choice");
+}
+
+/// A layer extended past its source's end (its last frame held) has that part of its bar
+/// striped, so the source's own span shows (#290); with time remapping it isn't.
+#[test]
+fn the_bar_past_the_source_end_is_striped() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Inner", "width": 64, "height": 64, "frameRate": 30, "duration": 2})).unwrap();
+    s.execute("comp.new", json!({"name": "Outer", "width": 64, "height": 64, "frameRate": 30, "duration": 4})).unwrap();
+    let l = s.execute("layer.addItem", json!({"item": "Inner"})).unwrap()["layer"].as_u64().unwrap();
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let past = format!("timeline.layer.{l}.bar.afterSource");
+    assert!(h.state().auto.find(&past).is_none(), "the source fills the whole bar");
+    h.state_mut().session.execute("layer.timing", json!({"layers": [l], "out": 4.0})).unwrap();
+    h.run_steps(2);
+    let (bar, after) = (rect(&h, &format!("timeline.layer.{l}.bar")), rect(&h, &past));
+    assert!((after.min.x - bar.center().x).abs() < 2.0 && (after.max.x - bar.max.x).abs() < 1.0, "{bar:?} {after:?}");
+    h.state_mut().session.execute("layer.enableTimeRemap", json!({"layers": [l]})).unwrap();
+    h.run_steps(2);
+    assert!(h.state().auto.find(&past).is_none(), "time remapping decides what shows");
 }

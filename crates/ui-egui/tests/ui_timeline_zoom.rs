@@ -6,6 +6,7 @@ use effectcraft_engine::Session;
 use effectcraft_ui_egui::EffectcraftApp;
 use egui::{Event, Modifiers, MouseWheelUnit, Pos2, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use serde_json::json;
 
 /// A 10-minute comp with one solid, zoomed in on its start.
@@ -168,6 +169,35 @@ fn spacebar_drag_scrolls_the_time_graph() {
     // Without Spacebar the same drag moves the bar.
     drag(&mut h, from, from - vec2(400.0, 0.0));
     assert!(in_point(&h) < -1.0, "{}", in_point(&h));
+}
+
+/// #290: right-clicking the work area bar offers its commands; Trim Comp to Work Area trims.
+#[test]
+fn work_area_context_menu_trims_the_comp() {
+    let (mut h, _) = harness();
+    h.state_mut().ui.timeline.pps = None;
+    h.state_mut().session.execute("comp.workArea", json!({"start": 60.0, "end": 180.0})).unwrap();
+    h.run_steps(3);
+    let at = rect(&h, "timeline.workArea.bar").center();
+    h.event(Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(2);
+    for label in ["Lift Work Area", "Extract Work Area"] {
+        assert!(h.query_by_label_contains(label).is_some(), "{label}");
+    }
+    let trim = h.query_by_label_contains("Trim Comp to Work Area").expect("Trim Comp to Work Area").rect().center();
+    h.event(Event::PointerMoved(trim));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton { pos: trim, button: egui::PointerButton::Primary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(2);
+    assert_eq!(h.state().session.active_comp().unwrap().duration.seconds(), 120.0);
 }
 
 /// #252: Shift-dragging a work area end, or the whole work area bar, snaps to the current-time

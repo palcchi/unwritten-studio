@@ -190,12 +190,10 @@ pub fn dialog(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             let labels = effectcraft_engine::color::Label::ALL;
             let cur = labels.get(d.label).copied().unwrap_or_default();
             let r = egui::ComboBox::from_id_salt("dialog.marker.label").selected_text(app.session.prefs.label_name(cur)).show_ui(ui, |ui| {
-                for (i, l) in labels.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        let (r, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-                        ui.painter().rect_filled(r, 2.0, app.tokens.label(*l));
-                        ui.selectable_value(&mut d.label, i, app.session.prefs.label_name(*l));
-                    });
+                for (i, l) in labels.into_iter().enumerate() {
+                    if crate::widgets::label_entry(ui, l, &app.session.prefs.label_name(l), d.label == i, &app.tokens).clicked() {
+                        d.label = i;
+                    }
                 }
             });
             app.auto.add("dialog.marker.label", r.response.rect, "Label");

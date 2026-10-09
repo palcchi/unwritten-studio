@@ -73,6 +73,23 @@ pub(crate) fn bar_color(label: Color32, selected: bool) -> Color32 {
     Color32::from_rgb(mix(label.r()), mix(label.g()), mix(label.b()))
 }
 
+/// Darken part `r` of a layer bar and stripe it diagonally in its label colour (where the layer
+/// runs past its source). Only the visible part is drawn.
+fn stripes(p: &egui::Painter, r: Rect, label: Color32) {
+    let v = r.intersect(p.clip_rect());
+    if !v.is_positive() {
+        return;
+    }
+    let p = p.with_clip_rect(v);
+    p.rect_filled(v, 0.0, Color32::from_black_alpha(90));
+    let h = v.height();
+    let mut x = v.min.x - h;
+    while x < v.max.x {
+        p.line_segment([pos2(x, v.max.y), pos2(x + h, v.min.y)], Stroke::new(1.0, label.gamma_multiply(0.7)));
+        x += 6.0;
+    }
+}
+
 /// Row height (expression editors grow with their text).
 fn row_height(row: &Row, rh: f32) -> f32 {
     match row.kind {
@@ -1242,8 +1259,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     p.with_clip_rect(wa_row).rect_filled(wa, 0.0, WORK_AREA_BAR);
     let shift = ui.input(|i| i.modifiers.shift);
     let bar = wa.intersect(wa_row);
-    let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::drag());
+    let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::click_and_drag());
     app.auto.add("timeline.workArea.bar", bar, "Work area");
+    // Right-click: the work area's commands (After Effects).
+    bresp.context_menu(|ui| {
+        let mut chosen = None;
+        for id in ["comp.trimToWorkArea", "edit.liftWorkArea", "edit.extractWorkArea"] {
+            crate::menus::entry_for(app, ui, id, &mut chosen);
+        }
+        actions.extend(chosen);
+    });
     let bar_start = egui::Id::new("wa-bar-start");
     if bresp.drag_started() {
         ctx.data_mut(|d| d.insert_temp(bar_start, wa0));
@@ -1582,15 +1607,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     lp.rect_filled(lr, 2.0, t.label(layer.label));
                     let lresp = ui.interact(lr, egui::Id::new(("label", layer.id.0)), Sense::click());
                     app.auto.add(&format!("timeline.layer.{}.label", layer.id.0), lr, layer.label.name());
-                    lresp.context_menu(|ui| {
-                        for lab in effectcraft_engine::color::Label::ALL {
-                            let name = if lab == effectcraft_engine::color::Label::None { lab.name().to_string() } else { app.session.prefs.label_name(lab) };
-                            if ui.button(name).clicked() {
-                                actions.push(("edit.label".into(), json!({"layers": [layer.id.0], "label": lab.name()})));
-                                ui.close();
-                            }
-                        }
-                    });
+                    // Click (or right-click) the swatch for the label menu (After Effects).
+                    let pop = egui::Id::new(("label-pop", layer.id.0));
+                    if lresp.clicked() || lresp.secondary_clicked() {
+                        widgets::open_popup(ui, pop);
+                    }
+                    if let Some(lab) = widgets::label_popup(ui, pop, lr.left_bottom(), layer.label, |l| app.session.prefs.label_name(l), &t) {
+                        actions.push(("edit.label".into(), json!({"layers": [layer.id.0], "label": lab.name()})));
+                    }
                 }
                 if vis.num {
                     lp.text(pos2(cw.num + 13.0, cy), Align2::CENTER_CENTER, format!("{}", idx_of(layer.id)), Tokens::ui(11.5), t.text_dim);
@@ -1818,6 +1842,20 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         let xe = tm.x(layer.comp_time(d).seconds());
                         let ghost = Rect::from_min_max(pos2(xs.min(xe), r.min.y + 9.0), pos2(xs.max(xe), r.max.y - 9.0));
                         gp.rect_filled(ghost, 1.0, lc.gamma_multiply(0.18));
+                        // The bar past the source's end (its last frame held) or before its start
+                        // is striped, so the source's own span shows (#290). Time remapping
+                        // decides what shows there itself.
+                        if layer.props.get("timeRemap").is_none() {
+                            for (side, part) in [
+                                ("beforeSource", Rect::from_min_max(bar.min, pos2(ghost.min.x, bar.max.y))),
+                                ("afterSource", Rect::from_min_max(pos2(ghost.max.x, bar.min.y), bar.max)),
+                            ] {
+                                if part.width() >= 1.0 {
+                                    stripes(&gp, part, lc);
+                                    app.auto.add(&format!("timeline.layer.{}.bar.{side}", layer.id.0), part, "Past the source");
+                                }
+                            }
+                        }
                         // Dragging the source bar outside the in/out span slips the source.
                         for (side, gr) in [
                             ("l", Rect::from_min_max(ghost.min, pos2(bar.min.x, ghost.max.y))),
@@ -2353,8 +2391,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                 if lbl == "Select All Keyframes" {
                                     // Keyframe colour labels.
                                     ui.menu_button("Label", |ui| {
-                                        for (i, l) in effectcraft_engine::color::Label::ALL.iter().enumerate() {
-                                            if ui.add(egui::Button::new(l.name()).selected(k.label as usize == i)).clicked() {
+                                        for (i, l) in effectcraft_engine::color::Label::ALL.into_iter().enumerate() {
+                                            if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), k.label as usize == i, &t).clicked() {
                                                 if !ks {
                                                     actions.push((
                                                         "keys.select".into(),

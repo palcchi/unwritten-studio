@@ -388,7 +388,7 @@ impl MediaPool {
         let Some(src) = self.inner.source(&path) else { return vec![0.0; frames * 2] };
         let s0 = start.to_units_floor(rate as i64);
         let native = src.info().audio.as_ref().map_or(rate, |a| a.sample_rate);
-        if native == 0 || native == rate {
+        if native == 0 || rate == 0 || native == rate {
             return read_stereo(&src, &path, s0, frames, rate);
         }
         // Output sample `n` sits at source position n × native / rate.

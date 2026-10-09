@@ -1,5 +1,5 @@
 //! MCP server: JSON-RPC 2.0, one message per line (the MCP stdio transport). Implements
-//! `initialize`, `ping`, `tools/list` and `tools/call`; notifications are accepted and ignored.
+//! tools and JSON resources. The stdio loop handles progress and cancellation for long renders.
 
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -101,18 +101,48 @@ impl McpServer {
         Some(reply.to_string())
     }
 
-    /// Serve until EOF on `input`.
-    pub fn serve(&mut self, input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
-        let served = (|| {
-            for line in input.lines() {
-                if let Some(reply) = self.handle_line(&line?) {
+    /// Serve until EOF on `input`. Input is read on its own thread so a long render can report
+    /// progress, be cancelled and let other requests through while it runs (`long_job`).
+    pub fn serve(&mut self, input: impl BufRead + Send, mut output: impl Write) -> std::io::Result<()> {
+        let (tx, inbox) = std::sync::mpsc::channel::<Option<String>>();
+        // A read error ends the input like EOF and is returned once the queued requests are answered.
+        let read_error = std::sync::Mutex::new(None::<std::io::Error>);
+        let served = std::thread::scope(|scope| {
+            let read_error = &read_error;
+            std::thread::Builder::new().name("mcp-input".into()).spawn_scoped(scope, move || {
+                for line in input.lines() {
+                    let line = match line {
+                        Ok(line) => line,
+                        Err(e) => {
+                            *read_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(e);
+                            break;
+                        }
+                    };
+                    if tx.send(Some(line)).is_err() {
+                        return;
+                    }
+                }
+                let _ = tx.send(None);
+            })?;
+            while let Ok(Some(line)) = inbox.recv() {
+                let long = serde_json::from_str::<Value>(line.trim()).ok().and_then(|m| crate::long_job::long_call(self, &m));
+                if let Some(call) = long {
+                    if !self.run_long(call, &inbox, &mut output)? {
+                        break;
+                    }
+                    continue;
+                }
+                if let Some(reply) = self.handle_line(&line) {
                     output.write_all(reply.as_bytes())?;
                     output.write_all(b"\n")?;
                     output.flush()?;
                 }
             }
-            Ok(())
-        })();
+            match read_error.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take() {
+                Some(e) => Err(e),
+                None => Ok(()),
+            }
+        });
         match (served, self.checkpoint(true)) {
             (r, Ok(())) => r,
             (Ok(()), Err(e)) => Err(e),
@@ -122,7 +152,7 @@ impl McpServer {
 
     /// Serve on stdin/stdout (the MCP stdio transport).
     pub fn serve_stdio(&mut self) -> std::io::Result<()> {
-        self.serve(std::io::stdin().lock(), std::io::stdout().lock())
+        self.serve(std::io::BufReader::new(std::io::stdin()), std::io::stdout().lock())
     }
 
     fn request(&mut self, method: &str, params: &Value) -> Result<Value, (i64, String)> {

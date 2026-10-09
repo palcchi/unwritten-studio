@@ -874,3 +874,182 @@ fn render_job_state_recovers_a_poisoned_lock() {
     .join();
     assert_eq!(shared.snapshot().done, 3);
 }
+
+/// A render that takes ~2 ms per frame and writes its file first (so a cancel leaves a partial
+/// one to clean up).
+struct SlowExporter;
+
+impl effectcraft_engine::Exporter for SlowExporter {
+    fn formats(&self) -> Vec<effectcraft_engine::project::render_queue::OutputFormat> {
+        effectcraft_engine::project::render_queue::OutputFormat::ALL.to_vec()
+    }
+    fn export(&self, job: &effectcraft_engine::ExportJob, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<effectcraft_engine::ExportResult, String> {
+        std::fs::write(job.path, b"partial").map_err(|e| e.to_string())?;
+        let n = 2000;
+        for k in 0..=n {
+            if !progress(k, n) {
+                std::fs::remove_file(job.path).map_err(|e| e.to_string())?;
+                return Err(effectcraft_engine::render_queue::CANCELLED.into());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        Ok(effectcraft_engine::ExportResult { path: job.path.to_string(), frames: n, ..Default::default() })
+    }
+}
+
+/// docs/mcp.md "Progress and cancellation" over the stdio loop: a blocking `renderQueue.render`
+/// reports `notifications/progress` for its token, other requests are answered while it renders,
+/// and `notifications/cancelled` stops it, deletes the partial file and sends no response.
+#[test]
+fn render_progress_and_cancel() {
+    let dir = std::env::temp_dir().join(format!("effectcraft-mcp-progress-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (in_r, mut in_w) = std::io::pipe().unwrap();
+    let (out_r, out_w) = std::io::pipe().unwrap();
+    let server = std::thread::spawn(move || {
+        let session = Session { exporter: Some(std::sync::Arc::new(SlowExporter)), ..Default::default() };
+        McpServer::new(Backend::headless(session)).serve(BufReader::new(in_r), out_w).unwrap();
+    });
+    let mut lines = BufReader::new(out_r).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    let mut send = |v: Value| writeln!(in_w, "{v}").unwrap();
+    let run = |id: u64, cmd: &str, params: Value, token: Option<Value>| {
+        let mut p = json!({"name": "command_run", "arguments": {"id": cmd, "params": params}});
+        if let Some(t) = token {
+            p["_meta"] = json!({"progressToken": t, "io.modelcontextprotocol/protocolVersion":"2026-07-28"});
+        }
+        json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": p})
+    };
+    send(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}));
+    next();
+    send(run(2, "comp.new", json!({"width": 64, "height": 64, "duration": 1}), None));
+    assert_eq!(next()["result"]["isError"], false);
+    let a = dir.join("a.mp4").to_string_lossy().to_string();
+    send(run(3, "renderQueue.add", json!({"output": a}), None));
+    assert_eq!(next()["result"]["isError"], false);
+    // progress for the token, strictly increasing; doc_inspect answered while rendering
+    send(run(4, "renderQueue.render", json!({}), Some(json!("tok"))));
+    let (mut last, mut notes, mut asked, mut answered) = (-1.0, 0, false, false);
+    let done = loop {
+        let m = next();
+        if m["method"] == "notifications/progress" {
+            assert_eq!(m["params"]["progressToken"], "tok", "{m}");
+            let p = m["params"]["progress"].as_f64().unwrap();
+            assert!(p > last && p <= m["params"]["total"].as_f64().unwrap(), "{m}");
+            (last, notes) = (p, notes + 1);
+            if !asked && p > 0.0 {
+                asked = true;
+                send(json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "doc_inspect", "arguments": {}}}));
+            }
+        } else if m["id"] == 5 {
+            answered = true;
+            assert_eq!(m["result"]["isError"], false, "{m}");
+        } else {
+            assert_eq!(m["id"], 4, "{m}");
+            break m;
+        }
+    };
+    assert_eq!(done["result"]["isError"], false, "{done}");
+    assert_eq!(done["result"]["resultType"], "complete");
+    assert_eq!(last, 1.0, "final progress reaches the total");
+    let v: Value = serde_json::from_str(done["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(v["items"][0]["statusLabel"], "Done", "{v}");
+    assert!(notes >= 2 && answered, "{notes} notifications; doc_inspect answered during the render: {answered}");
+    // cancel after the first notification: no response, the partial file is gone
+    let b = dir.join("b.mp4");
+    send(run(6, "renderQueue.add", json!({"output": b.to_string_lossy()}), None));
+    assert_eq!(next()["result"]["isError"], false);
+    send(run(7, "renderQueue.render", json!({}), Some(json!(7))));
+    loop {
+        let m = next();
+        assert_ne!(m["id"], 7, "{m}");
+        if m["method"] == "notifications/progress" && m["params"]["progress"].as_f64().unwrap() > 0.0 {
+            break;
+        }
+    }
+    assert!(b.exists(), "the render started writing");
+    send(json!({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 7, "reason": "test"}}));
+    send(json!({"jsonrpc": "2.0", "id": 8, "method": "ping"}));
+    let m = loop {
+        let m = next();
+        if m["method"] != "notifications/progress" {
+            break m;
+        }
+    };
+    assert_eq!(m["id"], 8, "no response for the cancelled request: {m}");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    let v = loop {
+        send(run(9, "renderQueue.list", json!({}), None));
+        let v: Value = serde_json::from_str(next()["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        // the queue stops rendering a moment before the stopped item's status is updated
+        if v["rendering"] == false && v["items"][1]["statusLabel"] != "Rendering" {
+            break v;
+        }
+        assert!(std::time::Instant::now() < deadline, "cancel did not stop the job: {v}");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(!b.exists(), "partial output deleted");
+    assert!(std::path::Path::new(&a).exists(), "completed earlier queue item is retained");
+    assert_eq!(v["items"][1]["statusLabel"], "User Stopped", "{v}");
+    drop(send);
+    drop(in_w);
+    server.join().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn render_without_token_finishes_after_stdin_closes() {
+    let dir = std::env::temp_dir().join(format!("ec-mcp-eof-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("complete.mp4");
+    let mut s = McpServer::new(Backend::headless(Session { exporter: Some(std::sync::Arc::new(SlowExporter)), ..Default::default() }));
+    let mut input = String::new();
+    for (id, command, params) in
+        [(1, "comp.new", json!({"width":16,"height":16})), (2, "renderQueue.add", json!({"output":path})), (3, "renderQueue.render", json!({}))]
+    {
+        input.push_str(&format!(
+            "{}\n",
+            json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"command_run","arguments":{"id":command,"params":params}}})
+        ));
+    }
+    let mut out = Vec::new();
+    s.serve(std::io::Cursor::new(input), &mut out).unwrap();
+    let replies: Vec<Value> = String::from_utf8(out).unwrap().lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+    assert_eq!(replies.len(), 3, "no token means no notifications: {replies:?}");
+    assert_eq!(replies[2]["result"]["isError"], false);
+    assert!(path.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn panicked_render_worker_finishes_with_an_error() {
+    struct BrokenExporter;
+    impl effectcraft_engine::Exporter for BrokenExporter {
+        fn formats(&self) -> Vec<effectcraft_engine::project::render_queue::OutputFormat> {
+            effectcraft_engine::project::render_queue::OutputFormat::ALL.to_vec()
+        }
+        fn export(&self, _: &effectcraft_engine::ExportJob, _: &mut dyn FnMut(u64, u64) -> bool) -> Result<effectcraft_engine::ExportResult, String> {
+            panic!("synthetic exporter failure");
+        }
+    }
+    let mut session = Session { exporter: Some(std::sync::Arc::new(BrokenExporter)), ..Default::default() };
+    session.execute("comp.new", json!({"width":16,"height":16})).unwrap();
+    session.execute("renderQueue.add", json!({"output":"unused.mp4"})).unwrap();
+    session.execute("renderQueue.render", json!({"wait":false})).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while session.is_rendering() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!session.is_rendering(), "a panicked worker must not leave an unfinishable job");
+    session.poll_render();
+    let queue = session.execute("renderQueue.list", json!({})).unwrap();
+    assert!(queue.to_string().contains("synthetic exporter failure"), "{queue}");
+    session.execute("renderQueue.add", json!({"output":"unused-again.mp4"})).unwrap();
+    let mut server = McpServer::new(Backend::headless(session));
+    let input =
+        json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"command_run","arguments":{"id":"renderQueue.render"}}}).to_string() + "\n";
+    let mut out = Vec::new();
+    server.serve(std::io::Cursor::new(input), &mut out).unwrap();
+    let reply: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(reply["result"]["isError"], true, "{reply}");
+}

@@ -162,7 +162,7 @@ pub(crate) async fn webm(job: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut Sta
     let duration_ms = frame_ms(total) as f64;
 
     let path = job.place(job.path, 1);
-    let mut file = crate::out::create(job.sink, &path)?;
+    let mut file = job.create(&path)?;
     // EBML header.
     let mut head = vec![];
     let mut eb = vec![];
@@ -403,7 +403,7 @@ pub(crate) fn audio_file(job: &Cx, comp: &Comp, aiff: bool, st: &mut State) -> R
         }
     }
     let path = job.place(job.path, out.len() as u64);
-    let mut file = crate::out::create(job.sink, &path)?;
+    let mut file = job.create(&path)?;
     file.write_all(&out).map_err(io)?;
     let bytes = file.finish()?;
     Ok(Report { path, frames: 0, width: 0, height: 0, seconds: 0.0, bytes, audio: true, log: None, overflow: vec![] })

@@ -58,7 +58,8 @@ pub trait Exporter: Send + Sync {
     /// Formats this build can write.
     fn formats(&self) -> Vec<OutputFormat>;
     /// Render and write one item (blocking). `progress(done, total)` returns `false` to cancel;
-    /// a cancelled export returns `Err("cancelled")`.
+    /// a cancelled export removes the files it opened for that output and returns `Err("cancelled")`.
+    /// Completed earlier queue items and unrelated files must be preserved.
     fn export(&self, job: &ExportJob, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<ExportResult, String>;
     /// [`Exporter::export`] as a future: renders whose GPU readbacks are deferred (a browser
     /// job worker's WebGPU device) await the device between a frame's passes. The default runs
@@ -494,7 +495,22 @@ impl Session {
             let sh = shared.clone();
             let thread = std::thread::Builder::new()
                 .name("render-queue".into())
-                .spawn(move || effectcraft_render::passes::block_on(run_work(work, &sh, &mut |_| {})))
+                .spawn(move || {
+                    let pending: Vec<u64> = work.items.iter().filter_map(|modules| modules.first().map(|(item, _)| item.id)).collect();
+                    if let Err(error) = crate::guard::guarded("render worker", || {
+                        effectcraft_render::passes::block_on(run_work(work, &sh, &mut |_| {}));
+                        Ok(())
+                    }) {
+                        let completed = lock(&sh.state).items_done;
+                        let mut updates = lock(&sh.updates);
+                        for id in pending.into_iter().skip(completed) {
+                            if !updates.iter().any(|u| matches!(u, ItemUpdate::Finished { id: done, .. } if *done == id)) {
+                                updates.push(ItemUpdate::Finished { id, status: RenderStatus::Failed(error.to_string()), seconds: 0.0, output: None });
+                            }
+                        }
+                        lock(&sh.state).finished = true;
+                    }
+                })
                 .map_err(|e| e.to_string())?;
             self.render_job = Some(RenderJob { shared, thread: Some(thread), remote: None });
         }

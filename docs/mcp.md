@@ -34,3 +34,23 @@ receive `resultType: complete` and list/read cache hints; document reads are nev
 {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"command_run","arguments":{"id":"comp.new","params":{"width":640,"height":360}}}}
 {"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"effectcraft://document"}}
 ```
+
+## Progress and cancellation
+
+Headless `command_run` / `execute_command` calls to `renderQueue.render` (unless `wait: false`)
+run the existing background job while the MCP server keeps reading stdin. A
+`params._meta.progressToken` string or number opts into `notifications/progress`, at most ten
+per second, strictly increasing with a queue-item total. No token means no notifications.
+`ping`, inspection and other requests are served while rendering. The existing engine refuses
+a second render while one is active. Closing stdin lets the pending render finish and reply.
+
+Send `notifications/cancelled` with `params.requestId` to stop the matching request at the next
+frame batch. No response is sent for that cancelled request. Unknown and completed ids are
+ignored. The exporter records the exact files it opens, including storage overflow paths, and
+removes those files on cancellation; it never scans for similarly named files. Finished earlier
+queue items and skipped existing frames remain. Custom exporters implement the same cleanup
+contract. A failed queue item gives `isError: true`.
+
+Bridge calls, `wait: false`, batch tools and single-frame tools retain synchronous/polling
+behaviour and do not report MCP progress or cancellation. Use a direct blocking command call
+for an MCP-cancellable render.

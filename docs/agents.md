@@ -73,6 +73,8 @@ Without `--autosave`, headless work is in memory until explicitly saved. The fla
 only; a bridged desktop app owns its auto-saves. An edit interrupted before its reply is received
 may be absent from the last checkpoint.
 
+See [MCP conventions](mcp.md) for core tools, resources, strict arguments, and render progress/cancellation.
+
 ### Tools
 
 | Tool | What it does |

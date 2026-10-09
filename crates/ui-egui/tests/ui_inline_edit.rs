@@ -127,3 +127,251 @@ fn the_expression_pick_whip_inserts_at_the_cursor_while_editing() {
     whip(&mut h);
     assert_eq!(expr(&h), "transform.rotation");
 }
+
+/// #363: dropped on one of a property's values the expression pick whip picks that dimension
+/// (`position[1]`), as in After Effects; on its name, the whole property.
+#[test]
+fn the_expression_pick_whip_picks_the_dimension_it_is_dropped_on() {
+    let (mut h, _) = harness();
+    let (layer, opacity, position, transform) = {
+        let s = &mut h.state_mut().session;
+        let l = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.setExpression", json!({"layer": l, "path": "transform/opacity", "expression": "50"})).unwrap();
+        let tr = s.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(l)).unwrap().props.sub("transform").unwrap().clone();
+        (l, tr.get("opacity").unwrap().uid, tr.get("position").unwrap().uid, tr.uid)
+    };
+    h.state_mut().ui.timeline.open_layers.insert(layer);
+    h.state_mut().ui.timeline.open_groups.insert(transform);
+    h.run_steps(3);
+    let expr = |h: &Harness<'_, EffectcraftApp>| {
+        let comp = h.state().session.active_comp().unwrap();
+        comp.layer(effectcraft_engine::project::LayerId(layer)).unwrap().props.find(opacity).unwrap().expr.as_ref().unwrap().text.clone()
+    };
+    let whip_to = |h: &mut Harness<'_, EffectcraftApp>, target: &str| {
+        let (from, to) = (center(h, &format!("timeline.prop.{opacity}.pickWhip")), center(h, target));
+        h.input_mut().events.push(Event::PointerMoved(from));
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.step();
+        for k in 1..=8 {
+            h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (k as f32 / 8.0)));
+            h.step();
+        }
+        h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    };
+    whip_to(&mut h, &format!("timeline.prop.{position}.value.1"));
+    assert_eq!(expr(&h), "transform.position[1]");
+    whip_to(&mut h, &format!("timeline.prop.{position}.name"));
+    assert_eq!(expr(&h), "transform.position[0]", "the whole Position into one value: its first, as before");
+}
+
+/// #362: an expression pick whip held near the bottom or top of the Timeline's layers scrolls
+/// them (After Effects), so a property out of view can be picked.
+#[test]
+fn the_pick_whip_scrolls_the_timeline_at_its_edges() {
+    let (mut h, _) = harness();
+    let (top, opacity, transform) = {
+        let s = &mut h.state_mut().session;
+        for i in 0..40 {
+            s.execute("layer.newSolid", json!({"name": format!("Layer {i}"), "color": "#406080"})).unwrap();
+        }
+        let l = s.execute("layer.newSolid", json!({"name": "Top", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.setExpression", json!({"layer": l, "path": "transform/opacity", "expression": "50"})).unwrap();
+        let tr = s.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(l)).unwrap().props.sub("transform").unwrap().clone();
+        (l, tr.get("opacity").unwrap().uid, tr.uid)
+    };
+    h.state_mut().ui.timeline.open_layers.insert(top);
+    h.state_mut().ui.timeline.open_groups.insert(transform);
+    h.run_steps(3);
+    let scroll = |h: &Harness<'_, EffectcraftApp>| h.state().ui.timeline.scroll_y;
+    let rows = h.state().auto.find("timeline.scroll").unwrap().rect;
+    let from = center(&h, &format!("timeline.prop.{opacity}.pickWhip"));
+    let (bottom, upper) = (pos2(from.x, rows[1] + rows[3] - 2.0), pos2(from.x, rows[1] + 2.0));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for k in 1..=8 {
+        h.input_mut().events.push(Event::PointerMoved(from + (bottom - from) * (k as f32 / 8.0)));
+        h.step();
+    }
+    h.run_steps(20);
+    let down = scroll(&h);
+    assert!(down > 50.0, "held at the bottom edge the layers scroll up: {down}");
+    h.input_mut().events.push(Event::PointerMoved(upper));
+    h.run_steps(10);
+    assert!(scroll(&h) < down, "and at the top edge back down: {} after {down}", scroll(&h));
+    h.input_mut().events.push(Event::PointerMoved(pos2(from.x, rows[1] + rows[3] / 2.0)));
+    h.run_steps(2);
+    let still = scroll(&h);
+    h.run_steps(10);
+    assert_eq!(scroll(&h), still, "away from the edges it stays");
+    h.input_mut().events.push(Event::PointerButton { pos: upper, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(3);
+}
+
+/// #371: the inline expression field grows with the text being typed (it used to keep the
+/// saved text's height until committed), and its bottom edge drags to any height in lines.
+#[test]
+fn the_expression_field_grows_while_editing_and_drags_taller() {
+    let (mut h, _) = harness();
+    let (layer, opacity, transform) = {
+        let s = &mut h.state_mut().session;
+        let l = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.setExpression", json!({"layer": l, "path": "transform/opacity", "expression": "50"})).unwrap();
+        let tr = s.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(l)).unwrap().props.sub("transform").unwrap().clone();
+        (l, tr.get("opacity").unwrap().uid, tr.uid)
+    };
+    h.state_mut().ui.timeline.open_layers.insert(layer);
+    h.state_mut().ui.timeline.open_groups.insert(transform);
+    h.run_steps(3);
+    let id = format!("timeline.prop.{opacity}.expression");
+    let height = |h: &Harness<'_, EffectcraftApp>| h.state().auto.find(&id).unwrap().rect[3];
+    let line = h.state().tokens.row_h;
+    let one = height(&h);
+    let p = center(&h, &id);
+    click(&mut h, p, 1);
+    key(&mut h, Key::End);
+    for more in ["+ 1", "+ 2"] {
+        key(&mut h, Key::Enter);
+        type_text(&mut h, more);
+    }
+    h.run_steps(2);
+    assert!((height(&h) - one - 2.0 * line).abs() < 0.5, "three lines while editing: {} from {one}", height(&h));
+    // Its bottom edge: dragged down 4 lines, then up past the top (one line).
+    let edge_id = format!("timeline.prop.{opacity}.expressionHeight");
+    let drag_edge = |h: &mut Harness<'_, EffectcraftApp>, dy: f32| {
+        let edge = center(h, &edge_id);
+        let to = edge + egui::vec2(0.0, dy);
+        h.input_mut().events.push(Event::PointerMoved(edge));
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: edge, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.step();
+        for k in 1..=6 {
+            h.input_mut().events.push(Event::PointerMoved(edge + (to - edge) * (k as f32 / 6.0)));
+            h.step();
+        }
+        h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    };
+    drag_edge(&mut h, 4.0 * line);
+    assert_eq!(h.state().ui.timeline.expr_lines.get(&opacity), Some(&7));
+    assert!((height(&h) - one - 6.0 * line).abs() < 0.5, "{}", height(&h));
+    drag_edge(&mut h, -20.0 * line);
+    assert_eq!(h.state().ui.timeline.expr_lines.get(&opacity), Some(&1));
+}
+
+fn key_with(h: &mut Harness<'_, EffectcraftApp>, key: Key, modifiers: Modifiers) {
+    h.input_mut().events.push(Event::ModifiersChanged(modifiers));
+    h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+    h.input_mut().events.push(Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers });
+    h.step();
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(2);
+}
+
+/// #361: Tab in a value being typed commits it and types in the next value (the next dimension,
+/// then the next property's), Shift+Tab the previous, in the Timeline and in Effect Controls,
+/// as in After Effects. It used to drop the keyboard instead.
+#[test]
+fn tab_commits_a_value_and_moves_to_the_next() {
+    let (mut h, _) = harness();
+    let (layer, transform) = {
+        let s = &mut h.state_mut().session;
+        let l = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#406080"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.select", json!({"layers": [l]})).unwrap();
+        for fx in ["Point Control", "Slider Control"] {
+            s.execute("effect.apply", json!({"layers": [l], "effect": fx})).unwrap();
+        }
+        let tr = s.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(l)).unwrap().props.sub("transform").unwrap().uid;
+        (l, tr)
+    };
+    h.state_mut().ui.timeline.open_layers.insert(layer);
+    h.state_mut().ui.timeline.open_groups.insert(transform);
+    h.state_mut().show_panel(effectcraft_ui_egui::dock::PanelKind::EffectControls);
+    h.run_steps(3);
+    let props =
+        |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(layer)).unwrap().props.clone();
+    let value = |h: &Harness<'_, EffectcraftApp>, path: &str| props(h).prop(path).unwrap().value.components();
+    let uid = |h: &Harness<'_, EffectcraftApp>, path: &str| props(h).prop(path).unwrap().uid;
+    let (position, scale) = (uid(&h, "transform/position"), uid(&h, "transform/scale"));
+    let none = Modifiers::NONE;
+    // Timeline: Position X, Tab, Position Y, Tab, Scale (linked).
+    let p = center(&h, &format!("timeline.prop.{position}.value.0"));
+    click(&mut h, p, 1);
+    type_text(&mut h, "100");
+    key_with(&mut h, Key::Tab, none);
+    type_text(&mut h, "50");
+    key_with(&mut h, Key::Tab, none);
+    type_text(&mut h, "200");
+    key(&mut h, Key::Enter);
+    assert_eq!(value(&h, "transform/position")[..2], [100.0, 50.0]);
+    assert_eq!(value(&h, "transform/scale")[..2], [200.0, 200.0]);
+    assert!(!h.ctx.egui_wants_keyboard_input(), "Enter ends the typing");
+    // Shift+Tab: from Scale X back to Position Y.
+    let p = center(&h, &format!("timeline.prop.{scale}.value.0"));
+    click(&mut h, p, 1);
+    type_text(&mut h, "120");
+    key_with(&mut h, Key::Tab, Modifiers::SHIFT);
+    type_text(&mut h, "60");
+    key(&mut h, Key::Enter);
+    assert_eq!(value(&h, "transform/position")[..2], [100.0, 60.0]);
+    assert_eq!(value(&h, "transform/scale")[..2], [120.0, 120.0]);
+    // Effect Controls: Point Control's Y, Tab, Slider Control's Slider (the next effect).
+    let point = uid(&h, "effects/#1/point");
+    let p = center(&h, &format!("effectControls.prop.{point}.value.1"));
+    click(&mut h, p, 1);
+    type_text(&mut h, "7");
+    key_with(&mut h, Key::Tab, none);
+    type_text(&mut h, "42");
+    key(&mut h, Key::Enter);
+    assert_eq!(value(&h, "effects/#1/point")[1], 7.0);
+    assert_eq!(value(&h, "effects/#2/slider"), [42.0]);
+}
+
+/// A click at `p` with `modifiers` held.
+fn click_with(h: &mut Harness<'_, EffectcraftApp>, p: Pos2, modifiers: Modifiers) {
+    h.input_mut().events.push(Event::PointerMoved(p));
+    h.input_mut().events.push(Event::ModifiersChanged(modifiers));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers });
+    h.input_mut().events.push(Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: false, modifiers });
+    h.step();
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::NONE));
+    h.run_steps(3);
+}
+
+/// #370: Ctrl/Cmd-click on the current-time display (the Timeline's or the Composition
+/// panel's) toggles the Time Display Style between Timecode and Frames, one undo step each, as
+/// in After Effects; under the Timeline's display the other style shows.
+#[test]
+fn ctrl_click_on_the_time_display_toggles_timecode_and_frames() {
+    use effectcraft_engine::project::TimeDisplayStyle;
+    let (mut h, _) = harness();
+    h.state_mut().session.execute("time.set", json!({"frame": 30})).unwrap();
+    h.run_steps(2);
+    let shown = |h: &Harness<'_, EffectcraftApp>, id: &str| h.state().auto.find(id).unwrap().label.clone();
+    let style = |h: &Harness<'_, EffectcraftApp>| h.state().session.project.settings.time_display;
+    let undo = h.state().session.history.undo.len();
+    let at = center(&h, "timeline.timecode");
+    click_with(&mut h, at, Modifiers::COMMAND);
+    assert_eq!(style(&h), TimeDisplayStyle::Frames);
+    assert_eq!(shown(&h, "timeline.timecode"), "00030");
+    assert_eq!(h.state().session.history.undo.len(), undo + 1, "one undo step");
+    assert!(!h.ctx.egui_wants_keyboard_input(), "no time entry opened");
+    let at = center(&h, "viewer.timecode");
+    click_with(&mut h, at, Modifiers::COMMAND);
+    assert_eq!(style(&h), TimeDisplayStyle::Timecode);
+    assert_eq!(shown(&h, "timeline.timecode"), "0:00:01:06");
+    // A plain click changes nothing.
+    click_with(&mut h, at, Modifiers::NONE);
+    let at = center(&h, "timeline.timecode");
+    click_with(&mut h, at, Modifiers::NONE);
+    assert_eq!(style(&h), TimeDisplayStyle::Timecode);
+    // Feet + Frames goes to Timecode.
+    h.state_mut().session.execute("file.projectSettings", json!({"timeDisplay": "feet35"})).unwrap();
+    h.run_steps(2);
+    click_with(&mut h, at, Modifiers::COMMAND);
+    assert_eq!(style(&h), TimeDisplayStyle::Timecode);
+}

@@ -482,6 +482,17 @@ Extension points and the bundled extensions: [plugins.md](plugins.md).
   step (separated X/Y/Z Position; Orientation and X/Y/Z Rotation on 3D layers).
 * Rename a layer with Enter (or double-click a name): the whole name is selected, Enter or a
   click elsewhere commits, Escape cancels; `layer.rename {layer, name}` does it directly.
+* Ctrl/Cmd-click on the current-time display (Timeline or Composition panel) toggles the Time
+  Display Style between Timecode and Frames: `file.projectSettings {"timeDisplay": "frames"}`.
+* `prop.pickWhip {layer, prop, target: {layer, prop, dimension?}}` links a property as its
+  expression pick whip does; `dimension` picks one of the target's values (`position[0]`), as a
+  drop on that value field does.
+* A property's menu (right-click its name; entries `timeline.prop.<uid>.menu.<entry>`): Reset
+  (`prop.reset`: no keyframes or expression, and the property's default value, an effect
+  parameter's or a Transform property's), Edit Value… (`prop.set {layer, prop}` without `value`
+  opens the value dialog), Separate Dimensions (Position: `prop.separateDimensions {layer,
+  value}`), Add / Remove Expression (`prop.setExpression {layer, prop}`) and Add Property to
+  Essential Graphics (`essential.addProperty`).
 
 ### History, puppet recording, plug-ins
 

@@ -23,7 +23,8 @@ pub const PREFS_VERSION: u32 = 2;
 pub const PREFS_FILE: &str = "prefs.json";
 
 /// Settings ▸ General ▸ Language: (label, `general.language` value).
-pub const LANGUAGES: &[(&str, &str)] = &[("Match System", "system"), ("English", "en"), ("日本語", "ja"), ("简体中文", "zh-hans"), ("繁體中文", "zh-hant")];
+pub const LANGUAGES: &[(&str, &str)] =
+    &[("Match System", "system"), ("English", "en"), ("日本語", "ja"), ("简体中文", "zh-hans"), ("繁體中文", "zh-hant"), ("Українська", "uk")];
 
 /// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).
 pub const UI_SCALES: &[(&str, &str)] = &[("75%", "75"), ("100%", "100"), ("125%", "125"), ("150%", "150"), ("175%", "175"), ("200%", "200")];
@@ -67,7 +68,7 @@ macro_rules! page {
 
 page!(General {
     /// Interface language: `system` (the operating system's, where EffectCraft has it, else
-    /// English), `en` or `ja`.
+    /// English), or a language code from `LANGUAGES`.
     language: String = "system".into(),
     /// Levels of Undo (1–99).
     undo_levels: u32 = 32,

@@ -734,3 +734,143 @@ fn autosave_non_utf8_path_returns_an_error_instead_of_panicking() {
     let result = server().with_autosave(&root);
     assert!(matches!(result, Err(crate::Error::Other(message)) if message.contains("UTF-8")));
 }
+
+#[test]
+fn core_tools_annotations_and_strict_keys() {
+    let mut s = server();
+    let tools = rpc(&mut s, 1, "tools/list", json!({}));
+    let tools = tools["tools"].as_array().unwrap();
+    for name in ["command_list", "command_run", "command_batch", "doc_inspect", "render_preview"] {
+        assert!(tools.iter().any(|t| t["name"] == name), "missing {name}");
+    }
+    for t in tools {
+        assert!(t["title"].as_str().is_some_and(|s| !s.is_empty()));
+        for hint in ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] {
+            assert!(t["annotations"][hint].is_boolean(), "{t}");
+        }
+        let msg = json!({"jsonrpc":"2.0", "id":2, "method":"tools/call", "params":{"name":t["name"], "arguments":{"typo_key":1}}});
+        let reply = s.handle(&msg).unwrap();
+        assert_eq!(reply["error"]["code"], -32602, "{reply}");
+        assert!(reply["error"]["message"].as_str().unwrap().contains("typo_key"));
+    }
+    let r = call_json(&mut s, "command_run", json!({"id":"comp.new", "params":{"width":32,"height":32}}));
+    assert!(r.is_object());
+    let (content, err) = call(&mut s, "command_batch", json!({"steps":[{"id":"no.such.command"},{"id":"layer.newNull"}]}));
+    assert!(err);
+    let result: Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(result["completed"], 0);
+    assert_eq!(result["failed"], 1);
+    assert_eq!(result["results"].as_array().unwrap().len(), 1);
+    let (content, err) = call(&mut s, "command_batch", json!({"stop_on_error":false,"steps":[{"id":"no.such.command"},{"id":"layer.newNull"}]}));
+    assert!(err);
+    let result: Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(result["completed"], 1);
+    assert_eq!(result["failed"], 1);
+    assert!(call_json(&mut s, "doc_inspect", json!({}))["activeComp"].is_object());
+    assert!(!call(&mut s, "render_preview", json!({"max_side":16})).1);
+}
+
+#[test]
+fn resources_match_tools_and_recover_after_parse_error() {
+    let mut s = server();
+    let bad: Value = serde_json::from_str(&s.handle_line("{broken").unwrap()).unwrap();
+    assert_eq!(bad["error"]["code"], -32700);
+    assert!(bad["id"].is_null());
+    assert_eq!(rpc(&mut s, 1, "ping", json!({})), json!({}));
+    let list = rpc(&mut s, 2, "resources/list", json!({}));
+    for (uri, tool) in [("effectcraft://document", "doc_inspect"), ("effectcraft://commands", "command_list")] {
+        assert!(list["resources"].as_array().unwrap().iter().any(|r| r["uri"] == uri));
+        let r = rpc(&mut s, 3, "resources/read", json!({"uri":uri}));
+        assert_eq!(r["contents"][0]["mimeType"], "application/json");
+        let value: Value = serde_json::from_str(r["contents"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(value, call_json(&mut s, tool, json!({})));
+    }
+}
+
+/// Rendering is a direct tool call, outside Session::execute's existing panic guard.
+#[test]
+fn render_panic_is_an_error_and_session_remains_usable() {
+    use effectcraft_engine::{
+        color::Label,
+        project::{Footage, FootageKind, ItemId, ItemKind},
+        raster::Image,
+        render::FootageSource,
+        time::Tick,
+    };
+    use std::sync::{Arc, Mutex};
+    struct BrokenFootage(Mutex<bool>);
+    impl FootageSource for BrokenFootage {
+        fn frame(&self, _: ItemId, _: &Footage, _: Tick) -> Option<Arc<Image>> {
+            let mut first = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if *first {
+                *first = false;
+                panic!("synthetic decoder failure");
+            }
+            Some(Arc::new(Image::new(16, 16)))
+        }
+    }
+    let mut session = Session { footage: Arc::new(BrokenFootage(Mutex::new(true))), ..Default::default() };
+    session.execute("comp.new", json!({"width":16,"height":16})).unwrap();
+    let item = Arc::make_mut(&mut session.project).add_item(
+        "synthetic",
+        Label::Aqua,
+        None,
+        ItemKind::Footage(Footage { path: "synthetic.png".into(), kind: FootageKind::Still, width: 16, height: 16, has_video: true, ..Default::default() }),
+    );
+    session.execute("layer.addItem", json!({"item":item.0})).unwrap();
+    let mut s = McpServer::new(Backend::headless(session));
+    let (content, err) = call(&mut s, "render_frame", json!({}));
+    assert!(err);
+    assert!(content[0]["text"].as_str().unwrap().contains("synthetic decoder failure"));
+    assert_eq!(rpc(&mut s, 2, "ping", json!({})), json!({}));
+    assert!(!call(&mut s, "render_frame", json!({})).1);
+}
+
+/// MCP 2026-07-28 ("modern") clients declare their revision per request in `_meta` and reject
+/// list/read results without `resultType`, `ttlMs` and `cacheScope`; legacy sessions (revision
+/// negotiated through `initialize`) keep the old result shape.
+#[test]
+fn modern_clients_get_result_type() {
+    let mut s = server();
+    let meta = json!({
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientInfo": {"name": "t", "version": "1"},
+        "io.modelcontextprotocol/clientCapabilities": {},
+    });
+    for (id, method, params) in [
+        (1, "tools/list", json!({"_meta": meta})),
+        (2, "resources/list", json!({"_meta": meta})),
+        (3, "resources/templates/list", json!({"_meta": meta})),
+        (4, "resources/read", json!({"_meta": meta, "uri": "effectcraft://document"})),
+        (5, "tools/call", json!({"_meta": meta, "name": "command_list", "arguments": {}})),
+    ] {
+        let r = rpc(&mut s, id, method, params);
+        assert_eq!(r["resultType"], "complete", "{method}: {r}");
+        if method != "tools/call" {
+            assert!(r["ttlMs"].is_u64(), "{method}: {r}");
+            assert!(matches!(r["cacheScope"].as_str(), Some("public" | "private")), "{method}: {r}");
+        }
+    }
+    let mut s = server();
+    rpc(&mut s, 1, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}));
+    for (id, method, params) in
+        [(2, "tools/list", json!({})), (3, "resources/list", json!({})), (4, "resources/read", json!({"uri": "effectcraft://document"}))]
+    {
+        let r = rpc(&mut s, id, method, params);
+        let res = r.as_object().unwrap();
+        assert!(!res.contains_key("resultType") && !res.contains_key("ttlMs") && !res.contains_key("cacheScope"), "{method}: {r}");
+    }
+}
+
+#[test]
+fn render_job_state_recovers_a_poisoned_lock() {
+    let shared = std::sync::Arc::new(effectcraft_engine::render_queue::JobShared::default());
+    let worker = shared.clone();
+    let _ = std::thread::spawn(move || {
+        let mut state = worker.state.lock().unwrap();
+        state.done = 3;
+        panic!("synthetic worker panic while holding the progress lock");
+    })
+    .join();
+    assert_eq!(shared.snapshot().done, 3);
+}

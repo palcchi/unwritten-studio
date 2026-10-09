@@ -219,6 +219,9 @@ build real projects through these interfaces; they are worked examples of everyt
   colour bars, as in After Effects. `file.interpretFootage {"items":[id], "frameRate":12,
   "startTimecode":1001}` conforms them and sets Override Start (the item and layers that ran to its end get the new
   length). See [footage.md](footage.md).
+* **Colour of footage**: `file.interpretFootage {"items":[id], "preserveRgb":true}` is Interpret
+  Footage ▸ Preserve RGB: the file's values unconverted (float EXRs stay linear), for a
+  per-layer OCIO conversion or data passes.
 * **Multi-layer OpenEXR**: the footage shows the beauty pass (an unnamed RGBA layer, else
   Combined / Beauty / Image / RGBA…, never Cryptomatte or depth). `layer.channels {layer}`
   lists a footage layer's EXR layers and

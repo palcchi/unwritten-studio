@@ -211,7 +211,7 @@ fn stdio_loop() {
     .map(|v| v.to_string() + "\n")
     .collect::<String>();
     let mut out = Vec::new();
-    s.serve(input.as_bytes(), &mut out).unwrap();
+    s.serve(std::io::Cursor::new(input), &mut out).unwrap();
     let lines: Vec<Value> = String::from_utf8(out).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[1]["id"], 2);
@@ -229,7 +229,7 @@ fn headless_autosave_on_eof_preserves_unsaved_project() {
         json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "execute_command", "arguments": {"command": "layer.newText", "params": {"text": "Unsaved title"}}}}),
     ].iter().map(|v| v.to_string() + "\n").collect::<String>();
     let mut output = Vec::new();
-    s.serve(input.as_bytes(), &mut output).unwrap();
+    s.serve(std::io::Cursor::new(input), &mut output).unwrap();
     let path = s.backend().session().unwrap().autosave.last_path.clone();
     assert!(path.is_some(), "disconnect discarded the dirty project without an auto-save");
     let path = path.unwrap();
@@ -349,6 +349,30 @@ fn autosave_marks_saved_or_undone_work_clean_without_losing_its_path() {
     let mut next = server().with_autosave(&dir).unwrap();
     assert!(autosave_status(&mut next)["previousSessions"].as_array().unwrap().is_empty());
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A reply that cannot be written ends `serve` with the write error, even while stdin stays open
+/// (the client is gone but never closed its end): the reader thread must not be waited for.
+#[test]
+fn broken_output_returns_while_stdin_stays_open() {
+    struct Broken;
+    impl Write for Broken {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let (in_r, mut in_w) = std::io::pipe().unwrap();
+    writeln!(in_w, "{}", json!({"jsonrpc": "2.0", "id": 1, "method": "ping"})).unwrap();
+    let (done_tx, done) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done_tx.send(server().serve(BufReader::new(in_r), Broken));
+    });
+    let result = done.recv_timeout(std::time::Duration::from_secs(10)).expect("serve must return while stdin is still open");
+    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::BrokenPipe);
+    drop(in_w);
 }
 
 #[test]
@@ -895,6 +919,62 @@ impl effectcraft_engine::Exporter for SlowExporter {
         }
         Ok(effectcraft_engine::ExportResult { path: job.path.to_string(), frames: n, ..Default::default() })
     }
+}
+
+/// docs/mcp.md "Requests during a render": while a blocking render runs, every way of starting a
+/// second render is refused (blocking, `wait: false`, inside a batch), and edits are applied to
+/// the project without changing the running job, which renders the snapshot it started with.
+#[test]
+fn second_render_is_refused_and_edits_apply_during_a_render() {
+    let dir = std::env::temp_dir().join(format!("effectcraft-mcp-busy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (in_r, mut in_w) = std::io::pipe().unwrap();
+    let (out_r, out_w) = std::io::pipe().unwrap();
+    let server = std::thread::spawn(move || {
+        let session = Session { exporter: Some(std::sync::Arc::new(SlowExporter)), ..Default::default() };
+        McpServer::new(Backend::headless(session)).serve(BufReader::new(in_r), out_w).unwrap();
+    });
+    let mut lines = BufReader::new(out_r).lines();
+    let mut next = || -> Value { serde_json::from_str(&lines.next().unwrap().unwrap()).unwrap() };
+    let mut send = |v: Value| writeln!(in_w, "{v}").unwrap();
+    let call =
+        |id: u64, name: &str, arguments: Value| json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": arguments}});
+    send(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}));
+    next();
+    send(call(2, "command_run", json!({"id": "comp.new", "params": {"width": 64, "height": 64, "duration": 1}})));
+    assert_eq!(next()["result"]["isError"], false);
+    let a = dir.join("a.mp4").to_string_lossy().to_string();
+    send(call(3, "command_run", json!({"id": "renderQueue.add", "params": {"output": a}})));
+    assert_eq!(next()["result"]["isError"], false);
+    send(call(4, "command_run", json!({"id": "renderQueue.render"})));
+    send(call(5, "command_run", json!({"id": "renderQueue.render", "params": {"wait": false}})));
+    send(call(6, "command_run", json!({"id": "renderQueue.render"})));
+    send(call(7, "command_batch", json!({"steps": [{"id": "renderQueue.render", "params": {"wait": false}}]})));
+    send(call(8, "command_run", json!({"id": "comp.new", "params": {"name": "Added while rendering", "width": 32, "height": 32, "duration": 1}})));
+    let mut replies = std::collections::HashMap::new();
+    while !replies.contains_key(&4) {
+        let m = next();
+        replies.insert(m["id"].as_u64().unwrap(), m);
+    }
+    for id in [5, 6, 7] {
+        let m = &replies[&id];
+        assert_eq!(m["result"]["isError"], true, "a second render is refused: {m}");
+        let text = m["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("already in progress") || text.contains("is rendering"), "{m}");
+    }
+    assert_eq!(replies[&8]["result"]["isError"], false, "edits are applied during a render");
+    let done = &replies[&4];
+    assert_eq!(done["result"]["isError"], false, "{done}");
+    let v: Value = serde_json::from_str(done["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(v["items"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(v["items"][0]["statusLabel"], "Done", "{v}");
+    send(call(9, "doc_inspect", json!({})));
+    let doc = next();
+    assert!(doc.to_string().contains("Added while rendering"), "{doc}");
+    drop(send);
+    drop(in_w);
+    server.join().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// docs/mcp.md "Progress and cancellation" over the stdio loop: a blocking `renderQueue.render`

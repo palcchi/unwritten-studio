@@ -8,6 +8,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use effectcraft_engine::color::Label;
 use effectcraft_engine::project::{Item, ItemId, ItemKind};
 use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
@@ -485,14 +486,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let sresp = ui.interact(sw.expand(3.0).intersect(list), egui::Id::new(("plabel", id.0)), Sense::click());
         app.auto.add(&format!("project.item.{}.label", id.0), sw, it.label.name());
         let pop = egui::Id::new(("plabel-pop", id.0));
-        if sresp.clicked() {
+        if sresp.clicked() || sresp.secondary_clicked() {
             widgets::open_popup(ui, pop);
         }
-        let names: Vec<String> = effectcraft_engine::color::Label::ALL.iter().map(|l| app.session.prefs.label_name(*l)).collect();
-        let cur = effectcraft_engine::color::Label::ALL.iter().position(|l| *l == it.label);
-        if let Some(li) = widgets::popup_menu(ui, pop, sw.left_bottom(), &names, cur) {
-            let items: Vec<u64> = if selected { app.session.state.project_selection.iter().map(|i| i.0).collect() } else { vec![id.0] };
-            actions.push(("project.setLabel".into(), json!({"items": items, "label": li})));
+        if let Some(l) = widgets::label_popup(ui, pop, sw.left_bottom(), it.label, |l| app.session.prefs.label_name(l), &t) {
+            actions.push(("project.setLabel".into(), json!({"items": targets(app, *id, selected), "label": label_index(l)})));
         }
         // Optional columns.
         for (key, _, cx, w) in cols.iter().skip(2) {
@@ -576,8 +574,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {
-                let items: Vec<u64> = if selected { app.session.state.project_selection.iter().map(|i| i.0).collect() } else { vec![id.0] };
-                actions.push(("project.delete".into(), json!({"items": items})));
+                actions.push(("project.delete".into(), json!({"items": targets(app, *id, selected)})));
                 ui.close();
             }
             if matches!(it.kind, ItemKind::Comp(_)) && ui.button("Open Composition").clicked() {
@@ -604,6 +601,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 ui.close();
             }
+            ui.separator();
+            ui.menu_button("Label", |ui| {
+                for l in Label::ALL {
+                    if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), l == it.label, &t).clicked() {
+                        actions.push(("project.setLabel".into(), json!({"items": targets(app, *id, selected), "label": label_index(l)})));
+                        ui.close();
+                    }
+                }
+            });
         });
     }
     // The scroll bars, over the rows (which would take their presses otherwise).
@@ -773,6 +779,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.ui.status = e;
         }
     }
+}
+
+/// Items a row's menu acts on: the selection when the row is selected, else the row's item.
+fn targets(app: &EffectcraftApp, id: ItemId, selected: bool) -> Vec<u64> {
+    if selected { app.session.state.project_selection.iter().map(|i| i.0).collect() } else { vec![id.0] }
+}
+
+/// `project.setLabel`'s index of a label.
+fn label_index(l: Label) -> usize {
+    Label::ALL.iter().position(|x| *x == l).unwrap_or(0)
 }
 
 /// The column header's context menu: show or hide the optional columns.

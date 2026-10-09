@@ -1599,15 +1599,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     lp.rect_filled(lr, 2.0, t.label(layer.label));
                     let lresp = ui.interact(lr, egui::Id::new(("label", layer.id.0)), Sense::click());
                     app.auto.add(&format!("timeline.layer.{}.label", layer.id.0), lr, layer.label.name());
-                    lresp.context_menu(|ui| {
-                        for lab in effectcraft_engine::color::Label::ALL {
-                            let name = if lab == effectcraft_engine::color::Label::None { lab.name().to_string() } else { app.session.prefs.label_name(lab) };
-                            if ui.button(name).clicked() {
-                                actions.push(("edit.label".into(), json!({"layers": [layer.id.0], "label": lab.name()})));
-                                ui.close();
-                            }
-                        }
-                    });
+                    // Click (or right-click) the swatch for the label menu (After Effects).
+                    let pop = egui::Id::new(("label-pop", layer.id.0));
+                    if lresp.clicked() || lresp.secondary_clicked() {
+                        widgets::open_popup(ui, pop);
+                    }
+                    if let Some(lab) = widgets::label_popup(ui, pop, lr.left_bottom(), layer.label, |l| app.session.prefs.label_name(l), &t) {
+                        actions.push(("edit.label".into(), json!({"layers": [layer.id.0], "label": lab.name()})));
+                    }
                 }
                 if vis.num {
                     lp.text(pos2(cw.num + 13.0, cy), Align2::CENTER_CENTER, format!("{}", idx_of(layer.id)), Tokens::ui(11.5), t.text_dim);
@@ -2384,8 +2383,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                 if lbl == "Select All Keyframes" {
                                     // Keyframe colour labels.
                                     ui.menu_button("Label", |ui| {
-                                        for (i, l) in effectcraft_engine::color::Label::ALL.iter().enumerate() {
-                                            if ui.add(egui::Button::new(l.name()).selected(k.label as usize == i)).clicked() {
+                                        for (i, l) in effectcraft_engine::color::Label::ALL.into_iter().enumerate() {
+                                            if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), k.label as usize == i, &t).clicked() {
                                                 if !ks {
                                                     actions.push((
                                                         "keys.select".into(),

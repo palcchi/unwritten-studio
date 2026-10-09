@@ -153,6 +153,29 @@ fn saved_workspace_is_listed_in_the_workspace_menu() {
     assert_eq!(h.state().ui.dock, saved, "its layout came back");
 }
 
+/// Edit ▸ Label shows each label's colour before its name (#290), and choosing one labels the
+/// selected layer.
+#[test]
+fn edit_label_menu_shows_the_label_colours() {
+    let mut h = harness();
+    click(&mut h, "menu.Edit");
+    let label = h.query_by_label(" Label ⏵").expect("Edit ▸ Label").rect();
+    hover(&mut h, label.center());
+    // (Not Dark Green; the entry's label starts with its check-mark column.)
+    let green = h.query_by_label(" Green").expect("the Label submenu is open").rect();
+    let col = h.state().tokens.label(effectcraft_engine::color::Label::Green);
+    let swatch = |s: &egui::Shape| matches!(s, egui::Shape::Rect(r) if r.fill == col && r.rect.width() < 16.0 && green.contains(r.rect.center()));
+    let shapes: Vec<egui::Shape> = h.output().shapes.iter().map(|c| c.shape.clone()).collect();
+    assert!(shapes.iter().any(|s| swatch(s) || matches!(s, egui::Shape::Vec(v) if v.iter().any(swatch))), "no Green swatch");
+    // Into the submenu, then down to Green.
+    hover(&mut h, pos2(green.center().x, label.center().y));
+    for k in 1..=10 {
+        hover(&mut h, pos2(green.center().x, label.center().y + (green.center().y - label.center().y) * k as f32 / 10.0));
+    }
+    click_at(&mut h, green.center());
+    assert_eq!(h.state().session.active_comp().unwrap().layers[0].label, effectcraft_engine::color::Label::Green);
+}
+
 /// Learn opens the Home screen's tutorials; clicking another workspace tab closes them again,
 /// however quickly the tabs are clicked (they stayed over every workspace, #272).
 #[test]

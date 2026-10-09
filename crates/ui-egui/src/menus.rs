@@ -1680,12 +1680,20 @@ fn gutter(checked: bool) -> egui::Atom<'static> {
 }
 
 fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> bool {
-    let label = entry_label(app, e);
-    let mut b = egui::Button::new((gutter(entry_checked(app, e) == Some(true)), label));
+    let (label, check, enabled) = (entry_label(app, e), gutter(entry_checked(app, e) == Some(true)), entry_enabled(app, e));
+    // Edit ▸ Label's entries show the label's colour before its name.
+    if e.command == "edit.label"
+        && let Some(l) = e.params.get("label").and_then(Value::as_str).and_then(effectcraft_engine::color::Label::from_name)
+    {
+        let out = ui.add_enabled_ui(enabled, |ui| egui::Button::new((check, crate::widgets::label_swatch(), label)).atom_ui(ui)).inner;
+        crate::widgets::paint_label_swatch(ui, &out, l, &app.tokens);
+        return out.response.clicked();
+    }
+    let mut b = egui::Button::new((check, label));
     if let Some(s) = entry_shortcut(app, e) {
         b = b.shortcut_text(shortcut_text(&s));
     }
-    ui.add_enabled(entry_enabled(app, e), b).clicked()
+    ui.add_enabled(enabled, b).clicked()
 }
 
 #[cfg(test)]

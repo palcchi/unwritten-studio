@@ -2052,11 +2052,7 @@ mod tests {
         let mut japanese_keys = BTreeSet::new();
         let mut chinese_keys = BTreeSet::new();
         let mut traditional_keys = BTreeSet::new();
-        for (catalog, unique) in [
-            (JAPANESE, &mut japanese_keys),
-            (SIMPLIFIED_CHINESE, &mut chinese_keys),
-            (TRADITIONAL_CHINESE, &mut traditional_keys),
-        ] {
+        for (catalog, unique) in [(JAPANESE, &mut japanese_keys), (SIMPLIFIED_CHINESE, &mut chinese_keys), (TRADITIONAL_CHINESE, &mut traditional_keys)] {
             for (command, en, translated) in catalog {
                 let key = (command.to_string(), en.to_string());
                 assert!(actual.contains(&key), "stale translation: {key:?}");
@@ -2191,10 +2187,7 @@ mod tests {
             "图层: File"
         );
         // The submenu titles that name the current workspace / view.
-        assert_eq!(
-            submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “Default” Workspace".into()),
-            "为工作区“Default”指定快捷键"
-        );
+        assert_eq!(submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “Default” Workspace".into()), "为工作区“Default”指定快捷键");
         assert_eq!(submenu(&app, "Assign Shortcut to 3D View", "Assign Shortcut to “Top”".into()), "为 3D 视图“Top”指定快捷键");
         // The menu tree carries the same commands and shortcuts with the Chinese labels.
         let zh = crate::native_menu::build(&app);
@@ -2234,10 +2227,7 @@ mod tests {
             "圖層: File"
         );
         // The submenu titles that name the current workspace / view.
-        assert_eq!(
-            submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “Default” Workspace".into()),
-            "為工作區“Default”指定快速鍵"
-        );
+        assert_eq!(submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “Default” Workspace".into()), "為工作區“Default”指定快速鍵");
         assert_eq!(submenu(&app, "Assign Shortcut to 3D View", "Assign Shortcut to “Top”".into()), "為 3D 檢視“Top”指定快速鍵");
         // The menu tree carries the same commands and shortcuts with the Traditional labels.
         let zh = crate::native_menu::build(&app);

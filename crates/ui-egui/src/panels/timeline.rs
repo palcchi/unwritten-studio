@@ -1259,8 +1259,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     p.with_clip_rect(wa_row).rect_filled(wa, 0.0, WORK_AREA_BAR);
     let shift = ui.input(|i| i.modifiers.shift);
     let bar = wa.intersect(wa_row);
-    let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::drag());
+    let bresp = ui.interact(bar, egui::Id::new("wa-bar"), Sense::click_and_drag());
     app.auto.add("timeline.workArea.bar", bar, "Work area");
+    // Right-click: the work area's commands (After Effects).
+    bresp.context_menu(|ui| {
+        let mut chosen = None;
+        for id in ["comp.trimToWorkArea", "edit.liftWorkArea", "edit.extractWorkArea"] {
+            crate::menus::entry_for(app, ui, id, &mut chosen);
+        }
+        actions.extend(chosen);
+    });
     let bar_start = egui::Id::new("wa-bar-start");
     if bresp.drag_started() {
         ctx.data_mut(|d| d.insert_temp(bar_start, wa0));

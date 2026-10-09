@@ -2643,7 +2643,6 @@ const UKRAINIAN: &[(&str, &str, &str)] = &[
     ("window.panel", "Render Queue", "Черга рендерингу"),
     ("window.panel", "Timeline", "Шкала часу"),
     ("window.panel", "Create Nulls From Paths", "Створення нульових об’єктів із контурів"),
-    ("window.panel", "Ease Presets", "Набори плавності"),
     ("window.panel", "VR Comp Editor", "Редактор композицій VR"),
     ("", "Help", "Довідка"),
     ("help.docs", "EffectCraft Help...", "Довідка EffectCraft..."),

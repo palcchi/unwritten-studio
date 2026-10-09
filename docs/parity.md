@@ -401,6 +401,14 @@ Browser in the web app (landed in M13.10: browser storage and File System Access
   wrong signatures and versions, fuel exhaustion, traps and bit-identical output; script
   `Socket` validates ports, and ScriptUI resource strings accept trailing array commas.
 
+## Update: text and viewer fidelity (G1)
+
+Fixes from measured reports:
+
+- Glyphs that touch or overlap ("ff") are drawn as one outline, so no light seam shows where
+  their anti-aliased edges meet (#415). Characters of other colours, with Blur, or under an
+  Inter-Character Blending mode are still composited one by one.
+
 ## Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 
 EffectCraft's core keeps After Effects parity; what After Effects users get from third parties is

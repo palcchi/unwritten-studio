@@ -572,6 +572,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if resp.drag_started() {
             egui::DragAndDrop::set_payload(&ctx, DragPayload::Item(id.0));
         }
+        // Right-clicking an item selects it (After Effects): the menu's File commands act on the
+        // selection.
+        if resp.secondary_clicked() && !selected {
+            app.session.state.project_selection = vec![*id];
+        }
+        let footage = matches!(it.kind, ItemKind::Footage(_));
         resp.context_menu(|ui| {
             if ui.button("Delete").clicked() {
                 actions.push(("project.delete".into(), json!({"items": targets(app, *id, selected)})));
@@ -610,6 +616,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                 }
             });
+            // Footage: the File menu's footage commands (Interpret Footage, Replace Footage…).
+            if footage {
+                let mut chosen = None;
+                crate::menus::submenu_at(app, ui, &["File", "Interpret Footage"], &mut chosen);
+                crate::menus::submenu_at(app, ui, &["File", "Replace Footage"], &mut chosen);
+                crate::menus::entry_for(app, ui, "file.reloadFootage", &mut chosen);
+                crate::menus::entry_for(app, ui, "file.revealInFinder", &mut chosen);
+                actions.extend(chosen);
+            }
         });
     }
     // The scroll bars, over the rows (which would take their presses otherwise).
@@ -680,9 +695,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let resp = widgets::icon_button(ui, r, icon, false, &t, egui::Id::new(("pfoot", id))).on_hover_text(tip);
         app.auto.add(&format!("project.{id}"), r, tip);
         if resp.clicked() {
+            let footage =
+                app.session.state.project_selection.first().and_then(|i| app.session.project.item(*i)).is_some_and(|i| matches!(i.kind, ItemKind::Footage(_)));
             match id {
                 "newComp" => crate::panels::dialogs::open_new_comp(app),
                 "newFolder" => actions.push(("project.newFolder".into(), json!({}))),
+                _ if footage => actions.push(("file.interpretFootage".into(), json!({}))),
                 _ => app.ui.status = "Interpret Footage: select a footage item".into(),
             }
         }

@@ -1668,6 +1668,38 @@ fn menu_nodes(app: &mut EffectcraftApp, ui: &mut egui::Ui, nodes: &[MenuNode], c
     }
 }
 
+/// The menu bar's submenu at `path` (`["File", "Interpret Footage"]`) in a panel's context menu,
+/// with the menu bar's labels, shortcuts and enabled state; a chosen entry goes to `clicked`.
+pub(crate) fn submenu_at(app: &mut EffectcraftApp, ui: &mut egui::Ui, path: &[&str], clicked: &mut Option<(String, Value)>) {
+    let mut nodes = effectcraft_engine::menus::menu_bar();
+    let mut found = None;
+    for label in path {
+        let Some(n) = nodes.iter().find(|n| matches!(n, MenuNode::Submenu { label: l, .. } if l == label)) else { return };
+        if let MenuNode::Submenu { children, .. } = n {
+            nodes = children;
+        }
+        found = Some(n);
+    }
+    if let Some(n) = found {
+        menu_nodes(app, ui, std::slice::from_ref(n), clicked);
+    }
+    if let Some((_, p)) = clicked.as_mut()
+        && p.is_null()
+    {
+        *p = json!({});
+    }
+}
+
+/// The menu bar's entry for `command` in a panel's context menu (see [`submenu_at`]).
+pub(crate) fn entry_for(app: &EffectcraftApp, ui: &mut egui::Ui, command: &str, clicked: &mut Option<(String, Value)>) {
+    if let Some((_, e)) = effectcraft_engine::menus::entries().into_iter().find(|(_, e)| e.command == command)
+        && menu_entry(app, ui, e)
+    {
+        *clicked = Some((e.command.clone(), e.params_or_empty()));
+        ui.close();
+    }
+}
+
 /// Frontend state for dynamic menus (the current workspace and the saved ones).
 pub(crate) fn dyn_ctx<'a>(workspace: &'a str, saved_workspaces: &'a [String]) -> effectcraft_engine::menus::DynCtx<'a> {
     effectcraft_engine::menus::DynCtx { workspace: Some(workspace), saved_workspaces }

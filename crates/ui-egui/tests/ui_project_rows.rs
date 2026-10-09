@@ -3,8 +3,8 @@
 
 use effectcraft_engine::Session;
 use effectcraft_engine::color::Label;
-use effectcraft_engine::project::{ItemId, ItemKind};
-use effectcraft_ui_egui::EffectcraftApp;
+use effectcraft_engine::project::{Footage, FootageKind, ItemId, ItemKind};
+use effectcraft_ui_egui::{Dialog, EffectcraftApp};
 use egui::{Color32, Event, Modifiers, Pos2, Rect, pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -108,6 +108,44 @@ fn label_swatch_opens_the_label_menu() {
     assert_eq!(h.state().session.project.item(solid).unwrap().label, Label::Green);
     assert_eq!(h.state().session.history.undo.len(), undo + 1);
     assert!(h.query_by_label(&green).is_none(), "the menu closed after the choice");
+}
+
+/// Right-clicking a footage item selects it and offers the File menu's footage commands:
+/// Interpret Footage ▸ Main... opens the Interpret Footage dialog on it (#290). A solid has none.
+#[test]
+fn footage_context_menu_interprets_the_footage() {
+    let (mut h, _, _, solid) = harness();
+    let footage = Footage { kind: FootageKind::Video, path: "clip.mp4".into(), width: 64, height: 36, has_video: true, ..Default::default() };
+    let clip = std::sync::Arc::make_mut(&mut h.state_mut().session.project).add_item("Clip", Default::default(), None, ItemKind::Footage(footage));
+    h.run_steps(2);
+    let right_click = |h: &mut Harness<'_, EffectcraftApp>, p: Pos2| {
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.step();
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerButton { pos: p, button: egui::PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+            h.step();
+        }
+        h.run_steps(2);
+    };
+    let at = center(&h, &format!("project.item.{}.name", solid.0));
+    right_click(&mut h, at);
+    assert_eq!(h.state().session.state.project_selection, vec![solid]);
+    assert!(h.query_by_label_contains("Interpret Footage").is_none(), "a solid isn't footage");
+    h.input_mut().events.push(Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+    h.run_steps(2);
+    let at = center(&h, &format!("project.item.{}.name", clip.0));
+    right_click(&mut h, at);
+    assert_eq!(h.state().session.state.project_selection, vec![clip], "right-click selects the item");
+    let sub = h.query_by_label_contains("Interpret Footage").expect("Interpret Footage in the menu").rect();
+    h.input_mut().events.push(Event::PointerMoved(sub.center()));
+    h.run_steps(3);
+    let main = h.query_by_label_contains("Main...").expect("Interpret Footage ▸ Main...").rect();
+    for k in 0..=6 {
+        h.input_mut().events.push(Event::PointerMoved(pos2(main.center().x, sub.center().y + (main.center().y - sub.center().y) * k as f32 / 6.0)));
+        h.step();
+    }
+    click_at(&mut h, main.center());
+    assert_eq!(h.state().dialog, Some(Dialog::Form), "the Interpret Footage dialog opened");
 }
 
 /// Dragging from the Project panel's empty area draws a selection box that selects the rows it

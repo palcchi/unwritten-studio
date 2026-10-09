@@ -71,8 +71,8 @@ Commands (CLI, MCP, control channel):
 - `audio.outputDevice`: Default Output (device list from the desktop host)
 - `audio.outputLeft`: Left (Audio Output Mapping)
 - `audio.outputRight`: Right (Audio Output Mapping)
-- `memory.layerCacheMb`: Layer Cache
-- `memory.mediaCacheMb`: Footage Frame Cache
+- `memory.layerCacheMb`: Layer Cache (in the browser at most 512 MB, see [web.md](web.md))
+- `memory.mediaCacheMb`: Footage Frame Cache (in the browser at most 256 MB)
 - `memory.previewCacheMb`: Preview (RAM) Cache
 - `threeD.defaultRenderer`: Default 3D Renderer
 - `labels.N.name` / `labels.N.color`: the 16 label names and colours, used by the Label menu,

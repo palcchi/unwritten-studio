@@ -40,7 +40,7 @@ impl Launch {
         let mut prefs = std::fs::read_to_string(&prefs_path).map(|t| Prefs::from_json(&t)).unwrap_or_default();
         let marker = dir.join(MARKER);
         // Locked by another launch that is still opening its window: not a crash.
-        let held = File::open(&marker).is_ok_and(|f| f.try_lock().is_err());
+        let held = File::open(&marker).is_ok_and(|f| matches!(f.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
         let mut notice = None;
         if marker.exists() && !held && prefs.startup.window_graphics == "auto" && cfg!(not(target_os = "macos")) {
             prefs.startup.window_graphics = "gl".into();

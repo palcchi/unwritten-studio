@@ -10,7 +10,7 @@ use effectcraft_render::FootageSource;
 use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use filmcraft_media::{FrameRequest, SharedSource};
 
-use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in};
+use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in, frame_to_image_scaled};
 use crate::{MediaError, Result};
 
 /// Default frame-cache budget: 1 GiB of decoded frames.
@@ -41,6 +41,8 @@ struct Key {
     /// pixels.
     interp: u8,
     matte: [u32; 3],
+    /// A movie frame made at this size for a reduced-resolution render ((0, 0): as decoded).
+    size: (u32, u32),
 }
 
 struct Entry {
@@ -322,7 +324,21 @@ impl MediaPool {
 
     /// Decode (or fetch from cache) the frame of `footage` at source time `t`.
     pub fn frame_at(&self, footage: &Footage, t: Tick) -> Result<Arc<Image>> {
-        Inner::frame_at(&self.inner, footage, t, true)
+        Inner::frame_at(&self.inner, footage, t, true, None)
+    }
+
+    /// [`FootageSource::frame`] / [`FootageSource::frame_at_size`]: `None` (logged) on errors.
+    fn frame_sized(&self, _item: ItemId, footage: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
+        if footage.missing {
+            return None;
+        }
+        match Inner::frame_at(&self.inner, footage, t, true, size) {
+            Ok(img) => Some(img),
+            Err(e) => {
+                log::warn!("media: frame of {} at {:?}: {e}", footage.path, t);
+                None
+            }
+        }
     }
 
     /// Settings ▸ Disk ▸ Conformed Audio Folder: write each footage file's decoded audio there
@@ -469,7 +485,7 @@ impl MediaPool {
 
     /// A thumbnail of `footage` (its first frame) fitting in `max_side` × `max_side`, aspect kept.
     pub fn thumbnail(&self, footage: &Footage, max_side: u32) -> Result<Image> {
-        let img = Inner::frame_at(&self.inner, footage, Tick::ZERO, false)?;
+        let img = Inner::frame_at(&self.inner, footage, Tick::ZERO, false, None)?;
         let (w, h) = (img.width.max(1), img.height.max(1));
         let s = (max_side.max(1) as f64 / w.max(h) as f64).min(1.0);
         if s >= 1.0 {
@@ -561,7 +577,7 @@ impl Inner {
         };
         let interp = alpha | (u8::from(footage.preserve_rgb) << 2);
         let matte = if footage.alpha == AlphaMode::Premultiplied { footage.premul_color.map(f32::to_bits) } else { [0; 3] };
-        let key = |path: &str, frame| Key { path: path.into(), frame, interp, matte };
+        let key = |path: &str, frame| Key { path: path.into(), frame, interp, matte, size: (0, 0) };
         match footage.kind {
             FootageKind::Sequence if !footage.sequence.is_empty() => {
                 let i = Self::frame_index(footage.frame_rate, t, footage.sequence_frames(), footage.loop_count);
@@ -591,21 +607,27 @@ impl Inner {
         }
     }
 
-    fn frame_at(self: &Arc<Self>, footage: &Footage, t: Tick, playback: bool) -> Result<Arc<Image>> {
+    /// The frame of `footage` at `t`; a movie's resampled to `size` when it can be made at that
+    /// size directly (see [`FootageSource::frame_at_size`]).
+    fn frame_at(self: &Arc<Self>, footage: &Footage, t: Tick, playback: bool, size: Option<(u32, u32)>) -> Result<Arc<Image>> {
         if !footage.has_video {
             return Err(MediaError::Unsupported(format!("{}: no video", footage.path)));
         }
-        let loc = Self::locate(footage, t);
+        let mut loc = Self::locate(footage, t);
         let movie = loc.media_t.is_some();
+        if movie && let Some(size) = size {
+            loc.key.size = size;
+        }
         let mut c = lock(&self.cache);
         // sequential playback of a movie: read the next frame ahead
         if playback && movie {
             let prev = c.last.insert(loc.key.path.clone(), loc.key.frame);
             if prev == Some(loc.key.frame - 1) && self.read_ahead.load(Ordering::Relaxed) {
                 let next_t = t + footage.frame_rate.frame_duration();
-                let next = Self::locate(footage, next_t);
+                let mut next = Self::locate(footage, next_t);
+                next.key.size = loc.key.size;
                 if next.key != loc.key && !c.lru.map.contains_key(&next.key) && !c.inflight.contains(&next.key) {
-                    self.prefetch(footage, next_t);
+                    self.prefetch(footage, next_t, size);
                 }
             }
         }
@@ -638,17 +660,17 @@ impl Inner {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn prefetch(self: &Arc<Self>, footage: &Footage, t: Tick) {
+    fn prefetch(self: &Arc<Self>, footage: &Footage, t: Tick, size: Option<(u32, u32)>) {
         let (me, f) = (self.clone(), footage.clone());
         self.prefetched.fetch_add(1, Ordering::Relaxed);
         // A plain thread, not a rayon job: the decode below parallelises with rayon itself.
         std::thread::spawn(move || {
-            let _ = me.frame_at(&f, t, false);
+            let _ = me.frame_at(&f, t, false, size);
         });
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick) {}
+    fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick, _size: Option<(u32, u32)>) {}
 
     fn decode(&self, loc: &Loc, footage: &Footage) -> Result<Image> {
         let op = AlphaOp::of(footage);
@@ -670,6 +692,15 @@ impl Inner {
             Some(mt) => {
                 let src = self.source(path).ok_or_else(|| MediaError::Io(format!("{path}: cannot open")))?;
                 let vf = src.video_frame(FrameRequest::full(filmcraft_time::Tick(mt.0))).map_err(MediaError::from)?;
+                // A reduced-resolution render's frame, made at its size (a frame of the footage's
+                // own size only, as the renderer resamples only those).
+                let (w, h) = loc.key.size;
+                if w > 0
+                    && (vf.width, vf.height) == (footage.width, footage.height)
+                    && let Some(img) = frame_to_image_scaled(&vf, w, h)
+                {
+                    return Ok(img);
+                }
                 let buf = lock(&self.cache).lru.take_spare(vf.width as usize * vf.height as usize);
                 Ok(frame_to_image_in(&vf, op, buf))
             }
@@ -696,17 +727,11 @@ impl FootageSource for MediaPool {
     fn cache_budget(&self) -> Option<usize> {
         Some(self.budget())
     }
-    fn frame(&self, _item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>> {
-        if footage.missing {
-            return None;
-        }
-        match self.frame_at(footage, t) {
-            Ok(img) => Some(img),
-            Err(e) => {
-                log::warn!("media: frame of {} at {:?}: {e}", footage.path, t);
-                None
-            }
-        }
+    fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>> {
+        self.frame_sized(item, footage, t, None)
+    }
+    fn frame_at_size(&self, item: ItemId, footage: &Footage, t: Tick, width: u32, height: u32) -> Option<Arc<Image>> {
+        self.frame_sized(item, footage, t, Some((width, height)))
     }
 
     fn vector_frame(&self, _item: ItemId, footage: &Footage, scale: f64) -> Option<Arc<Image>> {
@@ -834,7 +859,7 @@ mod tests {
     fn lru_respects_budget_and_recycles() {
         let mut c = Lru::default();
         let img = || Arc::new(Image::new(16, 16)); // 4 KiB + overhead
-        let k = |i| Key { path: "a".into(), frame: i, interp: 0, matte: [0; 3] };
+        let k = |i| Key { path: "a".into(), frame: i, interp: 0, matte: [0; 3], size: (0, 0) };
         let budget = 3 * (4096 + 64);
         for i in 0..10 {
             c.insert(k(i), img(), budget);

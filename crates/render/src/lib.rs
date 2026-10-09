@@ -40,6 +40,13 @@ use rayon::prelude::*;
 pub trait FootageSource: Send + Sync {
     /// The frame of `item` at source time `t`, straight from the file (any size).
     fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>>;
+    /// [`FootageSource::frame`] for a render that shows it at `width` × `height`, at most half its
+    /// size: either that frame or, when the source can make it more cheaply than the whole frame
+    /// (movies, see `effectcraft-media`), the frame already resampled to that size as
+    /// [`effectcraft_raster::resample`] would.
+    fn frame_at_size(&self, item: ItemId, footage: &Footage, t: Tick, _width: u32, _height: u32) -> Option<Arc<Image>> {
+        self.frame(item, footage, t)
+    }
     /// `frames` interleaved stereo sample frames of `item`'s audio from source time `t` at
     /// `rate` Hz (`None` when unavailable).
     fn audio(&self, _item: ItemId, _footage: &Footage, _t: Tick, _frames: usize, _rate: u32) -> Option<Vec<f32>> {
@@ -1104,8 +1111,10 @@ impl<'a> Renderer<'a> {
                 }
                 let lt = ctx.source_time(layer);
                 // The proxy is decoded instead, at its own size, and fills the footage's frame.
-                let pf = self.proxy_for(*item).unwrap_or(f);
-                let img = self.footage_frame(ctx, layer, *item, pf, lt)?;
+                let proxy = self.proxy_for(*item);
+                let pf = proxy.unwrap_or(f);
+                let size = self.reduced_size(f.width, f.height).filter(|_| proxy.is_none());
+                let img = self.footage_frame(ctx, layer, *item, pf, lt, size)?;
                 Some(self.footage_buf(&img, pf, f.width, f.height))
             }
             LayerSource::Text => Some(self.authored(text::render(ctx, layer, self.raster_scale(ctx, layer)))),
@@ -1127,17 +1136,23 @@ impl<'a> Renderer<'a> {
         let s = self.opts.scale;
         let k = if img.width > 0 { w.max(1) as f64 / img.width as f64 } else { 1.0 };
         // Keep native pixels when downsampling is small; resample otherwise.
-        let mut buf = if s < 0.75 && k <= 1.0 + 1e-9 {
-            let rw = ((w as f64 * s).round() as u32).max(1);
-            let rh = ((h as f64 * s).round() as u32).max(1);
-            Buf { img: effectcraft_raster::resample(img, rw, rh), offset: [0.0; 2], scale: s }
-        } else {
-            Buf { img: img.clone(), offset: [0.0; 2], scale: 1.0 / k }
+        let mut buf = match self.reduced_size(w, h) {
+            // The source resampled it already (`FootageSource::frame_at_size`).
+            Some(size) if (img.width, img.height) == size => Buf { img: img.clone(), offset: [0.0; 2], scale: s },
+            Some((rw, rh)) if k <= 1.0 + 1e-9 => Buf { img: effectcraft_raster::resample(img, rw, rh), offset: [0.0; 2], scale: s },
+            _ => Buf { img: img.clone(), offset: [0.0; 2], scale: 1.0 / k },
         };
         if let Some(c) = self.pipe.media_in(f) {
             color::convert(&mut buf.img, &c);
         }
         buf
+    }
+
+    /// The size of `w` × `h` layer pixels in this render when it is reduced enough that footage
+    /// is resampled to it (below 3/4 scale).
+    fn reduced_size(&self, w: u32, h: u32) -> Option<(u32, u32)> {
+        let s = self.opts.scale;
+        (s < 0.75).then(|| (((w as f64 * s).round() as u32).max(1), ((h as f64 * s).round() as u32).max(1)))
     }
 
     /// Authored colours into the working space (linear working spaces).
@@ -1151,7 +1166,8 @@ impl<'a> Renderer<'a> {
     /// A footage frame at source time `t`, frame-blended between the two nearest source frames
     /// when the layer's Frame Blending switch (and the comp's Enable Frame Blending) is on and
     /// `t` falls between frames (footage rate ≠ comp rate, time stretch, time remapping).
-    fn footage_frame(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick) -> Option<Arc<Image>> {
+    /// `size`: a plain frame may come resampled to it ([`FootageSource::frame_at_size`]).
+    fn footage_frame(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
         // Interpret Footage ▸ Separate Fields: each field is a frame at twice the rate.
         if f.fields != effectcraft_project::FieldOrder::Off && matches!(f.kind, FootageKind::Video | FootageKind::Sequence) {
             let field_rate = FrameRate::new(f.frame_rate.num * 2, f.frame_rate.den);
@@ -1162,11 +1178,13 @@ impl<'a> Renderer<'a> {
             let parity = if (i % 2 == 0) == dominant_upper { 0 } else { 1 };
             return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f)));
         }
-        let img = self.footage_frame_raw(ctx, layer, item, f, t)?;
+        // Interpretation is per pixel but not linear: it runs on the frame before resampling.
+        let size = size.filter(|_| !(f.invert_alpha || f.linear_light_applies()));
+        let img = self.footage_frame_raw(ctx, layer, item, f, t, size)?;
         if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f))) } else { Some(img) }
     }
 
-    fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick) -> Option<Arc<Image>> {
+    fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
         let mode = frame_blend_mode(ctx, layer);
         if mode != FrameBlend::Off && matches!(f.kind, FootageKind::Video | FootageKind::Sequence) {
             let (i, w) = frame_position(t, f.frame_rate);
@@ -1194,7 +1212,10 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
-        self.footage.frame(item, f, t)
+        match size {
+            Some((w, h)) => self.footage.frame_at_size(item, f, t, w, h),
+            None => self.footage.frame(item, f, t),
+        }
     }
 
     /// Source → masks, clamped/quantised to the project depth.
@@ -2151,6 +2172,8 @@ mod tests_aux;
 mod tests_collapse;
 #[cfg(test)]
 mod tests_color;
+#[cfg(test)]
+mod tests_footage_size;
 #[cfg(test)]
 mod tests_frame_blend;
 #[cfg(test)]

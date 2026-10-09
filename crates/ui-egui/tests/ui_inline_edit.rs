@@ -5,6 +5,7 @@ use effectcraft_engine::Session;
 use effectcraft_ui_egui::EffectcraftApp;
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, pos2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT, Queryable};
 use serde_json::json;
 
 fn harness() -> (Harness<'static, EffectcraftApp>, u64) {
@@ -421,4 +422,55 @@ fn ctrl_click_on_the_time_display_toggles_timecode_and_frames() {
     h.run_steps(2);
     click_with(&mut h, at, Modifiers::COMMAND);
     assert_eq!(style(&h), TimeDisplayStyle::Timecode);
+}
+
+/// Hold Alt and Shift and let go of them, as Windows' keyboard-layout hotkey does; `shift_first`
+/// releases Shift before Alt.
+fn switch_layout(h: &mut Harness<'_, EffectcraftApp>, shift_first: bool) {
+    let held = if shift_first { Modifiers::ALT } else { Modifiers::SHIFT };
+    for m in [Modifiers::ALT, Modifiers::ALT | Modifiers::SHIFT, held, Modifiers::NONE] {
+        h.input_mut().events.push(Event::ModifiersChanged(m));
+        h.step();
+    }
+    h.run_steps(2);
+}
+
+/// #394: switching the keyboard layout to Arabic with Alt+Shift while a name is being typed
+/// leaves the field with the keyboard: releasing Shift before Alt left Alt held alone, which
+/// counted as an Alt tap, so the menu bar took the keyboard, the rename ended and the Arabic
+/// letters went nowhere. Layer and Project names keep what is typed in any script.
+#[test]
+fn a_layout_switch_keeps_the_name_field_and_arabic_names_are_kept() {
+    let (mut h, comp) = harness();
+    let layer = h.state_mut().session.execute("layer.newNull", json!({})).unwrap()["layer"].as_u64().unwrap();
+    h.run_steps(3);
+    let layer_name =
+        |h: &Harness<'_, EffectcraftApp>| h.state().session.active_comp().unwrap().layer(effectcraft_engine::project::LayerId(layer)).unwrap().name.clone();
+    let p = center(&h, &format!("timeline.layer.{layer}.row"));
+    click(&mut h, p, 2);
+    assert!(h.state().auto.find(&format!("timeline.layer.{layer}.nameEdit")).is_some(), "double-click opened the rename field");
+    for shift_first in [true, false] {
+        switch_layout(&mut h, shift_first);
+        assert!(h.state().auto.find(&format!("timeline.layer.{layer}.nameEdit")).is_some(), "the rename field stays open");
+        type_text(&mut h, if shift_first { "طبقة " } else { "مرحبا" });
+    }
+    key(&mut h, Key::Enter);
+    assert_eq!(layer_name(&h), "طبقة مرحبا");
+    // The Project panel's rename field, with Hebrew, Devanagari and Thai.
+    let p = center(&h, &format!("project.item.{comp}.name"));
+    click(&mut h, p, 1);
+    key(&mut h, Key::Enter);
+    switch_layout(&mut h, true);
+    type_text(&mut h, "שכבה नाम ชื่อ");
+    key(&mut h, Key::Enter);
+    assert_eq!(h.state().session.project.items.values().find(|i| i.id.0 == comp).unwrap().name, "שכבה नाम ชื่อ");
+    // A plain Alt tap still takes the keyboard to the menu bar (#279).
+    if !cfg!(target_os = "macos") {
+        h.input_mut().events.push(Event::ModifiersChanged(Modifiers::ALT));
+        h.step();
+        h.input_mut().events.push(Event::ModifiersChanged(Modifiers::NONE));
+        h.run_steps(2);
+        let focused = h.query_by(|n| n.is_focused()).and_then(|n| n.accesskit_node().label()).unwrap_or_default();
+        assert_eq!(focused.trim(), "File", "Alt focused the menu bar");
+    }
 }

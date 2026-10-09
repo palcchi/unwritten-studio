@@ -11,6 +11,7 @@ pub mod essential;
 pub mod props;
 pub mod render_queue;
 pub mod render_templates;
+pub mod sequence;
 pub mod styles;
 pub mod tracking;
 
@@ -963,6 +964,15 @@ pub struct Footage {
     /// PDF / Illustrator footage: the page shown (0-based; File ▸ Import ▸ Page).
     #[serde(default, skip_serializing_if = "is_default")]
     pub page: u32,
+    /// Image sequences imported with Force Alphabetical Order: the files play one after another
+    /// and their numbering doesn't count (otherwise a gap in it shows a placeholder, as in After
+    /// Effects; [`sequence`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub alphabetical: bool,
+    /// Image sequences: Interpret Footage ▸ Start Frame, the frame number at the footage's first
+    /// frame (`None` = the first file's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_frame: Option<i64>,
 }
 
 fn is_default<T: Default + PartialEq>(v: &T) -> bool {
@@ -995,6 +1005,8 @@ impl Default for Footage {
             data: None,
             layer: None,
             page: 0,
+            alphabetical: false,
+            start_frame: None,
         }
     }
 }

@@ -408,6 +408,10 @@ Fixes from measured reports:
 - Glyphs that touch or overlap ("ff") are drawn as one outline, so no light seam shows where
   their anti-aliased edges meet (#415). Characters of other colours, with Blur, or under an
   Inter-Character Blending mode are still composited one by one.
+- Interior layer styles (Gradient / Color Overlay, Satin, Inner Glow, Inner Shadow, the inside of
+  Stroke) blend onto the layer's colour inside its alpha, so an anti-aliased edge no longer shows
+  a rim of the layer's own fill (#416). Not yet: Inner Bevel still shades an anti-aliased edge
+  over the layer's own colour.
 
 ## Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 

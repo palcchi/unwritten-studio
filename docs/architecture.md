@@ -207,8 +207,9 @@ switches that don't change pixels (Audio, Lock, Shy, Hide Shy Layers: `Switches:
 **Layer styles** (Layer ▸ Layer Styles; `crates/render/src/styles.rs`) render in layer space and
 may grow the layer's bounds. Drop Shadow and Outer Glow become separate passes composited below the
 layer with their own blend modes; the interior styles, Stroke and Bevel and Emboss are baked into
-the layer body. Layer opacity fades the whole stack; Knockout and the R/G/B channel switches apply
-at composite time. Styled pixels are cached separately from the layer content, so editing a style
+the layer body. Interior styles are clipped to the layer: they blend onto its colour inside its
+shape and keep its alpha, so an anti-aliased edge mixes the style and the background only. Layer
+opacity fades the whole stack; Knockout and the R/G/B channel switches apply at composite time. Styled pixels are cached separately from the layer content, so editing a style
 reuses the cached source/masks/effects. Global Light is one setting per comp, mirrored into every
 layer's Blending Options and kept in step after each edit.
 

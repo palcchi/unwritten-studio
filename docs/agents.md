@@ -262,6 +262,14 @@ build real projects through these interfaces; they are worked examples of everyt
 * **Essential Graphics**: controls can be addressed by name (`essential.set {"layer":"#1",
   "control":"Title","value":"John Smith"}`); a command that targets an explicit `comp` runs even
   when the active comp would disable it (`essential.exportTemplate {"comp":"Lower Third", …}`).
+  The CLI also renders an exported template directly:
+  `effectcraft-cli render --template lt.ectemplate --values values.json --out 'title_[#####].png'`.
+  `values.json` is an object such as `{"Title":"John Smith","Bar Color":"#00c080","Bar Opacity":50}`;
+  names follow `essential.set`, including its case-insensitive matching. Values override one
+  imported instance; the template file and its source controls keep their defaults. Omit
+  `--values` to render those defaults, or use the same options with `render-frame` for a PNG.
+  Values must fit in 1 MiB. Invalid JSON, unknown controls and invalid values fail before rendering.
+  Template mode cannot be combined with `--project`, `--demo`, `--bridge`, `--queue` or `--comp`.
 * **History**: Levels of Undo defaults to 32 (`prefs.set {"key":"general.undoLevels","value":99}`);
   `history` lists branches and `history {"goto": id}` jumps between them. A command that changes
   nothing (a value set to what it already is) records no undo step. `get_state` reports `dirty`

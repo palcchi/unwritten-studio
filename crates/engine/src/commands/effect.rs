@@ -387,7 +387,8 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit(&format!("Reset {name}"), None, |proj, _| {
         let g = layer_mut(proj, cid, lid)?.props.find_group_mut(uid).ok_or_else(|| bad("effect.reset", "gone"))?;
         for ps in &spec.params {
-            if let Some(pr) = g.get_mut(ps.id) {
+            // (`group/param` ids live in twirl-down groups.)
+            if let Some(pr) = g.prop_mut(ps.id) {
                 pr.set_value_at(lt, effectcraft_effects::default_value(ps, size));
             }
         }

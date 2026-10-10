@@ -11,6 +11,7 @@ use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use filmcraft_media::{FrameRequest, SharedSource};
 
 use crate::convert::{AlphaOp, dynamic_to_image, frame_to_image_in, frame_to_image_scaled};
+use crate::gif_anim::{self, Anim};
 use crate::{MediaError, Result};
 
 /// Default frame-cache budget: 1 GiB of decoded frames.
@@ -171,6 +172,9 @@ struct CacheState {
 /// (`None`: failed to open; not retried until `forget`).
 type SourceSlot = Arc<OnceLock<Option<SharedSource>>>;
 
+/// An animated GIF by path, as [`SourceSlot`] (the error message when it failed to load).
+type GifSlot = Arc<OnceLock<std::result::Result<Arc<Anim>, String>>>;
+
 struct Inner {
     /// Opened movie/audio sources by path.
     sources: Mutex<HashMap<Arc<str>, SourceSlot>>,
@@ -180,6 +184,9 @@ struct Inner {
     files: Mutex<HashMap<String, Arc<[u8]>>>,
     /// Parsed 3D models by path (`None`: failed to load; not retried until `forget`).
     models: Mutex<HashMap<String, Option<Arc<effectcraft_model::Model>>>>,
+    /// Decoded animated GIFs by path, loaded by the first caller while the others wait (an
+    /// `Err` is not retried until `forget`).
+    gifs: Mutex<HashMap<Arc<str>, GifSlot>>,
     cache: Mutex<CacheState>,
     done: Condvar,
     budget: AtomicU64,
@@ -248,6 +255,7 @@ impl MediaPool {
                 sources: Mutex::default(),
                 files: Mutex::default(),
                 models: Mutex::default(),
+                gifs: Mutex::default(),
                 cache: Mutex::default(),
                 done: Condvar::new(),
                 budget: AtomicU64::new(bytes as u64),
@@ -302,12 +310,14 @@ impl MediaPool {
     pub fn clear(&self) {
         self.clear_frames();
         lock(&self.inner.sources).clear();
+        lock(&self.inner.gifs).clear();
     }
 
     /// Forget a file (after it changed on disk, or to retry a file that failed to open).
     pub fn forget(&self, path: &str) {
         lock(&self.inner.sources).remove(path);
         lock(&self.inner.models).remove(path);
+        lock(&self.inner.gifs).remove(path);
         let mut c = lock(&self.inner.cache);
         let keys: Vec<Key> = c.lru.map.keys().filter(|k| &*k.path == path).cloned().collect();
         for k in keys {
@@ -555,6 +565,20 @@ impl Inner {
         .clone()
     }
 
+    /// The decoded frames of the animated GIF at `path`. The first caller decodes it, outside the
+    /// map's lock; callers asking for the same file meanwhile wait for that.
+    fn gif(&self, path: &Arc<str>) -> Result<Arc<Anim>> {
+        let slot = lock(&self.gifs).entry(path.clone()).or_default().clone();
+        let loaded = slot.get_or_init(|| {
+            let loaded = self.read(path).and_then(|bytes| Anim::load(&bytes));
+            loaded.map(Arc::new).map_err(|e| {
+                log::warn!("media: cannot decode {path}: {e}");
+                e.to_string()
+            })
+        });
+        loaded.clone().map_err(|e| MediaError::Decode(format!("{path}: {e}")))
+    }
+
     /// The frame index (in the footage's interpreted rate) shown at source time `t`, after
     /// looping (`loop_count`) and clamping to the footage's frames; `n` = frames per loop.
     fn frame_index(rate: FrameRate, t: Tick, n: i64, loops: u32) -> i64 {
@@ -688,6 +712,11 @@ impl Inner {
                     Err(e) => crate::exr_channels::layered_image(&bytes).ok_or_else(|| MediaError::Decode(format!("{path}: {e}")))?,
                 };
                 Ok(dynamic_to_image(&img, op))
+            }
+            Some(mt) if gif_anim::is_gif(footage) => {
+                let anim = self.gif(path)?;
+                let frame = anim.frame_at(Tick(mt.0)).ok_or_else(|| MediaError::Decode(format!("{path}: no frames")))?;
+                Ok(dynamic_to_image(frame, op))
             }
             Some(mt) => {
                 let src = self.source(path).ok_or_else(|| MediaError::Io(format!("{path}: cannot open")))?;

@@ -65,6 +65,12 @@ pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
         return probe_model(path, &bytes, &|_| None);
     }
     if let Ok(fmt) = image::guess_format(&bytes) {
+        // An animated GIF is a movie; one with a single frame is a still.
+        if fmt == image::ImageFormat::Gif
+            && let Some(f) = crate::gif_anim::probe(path, &bytes)
+        {
+            return Ok(f);
+        }
         return probe_still_bytes(path, &bytes, fmt);
     }
     let name = Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());

@@ -96,8 +96,8 @@ page!(Startup {
     /// After a crash, offer to open the most recent auto-save.
     offer_crash_recovery: bool = true,
     /// What the desktop window draws with, from the next launch: `auto` (the platform's best
-    /// graphics API) or `gl` (OpenGL, for drivers that crash with the others). A launch whose
-    /// window never drew switches it to `gl` (#243).
+    /// graphics API) or `gl` (OpenGL, for drivers that crash with the others). A launch that
+    /// stops as its window opens switches it to `gl` (#243).
     window_graphics: String = "auto".into(),
 });
 
@@ -948,7 +948,7 @@ pub fn pages() -> Vec<Page> {
                 s("startup.offerCrashRecovery", "Offer to Open the Latest Auto-Save After a Crash", B, true),
                 s("startup.windowGraphics", "Window Graphics", Kind::Choice(WINDOW_GRAPHICS), true),
                 Note(
-                    "Window Graphics applies from the next launch. When the graphics driver stops EffectCraft before its window draws, the next launch switches to OpenGL.",
+                    "Window Graphics applies from the next launch. When the graphics driver stops EffectCraft as its window opens, the next launch switches to OpenGL.",
                 ),
                 Section("Repair"),
                 Button { label: "Reset Settings", command: "prefs.reset", params: "{}" },

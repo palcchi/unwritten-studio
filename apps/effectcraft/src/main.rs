@@ -78,8 +78,8 @@ fn main() -> eframe::Result {
     // Wayland shows the window's icon from its desktop entry: an AppImage brings its own.
     #[cfg(target_os = "linux")]
     appimage::integrate_from_env(ICON_PNG);
-    // Settings ▸ Startup & Repair ▸ Window Graphics, switched to OpenGL when the last launch's
-    // window never drew (a crashing graphics driver, #243).
+    // Settings ▸ Startup & Repair ▸ Window Graphics, switched to OpenGL when the last launch
+    // stopped as its window opened (a crashing graphics driver, #243).
     let mut launch = launch_guard::Launch::begin(effectcraft_host::config_dir().as_deref(), std::env::var_os("WGPU_BACKEND").is_some());
     let on_gl = launch.backends == Some(eframe::wgpu::Backends::GL);
     let notice = launch.notice.take();
@@ -290,12 +290,17 @@ impl eframe::App for Desktop {
         self.app.ui(ui, frame);
         if !self.drawn {
             self.drawn = true;
-            self.launch.drawn();
             log::info!("first frame drawn");
+        }
+        // The launch guard's marker goes once the window has kept drawing for a few seconds: a
+        // driver may still crash as the window is shown and its surface re-created.
+        if let Some(left) = self.launch.frame_drawn() {
+            ui.ctx().request_repaint_after(left);
         }
     }
 
     fn on_exit(&mut self) {
+        self.launch.exited();
         self.app.on_exit();
     }
 

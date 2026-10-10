@@ -879,6 +879,11 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     }
 }
 
+/// Close the information dialog without abandoning a pending Settings transaction.
+pub(crate) fn close_info(app: &mut EffectcraftApp) {
+    app.dialog = app.dialog_state.prefs_snapshot.is_some().then_some(Dialog::Settings);
+}
+
 pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let (title, body) = app.dialog_state.info.clone();
     let mut close = false;
@@ -892,7 +897,7 @@ pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         });
     });
     if close {
-        app.dialog = None;
+        close_info(app);
     }
 }
 

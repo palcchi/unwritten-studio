@@ -1465,6 +1465,8 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
         ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         if app.dialog == Some(crate::Dialog::LayerStyles) {
             crate::panels::layer_styles_dialog::finish(app, false);
+        } else if app.dialog == Some(crate::Dialog::Info) {
+            crate::panels::forms::close_info(app);
         } else {
             if app.dialog == Some(crate::Dialog::Settings)
                 && let Some(p) = app.dialog_state.prefs_snapshot.take()
@@ -1548,6 +1550,10 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
         if key == egui::Key::Escape && app.dialog.is_some() {
             // Escape while recording a shortcut cancels the recording, not the editor.
             if crate::panels::shortcut_editor::recording(app) {
+                continue;
+            }
+            if app.dialog == Some(crate::Dialog::Info) {
+                crate::panels::forms::close_info(app);
                 continue;
             }
             // Escape in Settings is Cancel: restore the settings from when it opened.

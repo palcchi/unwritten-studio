@@ -304,13 +304,15 @@ impl MediaPool {
         let mut c = lock(&self.inner.cache);
         c.lru = Lru::default();
         c.last.clear();
+        drop(c);
+        // Decoded GIFs sit outside the frame budget; Purge frees them too.
+        lock(&self.inner.gifs).clear();
     }
 
     /// Drop every cached frame and decoder.
     pub fn clear(&self) {
         self.clear_frames();
         lock(&self.inner.sources).clear();
-        lock(&self.inner.gifs).clear();
     }
 
     /// Forget a file (after it changed on disk, or to retry a file that failed to open).

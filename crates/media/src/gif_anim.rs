@@ -15,8 +15,12 @@ use crate::{MediaError, Result};
 /// The `Footage::codec` of an animated GIF.
 pub(crate) const CODEC: &str = "GIF";
 
-/// Decoded frames of one GIF are kept as 8-bit RGBA, up to this many bytes.
+/// Decoded frames of one GIF are kept as 8-bit RGBA, up to this many bytes (less in a browser tab,
+/// whose wasm32 heap is 4 GiB at most and shared with everything else).
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_BYTES: usize = 1 << 30;
+#[cfg(target_arch = "wasm32")]
+const MAX_BYTES: usize = 256 << 20;
 
 /// Frames read from a GIF's headers when probing.
 const MAX_FRAMES: usize = 100_000;

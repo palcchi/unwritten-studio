@@ -3,6 +3,7 @@
 
 use effectcraft_keyframe::Value as KV;
 use effectcraft_project::{FrameBlend, ItemKind, MatteKind, Quality, Sampling};
+use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
 use crate::{EngineError, Event, Session};
@@ -251,6 +252,69 @@ fn lift_and_extract_work_area() {
     let mut spans: Vec<(f64, f64)> = c.layers.iter().map(|l| (l.in_point.seconds(), l.out_point.seconds())).collect();
     spans.sort_by(|x, y| x.0.total_cmp(&y.0));
     assert!((spans[1].0 - 2.0).abs() < 1e-6 && (spans[1].1 - 8.0).abs() < 1e-6, "{spans:?}");
+}
+
+#[test]
+fn work_area_stays_ordered_when_the_start_passes_the_end() {
+    let ordered = |s: &Session| {
+        let c = s.active_comp().unwrap();
+        let fd = c.frame_duration();
+        assert!(c.duration >= fd, "duration {}", c.duration.seconds());
+        assert!(c.work_area.0 >= Tick::ZERO);
+        assert!(c.work_area.0 + fd <= c.work_area.1, "start {} end {}", c.work_area.0.seconds(), c.work_area.1.seconds());
+        assert!(c.work_area.1 <= c.duration);
+        (c.duration, c.work_area)
+    };
+    let one_frame_at_two = |s: &Session| {
+        let end = Tick::from_seconds_f64(2.0);
+        (end - s.active_comp().unwrap().frame_duration(), end)
+    };
+
+    let mut s = comp();
+    s.execute("comp.workArea", json!({"end": 2.0})).unwrap();
+    s.execute("comp.workArea", json!({"start": 8.0})).unwrap();
+    assert_eq!(ordered(&s).1, one_frame_at_two(&s));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(ordered(&s).1, (Tick::ZERO, Tick::from_seconds_f64(2.0)));
+
+    s.execute("comp.workArea", json!({"start": 0.0, "end": 2.0})).unwrap();
+    s.execute("comp.trimToWorkArea", json!({})).unwrap();
+    assert_eq!(ordered(&s), (Tick::from_seconds_f64(2.0), (Tick::ZERO, Tick::from_seconds_f64(2.0))));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(ordered(&s).0, Tick::from_seconds_f64(10.0));
+
+    let mut s = comp();
+    s.execute("comp.workArea", json!({"start": 9.0, "end": 10.0})).unwrap();
+    let before = ordered(&s);
+    s.execute("comp.settings", json!({"duration": 2.0})).unwrap();
+    let (dur, wa) = ordered(&s);
+    assert_eq!(dur, Tick::from_seconds_f64(2.0));
+    assert_eq!(wa, one_frame_at_two(&s));
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(ordered(&s), before);
+
+    let mut s = comp();
+    s.execute("comp.workArea", json!({"end": 2.0})).unwrap();
+    s.execute("time.set", json!({"time": 8.0})).unwrap();
+    s.execute("comp.workArea", json!({"set": "begin"})).unwrap();
+    assert_eq!(ordered(&s).1, one_frame_at_two(&s));
+    let path = tmp("WorkArea.ecproj");
+    s.execute("file.saveAs", json!({"path": path})).unwrap();
+    s.execute("file.open", json!({"path": path})).unwrap();
+    assert_eq!(ordered(&s).1, one_frame_at_two(&s));
+
+    // A project that already has an inverted interval must not trim into a negative duration.
+    let mut s = comp();
+    let cid = s.state.active_comp.unwrap();
+    {
+        let c = std::sync::Arc::make_mut(&mut s.project).comp_mut(cid).unwrap();
+        c.work_area = (Tick::from_seconds_f64(8.0), Tick::from_seconds_f64(2.0));
+    }
+    let err = s.execute("comp.trimToWorkArea", json!({})).unwrap_err();
+    assert!(err.to_string().contains("work area"), "{err}");
+    let c = s.active_comp().unwrap();
+    assert_eq!(c.duration, Tick::from_seconds_f64(10.0));
+    assert_eq!(c.work_area, (Tick::from_seconds_f64(8.0), Tick::from_seconds_f64(2.0)));
 }
 
 #[test]

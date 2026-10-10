@@ -76,6 +76,8 @@ fn apply_settings(c: &mut Comp, p: &Value) {
             c.work_area.1 = c.duration;
         }
         c.work_area.1 = c.work_area.1.min(c.duration);
+        // A shorter composition must not leave the start past the end.
+        keep_work_area_ordered(c);
     }
     if let Some(pa) = f_p(p, "pixelAspect") {
         c.pixel_aspect = pa.max(0.1);
@@ -196,10 +198,28 @@ fn work_area(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(e) = end {
             c.work_area.1 = e.clamp(c.work_area.0 + fd, c.duration);
         }
+        // A start on its own can land after the current end. Pull it back so the interval
+        // still covers one frame, the same rule as `set: "begin"`.
+        keep_work_area_ordered(c);
         Ok(())
     })?;
     let c = s.project.comp(cid).ok_or(EngineError::NoComp)?;
     Ok(json!({"start": c.work_area.0.seconds(), "end": c.work_area.1.seconds()}))
+}
+
+/// Keep `work_area` inside the composition and at least one frame long.
+fn keep_work_area_ordered(c: &mut Comp) {
+    let fd = c.frame_duration();
+    c.work_area.1 = c.work_area.1.min(c.duration);
+    if c.work_area.0 < Tick::ZERO {
+        c.work_area.0 = Tick::ZERO;
+    }
+    if c.work_area.0 + fd > c.work_area.1 {
+        c.work_area.0 = (c.work_area.1 - fd).max(Tick::ZERO);
+    }
+    if c.work_area.0 + fd > c.work_area.1 {
+        c.work_area.1 = (c.work_area.0 + fd).min(c.duration);
+    }
 }
 
 fn trim_to_wa(s: &mut Session, p: &Value) -> Result<Value> {
@@ -207,6 +227,11 @@ fn trim_to_wa(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit("Trim Comp to Work Area", None, |proj, _| {
         let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let (a, b) = c.work_area;
+        let fd = c.frame_duration();
+        // An interval that is already inverted must not become a negative duration.
+        if a < Tick::ZERO || b > c.duration || a + fd > b {
+            return Err(bad("comp.trimToWorkArea", "the work area must cover at least one frame inside the composition"));
+        }
         for l in &mut c.layers {
             l.start_time -= a;
             l.in_point = (l.in_point - a).max(Tick::ZERO);

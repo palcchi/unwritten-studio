@@ -304,9 +304,28 @@ pub fn parse_num(w: &[u8]) -> Option<f64> {
 
 // ------------------------------------------------------------------ filters
 
+/// The most bytes one FlateDecode filter may inflate to. Deflate expands up to about 1000:1, so
+/// unbounded, a few MB of PDF ask for gigabytes and a failed allocation aborts the process. The
+/// largest image `image::decode` accepts (64 Mi pixels) of four 16-bit components is 512 MiB;
+/// 1 GiB leaves room for more components and is PdfCraft's ceiling for one stream. 32-bit
+/// targets (the web build) get a quarter: their whole address space is 4 GiB, and the inflater's
+/// growing buffer can reserve about twice the limit.
+const MAX_INFLATED: usize = if cfg!(target_pointer_width = "32") { 256 << 20 } else { 1 << 30 };
+
+/// The tighter bound for object streams, which [`File::parse`] decodes eagerly (all of them,
+/// before any page is chosen). They hold only other objects' dictionaries, arrays, numbers and
+/// strings, so real ones are far smaller; PdfCraft uses 256 MiB for the object and
+/// cross-reference streams it decodes while loading. A quarter on 32-bit targets, as above.
+const MAX_OBJECT_STREAM: usize = if cfg!(target_pointer_width = "32") { 64 << 20 } else { 256 << 20 };
+
 /// Decode a stream's data through its `/Filter` chain. Unknown filters (images: DCT, JPX, CCITT,
 /// JBIG2) give `None`.
 pub fn decode_stream(file: &File, d: &Dict, raw: &[u8]) -> Option<Vec<u8>> {
+    decode_stream_within(file, d, raw, MAX_INFLATED)
+}
+
+/// [`decode_stream`] with each FlateDecode filter's output bounded by `max` bytes.
+pub fn decode_stream_within(file: &File, d: &Dict, raw: &[u8], max: usize) -> Option<Vec<u8>> {
     let filters: Vec<String> = match d.get("Filter").map(|f| file.resolve(f)) {
         None => vec![],
         Some(Obj::Name(n)) => vec![n.clone()],
@@ -321,7 +340,7 @@ pub fn decode_stream(file: &File, d: &Dict, raw: &[u8]) -> Option<Vec<u8>> {
     let mut data = raw.to_vec();
     for (i, f) in filters.iter().enumerate() {
         data = match f.as_str() {
-            "FlateDecode" | "Fl" => inflate(&data)?,
+            "FlateDecode" | "Fl" => inflate(&data, max)?,
             "ASCIIHexDecode" | "AHx" => ascii_hex(&data),
             "ASCII85Decode" | "A85" => ascii85(&data),
             "LZWDecode" | "LZW" => {
@@ -358,14 +377,29 @@ fn ccitt_params(file: &File, d: Option<&Dict>) -> crate::ccitt::Params {
     p
 }
 
-pub fn inflate(data: &[u8]) -> Option<Vec<u8>> {
-    miniz_oxide::inflate::decompress_to_vec_zlib(data).ok().or_else(|| miniz_oxide::inflate::decompress_to_vec(data).ok()).or_else(|| {
-        // Truncated streams: keep what inflates.
-        let mut d = miniz_oxide::inflate::stream::InflateState::new_boxed(miniz_oxide::DataFormat::Zlib);
-        let mut out = vec![0u8; data.len() * 8 + 1024];
-        let r = miniz_oxide::inflate::stream::inflate(&mut d, data, &mut out, miniz_oxide::MZFlush::Finish);
-        (r.bytes_written > 0).then(|| out[..r.bytes_written].to_vec())
-    })
+/// Inflate zlib data (or raw deflate) to at most `max` bytes. A stream that inflates to more is
+/// undecodable (`None`), not salvaged as a truncated one.
+pub fn inflate(data: &[u8], max: usize) -> Option<Vec<u8>> {
+    use miniz_oxide::inflate::{TINFLStatus, decompress_to_vec_with_limit, decompress_to_vec_zlib_with_limit};
+    for attempt in [decompress_to_vec_zlib_with_limit, decompress_to_vec_with_limit] {
+        match attempt(data, max) {
+            Ok(v) => return Some(v),
+            Err(e) if e.status == TINFLStatus::HasMoreOutput => return None,
+            Err(_) => {}
+        }
+    }
+    // Truncated streams: keep what inflates.
+    let mut d = miniz_oxide::inflate::stream::InflateState::new_boxed(miniz_oxide::DataFormat::Zlib);
+    let mut out = vec![0u8; salvage_len(data.len(), max)];
+    let r = miniz_oxide::inflate::stream::inflate(&mut d, data, &mut out, miniz_oxide::MZFlush::Finish);
+    (r.bytes_written > 0).then(|| out[..r.bytes_written].to_vec())
+}
+
+/// The buffer [`inflate`] salvages a truncated stream of `data_len` bytes into: eight times that
+/// and 1 KiB, at most `max`. The zlib attempt already stopped within `max`, so the bound loses
+/// nothing, while without it a Flate filter after another could ask for eight times `max`.
+pub fn salvage_len(data_len: usize, max: usize) -> usize {
+    data_len.saturating_mul(8).saturating_add(1024).min(max)
 }
 
 fn ascii_hex(data: &[u8]) -> Vec<u8> {
@@ -655,7 +689,7 @@ impl File {
             })
             .collect();
         for (d, raw) in streams {
-            let Some(dec) = decode_stream(&f, &d, &raw) else { continue };
+            let Some(dec) = decode_stream_within(&f, &d, &raw, MAX_OBJECT_STREAM) else { continue };
             let n = d.get("N").and_then(Obj::num).unwrap_or(0.0) as usize;
             let first = d.get("First").and_then(Obj::num).unwrap_or(0.0) as usize;
             let mut lx = Lexer::new(&dec, 0);

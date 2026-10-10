@@ -147,7 +147,61 @@ fn eps_postscript_subset() {
 fn filters_decode() {
     assert_eq!(object::ascii85(b"<~87cURD]i,\"Ebo80~>"), b"Hello World!".to_vec());
     let z = miniz_oxide::deflate::compress_to_vec_zlib(b"abc", 6);
-    assert_eq!(object::inflate(&z).unwrap(), b"abc");
+    assert_eq!(object::inflate(&z, 1 << 20).unwrap(), b"abc");
+}
+
+#[test]
+fn flate_bomb_is_bounded() {
+    // A decompression bomb in miniature: 16 MiB of zeros deflate to about 16 KB.
+    let zeros = vec![0u8; 16 << 20];
+    for bomb in [miniz_oxide::deflate::compress_to_vec_zlib(&zeros, 6), miniz_oxide::deflate::compress_to_vec(&zeros, 6)] {
+        assert!(bomb.len() < 64 << 10);
+        // Past the limit, as zlib and as raw deflate, it is undecodable: not inflated in full
+        // and not salvaged as a truncated stream.
+        assert_eq!(object::inflate(&bomb, 1 << 20).map(|v| v.len()), None);
+        assert_eq!(object::inflate(&bomb, 32 << 20).map(|v| v.len()), Some(16 << 20));
+    }
+}
+
+#[test]
+fn truncated_flate_keeps_what_inflates() {
+    let mut x = 1u32;
+    let data: Vec<u8> = (0..20_000)
+        .map(|_| {
+            x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            (x >> 16) as u8
+        })
+        .collect();
+    let z = miniz_oxide::deflate::compress_to_vec_zlib(&data, 6);
+    let part = object::inflate(&z[..z.len() / 2], 1 << 20).unwrap();
+    assert!(!part.is_empty() && part.len() < data.len());
+    assert_eq!(part, data[..part.len()]);
+}
+
+#[test]
+fn salvage_buffer_is_bounded_by_the_limit() {
+    // Small inputs keep eight times their size and 1 KiB.
+    assert_eq!(object::salvage_len(0, 1 << 20), 1024);
+    assert_eq!(object::salvage_len(10_000, 1 << 20), 81_024);
+    // Large ones stop at the limit (`1 << 28` fits a 32-bit `usize` too), without overflowing.
+    assert_eq!(object::salvage_len(1 << 28, 1 << 20), 1 << 20);
+    assert_eq!(object::salvage_len(usize::MAX, 1 << 20), 1 << 20);
+}
+
+#[test]
+fn nested_bomb_in_the_second_flate_filter_is_refused() {
+    // `/Filter [/FlateDecode /FlateDecode]`: the first filter inflates, within the limit, to a zlib
+    // bomb (padded to just under the limit) that the second would inflate to 16 MiB. The second
+    // stops at the limit, so the stream is undecodable.
+    const MAX: usize = 1 << 20;
+    let flate = object::Obj::Name("FlateDecode".into());
+    let chain: object::Dict = [("Filter".to_string(), object::Obj::Array(vec![flate.clone(), flate]))].into_iter().collect();
+    let file = object::File::parse(b"");
+    let mut nested = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; 16 << 20], 6);
+    nested.resize(MAX - 1, 0);
+    let raw = miniz_oxide::deflate::compress_to_vec_zlib(&nested, 6);
+    assert_eq!(object::inflate(&raw, MAX).map(|v| v.len()), Some(MAX - 1));
+    assert_eq!(object::decode_stream_within(&file, &chain, &raw, MAX).map(|v| v.len()), None);
 }
 
 // ------------------------------------------------------------------ M13.6: text, images,

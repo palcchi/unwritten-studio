@@ -612,6 +612,15 @@ impl EffectcraftApp {
             return;
         }
         let Some(rs) = frame.wgpu_render_state() else { return };
+        // Help ▸ System Compatibility Report names the adapter and backend the window got.
+        let info = rs.adapter.get_info();
+        self.session.window_adapter = Some(format!(
+            "{} ({:?}, {:?}{})",
+            info.name,
+            info.backend,
+            info.device_type,
+            if info.driver.is_empty() { String::new() } else { format!(", {} {}", info.driver, info.driver_info) }
+        ));
         // Backend validation can panic on shader compilation even when device creation
         // succeeded. Keep the document and the egui renderer, and use CPU compositing.
         let gpu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| effectcraft_gpu::Gpu::new(&rs.adapter, rs.device.clone(), rs.queue.clone())));

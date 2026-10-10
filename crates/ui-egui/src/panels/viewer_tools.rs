@@ -349,6 +349,14 @@ fn transformed(img: &egui::ColorImage, ch: Channel, colorized: bool, stops: f32,
     egui::ColorImage::new(img.size, px.into_iter().map(|a| Color32::from_rgba_premultiplied(a[0], a[1], a[2], a[3])).collect())
 }
 
+/// The display conversion's inputs, for the texture caches.
+pub(crate) fn display_key(app: &EffectcraftApp, has_conversion: bool) -> String {
+    let opts = &app.session.state.viewer;
+    let custom = if opts.simulation.profile == vw::SimProfile::MyCustom { format!("{:?}", app.session.prefs.custom_rgb) } else { String::new() };
+    format!("{:?}{:?}{}{custom}", has_conversion, opts.simulation, app.session.prefs.previews.display_profile)
+        + &format!("{:?}{:?}{}", app.session.project.settings.working_space, app.session.project.settings.output_space, opts.display_color_management)
+}
+
 /// Draw the frame into `comp_rect`: the rendered frame (covering the region of interest when one
 /// is set), or the snapshot while Show Snapshot is on / F5 is held, through Show Channel and the
 /// exposure. Fast Previews ▸ Wireframe draws layer outlines instead.
@@ -378,10 +386,7 @@ pub(crate) fn draw_frame(app: &mut EffectcraftApp, ctx: &egui::Context, painter:
         return;
     }
     let dc = vw::DisplayColor::of(&app.session);
-    // The display conversion's inputs, for the texture caches.
-    let custom = if opts.simulation.profile == vw::SimProfile::MyCustom { format!("{:?}", app.session.prefs.custom_rgb) } else { String::new() };
-    let dc_key = format!("{:?}{:?}{}{custom}", dc.is_some(), opts.simulation, app.session.prefs.previews.display_profile)
-        + &format!("{:?}{:?}{}", app.session.project.settings.working_space, app.session.project.settings.output_space, opts.display_color_management);
+    let dc_key = display_key(app, dc.is_some());
     let plain = opts.channel == Channel::Rgb && opts.exposure == 0.0 && dc.is_none();
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     if snap {

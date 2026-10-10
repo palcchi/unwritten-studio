@@ -761,6 +761,19 @@ impl<'a> Renderer<'a> {
     /// always continuously rasterised, and Continuously Rasterize shape layers and vector footage —
     /// the output scale times the layer's on-screen scale (quarter-octave steps, rounded up, so
     /// vector content is drawn at its final size and stays sharp when scaled up).
+    /// Whether `layer`'s processed buffer (source → masks → effects) is cached and the same as
+    /// one frame earlier: drawing it from the layer cache (an accelerator uploads it once) beats
+    /// re-running its effects every frame.
+    pub fn layer_is_static(&self, ctx: &EvalCtx, layer: &Layer) -> bool {
+        if self.cache.is_none() {
+            return false;
+        }
+        let (scale, draft, blur) = (self.raster_scale(ctx, layer), self.opts.draft, self.mb_on(ctx, layer));
+        let prev = ctx.time - ctx.comp.frame_rate.frame_duration();
+        let now = cache::layer_key(ctx, layer, scale, draft, blur);
+        now.is_some() && now == cache::layer_key(&ctx.at(prev), layer, scale, draft, blur)
+    }
+
     pub fn raster_scale(&self, ctx: &EvalCtx, layer: &Layer) -> f64 {
         let s = self.opts.scale;
         let continuous = match layer.source {

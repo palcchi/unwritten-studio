@@ -979,3 +979,68 @@ fn upload_budget_bounds_the_layer_textures_kept() {
     assert!(up > 0, "over budget, the footprints must upload again");
     assert!(a == b && b == c, "the upload budget changed the frame");
 }
+
+/// Layers with effect stacks run them resident on the GPU (`walk::draw_resident_fx`): GPU
+/// effects, a CPU-only effect in the middle (read back, run, upload), opacity and a blend mode,
+/// a shape layer whose effects run in effect space from its bounds' corner; 8 and 32 bpc, full
+/// and half resolution; all match the CPU.
+#[test]
+fn effect_stacks_render_resident() {
+    for depth in [BitDepth::Bpc8, BitDepth::Bpc32] {
+        let mut s = Scene::new(depth);
+        let bg = s.footage(97, 61);
+        s.push(bg);
+        let mut a = s.footage(70, 44);
+        s.effect(&mut a, "ec.blur.gaussian", &[("blurriness", n(4.0))]);
+        s.effect(&mut a, "ec.generate.fractal", &[]);
+        s.effect(&mut a, "ec.color.levels", &[("gamma", n(1.4))]);
+        set(&mut a, "transform/rotation", Value::Scalar(20.0));
+        set(&mut a, "transform/opacity", Value::Scalar(70.0));
+        a.blend_mode = BlendMode::Overlay;
+        s.push(a);
+        let mut l = build::layer(&mut s.p, &s.comp, "Shape", LayerSource::Shape, (97, 61), None);
+        let mut next = s.p.next_id;
+        let mut ids = Ids(&mut next);
+        let rect = build::shape_rect(&mut ids, [50.0, 30.0], [5.0, -4.0], 0.0);
+        let fill = build::shape_fill(&mut ids, [0.2, 0.8, 0.3, 1.0]);
+        let g = build::shape_group(&mut ids, "Rectangle 1", vec![rect, fill]);
+        s.p.next_id = next;
+        l.props.sub_mut("contents").expect("a shape layer has contents").children.push(g.into());
+        s.effect(&mut l, "ec.blur.gaussian", &[("blurriness", n(3.0))]);
+        s.effect(&mut l, "ec.stylize.mosaic", &[]);
+        s.push(l);
+        let t = Tick::from_seconds_f64(0.2);
+        check(&format!("effect stacks {depth:?}"), compare_at(&s, opts(), t), 0.0);
+        check(&format!("effect stacks half {depth:?}"), compare_at(&s, RenderOpts { scale: 0.5, ..opts() }, t), 0.0);
+    }
+}
+
+/// A layer whose effects give the same result as last frame draws from the layer cache (its
+/// processed buffer uploads once) instead of re-running the stack on the GPU every frame.
+#[test]
+fn static_effect_layers_draw_from_the_cache() {
+    let Some(g) = gpu() else { return };
+    let mut s = Scene::new(BitDepth::Bpc8);
+    let mut l = s.solid([0.6, 0.4, 0.2], 80, 50);
+    s.effect(&mut l, "ec.blur.gaussian", &[("blurriness", n(3.0))]);
+    s.push(l);
+    let cache = effectcraft_render::cache::LayerCache::new(64 << 20);
+    let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+    r.accel = Some(g);
+    r.cache = Some(&cache);
+    let comp = s.p.comp(s.cid).expect("the scene's comp");
+    let layer = comp.layers.last().expect("the layer");
+    let t = |k: u64| Tick::from_seconds_f64(k as f64 / 30.0);
+    assert!(r.layer_is_static(&effectcraft_render::EvalCtx::new(&s.p, s.cid, comp, t(2)), layer));
+    let mut frames = Vec::new();
+    for k in 0..3 {
+        let before = g.ctx.transfer_stats().upload_bytes;
+        frames.push(g.render(&r, s.cid, t(k)).expect("the GPU renders the frame").data);
+        let up = g.ctx.transfer_stats().upload_bytes - before;
+        if k == 2 {
+            assert_eq!(up, 0, "the cached layer uploaded again");
+        }
+    }
+    assert!(frames[1] == frames[2]);
+    check("static effect layer vs CPU", compare_at(&s, opts(), t(2)), 0.0);
+}

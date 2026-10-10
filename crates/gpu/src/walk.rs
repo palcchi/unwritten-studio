@@ -217,6 +217,9 @@ fn draw_layer(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &
     if let Some(done) = draw_precomp(e, r, ctx, layer, canvas, opacity) {
         return done;
     }
+    if let Some(done) = draw_resident_fx(e, r, ctx, layer, canvas, opacity) {
+        return done;
+    }
     let Some(st) = r.styled_layer(ctx, layer) else { return Some(()) };
     if st.plain {
         return composite_layer(e, r, ctx, layer, &st.body, canvas, opacity);
@@ -244,6 +247,44 @@ fn draw_layer(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &
     tmp = place(e, r, ctx, layer, &st.body, &tmp, layer.blend_mode, 1.0, None)?;
     *canvas = ops::channel_mix(e, canvas, &tmp, bl.channels, opacity);
     Some(())
+}
+
+/// A plain layer with effects, its effect stack run on the GPU: the source (+ masks, from the
+/// layer cache) uploads once while unchanged, the effects stay resident and the result is
+/// placed directly; the CPU path instead runs each GPU-capable effect run through an
+/// upload → kernels → readback, then uploads the result again to place it. `None`: not this
+/// kind of layer (draw it the usual way); `Some(None)`: the GPU failed.
+fn draw_resident_fx(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &mut GpuImage, opacity: f32) -> Option<Option<()>> {
+    if !layer.switches.effects
+        || layer.effects().is_none_or(|f| f.children.is_empty())
+        || styles::active(ctx, layer)
+        || layer.preserve_transparency
+        || r.track_matte(ctx, layer).is_some()
+        // Unchanged since the last frame: the cached result uploads once (the usual path).
+        || r.layer_is_static(ctx, layer)
+    {
+        return None;
+    }
+    let input = r.layer_input(ctx, layer, 0)?;
+    if input.img.is_empty() {
+        return Some(Some(()));
+    }
+    let Some(src) = e.g.upload_buf(&input) else { return Some(None) };
+    let pipe = r.pipe();
+    // `layer_input` is in effect space: run the stack there, then back to layer space.
+    let mut fx = crate::effects::GpuFx::new(e, src, input.offset, input.scale, pipe.levels);
+    let origin = r.run_layer_effects_on(ctx, layer, &mut fx);
+    let Some((mut img, mut offset, scale)) = fx.finish() else { return Some(None) };
+    offset = [offset[0] - origin[0] * scale, offset[1] - origin[1] * scale];
+    if img.width == 0 || img.height == 0 {
+        return Some(Some(()));
+    }
+    if let Some(c) = pipe.to_blend() {
+        img = ops::convert(e, &img, &c);
+    }
+    // The placement only reads the buffer's size, offset and scale.
+    let shape = Buf { img: Image { width: img.width, height: img.height, data: Vec::new() }, offset, scale };
+    Some(place_src(e, r, ctx, layer, &shape, img, canvas, layer.blend_mode, opacity, pipe.levels).map(|c| *canvas = c))
 }
 
 /// A 2D precomp layer, its nested comp rendered resident on the GPU (`walk::render` one level

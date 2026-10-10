@@ -4,7 +4,9 @@
 //! output (a second window showing the composition frame, Mercury Transmit-style).
 
 use egui::{Color32, Rect};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(not(target_arch = "wasm32"))]
+use serde_json::json;
 
 use crate::EffectcraftApp;
 use crate::frames::FrameKey;

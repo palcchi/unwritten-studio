@@ -1167,3 +1167,6 @@ mod tests_paint;
 mod tests_panels;
 #[cfg(test)]
 mod tests_roto;
+
+#[cfg(test)]
+mod tests_key_time;

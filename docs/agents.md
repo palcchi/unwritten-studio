@@ -111,6 +111,28 @@ example `transform/position`, `transform/opacity`, `effects/#1/blurriness` or `@
 are in seconds. Keyframe times are layer time, which equals comp time unless the layer is offset or
 stretched.
 
+Use MCP `execute_command` for engine commands `prop.set`, `prop.addKey`, `keys.set` and
+`keys.select` with `timeBase: "layer" | "comp"`; omitted means `layer`. The convenience tools
+`set_property` and `add_keyframe` retain their layer-time interface. The input base applies to
+both `keys.set.time` and `newTime`, and to every `keys.select.keys[].time`.
+Omitted `prop.set` or `prop.addKey` times use the target comp's CTI. Supplied write times snap
+to its nearest comp frame before conversion to stored layer time, including stretched or
+reversed layers; existing `keys.set` neighbor constraints and roving adjustment still apply.
+
+Explicit bases add timing metadata to mutation replies; `keys.select` reports timing in
+`keys[]` for the resulting selection. Returned key `time` and `layerTime` are layer seconds;
+`compTime` is comp seconds. Omitted-base `prop.set`, `prop.addKey` and `keys.select` retain
+their existing JSON value/count replies even outside the active range. Timing metadata
+carries outside-range warnings; the existing objects from `keys.set` and `prop.get.keys[]`
+also report both bases and warnings. `prop.get.time` is comp seconds. Separated Position
+`prop.set` retains per-axis replies; for these commands, `path` or `prop` identifies a property, not a group.
+
+Set offsets with `layer.timing {layer, start: 10.5}`; `in`, `out` and `delta` also use comp seconds.
+For an unstretched layer starting at 10.5 s in a 30 fps comp,
+`prop.addKey {layer: "A", path: "transform/opacity", time: 15.3,
+timeBase: "comp", value: 0}` writes a key at comp 15.3 s (layer 4.8 s), matching
+`prop.get {layer: "A", path: "transform/opacity", time: 15.3}`.
+
 Command params are checked against each command's `params` doc. An unknown key, such as
 `layer.select {"index": 2}`, returns an error that lists the accepted keys (here `layers, add, toggle`)
 instead of being ignored.
@@ -149,11 +171,11 @@ the Progress panel, `jobs.list`); headless sessions run `footage.check` when the
 
 Things that tripped up a long agent-driven session (a multi-scene 3D piece built entirely over MCP).
 
-- **Layer time vs comp time.** `add_keyframe`, `set_property` with `time`, `prop.addKey`,
-  `keys.select` and `keys.set` take layer time; `get_property` and `render_frame` take comp time;
-  `run_script`'s `setValueAtTime` and `keyTime` use comp time, as in After Effects. On a layer that
-  doesn't start at 0, such as a nested comp placed later, subtract the layer's start time from the
-  comp time before keying (unstretched layers), or set the keys from `run_script`
+- **Layer time vs comp time.** `add_keyframe` and `set_property` with `time` take layer time;
+  `get_property` and `render_frame` take comp time. Engine keyframe commands default to layer
+  time; use `execute_command` with `timeBase: "comp"` to supply comp seconds on offset or
+  stretched layers. `run_script`'s `setValueAtTime` and `keyTime` also use comp time. Without an
+  explicit engine time base, subtract the layer's start time before keying an unstretched layer
   ([#257](https://github.com/storytold/effectcraft/issues/257)).
 - **Moving a layer in time.** `execute_command layer.timing {"layers":["Scene 2"],"start":5.1}` sets
   the start time in comp seconds and moves the in and out points with it.

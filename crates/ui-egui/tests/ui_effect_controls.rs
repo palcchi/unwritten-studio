@@ -574,3 +574,85 @@ fn custom_effect_editors_activate_their_owner() {
     click(&mut h, graph);
     assert!(h.state().session.state.selected_props.contains(&(LayerId(x.small), x.curves)));
 }
+
+/// #514: Apply Color LUT asks for its LUT as it is applied (as in After Effects), Effect
+/// Controls shows the file with a Choose… button that picks another, and the LUT changes the
+/// pixels. #473: a text parameter (Cryptomatte's Selection) has a field that sets it.
+#[test]
+fn file_and_text_parameters_have_widgets() {
+    let dir = std::env::temp_dir().join(format!("ec-ui-lut-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A 2×2×2 LUT that inverts, and one that does nothing.
+    let cube = |inv: bool| {
+        let mut t = String::from("LUT_3D_SIZE 2\n");
+        for b in 0..2 {
+            for g in 0..2 {
+                for r in 0..2 {
+                    let f = |c: i32| if inv { 1 - c } else { c };
+                    t += &format!("{} {} {}\n", f(r), f(g), f(b));
+                }
+            }
+        }
+        t
+    };
+    let (invert, identity) = (dir.join("invert.cube"), dir.join("identity.cube"));
+    std::fs::write(&invert, cube(true)).unwrap();
+    std::fs::write(&identity, cube(false)).unwrap();
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "LUT", "width": 64, "height": 32, "frameRate": 30, "duration": 1})).unwrap();
+    let l = s.execute("layer.newSolid", json!({"name": "Plate", "color": "#ff0000", "width": 64, "height": 32})).unwrap()["layer"].as_u64().unwrap();
+    s.state.selected_layers = vec![LayerId(l)];
+    let mut app = EffectcraftApp::new(s);
+    app.show_panel(PanelKind::EffectControls);
+    let picked = std::sync::Arc::new(std::sync::Mutex::new(invert.to_string_lossy().to_string()));
+    let pick = picked.clone();
+    app.hooks.pick_files = Some(Box::new(move |exts: &[&str]| {
+        assert_eq!(exts, ["cube"]);
+        vec![pick.lock().unwrap().clone()]
+    }));
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    settle(&mut h);
+    let ctx = h.ctx.clone();
+    let r = effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "effect.apply", json!({"effect": "Apply Color LUT"})).unwrap();
+    let fx = r["effects"][0].as_u64().unwrap();
+    let lut = |h: &Harness<'_, EffectcraftApp>| {
+        let g = layer(&h.state().session, l).effects().and_then(|f| f.groups().find(|g| g.uid == fx).cloned()).unwrap();
+        let p = g.get("lut").unwrap().clone();
+        (
+            p.uid,
+            match p.value {
+                KV::Str(s) => s,
+                _ => String::new(),
+            },
+        )
+    };
+    assert_eq!(lut(&h).1, invert.to_string_lossy(), "the LUT was asked for on apply");
+    let px = |h: &Harness<'_, EffectcraftApp>| {
+        let s = &h.state().session;
+        s.render(s.active_comp_id().unwrap(), effectcraft_engine::time::Tick::ZERO, Default::default()).get(10, 10)
+    };
+    assert!(px(&h)[0] < 0.05 && px(&h)[1] > 0.95, "red inverted to cyan: {:?}", px(&h));
+    settle(&mut h);
+    let uid = lut(&h).0;
+    assert!(h.state().auto.find(&format!("effectControls.prop.{uid}.value")).is_some_and(|e| e.label == "invert.cube"));
+    *picked.lock().unwrap() = identity.to_string_lossy().to_string();
+    let at = rect_of(&h, &format!("effectControls.prop.{uid}.choose")).center();
+    click(&mut h, at);
+    assert_eq!(lut(&h).1, identity.to_string_lossy());
+    assert!(px(&h)[0] > 0.95, "{:?}", px(&h));
+
+    // A text parameter: type into its field; it is set when the field loses the focus.
+    let crypto = h.state_mut().session.execute("effect.apply", json!({"layers": [l], "effect": "ec.3d.cryptomatte"})).unwrap()["effects"][0].as_u64().unwrap();
+    settle(&mut h);
+    let sel =
+        layer(&h.state().session, l).effects().and_then(|f| f.groups().find(|g| g.uid == crypto).and_then(|g| g.get("selection")).map(|p| p.uid)).unwrap();
+    let at = rect_of(&h, &format!("effectControls.prop.{sel}.value")).center();
+    click(&mut h, at);
+    h.event(egui::Event::Text("left*".into()));
+    h.step();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let v = layer(&h.state().session, l).props.find(sel).unwrap().value.clone();
+    assert_eq!(v, KV::Str("left*".into()));
+    let _ = std::fs::remove_dir_all(dir);
+}

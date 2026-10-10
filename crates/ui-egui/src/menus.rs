@@ -640,8 +640,9 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             // up Effect Controls on that layer, as in After Effects.
             if matches!(id, "effect.apply" | "effect.applyLast") {
                 let r = run_engine(app, ctx, id, params.clone());
-                if r.is_ok() {
+                if let Ok(applied) = &r {
                     crate::panels::effect_controls::reveal_applied(app, &params);
+                    crate::panels::effect_controls::choose_files_after_apply(app, applied);
                 }
                 return r;
             }

@@ -287,6 +287,17 @@ impl Gpu {
         }
     }
 
+    /// Why a frame was not rendered (best effort: device health, else size / support).
+    fn decline_reason(&self) -> String {
+        match self.ctx.check_health() {
+            Err(e) => format!("device failure / out of memory: {e}"),
+            Ok(()) => format!(
+                "the GPU compositor did not handle the frame (unsupported content, a frame over the {} px texture limit, or an allocation failed)",
+                self.ctx.max_dim
+            ),
+        }
+    }
+
     /// Wait for submitted GPU work with the readback deadline (benchmarks).
     pub fn wait(&self) {
         let _ = self.ctx.poll_readbacks(wgpu::PollType::Wait { submission_index: None, timeout: Some(crate::readback::TIMEOUT) });
@@ -299,7 +310,13 @@ impl Accelerator for Gpu {
     }
 
     fn comp_frame(&self, r: &Renderer, comp: ItemId, t: Tick) -> Option<Image> {
-        self.render(r, comp, t)
+        let img = self.render(r, comp, t);
+        if img.is_none() {
+            // The caller renders the frame on the CPU; say so and why, or an export that falls
+            // back frame after frame (a nested comp the GPU declines) is only mysteriously slow.
+            log::warn!(target: "effectcraft_gpu", "GPU declined the frame at {:.3} s, the CPU renders it: {}", t.seconds(), self.decline_reason());
+        }
+        img
     }
 
     fn supports_effect(&self, id: &str) -> bool {

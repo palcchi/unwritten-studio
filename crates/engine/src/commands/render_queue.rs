@@ -592,7 +592,8 @@ fn set_output_module(s: &mut Session, p: &Value) -> Result<Value> {
     // When aspect is locked, an explicit height-only edit must drive the size.
     // frame_size() derives height from width; calculate the matching width from the
     // cropped render bounds before storing the updated module.
-    let width_given = p.get("resizeWidth").is_some() || p.get("resize").and_then(Value::as_object).is_some_and(|r| r.contains_key("width") || r.contains_key("preset"));
+    let width_given =
+        p.get("resizeWidth").is_some() || p.get("resize").and_then(Value::as_object).is_some_and(|r| r.contains_key("width") || r.contains_key("preset"));
     let height_given = p.get("resizeHeight").is_some() || p.get("resize").and_then(Value::as_object).is_some_and(|r| r.contains_key("height"));
     if om.resize.enabled && om.resize.lock_aspect && height_given && !width_given {
         let item = &s.project.render_queue[i];

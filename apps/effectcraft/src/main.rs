@@ -373,10 +373,7 @@ mod tests {
         }
         let files = ["scene.ecprojx".to_string(), "clip.mov".to_string()];
         assert_eq!(files.iter().find(|f| super::is_project_file(f)).map(String::as_str), Some("scene.ecprojx"));
-        assert_eq!(
-            files.iter().filter(|f| !super::is_project_file(f)).map(String::as_str).collect::<Vec<_>>(),
-            vec!["clip.mov"],
-        );
+        assert_eq!(files.iter().filter(|f| !super::is_project_file(f)).map(String::as_str).collect::<Vec<_>>(), vec!["clip.mov"],);
     }
 
     /// Launching without a project opens an empty project, not the demo (#204).

@@ -1164,32 +1164,11 @@ fn thousands_of_host_reads_on_one_thread_keep_working() {
 #[test]
 fn pending_text_style_baseline_setters_are_visible_to_expression_getters() {
     let x = fx();
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).isSuperscript ? 1 : 0", 0.0),
-        1.0
-    );
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setSubscript(true).isSubscript ? 1 : 0", 0.0),
-        1.0
-    );
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).setSubscript(true).isSuperscript ? 1 : 0", 0.0),
-        0.0
-    );
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).setSubscript(true).isSubscript ? 1 : 0", 0.0),
-        1.0
-    );
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setSubscript(true).setSubscript(false).isSubscript ? 1 : 0", 0.0),
-        0.0
-    );
-    assert_eq!(
-        x.num("thisComp.layer('Title').text.sourceText.style.setBaselineOption('superscript').isSuperscript ? 1 : 0", 0.0),
-        1.0
-    );
-    assert_eq!(
-        x.text("var s = text.sourceText.style.setSuperscript(true); s.setText(s.isSuperscript ? 'super' : 'normal')", 0.0),
-        "super"
-    );
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).isSuperscript ? 1 : 0", 0.0), 1.0);
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setSubscript(true).isSubscript ? 1 : 0", 0.0), 1.0);
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).setSubscript(true).isSuperscript ? 1 : 0", 0.0), 0.0);
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setSuperscript(true).setSubscript(true).isSubscript ? 1 : 0", 0.0), 1.0);
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setSubscript(true).setSubscript(false).isSubscript ? 1 : 0", 0.0), 0.0);
+    assert_eq!(x.num("thisComp.layer('Title').text.sourceText.style.setBaselineOption('superscript').isSuperscript ? 1 : 0", 0.0), 1.0);
+    assert_eq!(x.text("var s = text.sourceText.style.setSuperscript(true); s.setText(s.isSuperscript ? 'super' : 'normal')", 0.0), "super");
 }

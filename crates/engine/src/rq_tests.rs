@@ -186,10 +186,7 @@ fn queue_add_accepts_render_settings_templates_without_output_module_namesakes()
 
 #[test]
 fn locked_resize_uses_height_for_height_only_output_module_updates() {
-    for change in [
-        json!({"resizeHeight": 32}),
-        json!({"resize": {"height": 32, "lockAspect": true}}),
-    ] {
+    for change in [json!({"resizeHeight": 32}), json!({"resize": {"height": 32, "lockAspect": true}})] {
         let mut s = Session::default();
         s.execute("comp.new", json!({"name":"Square","width":64,"height":64,"frameRate":10,"duration":1})).unwrap();
         s.execute("renderQueue.add", json!({})).unwrap();

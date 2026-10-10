@@ -1235,6 +1235,7 @@ LayerCollection.prototype = {
     if (name !== undefined) p.name = String(name);
     if (width !== undefined) p.width = Math.round(__num(width, "width"));
     if (height !== undefined) p.height = Math.round(__num(height, "height"));
+    if (pixelAspect !== undefined) p.pixelAspect = __num(pixelAspect, "pixelAspect");
     return this.__dur(this.__new(__call("layer.newSolid", p)), duration);
   },
   addNull: function (duration) { return this.__dur(this.__new(__call("layer.newNull", { comp: this.__comp })), duration); },

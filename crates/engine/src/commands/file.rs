@@ -43,7 +43,8 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let text = String::from_utf8(bytes).map_err(|_| EngineError::Other("not a text project file".into()))?;
     // XML copies (File ▸ Save a Copy As XML…) open like the JSON project.
     let text = if crate::xml_project::is_xml(&text) { crate::xml_project::from_xml(&text).map_err(EngineError::Other)? } else { text };
-    let proj = Project::from_json(&text).map_err(|e| EngineError::Other(format!("{path} is not a project EffectCraft can open: {e}")))?;
+    let mut proj = Project::from_json(&text).map_err(|e| EngineError::Other(format!("{path} is not a project EffectCraft can open: {e}")))?;
+    resolve_relative_footage(&mut proj, path, s.services.as_ref());
     s.replace_project(proj, Some(path.to_string()));
     s.note_project_path(path);
     // Written by a newer EffectCraft: what this version doesn't know would be lost on saving.
@@ -60,6 +61,28 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
         crate::footage_check::start(s, None, false)?;
     }
     Ok(json!({"path": path, "savedBy": saved_by}))
+}
+
+/// Footage saved with a relative path (imported by the CLI or an agent as `clip.mp4`, or written
+/// by hand) is found next to the project file, as After Effects looks for footage relative to
+/// the project. It used to be looked up from the working directory: the CLI started in the
+/// project's folder found it, the desktop app (started from the Finder, Explorer or a launcher,
+/// in another folder) showed and rendered nothing (#652). A path that exists from the working
+/// directory is kept.
+fn resolve_relative_footage(p: &mut Project, project_path: &str, services: &dyn crate::Services) {
+    use std::path::Path;
+    let Some(dir) = Path::new(project_path).parent().filter(|d| !d.as_os_str().is_empty()) else { return };
+    let beside = |f: &str| dir.join(f).to_string_lossy().to_string();
+    for item in p.items.values_mut() {
+        let ItemKind::Footage(f) = &mut item.kind else { continue };
+        if f.path.is_empty() || !Path::new(&f.path).is_relative() || services.exists(&f.path) || !services.exists(&beside(&f.path)) {
+            continue;
+        }
+        f.path = beside(&f.path);
+        for frame in f.sequence.iter_mut().filter(|q| Path::new(q.as_str()).is_relative()) {
+            *frame = beside(frame);
+        }
+    }
 }
 
 /// The project file's text for `path`: `.ecproj` JSON, or XML for `.ecprojx` / `.xml` (a

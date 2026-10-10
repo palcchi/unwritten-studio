@@ -731,6 +731,13 @@ impl Inner {
                 if let Some(img) = crate::layered::decode(path, &bytes, footage, op)? {
                     return Ok(img);
                 }
+                // (an OpenEXR compression the decoder lacks came out transparent or as a missing
+                // channel error)
+                if path.to_ascii_lowercase().ends_with(".exr")
+                    && let Some(why) = crate::exr_channels::unsupported_compression(&bytes)
+                {
+                    return Err(MediaError::Decode(format!("{path}: {why}")));
+                }
                 let img = match image::load_from_memory(&bytes) {
                     Ok(img) => img,
                     // A multi-layer OpenEXR file without an unnamed RGB layer: its colour layer.
@@ -961,6 +968,32 @@ mod tests {
         assert_eq!(c.spare.len(), MAX_SPARE);
         assert_eq!(c.take_spare(256).len(), 256);
         assert!(c.take_spare(17).is_empty());
+    }
+
+    /// #482: an OpenEXR file with HTJ2K compression (which the decoder lacks) says so on import
+    /// and when its frame is read, instead of "no non-deep rgb channels" or a transparent frame.
+    #[test]
+    fn htj2k_exr_is_reported_as_unsupported() {
+        use exr::prelude::*;
+        let channels =
+            AnyChannels::sort(vec![AnyChannel::new("R", FlatSamples::F32(vec![0.5; 4])), AnyChannel::new("G", FlatSamples::F32(vec![0.5; 4]))].into());
+        let image = exr::image::Image::from_layer(Layer::new((2, 2), LayerAttributes::default(), Encoding::UNCOMPRESSED, channels));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let mut bytes = bytes.into_inner();
+        assert_eq!(crate::exr_channels::unsupported_compression(&bytes), None);
+        // The header's compression attribute (name, type, size 1, value) says HTJ2K32 (11).
+        let tag = b"compression\0compression\0\x01\0\0\0";
+        let at = bytes.windows(tag.len()).position(|w| w == tag).unwrap() + tag.len();
+        bytes[at] = 11;
+        let b: Arc<[u8]> = bytes.into();
+        let e = crate::probe_bytes("/shot.exr", b.clone()).unwrap_err().to_string();
+        assert!(e.contains("/shot.exr: OpenEXR HTJ2K compression isn't supported yet"), "{e}");
+        let pool = MediaPool::new();
+        pool.add_bytes("/shot.exr", b);
+        let f = Footage { path: "/shot.exr".into(), kind: FootageKind::Still, width: 2, height: 2, has_video: true, ..Default::default() };
+        let e = pool.frame_at(&f, Tick::ZERO).unwrap_err().to_string();
+        assert!(e.contains("HTJ2K compression isn't supported yet"), "{e}");
     }
 
     /// #411: Interpret Footage ▸ Preserve RGB reads a float OpenEXR's values as the file stores

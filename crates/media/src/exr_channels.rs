@@ -37,6 +37,18 @@ pub fn parse_manifest(json: &str) -> Vec<(String, u32)> {
     v
 }
 
+/// Why an OpenEXR file's pixels can't be decoded when its headers name a compression this build
+/// can't decompress (HTJ2K, OpenEXR 3.4's High-Throughput JPEG 2000): the decoders only said
+/// "no non-deep rgb channels" or showed a transparent frame (#482). `None` for other files.
+pub fn unsupported_compression(bytes: &[u8]) -> Option<&'static str> {
+    use exr::compression::Compression;
+    let meta = exr::meta::MetaData::read_from_buffered(std::io::Cursor::new(bytes), false).ok()?;
+    meta.headers
+        .iter()
+        .any(|h| matches!(h.compression, Compression::HTJ2K32 | Compression::HTJ2K256))
+        .then_some("OpenEXR HTJ2K compression isn't supported yet: re-save the file with ZIP, PIZ or DWAA compression")
+}
+
 /// Read all channels of an EXR file's bytes. `None` when it is not a readable EXR.
 pub fn read_exr_channels(bytes: &[u8]) -> Option<AuxChannels> {
     use exr::prelude::*;

@@ -158,6 +158,11 @@ pub(crate) fn still_footage(path: &str, w: u32, h: u32, fmt: image::ImageFormat,
 
 fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Result<Footage> {
     use image::ImageDecoder;
+    if fmt == image::ImageFormat::OpenExr
+        && let Some(why) = crate::exr_channels::unsupported_compression(bytes)
+    {
+        return Err(MediaError::Decode(format!("{path}: {why}")));
+    }
     let reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), fmt);
     let (w, h, has_alpha) = match reader.into_decoder() {
         Ok(dec) => (dec.dimensions().0, dec.dimensions().1, dec.color_type().has_alpha()),

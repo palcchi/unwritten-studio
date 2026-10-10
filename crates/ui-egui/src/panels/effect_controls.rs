@@ -753,7 +753,7 @@ fn curves_editor(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
     .min(4);
     let x0 = r.min.x + 30.0;
     let cy = r.min.y + 17.0;
-    let names: Vec<&str> = fw::CURVE_CHANNELS.iter().map(|c| c.1).collect();
+    let names: [&str; 5] = [crate::i18n::tr("RGB"), crate::i18n::tr("Red"), crate::i18n::tr("Green"), crate::i18n::tr("Blue"), crate::i18n::tr("Alpha")];
     if let Some(n) = channel_popup(app, ui, p, x0, cy, ch, &names, egui::Id::new(("ec-cch", euid)), &format!("effectControls.effect.{euid}.curves.channel")) {
         match chan_prop {
             Some(pr) => actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": pr.uid, "value": n}))),
@@ -842,7 +842,7 @@ fn levels_editor(
         g.get("channel").map(|pr| ectx.value(layer, pr).as_enum() as usize).unwrap_or(0).min(4)
     };
     if effect == "ec.color.levelsic" {
-        let names: Vec<&str> = fw::LEVELS_CHANNELS.iter().map(|c| c.1).collect();
+        let names: [&str; 5] = [crate::i18n::tr("RGB"), crate::i18n::tr("Red"), crate::i18n::tr("Green"), crate::i18n::tr("Blue"), crate::i18n::tr("Alpha")];
         if let Some(n) = channel_popup(app, ui, p, x0, cy, ch, &names, egui::Id::new(("ec-lch", euid)), &format!("effectControls.effect.{euid}.levels.channel"))
         {
             app.ui.fx_levels_channel.insert(euid, n);

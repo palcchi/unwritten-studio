@@ -8,6 +8,7 @@ use effectcraft_engine::render::{EvalCtx, RenderOpts, Renderer};
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
 
+use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
 
@@ -292,7 +293,7 @@ pub fn bar_buttons(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
     let t = app.tokens;
     let mut x = x;
     let view = app.session.state.roto.view.clone();
-    for (id, label) in [("alpha", "Alpha"), ("alphaBoundary", "Boundary"), ("alphaOverlay", "Overlay")] {
+    for (id, label) in [("alpha", tr("Alpha")), ("alphaBoundary", tr("Boundary")), ("alphaOverlay", tr("Overlay"))] {
         let r = Rect::from_min_size(pos2(x, bar.center().y - 10.0), vec2(66.0, 20.0));
         let on = view == id;
         if widgets::text_button(ui, r, label, on, &t, egui::Id::new(("roto-view", id))).clicked() {
@@ -309,7 +310,7 @@ pub fn bar_buttons(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
     let running = app.session.is_roto_running();
     x += 8.0;
     let r = Rect::from_min_size(pos2(x, bar.center().y - 10.0), vec2(74.0, 20.0));
-    let label = if frozen { "Unfreeze" } else { "Freeze" };
+    let label = if frozen { tr("Unfreeze") } else { tr("Freeze") };
     if widgets::text_button(ui, r, label, frozen, &t, egui::Id::new(("roto-freeze", uid))).clicked() {
         let id = if frozen { "roto.unfreeze" } else { "roto.freeze" };
         if let Err(e) = app.session.execute(id, json!({"layer": layer.id.0, "effect": uid})) {
@@ -320,7 +321,7 @@ pub fn bar_buttons(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painte
     x += 80.0;
     if running {
         let r = Rect::from_min_size(pos2(x, bar.center().y - 10.0), vec2(60.0, 20.0));
-        if widgets::text_button(ui, r, "Stop", false, &t, egui::Id::new("roto-stop")).clicked() {
+        if widgets::text_button(ui, r, tr("Stop"), false, &t, egui::Id::new("roto-stop")).clicked() {
             let _ = app.session.execute("roto.cancel", json!({}));
         }
         app.auto.add("layerPanel.roto.stop", r, "Stop");

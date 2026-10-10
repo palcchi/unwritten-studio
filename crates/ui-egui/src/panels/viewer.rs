@@ -1046,7 +1046,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     let gid = egui::Id::new("viewer-gesture");
-    if let Some(hp) = resp.hover_pos() {
+    // An overlay on top of the viewer (e.g. the camera tracker points) takes the hover, but the pointer is still over the viewer: keep wheel zoom working.
+    let hover_pos = resp.hover_pos().or_else(|| if resp.contains_pointer() { ui.input(|i| i.pointer.hover_pos()) } else { None });
+    if let Some(hp) = hover_pos {
         app.pointer_comp = Some({
             let c = map.to_comp(hp);
             [c[0] as f32, c[1] as f32]

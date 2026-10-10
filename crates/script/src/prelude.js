@@ -1724,7 +1724,10 @@ Project.prototype = {
   importFile: function (opts) {
     var f = opts instanceof ImportOptions ? opts.file : opts;
     if (!f) throw __err("importFile(): no file");
-    var r = __call("file.import", { paths: [__str(f)] });
+    var args = { paths: [__str(f)] };
+    // After Effects imports just the picked file unless ImportOptions.sequence is set.
+    if (opts instanceof ImportOptions) args.sequence = !!opts.sequence;
+    var r = __call("file.import", args);
     if (r.errors && r.errors.length) throw __err(r.errors.join("; "));
     return __item(r.items[0]);
   },

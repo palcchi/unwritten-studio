@@ -3,6 +3,7 @@
 
 use effectcraft_keyframe::Value as KV;
 use effectcraft_project::{FrameBlend, ItemKind, MatteKind, Quality, Sampling};
+use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
 use crate::{EngineError, Event, Session};
@@ -101,6 +102,58 @@ fn transform_dialog_values_and_center_anchor() {
 
     s.execute("layer.autoOrient", json!({"mode": "alongPath"})).unwrap();
     assert_eq!(layer(&s, a).auto_orient, effectcraft_project::AutoOrient::AlongPath);
+}
+
+/// Pixel-centre of the opaque samples, so a 10×10 solid centred on (11, 22) reports (11, 22).
+fn opaque_centroid(s: &Session) -> (f64, f64, u32) {
+    let img = s.render(s.active_comp_id().unwrap(), Tick::ZERO, Default::default());
+    let mut n = 0u32;
+    let mut sx = 0.0;
+    let mut sy = 0.0;
+    for y in 0..img.height {
+        for x in 0..img.width {
+            if img.get(x as i64, y as i64)[3] > 0.5 {
+                n += 1;
+                sx += x as f64 + 0.5;
+                sy += y as f64 + 0.5;
+            }
+        }
+    }
+    assert!(n > 0, "the layer rendered nothing");
+    (sx / n as f64, sy / n as f64, n)
+}
+
+#[test]
+fn separated_position_set_transform_moves_the_layer() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Scene", "width": 100, "height": 100, "frameRate": 30, "duration": 2})).unwrap();
+    let a = s.execute("layer.newSolid", json!({"name": "Square", "color": "#ff0000", "width": 10, "height": 10})).unwrap()["layer"].as_u64().unwrap();
+    let (x, y, n) = opaque_centroid(&s);
+    assert_eq!(n, 100);
+    assert!((x - 50.0).abs() < 0.6 && (y - 50.0).abs() < 0.6, "starts centred, centroid ({x}, {y})");
+
+    s.execute("prop.separateDimensions", json!({"layer": a, "value": true})).unwrap();
+    s.execute("layer.setTransform", json!({"layers": [a], "prop": "position", "value": [11, 22]})).unwrap();
+    let l = layer(&s, a);
+    let tr = l.transform().unwrap();
+    assert!((tr.get("positionX").unwrap().value.as_f64() - 11.0).abs() < 1e-6);
+    assert!((tr.get("positionY").unwrap().value.as_f64() - 22.0).abs() < 1e-6);
+    assert_eq!(tr.get("position").unwrap().value, KV::Vec3([11.0, 22.0, 0.0]));
+    let (x, y, n) = opaque_centroid(&s);
+    assert_eq!(n, 100);
+    assert!((x - 11.0).abs() < 0.6 && (y - 22.0).abs() < 0.6, "separated position renders at ({x}, {y})");
+
+    s.execute("edit.undo", json!({})).unwrap();
+    let (x, y, _) = opaque_centroid(&s);
+    assert!((x - 50.0).abs() < 0.6 && (y - 50.0).abs() < 0.6, "undo puts it back at ({x}, {y})");
+
+    // Combined Position, the control, still moves.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(layer(&s, a).transform().unwrap().get("positionX").is_none());
+    s.execute("layer.setTransform", json!({"prop": "position", "value": [11, 22]})).unwrap();
+    let (x, y, n) = opaque_centroid(&s);
+    assert_eq!(n, 100);
+    assert!((x - 11.0).abs() < 0.6 && (y - 22.0).abs() < 0.6, "combined position renders at ({x}, {y})");
 }
 
 #[test]

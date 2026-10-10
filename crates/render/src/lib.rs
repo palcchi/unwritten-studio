@@ -41,7 +41,8 @@ pub trait FootageSource: Send + Sync {
     /// The frame of `item` at source time `t`, straight from the file (any size).
     fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>>;
     /// `frames` interleaved stereo sample frames of `item`'s audio from source time `t` at
-    /// `rate` Hz (`None` when unavailable).
+    /// `rate` Hz (`None` when unavailable). The first sample is `t.to_units_floor(rate)`;
+    /// a sample boundary uses the earliest representable tick that selects that sample.
     fn audio(&self, _item: ItemId, _footage: &Footage, _t: Tick, _frames: usize, _rate: u32) -> Option<Vec<f32>> {
         None
     }

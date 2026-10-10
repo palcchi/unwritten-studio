@@ -258,7 +258,12 @@ fn draw_precomp(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas:
         return None;
     }
     let (sub, item, lt, bs) = r.precomp_source(ctx, layer)?;
-    let Some(mut src) = render(e, &sub, item, lt) else { return Some(None) };
+    // A nested comp the GPU can't take (nested too deep, over the texture limit, content it
+    // declines) goes back to the CPU path for this layer only; only a device failure fails the
+    // frame.
+    let Some(mut src) = render(e, &sub, item, lt) else {
+        return if e.g.check_health().is_ok() { None } else { Some(None) };
+    };
     let pipe = r.pipe();
     // `masked_source` quantises a non-solid source to the project's depth.
     if let Some(l) = pipe.levels {

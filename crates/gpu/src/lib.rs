@@ -102,6 +102,8 @@ pub struct Gpu {
     ctx: Arc<GpuContext>,
     /// Backend::Auto's per-comp CPU / GPU timings.
     auto: Arc<effectcraft_render::AutoPick>,
+    /// (comp, reason) pairs already warned about when the GPU declined a frame.
+    declined: Arc<std::sync::Mutex<std::collections::HashSet<(u64, String)>>>,
 }
 
 /// A viewer frame left on the GPU: premultiplied RGBA8 (`wgpu::TextureFormat::Rgba8Unorm`) with
@@ -133,7 +135,7 @@ impl Gpu {
     }
 
     pub fn from_context(ctx: GpuContext) -> Gpu {
-        Gpu { ctx: Arc::new(ctx), auto: Default::default() }
+        Gpu { ctx: Arc::new(ctx), auto: Default::default(), declined: Default::default() }
     }
 
     /// A device of its own without blocking, with deferred readbacks (a browser worker, see
@@ -291,8 +293,9 @@ impl Gpu {
     fn decline_reason(&self) -> String {
         match self.ctx.check_health() {
             Err(e) => format!("device failure / out of memory: {e}"),
+            Ok(()) if !self.ctx.can_readback() => "no GPU readback is available here".into(),
             Ok(()) => format!(
-                "the GPU compositor did not handle the frame (unsupported content, a frame over the {} px texture limit, or an allocation failed)",
+                "the GPU compositor did not handle the frame (a region of interest, unsupported content, a frame over the {} px texture limit, or an allocation failed)",
                 self.ctx.max_dim
             ),
         }
@@ -313,8 +316,16 @@ impl Accelerator for Gpu {
         let img = self.render(r, comp, t);
         if img.is_none() {
             // The caller renders the frame on the CPU; say so and why, or an export that falls
-            // back frame after frame (a nested comp the GPU declines) is only mysteriously slow.
-            log::warn!(target: "effectcraft_gpu", "GPU declined the frame at {:.3} s, the CPU renders it: {}", t.seconds(), self.decline_reason());
+            // back frame after frame is only mysteriously slow. Once per comp and reason as a
+            // warning (the log keeps only the last few hundred, for the System Report), then at
+            // debug level.
+            let reason = self.decline_reason();
+            let first = self.declined.lock().map(|mut seen| seen.len() < 256 && seen.insert((comp.0, reason.clone()))).unwrap_or(false);
+            if first {
+                log::warn!(target: "effectcraft_gpu", "GPU declined the frame at {:.3} s, the CPU renders it: {reason}", t.seconds());
+            } else {
+                log::debug!(target: "effectcraft_gpu", "GPU declined the frame at {:.3} s: {reason}", t.seconds());
+            }
         }
         img
     }

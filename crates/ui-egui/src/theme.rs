@@ -81,6 +81,20 @@ pub struct Tokens {
     pub timecode: Color32,
     pub danger: Color32,
     pub warning: Color32,
+    /// Effect Controls effect headers, and the header of the effect being worked on (it or one
+    /// of its properties selected).
+    pub fx_header: Color32,
+    pub fx_header_active: Color32,
+    /// Timeline: a selected layer's row in the time graph, the boxes behind the A/V and layer
+    /// switches, the time navigator and the work area bar.
+    pub tl_graph_selected: Color32,
+    pub switch_well: Color32,
+    pub tl_nav_bar: Color32,
+    pub tl_work_area_bar: Color32,
+    /// The Timeline's expression field and the colour of enabled expressions (their text and
+    /// the names of properties that have one).
+    pub expr_bg: Color32,
+    pub expr_text: Color32,
     /// Label colours (`Label::ALL` order), from Settings ▸ Labels.
     pub labels: [Color32; 17],
     pub radius: f32,
@@ -153,6 +167,14 @@ impl Tokens {
             timecode: Color32::from_rgb(0x3d, 0x8f, 0xf5),
             danger: Color32::from_rgb(0xe0, 0x4a, 0x3c),
             warning: Color32::from_rgb(0xe8, 0x9a, 0x2c),
+            fx_header: Color32::from_rgb(0x2a, 0x2a, 0x2a),
+            fx_header_active: Color32::from_rgb(0x2f, 0x3a, 0x52),
+            tl_graph_selected: Color32::from_rgb(0x2a, 0x2a, 0x2a),
+            switch_well: Color32::from_rgb(0x19, 0x19, 0x19),
+            tl_nav_bar: Color32::from_rgb(0x55, 0x55, 0x55),
+            tl_work_area_bar: Color32::from_rgb(0x5c, 0x5c, 0x5c),
+            expr_bg: Color32::from_rgb(0x1a, 0x1a, 0x1a),
+            expr_text: Color32::from_rgb(0xe8, 0x7c, 0x5c),
             labels: default_labels(),
             radius: 6.0,
             radius_sm: 3.0,
@@ -202,6 +224,16 @@ impl Tokens {
                 pasteboard: Color32::from_rgb(0xa8, 0xa8, 0xa8),
                 // Keyframes have no outline: dark enough to stand out on the light time graph.
                 keyframe: Color32::from_rgb(0x6c, 0x6c, 0x6c),
+                // Custom-painted surfaces in the Light palette, so dark text stays readable on
+                // them (#644).
+                fx_header: Color32::from_rgb(0xd8, 0xd8, 0xd8),
+                fx_header_active: Color32::from_rgb(0xb0, 0xcf, 0xec),
+                tl_graph_selected: Color32::from_rgb(0xc2, 0xc2, 0xc2),
+                switch_well: Color32::from_rgb(0xf2, 0xf2, 0xf2),
+                tl_nav_bar: Color32::from_rgb(0x9a, 0x9a, 0x9a),
+                tl_work_area_bar: Color32::from_rgb(0x94, 0x94, 0x94),
+                expr_bg: Color32::from_rgb(0xf2, 0xf2, 0xf2),
+                expr_text: Color32::from_rgb(0xa3, 0x34, 0x17),
                 ..dark
             },
         }
@@ -268,6 +300,10 @@ impl Tokens {
             &mut self.tl_ruler_bg,
             &mut self.pasteboard,
             &mut self.work_area,
+            &mut self.fx_header,
+            &mut self.tl_graph_selected,
+            &mut self.switch_well,
+            &mut self.expr_bg,
         ] {
             adj(c);
         }

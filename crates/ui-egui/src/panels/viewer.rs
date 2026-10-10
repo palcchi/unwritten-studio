@@ -872,6 +872,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut handle_hits: Vec<(LayerId, usize, Pos2, egui::CursorIcon)> = Vec::new();
     let mut vertex_hits: Vec<VertexHit> = Vec::new();
     let mut key_hits: Vec<ov::KeyHit> = Vec::new();
+    let mut motion_frames: Vec<ov::PathFrame> = Vec::new();
     let mut paths: Vec<ov::PathInfo> = Vec::new();
     let sel_vertices = app.session.state.selected_vertices.clone();
     // Pen path in progress ends when the tool changes or its mask is gone; Esc / Enter also end
@@ -891,7 +892,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         for l in comp.layers.iter().filter(|l| selected.contains(&l.id) && l.is_active_at(time)) {
             let col = if label_handles { t.label(l.label) } else { t.accent };
             // Motion path of animated position (keyframes and spatial tangents are draggable).
-            ov::motion_path(app, &painter, &map, &ectx, l, col, &mut key_hits);
+            ov::motion_path(app, &painter, &map, &ectx, l, col, &mut key_hits, &mut motion_frames);
             // Masks and shape paths.
             if app.ui.viewer.show_masks {
                 let pen = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id()));
@@ -1153,7 +1154,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             Tool::Orbit => egui::CursorIcon::Alias,
             Tool::PanCamera => egui::CursorIcon::Move,
             Tool::Dolly => egui::CursorIcon::ResizeVertical,
-            t if t.is_shape() || t.is_pen() => egui::CursorIcon::Crosshair,
+            t if t.is_pen() => {
+                pen_cursor(
+                    &ctx,
+                    hp,
+                    pen_cursor_icon(t, ov::segment_at(&paths, &map, hp, 5.0).is_some() || ov::motion_frame_at(&motion_frames, &key_hits, hp).is_some()),
+                );
+                egui::CursorIcon::None
+            }
+            t if t.is_shape() => egui::CursorIcon::Crosshair,
             _ if app.ui.viewer.roi_draw => egui::CursorIcon::Crosshair,
             t if t.puppet_kind().is_some() => match super::puppet_tool::hit(&pin_hits, hp) {
                 Some((_, super::puppet_tool::PinPart::Ring)) => egui::CursorIcon::Alias,
@@ -1201,7 +1210,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && ui.input(|i| i.pointer.primary_pressed())
         && let Some(pos) = ui.input(|i| i.pointer.press_origin())
     {
-        pen_press(app, ui, &ectx, &map, &paths, pos, mods);
+        pen_press(app, ui, &ectx, &map, &paths, ov::motion_frame_at(&motion_frames, &key_hits, pos), pos, mods);
     }
     // A pen click (press + release without a drag) ends its tangent gesture on release.
     if ui.input(|i| i.pointer.primary_released())
@@ -1703,19 +1712,35 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
             Tool::Type | Tool::TypeVertical => {}
             Tool::Pen | Tool::MaskFeather => {}
+            // On a motion path (After Effects): Add Vertex adds a keyframe where it is clicked,
+            // Delete Vertex removes the keyframe, Convert Vertex switches it between Linear and
+            // Auto Bezier spatial interpolation.
             Tool::PenAdd => {
                 if let Some((l, m, seg, tt)) = ov::segment_at(&paths, &map, pos, 6.0) {
                     let _ = app.session.execute("mask.insertVertex", json!({"layer": l.0, "mask": m, "segment": seg, "t": tt}));
+                } else if let Some(f) = ov::motion_frame_at(&motion_frames, &key_hits, pos) {
+                    add_motion_key(app, f);
                 }
             }
             Tool::PenDelete => {
                 if let Some(h) = vertex_at(pos, false) {
                     let _ = app.session.execute("mask.deleteVertices", json!({"vertices": [{"layer": h.layer.0, "mask": h.mask, "index": h.index}]}));
+                } else if let Some(k) = ov::motion_key_at(&key_hits, pos)
+                    && select_motion_key(app, &k)
+                {
+                    let _ = app.session.execute("keys.delete", json!({}));
                 }
             }
             Tool::PenConvert => {
                 if let Some(h) = vertex_at(pos, false) {
                     let _ = app.session.execute("mask.convertVertex", json!({"layer": h.layer.0, "mask": h.mask, "index": h.index}));
+                } else if let Some(k) = ov::motion_key_at(&key_hits, pos) {
+                    // A key showing direction handles becomes Linear; one without, Auto Bezier.
+                    let curved = key_hits.iter().any(|h| h.tangent.is_some() && h.layer == k.layer && h.prop == k.prop && h.time == k.time);
+                    if select_motion_key(app, &k) {
+                        let spatial = if curved { "linear" } else { "autoBezier" };
+                        let _ = app.session.execute("keys.interpolation", json!({"spatial": spatial}));
+                    }
                 }
             }
             Tool::Selection if mods.alt && vertex_at(pos, false).is_some() => {
@@ -1907,7 +1932,60 @@ fn draw_rigs(app: &mut EffectcraftApp, painter: &egui::Painter, map: &ViewerMap,
 /// footage/solid layer (or shape layer, with Tool Creates Mask), a shape path (Shape n group with
 /// the Tools bar's Fill and Stroke) on the selected shape layer, or a new shape layer when
 /// nothing is selected. The placed point snaps.
-fn pen_press(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, map: &ViewerMap, paths: &[ov::PathInfo], pos: Pos2, mods: egui::Modifiers) {
+/// Add a Position keyframe at a motion path's frame, keeping the path where it is.
+fn add_motion_key(app: &mut EffectcraftApp, f: ov::PathFrame) {
+    if let Err(e) = app.session.execute("prop.addKey", json!({"layer": f.layer.0, "prop": f.prop, "time": f.time.seconds()})) {
+        app.ui.status = e.to_string();
+    }
+}
+
+/// Select only the motion path's keyframe `k` (what the vertex tools act on).
+fn select_motion_key(app: &mut EffectcraftApp, k: &ov::KeyHit) -> bool {
+    app.session.execute("keys.select", json!({"keys": [{"layer": k.layer.0, "prop": k.prop, "time": k.time.seconds()}]})).is_ok()
+}
+
+/// The pointer for a Pen slot tool: the tool's own pen, the Pen showing Add Vertex's over a path
+/// it would add a point to (After Effects).
+fn pen_cursor_icon(tool: Tool, over_path: bool) -> crate::icons::Icon {
+    use crate::icons::Icon;
+    match tool {
+        Tool::Pen if over_path => Icon::PenAdd,
+        Tool::PenAdd => Icon::PenAdd,
+        Tool::PenDelete => Icon::PenDelete,
+        Tool::PenConvert => Icon::PenConvert,
+        Tool::MaskFeather => Icon::MaskFeather,
+        _ => Icon::Pen,
+    }
+}
+
+/// Paint pen pointer `icon` with its tip at `at`, outlined for any background.
+fn pen_cursor(ctx: &egui::Context, at: Pos2, icon: crate::icons::Icon) {
+    use crate::icons::Icon;
+    // Where each glyph's tip sits in its 16 × 16 box.
+    let tip = match icon {
+        Icon::PenAdd | Icon::PenDelete | Icon::MaskFeather => vec2(6.0, 2.5),
+        Icon::PenConvert => vec2(8.0, 3.5),
+        _ => vec2(8.0, 1.8),
+    };
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("viewer-pen-cursor")));
+    let rect = Rect::from_min_size(at - tip, vec2(16.0, 16.0));
+    for d in [vec2(-1.0, 0.0), vec2(1.0, 0.0), vec2(0.0, -1.0), vec2(0.0, 1.0)] {
+        crate::icons::paint(&painter, rect.translate(d), icon, Color32::BLACK);
+    }
+    crate::icons::paint(&painter, rect, icon, Color32::WHITE);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pen_press(
+    app: &mut EffectcraftApp,
+    ui: &mut egui::Ui,
+    ectx: &EvalCtx,
+    map: &ViewerMap,
+    paths: &[ov::PathInfo],
+    motion_frame: Option<ov::PathFrame>,
+    pos: Pos2,
+    mods: egui::Modifiers,
+) {
     use effectcraft_engine::project::LayerSource;
     let gid = egui::Id::new("viewer-gesture");
     let current: Option<(LayerId, u64)> = ui.data(|d| d.get_temp(pen_id()));
@@ -1939,7 +2017,11 @@ fn pen_press(app: &mut EffectcraftApp, ui: &mut egui::Ui, ectx: &EvalCtx, map: &
         }
         return;
     }
-    // On a visible path's segment the Pen adds a vertex there.
+    // On a visible path's segment the Pen adds a vertex there; on a motion path, a keyframe.
+    if let Some(f) = motion_frame {
+        add_motion_key(app, f);
+        return;
+    }
     if let Some((l, m, seg, t)) = ov::segment_at(paths, map, pos, 5.0) {
         let _ = app.session.execute("mask.insertVertex", json!({"layer": l.0, "mask": m, "segment": seg, "t": t}));
         return;

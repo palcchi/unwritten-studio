@@ -898,3 +898,47 @@ fn adjustment_footprint_uploads_once_under_time_dependent_effects() {
         check(&format!("noise adjustment frame {k}"), compare_at(&s, opts(), t(k)), 0.0);
     }
 }
+
+/// An `Enc` reuses a working texture it released at once (`Pool::owned`); another `Enc` does
+/// not get it while the first is alive.
+#[test]
+fn enc_reuses_its_own_released_textures() {
+    let Some(g) = gpu() else { return };
+    let mut e = crate::context::Enc::new(&g.ctx);
+    let a = e.image(37, 23);
+    let ta = a.texture.clone();
+    drop(a);
+    let mut other = crate::context::Enc::new(&g.ctx);
+    let o = other.image(37, 23);
+    assert!(o.texture != ta, "another Enc got a texture the first may still be using");
+    let b = e.image(37, 23);
+    assert!(b.texture == ta, "the Enc allocated a new texture instead of reusing its own");
+}
+
+/// In-`Enc` texture reuse changes no pixel: a busy frame (layers, effects, adjustment layer,
+/// nested comp) renders bit-identically with reuse on and off, and matches the CPU.
+#[test]
+fn texture_reuse_does_not_change_output() {
+    let Some(g) = gpu() else { return };
+    let mut s = Scene::new(BitDepth::Bpc32);
+    for i in 0..4 {
+        let mut l = s.footage(90 - i * 7, 60 - i * 5);
+        s.effect(&mut l, "ec.blur.gaussian", &[("blurriness", n(2.0 + i as f64))]);
+        set(&mut l, "transform/rotation", Value::Scalar(10.0 * i as f64));
+        l.blend_mode = if i % 2 == 0 { BlendMode::Screen } else { BlendMode::Multiply };
+        s.push(l);
+    }
+    let mut adj = s.solid([1.0, 1.0, 1.0], 80, 50);
+    adj.switches.adjustment = true;
+    s.effect(&mut adj, "ec.color.levels", &[("gamma", n(1.2))]);
+    s.push(adj);
+    let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+    r.accel = Some(g);
+    let t = Tick::from_seconds_f64(0.3);
+    let on = g.render(&r, s.cid, t).expect("the GPU renders the frame");
+    crate::context::TEXTURE_REUSE.store(false, std::sync::atomic::Ordering::Relaxed);
+    let off = g.render(&r, s.cid, t);
+    crate::context::TEXTURE_REUSE.store(true, std::sync::atomic::Ordering::Relaxed);
+    assert!(off.is_some_and(|off| off.data == on.data), "texture reuse changed the frame");
+    check("texture reuse vs CPU", compare_at(&s, opts(), t), 0.0);
+}

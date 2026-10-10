@@ -38,6 +38,12 @@ fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 
+/// sRGB components (0–1) as bytes.
+fn srgb_bytes(c: [f32; 3]) -> [u8; 3] {
+    let col = crate::widgets::srgb32(c);
+    [col.r(), col.g(), col.b()]
+}
+
 fn reg(app: &mut EffectcraftApp, id: &str, r: &egui::Response, label: &str) {
     app.auto.add(id, r.rect, label);
 }
@@ -178,8 +184,9 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                 }
                                 Kind::Color => {
                                     let c = crate::panels::viewer::hex_rgb(v.as_str().unwrap_or("")).unwrap_or([128, 128, 128]);
-                                    let mut rgb = c;
-                                    let r = ui.color_edit_button_srgb(&mut rgb);
+                                    let mut f = c.map(|v| v as f32 / 255.0);
+                                    let r = crate::widgets::srgb_color_button(ui, &mut f);
+                                    let rgb = if r.changed() { srgb_bytes(f) } else { c };
                                     ui.label(RichText::new(hex(rgb)).monospace().color(t.text_dim));
                                     if rgb != c {
                                         acts.push(Act::Set(key.into(), json!(hex(rgb))));
@@ -559,8 +566,9 @@ fn labels_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, cur: &Value, acts: &mu
     egui::Grid::new("settings-labels").num_columns(4).spacing([10.0, 4.0]).show(ui, |ui| {
         for (i, l) in labels.iter().enumerate() {
             let c = crate::panels::viewer::hex_rgb(l["color"].as_str().unwrap_or("")).unwrap_or([128, 128, 128]);
-            let mut rgb = c;
-            let r = ui.color_edit_button_srgb(&mut rgb);
+            let mut f = c.map(|v| v as f32 / 255.0);
+            let r = crate::widgets::srgb_color_button(ui, &mut f);
+            let rgb = if r.changed() { srgb_bytes(f) } else { c };
             app.auto.add(&format!("settings.labels.{i}.color"), r.rect, "label colour");
             if rgb != c {
                 acts.push(Act::Set(format!("labels.{i}.color"), json!(hex(rgb))));

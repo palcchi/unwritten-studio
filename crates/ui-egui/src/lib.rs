@@ -10,6 +10,7 @@
 pub mod audio;
 pub mod automation;
 pub mod bench;
+pub mod color_picker;
 pub mod control;
 pub mod credits;
 pub mod dock;

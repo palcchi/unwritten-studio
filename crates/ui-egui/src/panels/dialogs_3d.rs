@@ -268,7 +268,7 @@ pub fn light(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             });
             ui.end_row();
             ui.label(tr("Color"));
-            ui.color_edit_button_rgb(&mut d.color);
+            crate::widgets::srgb_color_button(ui, &mut d.color);
             ui.end_row();
             ui.label(tr("Intensity"));
             ui.add(egui::DragValue::new(&mut d.intensity).range(-10000.0..=10000.0).suffix(" %"));

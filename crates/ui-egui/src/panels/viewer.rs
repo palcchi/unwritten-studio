@@ -2147,14 +2147,7 @@ pub(crate) fn minify_factor(smooth: bool, pixels: f64, screen: f64) -> usize {
     if smooth && k >= 1.0 { k.min(256.0) as usize } else { 1 }
 }
 
-pub(crate) fn hex_rgb(s: &str) -> Option<[u8; 3]> {
-    let h = s.trim().trim_start_matches('#');
-    if h.len() != 6 || !h.is_ascii() {
-        return None;
-    }
-    let p = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
-    Some([p(0)?, p(2)?, p(4)?])
-}
+pub(crate) use crate::widgets::hex_rgb;
 
 /// The Extended Viewer's render region for this frame (see [`ViewerState::extended`]):
 /// Settings ▸ 3D ▸ Extended Viewer on, the comp has 3D layers and the view is a custom 3D view

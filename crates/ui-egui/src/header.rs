@@ -364,7 +364,7 @@ fn fill_stroke_options(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Pa
             }
         }
         let mut c = tp.color;
-        if color_popup(ui, picker_id(key), sr.left_bottom(), &mut c) {
+        if widgets::color_popup(ui, picker_id(key), sr.left_bottom(), &mut c) {
             tool_options(app, json!({key: c}));
             paint(app, key, json!(c));
         }
@@ -445,12 +445,6 @@ fn paint_options_popup(app: &mut EffectcraftApp, ui: &mut egui::Ui, key: &str, t
     }
 }
 
-/// sRGB components (0–1) as a colour.
-fn srgb32(c: [f32; 3]) -> Color32 {
-    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    Color32::from_rgb(b(c[0]), b(c[1]), b(c[2]))
-}
-
 /// A Fill or Stroke swatch: its colour, a gradient (white to black), or None's red slash.
 fn paint_swatch(p: &egui::Painter, r: Rect, paint: &ToolPaint, hovered: bool, t: &Tokens) {
     let clip = p.with_clip_rect(r);
@@ -460,7 +454,7 @@ fn paint_swatch(p: &egui::Painter, r: Rect, paint: &ToolPaint, hovered: bool, t:
             clip.line_segment([r.left_bottom(), r.right_top()], Stroke::new(1.5, Color32::from_rgb(0xe0, 0x30, 0x30)));
         }
         PaintKind::Solid => {
-            clip.rect_filled(r, 2.0, srgb32(paint.color));
+            clip.rect_filled(r, 2.0, widgets::srgb32(paint.color));
         }
         PaintKind::Linear => {
             let mut m = egui::Mesh::default();
@@ -553,28 +547,6 @@ fn ws_menu(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
         app.set_workspace(&n);
         ui.close();
     }
-}
-
-/// A small colour picker popup bound to an RGB value.
-pub fn color_popup(ui: &mut egui::Ui, id: egui::Id, pos: egui::Pos2, c: &mut [f32; 3]) -> bool {
-    let open_id = id.with("open");
-    if !ui.data(|d| d.get_temp::<bool>(open_id).unwrap_or(false)) {
-        return false;
-    }
-    let mut changed = false;
-    let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos + vec2(0.0, 4.0)).show(ui.ctx(), |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            let mut col = srgb32(*c);
-            if egui::color_picker::color_picker_color32(ui, &mut col, egui::color_picker::Alpha::Opaque) {
-                *c = [col.r() as f32 / 255.0, col.g() as f32 / 255.0, col.b() as f32 / 255.0];
-                changed = true;
-            }
-        });
-    });
-    if widgets::pressed_outside(ui.ctx(), &area.response) || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        ui.data_mut(|d| d.insert_temp(open_id, false));
-    }
-    changed
 }
 
 /// The ArtCraft mark as supplied in `docs/brand` (the README's and getartcraft.com's logo; used

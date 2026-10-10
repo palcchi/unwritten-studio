@@ -645,7 +645,7 @@ pub(super) fn font_picker(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: egui:
             }
             scroll.show(ui, |ui| {
                 if filtered.is_empty() {
-                    let r = ui.label("No matching fonts");
+                    let r = ui.label(tr("No matching fonts"));
                     app.auto.add(&format!("{auto}.empty"), r.rect, "No matching fonts");
                 }
                 let mut was_recent = false;
@@ -655,7 +655,7 @@ pub(super) fn font_picker(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: egui:
                     }
                     was_recent = r.recent;
                     let row_width = ui.available_width();
-                    let label_width = if preview { row_width - 100.0 } else { row_width };
+                    let label_width = if preview { (row_width - 100.0).max(40.0) } else { row_width };
                     let resp = ui.add_sized([row_width, 24.0], egui::Button::selectable(index == state.selected, ""));
                     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, ui.is_enabled(), index == state.selected, &r.display));
                     let label_rect = Rect::from_min_size(resp.rect.min + vec2(5.0, 0.0), vec2(label_width - 5.0, resp.rect.height()));

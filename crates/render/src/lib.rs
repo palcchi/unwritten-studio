@@ -1200,12 +1200,12 @@ impl<'a> Renderer<'a> {
             let dominant_upper = f.fields == effectcraft_project::FieldOrder::UpperFirst;
             // Upper field = even lines (0, 2, …).
             let parity = if (i % 2 == 0) == dominant_upper { 0 } else { 1 };
-            return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f)));
+            return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f, self.pipe.linear_footage_space(f))));
         }
         // Interpretation is per pixel but not linear: it runs on the frame before resampling.
         let size = size.filter(|_| !(f.invert_alpha || f.linear_light_applies()));
         let img = self.footage_frame_raw(ctx, layer, item, f, t, size)?;
-        if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f))) } else { Some(img) }
+        if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f, self.pipe.linear_footage_space(f)))) } else { Some(img) }
     }
 
     fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
@@ -2074,13 +2074,12 @@ pub fn field_frame(img: &Image, parity: usize) -> Image {
 }
 
 /// Interpret Footage ▸ Invert Alpha and Interpret As Linear Light on decoded (premultiplied)
-/// pixels.
-pub fn interpret_pixels(img: &Image, f: &Footage) -> Image {
+/// pixels; linear light is encoded in `space` ([`color::Pipe::linear_footage_space`]).
+pub fn interpret_pixels(img: &Image, f: &Footage, space: effectcraft_color::ColorSpace) -> Image {
     let linear = f.linear_light_applies();
     if !f.invert_alpha && !linear {
         return img.clone();
     }
-    let space = f.color_profile.unwrap_or(effectcraft_color::ColorSpace::Srgb);
     let mut out = img.clone();
     for p in out.data.iter_mut() {
         let a = p[3];

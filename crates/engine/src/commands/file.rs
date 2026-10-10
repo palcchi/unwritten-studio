@@ -577,6 +577,14 @@ fn project_settings(s: &mut Session, p: &Value) -> Result<Value> {
                 ),
             };
         }
+        if let Some(g) = p.get("workingGamma") {
+            // After Effects takes 2.2 or 2.4 only (`app.project.workingGamma`).
+            proj.settings.working_gamma = match g.as_f64() {
+                Some(g) if (g - 2.2).abs() < 1e-6 => 2.2,
+                Some(g) if (g - 2.4).abs() < 1e-6 => 2.4,
+                _ => return Err(bad(cmd, format!("workingGamma: 2.2|2.4, not `{g}`"))),
+            };
+        }
         if proj.settings.color_engine == ColorEngine::Ocio && !proj.settings.working_space.is_some_and(|w| w.is_linear()) {
             return Err(bad(cmd, "the OCIO built-in config's working spaces are acescg and aces2065"));
         }
@@ -689,7 +697,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Project Settings...",
             ["File"],
             Some("Cmd+Alt+Shift+K"),
-            "{bitDepth?: 8|16|32, colorEngine?: adobe|ocio, workingSpace?: none|srgb|rec709|rec2020|p3|acescg|aces2065, linearize?, blendLinear?, hdr?: clip|compand|toneMap, outputSpace?: srgb|rec709|rec2020|p3|rec2100pq|rec2100hlg, renderer?: gpu|software, timeDisplay?: timecode|frames|feet35|feet16}",
+            "{bitDepth?: 8|16|32, colorEngine?: adobe|ocio, workingSpace?: none|srgb|rec709|rec2020|p3|acescg|aces2065, workingGamma?: 2.2|2.4 (with no working space), linearize?, blendLinear?, hdr?: clip|compand|toneMap, outputSpace?: srgb|rec709|rec2020|p3|rec2100pq|rec2100hlg, renderer?: gpu|software, timeDisplay?: timecode|frames|feet35|feet16}",
             always,
             project_settings
         ),

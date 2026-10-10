@@ -546,6 +546,8 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
                         ],
                         st.working_space.map_or(0, |c| 1 + effectcraft_engine::project::ColorSpace::WORKING.iter().position(|x| *x == c).unwrap_or(0)),
                     ),
+                    // With Working Space None (After Effects' Working Gamma, 2.2 or 2.4).
+                    Field::choice("workingGamma", "Working gamma", &[("2.2", json!(2.2)), ("2.4", json!(2.4))], usize::from(st.working_gamma_24())),
                     Field::bool("linearize", "Linearize working space", st.linearize),
                     Field::bool("blendLinear", "Blend colors using 1.0 gamma", st.blend_linear),
                     Field::choice(

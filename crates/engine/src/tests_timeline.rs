@@ -831,3 +831,51 @@ fn toggle_transform_key_covers_selected_layers_separated_position_and_3d_rotatio
     }
     assert!(s.execute("keys.toggleTransform", json!({"prop": "skew"})).is_err());
 }
+
+/// #355, #491: with several layers selected, the stopwatch, the keyframe button and value edits
+/// (`selected: true`, as the panels send them) apply to every selected layer in one undo step; a
+/// scrub (`offset`) moves each layer by the same amount, a typed value sets them all.
+#[test]
+fn property_edits_apply_to_every_selected_layer() {
+    let (mut s, a) = setup();
+    let b = s.execute("layer.newSolid", json!({"color": "#ff0000", "width": 50, "height": 50})).unwrap()["layer"].as_u64().unwrap();
+    let c = s.execute("layer.newSolid", json!({"color": "#00ff00", "width": 50, "height": 50})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("prop.set", json!({"layer": b, "path": "transform/position", "value": [10, 20]})).unwrap();
+    s.execute("layer.select", json!({"layers": [a, b]})).unwrap();
+    let pos = |s: &Session, l: u64| prop(s, l, "transform/position").value_at(effectcraft_time::Tick::ZERO).components();
+    let uid = prop(&s, a, "transform/position").uid;
+
+    // Stopwatch on all selected layers, one undo step; the unselected layer is untouched.
+    let undo = s.history.undo.len();
+    s.execute("prop.toggleAnimation", json!({"layer": a, "prop": uid, "selected": true})).unwrap();
+    assert!(prop(&s, a, "transform/position").is_animated() && prop(&s, b, "transform/position").is_animated());
+    assert!(!prop(&s, c, "transform/position").is_animated());
+    assert_eq!(s.history.undo.len(), undo + 1);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(!prop(&s, a, "transform/position").is_animated() && !prop(&s, b, "transform/position").is_animated());
+
+    // A scrub moves both by the same change (merged into one step while it continues).
+    let (pa, pb) = (pos(&s, a), pos(&s, b));
+    for k in 1..=3 {
+        let v = [pa[0] + 5.0 * k as f64, pa[1]];
+        s.execute("prop.set", json!({"layer": a, "prop": uid, "value": v, "selected": true, "offset": true, "merge": "scrub-1"})).unwrap();
+    }
+    assert_eq!(pos(&s, a)[..2], [pa[0] + 15.0, pa[1]]);
+    assert_eq!(pos(&s, b)[..2], [pb[0] + 15.0, pb[1]]);
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step for the scrub");
+    // A typed value sets them all.
+    s.execute("prop.set", json!({"layer": a, "path": "transform/opacity", "value": 40, "selected": true})).unwrap();
+    assert_eq!(prop(&s, b, "transform/opacity").value.as_f64(), 40.0);
+    assert_eq!(prop(&s, c, "transform/opacity").value.as_f64(), 100.0);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(prop(&s, a, "transform/opacity").value.as_f64(), 100.0);
+    assert_eq!(prop(&s, b, "transform/opacity").value.as_f64(), 100.0);
+
+    // The keyframe button adds a key on each selected layer.
+    s.execute("prop.toggleKey", json!({"layer": a, "path": "transform/scale", "selected": true})).unwrap();
+    assert_eq!(prop(&s, a, "transform/scale").keys.len(), 1);
+    assert_eq!(prop(&s, b, "transform/scale").keys.len(), 1);
+    // Without `selected` only the given layer changes.
+    s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
+    assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
+}

@@ -348,3 +348,53 @@ fn graph_editor_buttons_that_do_not_fit_move_to_the_more_menu() {
     click(&mut h, pos2(item[0] + item[2] / 2.0, item[1] + item[3] / 2.0));
     assert_eq!(h.state().ui.timeline.graph_transform_box, !before, "the menu item runs the button");
 }
+
+/// #355, #491: with three layers selected the Properties panel heads "(3) Selected Objects"; its
+/// stopwatch animates Position on all three (one undo step) and scrubbing X moves all three by
+/// the same amount.
+#[test]
+fn properties_panel_edits_every_selected_layer() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Three", "width": 320, "height": 180, "frameRate": 30, "duration": 4})).unwrap();
+    let mut ids = vec![];
+    for (i, c) in ["#e04020", "#20e040", "#2040e0"].iter().enumerate() {
+        let l = s.execute("layer.newSolid", json!({"color": c, "width": 40, "height": 40})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("prop.set", json!({"layer": l, "path": "transform/position", "value": [60.0 + 80.0 * i as f64, 90.0]})).unwrap();
+        ids.push(l);
+    }
+    s.execute("layer.select", json!({"layers": ids})).unwrap();
+    let first = s.state.selected_layers[0];
+    let uid = s.active_comp().unwrap().layer(first).unwrap().props.prop("transform/position").unwrap().uid;
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.state_mut().show_panel(effectcraft_ui_egui::dock::PanelKind::Properties);
+    h.run_steps(4);
+    assert_eq!(h.state().auto.find("properties.selectedObjects").map(|e| e.label.clone()), Some("(3) Selected Objects".into()));
+    let pos = |h: &Harness<'_, EffectcraftApp>, l: u64| {
+        h.state().session.active_comp().unwrap().layer(LayerId(l)).unwrap().props.prop("transform/position").unwrap().clone()
+    };
+    let at = |h: &Harness<'_, EffectcraftApp>, id: &str| {
+        let e = h.state().auto.find(id).unwrap_or_else(|| panic!("no {id}"));
+        pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0)
+    };
+    let sw = at(&h, &format!("properties.prop.{uid}.stopwatch"));
+    h.input_mut().events.push(Event::PointerMoved(sw));
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: sw, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: sw, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    assert!(ids.iter().all(|l| pos(&h, *l).is_animated()), "every selected layer's stopwatch");
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    assert!(ids.iter().all(|l| !pos(&h, *l).is_animated()), "one undo step");
+    // Scrub X: each layer moves by the same amount.
+    let before: Vec<f64> = ids.iter().map(|l| pos(&h, *l).value.components()[0]).collect();
+    let x = at(&h, &format!("properties.prop.{uid}.value.0"));
+    drag(&mut h, x, x + egui::vec2(30.0, 0.0), Default::default());
+    let after: Vec<f64> = ids.iter().map(|l| pos(&h, *l).value.components()[0]).collect();
+    let d = after[0] - before[0];
+    assert!(d.abs() > 1.0, "the scrub moved X: {before:?} → {after:?}");
+    for (a, b) in after.iter().zip(&before) {
+        assert!((a - b - d).abs() < 1e-6, "same change on every layer: {before:?} → {after:?}");
+    }
+}

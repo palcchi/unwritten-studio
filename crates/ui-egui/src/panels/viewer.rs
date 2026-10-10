@@ -84,12 +84,17 @@ enum Gesture {
         /// Layer pixels → comp as the drag began, and its inverse.
         l2c: Mat3,
         inv: Mat3,
+        /// The other selected layers and their scales as the drag began: they scale by the same
+        /// ratio about their own anchor points, as in After Effects (#491).
+        others: Vec<(LayerId, [f64; 3])>,
     },
     Rotate {
         layer: LayerId,
         center: Pos2,
         start_angle: f64,
         start_rot: f64,
+        /// The other selected layers and their rotations: they turn by the same angle.
+        others: Vec<(LayerId, f64)>,
     },
     Anchor {
         layer: LayerId,
@@ -256,6 +261,16 @@ pub(crate) fn from_effect_space(ctx: &EvalCtx, layer: &Layer, l2c: Mat3) -> Mat3
 /// Effect space → comp (viewer) matrix through the current 3D view.
 pub(crate) fn fx2c(ctx: &EvalCtx, layer: &Layer) -> Mat3 {
     from_effect_space(ctx, layer, l2c(ctx, layer).0)
+}
+
+/// The selected, unlocked layers of `comp` other than `layer` (when `layer` is one of them): a
+/// handle or Rotation tool drag on one changes them all.
+fn selected_others<'a>(app: &EffectcraftApp, comp: &'a Comp, layer: LayerId) -> Vec<&'a Layer> {
+    let sel = &app.session.state.selected_layers;
+    if !sel.contains(&layer) {
+        return vec![];
+    }
+    sel.iter().filter(|id| **id != layer).filter_map(|id| comp.layer(*id)).filter(|l| !l.switches.locked && l.transform().is_some()).collect()
 }
 
 /// The least homogeneous depth (`w`: the distance in front of a perspective camera in pixels, 1
@@ -1232,6 +1247,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
             Tool::MaskFeather => ov::begin_feather(app, &ectx, &paths, &map, press).map(Gesture::Overlay),
             Tool::Rotate => pick(app, &ectx, cpt, mods.shift).map(|l| {
+                let others = selected_others(app, &comp, l).into_iter().filter_map(|o| Some((o.id, ectx.f(o, o.transform()?, "rotation", 0.0)))).collect();
                 let layer = comp.layer(l).cloned();
                 let center = layer
                     .as_ref()
@@ -1239,7 +1255,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     .map(|p| map.to_screen([p[0], p[1]]))
                     .unwrap_or(pos);
                 let rot = layer.as_ref().and_then(|l| l.transform().map(|tr| ectx.f(l, tr, "rotation", 0.0))).unwrap_or(0.0);
-                Gesture::Rotate { layer: l, center, start_angle: ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees(), start_rot: rot }
+                Gesture::Rotate {
+                    layer: l,
+                    center,
+                    start_angle: ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees(),
+                    start_rot: rot,
+                    others,
+                }
             }),
             Tool::PanBehind => pick(app, &ectx, cpt, false).and_then(|l| {
                 let layer = comp.layer(l)?;
@@ -1349,6 +1371,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             axes: handle_axes(hi),
                             l2c,
                             inv,
+                            others: selected_others(app, &comp, lid)
+                                .into_iter()
+                                .filter_map(|o| Some((o.id, ectx.v3(o, o.transform()?, "scale", [100.0; 3]))))
+                                .collect(),
                         })
                     })
                 } else if let Some(l) = pick(app, &ectx, cpt, mods.shift) {
@@ -1417,23 +1443,29 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     let _ = app.session.execute("prop.set", json!({"layer": lid.0, "path": "transform/position", "value": v, "merge": merge}));
                 }
             }
-            Gesture::Scale { layer, start_scale, start_local, handle, anchor, axes, l2c, inv } => {
+            Gesture::Scale { layer, start_scale, start_local, handle, anchor, axes, l2c, inv, others } => {
                 let lp = inv.apply(gv2(cpt[0], cpt[1]));
                 let uniform = mods.shift && axes == [true, true];
                 let f = drag_ratio(start_local, [lp.x - anchor[0], lp.y - anchor[1]], axes, uniform);
                 // The handle snaps (to the comp's and other layers' edges, corners and centres),
                 // so a layer scales exactly to them, e.g. to the comp's size.
                 let f = snap_handle(f, handle, anchor, &l2c, axes, uniform, |p| vt::snap(app, &ctx, &ectx, &map, &[layer], &[p], mods));
-                let v = [start_scale[0] * f[0], start_scale[1] * f[1], start_scale[2]];
-                let _ = app.session.execute("prop.set", json!({"layer": layer.0, "path": "transform/scale", "value": v, "merge": merge}));
+                for (lid, s0) in std::iter::once((layer, start_scale)).chain(others) {
+                    let v = [s0[0] * f[0], s0[1] * f[1], s0[2]];
+                    let _ = app.session.execute("prop.set", json!({"layer": lid.0, "path": "transform/scale", "value": v, "merge": merge}));
+                }
             }
-            Gesture::Rotate { layer, center, start_angle, start_rot } => {
+            Gesture::Rotate { layer, center, start_angle, start_rot, others } => {
                 let ang = ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees();
                 let mut r = start_rot + (ang - start_angle);
                 if mods.shift {
                     r = (r / 45.0).round() * 45.0;
                 }
                 let _ = app.session.execute("prop.set", json!({"layer": layer.0, "path": "transform/rotation", "value": r, "merge": merge}));
+                for (lid, r0) in others {
+                    let _ =
+                        app.session.execute("prop.set", json!({"layer": lid.0, "path": "transform/rotation", "value": r0 + (r - start_rot), "merge": merge}));
+                }
             }
             Gesture::Anchor { layer, start_anchor, start_pos, start, inv, l2p, own, anchor_only } => {
                 // Pan Behind snaps the anchor point (to its own layer's box, other layers' features,

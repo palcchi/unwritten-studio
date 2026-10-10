@@ -1707,6 +1707,32 @@ fn handle_drags_scale_about_the_anchor_and_follow_the_pointer() {
     assert!(close(scale(&h), [162.5, 162.5]), "{:?}", scale(&h));
 }
 
+/// #491: with several layers selected, a handle drag scales all of them by the same ratio, each
+/// about its own anchor point, in one undo step.
+#[test]
+fn handle_drags_scale_every_selected_layer() {
+    let mut h = harness();
+    let layers = h.state().session.active_comp().unwrap().layers.iter().map(|l| l.id).collect::<Vec<_>>();
+    let (box_id, plate) = (layers[0], layers[1]);
+    let scale = |h: &Harness<'_, EffectcraftApp>, id: LayerId| {
+        let l = h.state().session.active_comp().unwrap().layer(id).unwrap().clone();
+        l.props.prop("transform/scale").unwrap().value.as_vec3()
+    };
+    h.state_mut().session.execute("prop.set", json!({"layer": plate.0, "path": "transform/scale", "value": [50, 50, 100]})).unwrap();
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_id.0, plate.0]})).unwrap();
+    h.state_mut().session.execute("view.snapping", json!({"value": false})).unwrap();
+    h.run_steps(2);
+    let undo0 = h.state().session.history.undo.len();
+    // The box's bottom-right corner (360, 220) to (400, 260): twice the box's size.
+    let corner = rect(&h, &format!("viewer.handle.{}.2", box_id.0)).center();
+    let to = screen(&h, [400.0, 260.0]);
+    drag_path(&mut h, &[corner, to], Default::default());
+    let (b, p) = (scale(&h, box_id), scale(&h, plate));
+    assert!((b[0] - 200.0).abs() < 1.0 && (b[1] - 200.0).abs() < 1.0, "{b:?}");
+    assert!((p[0] - 100.0).abs() < 1.0 && (p[1] - 100.0).abs() < 1.0, "the other layer doubles too: {p:?}");
+    assert_eq!(h.state().session.history.undo.len(), undo0 + 1, "one undo step");
+}
+
 /// #252: with snapping on, a dragged handle snaps to the comp's corners and edges (and other
 /// layers'), so a layer scales exactly to the comp; Shift keeps the proportions and still lands
 /// on the comp's size.

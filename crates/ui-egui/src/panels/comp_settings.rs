@@ -340,11 +340,13 @@ pub fn show(ui: &mut egui::Ui, d: &mut CompDraft, t: &Tokens, auto: &mut Registr
         Tab::Renderer => {
             ui.horizontal(|ui| {
                 ui.label(tr("Renderer:"));
-                let r =
-                    egui::ComboBox::from_id_salt("comp-renderer").selected_text(if d.advanced_3d { "Advanced 3D" } else { "Classic 3D" }).show_ui(ui, |ui| {
+                let r = egui::ComboBox::from_id_salt("comp-renderer").selected_text(tr(if d.advanced_3d { "Advanced 3D" } else { "Classic 3D" })).show_ui(
+                    ui,
+                    |ui| {
                         ui.selectable_value(&mut d.advanced_3d, false, tr("Classic 3D"));
                         ui.selectable_value(&mut d.advanced_3d, true, tr("Advanced 3D"));
-                    });
+                    },
+                );
                 auto.add("dialog.comp.renderer", r.response.rect, "Renderer");
             });
         }

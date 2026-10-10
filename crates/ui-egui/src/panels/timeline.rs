@@ -14,6 +14,7 @@ use effectcraft_engine::time::Tick;
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
 
+use crate::i18n::tr;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
@@ -3280,7 +3281,7 @@ fn text_anim_popups(
     let mut opts: Vec<String> = Vec::new();
     let mut acts: Vec<(String, serde_json::Value)> = Vec::new();
     if key == "animate" {
-        opts.push(if per_char { "Disable Per-character 3D" } else { "Enable Per-character 3D" }.into());
+        opts.push(tr(if per_char { "Disable Per-character 3D" } else { "Enable Per-character 3D" }).to_string());
         acts.push(("layer.enablePerChar3D".into(), json!({"layer": layer.id.0, "enabled": !per_char})));
         opts.push("-".into());
         acts.push((String::new(), json!(null)));

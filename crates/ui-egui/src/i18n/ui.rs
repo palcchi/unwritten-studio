@@ -129,7 +129,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("Casts Shadows", "投射阴影"),
     ("Change Renderer…", "更改渲染器…"),
     ("Changing a shortcut creates a custom preset; the default stays as it is.", "修改快捷键会创建自定义预设；默认预设保持不变。"),
-    ("Channel", "色版"),
+    ("Channel", "通道"),
     ("Channel:", "通道："),
     ("Chapter:", "章节："),
     ("Choose...", "选择..."),
@@ -285,7 +285,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("More ArtCraft apps", "更多 ArtCraft 应用"),
     ("More tutorials", "更多教程"),
     ("Motion Blur", "运动模糊"),
-    ("Motion Blur: {}", "动态模糊：{}"),
+    ("Motion Blur: {}", "运动模糊：{}"),
     ("Motion Sketch: drag to record", "动态草图：拖动以记录"),
     ("Move Down", "下移"),
     ("Move Up", "上移"),
@@ -490,6 +490,64 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "⌘/Ctrl 拖动定位点可记录其运动"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {} 已被以下项目使用："),
+    // Strings a panel used to hand to a helper as a bare literal: the helper draws them (the
+    // viewer's toolbar tooltips and popup items, the solid dialog's checkbox), so the lookup has
+    // to reach the catalog from inside the helper. Kept at the end so the catalogs stay parallel.
+    ("3D Reference Axes", "3D 参考轴"),
+    ("Affect all layers that use this solid", "影响使用该纯色的所有图层"),
+    ("Choose grid and guide options", "选择网格和参考线选项"),
+    ("Colorize", "着色"),
+    ("Custom", "自定义"),
+    ("Custom...", "自定义…"),
+    ("Fit", "适合"),
+    ("Fit up to 100%", "适合（最大 100%）"),
+    ("Full", "完整"),
+    ("Half", "一半"),
+    ("Only this layer uses this solid.", "仅此图层使用该纯色。"),
+    ("Proportional Grid", "比例网格"),
+    ("Quarter", "四分之一"),
+    ("Region of Interest", "目标区域"),
+    ("Reset Exposure", "重置曝光"),
+    ("Show Channel and Color Management Settings", "显示通道和色彩管理设置"),
+    ("Show Snapshot (hold)", "显示快照（按住）"),
+    ("Take Snapshot", "拍摄快照"),
+    ("Third", "三分之一"),
+    ("Toggle Mask and Shape Path Visibility", "切换蒙版与形状路径可见性"),
+    ("Toggle Transparency Grid", "切换透明网格"),
+    // Technical terms and proper nouns: the project settings, the import and export forms, the
+    // viewer's channel and Fast Previews popups, the keyframe dialogs and the About window. The
+    // terms that are the same in Chinese (Display P3, HDTV (Rec. 709), RGB, Alpha, H.264, ProRes…)
+    // need no row: a missing row falls back to the English source, which is the decision.
+    ("16 bits per channel", "每通道 16 位"),
+    ("32 bits per channel (float)", "每通道 32 位（浮点）"),
+    ("8 bits per channel", "每通道 8 位"),
+    ("Adaptive Resolution", "自适应分辨率"),
+    ("Adobe-style built-in", "Adobe 风格内置"),
+    ("Blue", "蓝色"),
+    ("Current Settings", "当前设置"),
+    ("Disable Per-character 3D", "停用逐字 3D 化"),
+    ("Draft", "草图"),
+    ("Enable Per-character 3D", "启用逐字 3D 化"),
+    ("Fast Draft", "快速草图"),
+    ("Fast Previews (Draft 3D, Faster Effects)", "快速预览（3D 草图、更快效果）"),
+    ("Green", "绿色"),
+    ("Import Image Sequence", "导入图像序列"),
+    ("Import PDF / Illustrator File", "导入 PDF / Illustrator 文件"),
+    ("Import Photoshop File", "导入 Photoshop 文件"),
+    ("Interpret Unlabeled Alpha As", "将未标记的 Alpha 解释为"),
+    ("Join the ArtCraft Discord", "加入 ArtCraft Discord"),
+    ("Mercury GPU Acceleration ({})", "Mercury GPU 加速（{}）"),
+    ("Mercury Software Only", "仅 Mercury 软件"),
+    ("OCIO (built-in ACES config)", "OCIO（内置 ACES 配置）"),
+    ("Off (Final Quality)", "关闭（最终质量）"),
+    ("OpenGL (compatibility)", "OpenGL（兼容）"),
+    ("Opus Bitrate: {} kbps", "Opus 比特率：{} kbps"),
+    ("RGB Straight", "RGB 直接"),
+    ("Red", "红色"),
+    ("Tone map", "色调映射"),
+    ("Use In-Window Menu Bar on macOS", "在 macOS 上使用窗口内菜单栏"),
+    ("Wireframe", "线框"),
+    ("sRGB IEC61966-2.1 (default)", "sRGB IEC61966-2.1（默认）"),
 ];
 
 const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
@@ -907,6 +965,61 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "⌘/Ctrl 拖曳釘選點可記錄其運動"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {} 已被以下專案使用："),
+    // The same rows as the Simplified catalog (the tests require both lists to match). The
+    // Traditional wording is the translator's call and is left as the English source for now.
+    ("3D Reference Axes", "3D Reference Axes"),
+    ("Affect all layers that use this solid", "Affect all layers that use this solid"),
+    ("Choose grid and guide options", "Choose grid and guide options"),
+    ("Colorize", "Colorize"),
+    ("Custom", "Custom"),
+    ("Custom...", "Custom..."),
+    ("Fit", "Fit"),
+    ("Fit up to 100%", "Fit up to 100%"),
+    ("Full", "Full"),
+    ("Half", "Half"),
+    ("Only this layer uses this solid.", "Only this layer uses this solid."),
+    ("Proportional Grid", "Proportional Grid"),
+    ("Quarter", "Quarter"),
+    ("Region of Interest", "Region of Interest"),
+    ("Reset Exposure", "Reset Exposure"),
+    ("Show Channel and Color Management Settings", "Show Channel and Color Management Settings"),
+    ("Show Snapshot (hold)", "Show Snapshot (hold)"),
+    ("Take Snapshot", "Take Snapshot"),
+    ("Third", "Third"),
+    ("Toggle Mask and Shape Path Visibility", "Toggle Mask and Shape Path Visibility"),
+    ("Toggle Transparency Grid", "Toggle Transparency Grid"),
+    // The same rows as the Simplified catalog (the tests require both lists to match). The
+    // Traditional wording is the translator's call and stays the English source until then.
+    ("16 bits per channel", "16 bits per channel"),
+    ("32 bits per channel (float)", "32 bits per channel (float)"),
+    ("8 bits per channel", "8 bits per channel"),
+    ("Adaptive Resolution", "Adaptive Resolution"),
+    ("Adobe-style built-in", "Adobe-style built-in"),
+    ("Blue", "Blue"),
+    ("Current Settings", "Current Settings"),
+    ("Disable Per-character 3D", "Disable Per-character 3D"),
+    ("Draft", "Draft"),
+    ("Enable Per-character 3D", "Enable Per-character 3D"),
+    ("Fast Draft", "Fast Draft"),
+    ("Fast Previews (Draft 3D, Faster Effects)", "Fast Previews (Draft 3D, Faster Effects)"),
+    ("Green", "Green"),
+    ("Import Image Sequence", "Import Image Sequence"),
+    ("Import PDF / Illustrator File", "Import PDF / Illustrator File"),
+    ("Import Photoshop File", "Import Photoshop File"),
+    ("Interpret Unlabeled Alpha As", "Interpret Unlabeled Alpha As"),
+    ("Join the ArtCraft Discord", "Join the ArtCraft Discord"),
+    ("Mercury GPU Acceleration ({})", "Mercury GPU Acceleration ({})"),
+    ("Mercury Software Only", "Mercury Software Only"),
+    ("OCIO (built-in ACES config)", "OCIO (built-in ACES config)"),
+    ("Off (Final Quality)", "Off (Final Quality)"),
+    ("OpenGL (compatibility)", "OpenGL (compatibility)"),
+    ("Opus Bitrate: {} kbps", "Opus Bitrate: {} kbps"),
+    ("RGB Straight", "RGB Straight"),
+    ("Red", "Red"),
+    ("Tone map", "Tone map"),
+    ("Use In-Window Menu Bar on macOS", "Use In-Window Menu Bar on macOS"),
+    ("Wireframe", "Wireframe"),
+    ("sRGB IEC61966-2.1 (default)", "sRGB IEC61966-2.1 (default)"),
 ];
 
 #[cfg(test)]
@@ -965,6 +1078,12 @@ mod tests {
         ("panels/viewer.rs", include_str!("../panels/viewer.rs")),
         ("panels/viewer_tools.rs", include_str!("../panels/viewer_tools.rs")),
         ("panels/viewers.rs", include_str!("../panels/viewers.rs")),
+        // Text the interface draws but does not own: the settings pages and the viewer's channel
+        // and Fast Previews lists come from the engine as data, so their source strings live here.
+        // Both files pass the literal scan below unchanged (they hold no drawn literals).
+        ("engine settings pages", include_str!("../../../engine/src/prefs.rs")),
+        ("engine viewer channels", include_str!("../../../engine/src/viewer.rs")),
+        ("engine viewer commands", include_str!("../../../engine/src/commands/viewer_cmds.rs")),
     ];
 
     /// Call shapes that hand a string literal straight to the user.
@@ -976,6 +1095,7 @@ mod tests {
         ".heading(\"",
         ".monospace(\"",
         ".on_hover_text(\"",
+        ".on_disabled_hover_text(\"",
         ".hint_text(\"",
         ".text(\"",
         ".prefix(\"",
@@ -1039,16 +1159,41 @@ mod tests {
     }
 
     /// Every row is asked for by a converted panel: a leftover row means the panel went back to its
-    /// English literal.
+    /// English literal. A string a helper draws for the panel (a toolbar tooltip, a popup item, a
+    /// checkbox label) is looked up inside that helper, so its English source only appears as a
+    /// literal there - `helper_labels_are_translated` keeps those helpers honest.
     #[test]
     fn every_row_is_used_by_a_converted_panel() {
         for (en, _) in catalogs() {
             let plain = format!("tr({en:?})");
             let formatted = format!("tr_args({en:?}");
+            let bare = format!("{en:?}");
             assert!(
-                CONVERTED.iter().any(|(_, src)| src.contains(&plain) || src.contains(&formatted)),
+                CONVERTED.iter().any(|(_, src)| src.contains(&plain) || src.contains(&formatted) || src.contains(&bare)),
                 "{en:?} is in the catalog but no converted panel asks for it"
             );
+        }
+    }
+
+    /// A label that a helper takes as an argument is drawn by the helper, so the helper has to ask
+    /// the catalog: `Checkbox::new` and `RadioButton::new` are not among the scanned call shapes
+    /// (the label is their second argument), which let the solid dialog's checkbox ship in English.
+    #[test]
+    fn helper_labels_are_translated() {
+        for (path, source) in CONVERTED {
+            for marker in ["Checkbox::new(", "RadioButton::new("] {
+                let mut from = 0;
+                while let Some(at) = source[from..].find(marker) {
+                    let at = from + at;
+                    let rest = &source[at + marker.len()..];
+                    let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
+                    if let Some(q) = line.find('"') {
+                        let before = line[..q].trim_end();
+                        assert!(before.ends_with("tr("), "{path}: the `{marker}` label `{}` is not in the catalog", &line[q..]);
+                    }
+                    from = at + marker.len();
+                }
+            }
         }
     }
 

@@ -15,6 +15,7 @@ use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
 use crate::dock::PanelKind;
+use crate::i18n::tr;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 use crate::{EffectcraftApp, widgets};
@@ -120,7 +121,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         let per_char = layer.props.prop("text/perChar3d").is_some_and(|q| q.value.as_bool());
         let entries = animator_entries(per_char);
-        let labels: Vec<String> = entries.iter().map(|(l, _)| l.clone()).collect();
+        // The entries are the English source strings; the menu draws them translated.
+        let labels: Vec<String> = entries.iter().map(|(l, _)| tr(l).to_string()).collect();
         if let Some(i) = widgets::popup_menu(ui, pop, br.left_bottom(), &labels, None) {
             match entries[i].1 {
                 "" => {}

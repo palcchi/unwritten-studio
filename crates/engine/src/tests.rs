@@ -542,3 +542,21 @@ fn render_queue_add_accepts_documented_settings_when_checked() {
     assert!(r.is_ok(), "{r:?}");
     assert!(s.execute_checked("renderQueue.add", json!({"bogus": 1})).is_err());
 }
+
+#[test]
+fn new_text_rejects_malformed_positions_without_creating_a_layer() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "C", "width": 64, "height": 64, "duration": 1})).unwrap();
+    for position in [json!([]), json!([10]), json!(["x", 20]), json!([null, 20])] {
+        let err = s.execute("layer.newText", json!({"text": "Hello", "position": position})).unwrap_err();
+        assert!(err.to_string().contains("position: [x, y]"), "{err}");
+        assert!(s.active_comp().unwrap().layers.is_empty());
+    }
+    s.execute("layer.newText", json!({"name": "Valid", "text": "Hello", "position": [10, 20]})).unwrap();
+    assert_eq!(
+        s.active_comp().unwrap().layers[0].props.prop("transform/position").unwrap().value,
+        effectcraft_keyframe::Value::Vec3([10.0, 20.0, 0.0])
+    );
+    s.execute("layer.newText", json!({"text": "No explicit position"})).unwrap();
+    assert_eq!(s.active_comp().unwrap().layers.len(), 2);
+}

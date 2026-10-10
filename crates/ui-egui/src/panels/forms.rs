@@ -771,7 +771,7 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 let r = match &mut fl.kind {
                     FieldKind::Number { value, speed } => {
                         let dec = if *speed < 0.01 { 5 } else { 3 };
-                        ui.add(egui::DragValue::new(value).speed(*speed).max_decimals(dec)).rect
+                        ui.add(crate::widgets::drag_value(egui::DragValue::new(value).speed(*speed).max_decimals(dec))).rect
                     }
                     FieldKind::Text(s) => ui.add(egui::TextEdit::singleline(s).desired_width(220.0)).rect,
                     FieldKind::Path { value, .. } => {

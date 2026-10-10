@@ -411,6 +411,29 @@ fn time_set_snaps_to_the_nearest_frame_and_ae_timecode() {
 }
 
 #[test]
+fn time_set_keeps_the_frame_shown_in_the_current_time_field() {
+    let mut s = Session::default();
+    s.execute(
+        "comp.new",
+        json!({"name": "Example", "width": 64, "height": 64, "frameRate": 30, "duration": 0.6, "startTimecode": "0:00:00:05"}),
+    )
+    .unwrap();
+    let r = s.execute("time.set", json!({"frame": 0})).unwrap();
+    assert_eq!(r["display"], "0:00:00:05");
+    let r = s.execute("time.set", json!({"timecode": "0:00:00:05"})).unwrap();
+    assert_eq!((r["frame"].as_i64(), r["time"].as_f64()), (Some(0), Some(0.0)));
+
+    s.execute("file.projectSettings", json!({"timeDisplay": "frames"})).unwrap();
+    std::sync::Arc::make_mut(&mut s.project).settings.frame_start = 1;
+    let r = s.execute("time.set", json!({"frame": 12})).unwrap();
+    assert_eq!(r["display"], "00013");
+    let r = s.execute("time.set", json!({"timecode": "00013"})).unwrap();
+    assert_eq!((r["frame"].as_i64(), r["time"].as_f64()), (Some(12), Some(0.4)));
+    let r = s.execute("time.set", json!({"timecode": "+1"})).unwrap();
+    assert_eq!(r["frame"], 13);
+}
+
+#[test]
 fn separate_dimensions_split_and_rejoin() {
     let (mut s, l) = setup();
     animate(&mut s, l, "transform/position", &[(0.0, json!([0, 100])), (2.0, json!([200, 50]))]);

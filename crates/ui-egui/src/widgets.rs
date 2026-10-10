@@ -165,12 +165,24 @@ pub fn drag_value(value: egui::DragValue<'_>) -> impl egui::Widget {
 }
 
 /// Keep the keyboard on an inline editor that is open until it loses the focus. The frame it
-/// opens (it has no focus yet) its whole `text` is selected, so typing replaces the value.
-/// (Only then is the focus requested: a request resets what keys the field keeps for itself,
-/// such as Tab with [`egui::TextEdit::lock_focus`].)
+/// opens its whole `text` is selected, so typing replaces the value; after that the caret is the
+/// user's (arrow keys move it), even if the field is without the focus for a frame (#488).
+/// (The focus is only requested while the field doesn't have it: a request resets what keys the
+/// field keeps for itself, such as Tab with [`egui::TextEdit::lock_focus`].)
 pub fn keep_focus(ctx: &egui::Context, field: &Response, text: &str) {
+    // The editor is open in consecutive passes; a gap means it was closed and opened again.
+    let shown = field.id.with("keep-focus-pass");
+    let pass = ctx.cumulative_pass_nr();
+    let previous = ctx.data_mut(|d| {
+        let previous = d.get_temp::<u64>(shown);
+        d.insert_temp(shown, pass);
+        previous
+    });
+    let opening = previous.is_none_or(|p| p.saturating_add(1) < pass);
     if !ctx.memory(|m| m.has_focus(field.id)) {
-        select_all(ctx, field.id, text);
+        if opening {
+            select_all(ctx, field.id, text);
+        }
         field.request_focus();
     }
 }
@@ -591,6 +603,47 @@ pub(crate) fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #488: an inline editor selects its whole text only as it opens. Should it be without the
+    /// keyboard for a frame later (an input method, another handler), it takes the keyboard back
+    /// with the caret where the user put it instead of selecting everything again, which made
+    /// the arrows seem dead and Backspace erase the whole name.
+    #[test]
+    fn inline_editors_select_all_only_as_they_open() {
+        let ctx = egui::Context::default();
+        let mut text = String::from("Comp 1");
+        let mut id = egui::Id::NULL;
+        let frame = |ctx: &egui::Context, text: &mut String, id: &mut egui::Id| {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let r = ui.add(egui::TextEdit::singleline(text));
+                keep_focus(ui.ctx(), &r, text);
+                *id = r.id;
+            });
+            out.textures_delta.clear();
+        };
+        let range = |ctx: &egui::Context, id: egui::Id| egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range());
+        let ix = |n: usize| egui::text::CCursor::new(n).index;
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        let all = range(&ctx, id).unwrap();
+        assert_eq!((all.primary.index.min(all.secondary.index), all.primary.index.max(all.secondary.index)), (ix(0), ix(6)), "opened with all selected");
+        // The caret after "Co", then a frame without the keyboard.
+        let mut state = egui::TextEdit::load_state(&ctx, id).unwrap();
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(2))));
+        state.store(&ctx, id);
+        ctx.memory_mut(|m| m.surrender_focus(id));
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        assert!(ctx.memory(|m| m.has_focus(id)), "the editor keeps the keyboard");
+        let r = range(&ctx, id).unwrap();
+        assert_eq!((r.primary.index, r.secondary.index), (ix(2), ix(2)), "the caret stays where it was");
+        // Closed for a frame and opened again: all selected again.
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        frame(&ctx, &mut text, &mut id);
+        frame(&ctx, &mut text, &mut id);
+        let r = range(&ctx, id).unwrap();
+        assert_eq!((r.primary.index.min(r.secondary.index), r.primary.index.max(r.secondary.index)), (ix(0), ix(6)));
+    }
 
     /// #581: a field's text edit fills it, so its text and hint sit on the field's middle line
     /// (it was a row at the top of the field, its text high).

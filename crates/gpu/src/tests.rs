@@ -746,6 +746,28 @@ fn within_memory_returns_the_work_when_there_is_room() {
     assert_eq!((img.width, img.height), (64, 32));
 }
 
+/// A buffer whose allocation fails (here: over the device's buffer size limit; on Adreno an
+/// internal `ERROR_INITIALIZATION_FAILED`) is reported to the caller's error scope instead of
+/// panicking in `create_buffer_init`'s mapped range on a frame thread (#591).
+#[test]
+fn a_failed_buffer_allocation_is_an_error_not_a_panic() {
+    hold_gpu_lock();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else { return };
+    let required_limits =
+        wgpu::Limits { max_buffer_size: 4096, max_storage_buffer_binding_size: 4096, max_uniform_buffer_binding_size: 4096, ..Default::default() };
+    let desc = wgpu::DeviceDescriptor { required_limits, ..Default::default() };
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc)).expect("a device with a small buffer limit");
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::context::buffer_init(&device, &queue, Some("too big"), &[0u8; 8192], wgpu::BufferUsages::STORAGE);
+        crate::context::buffer_init(&device, &queue, Some("unaligned"), &[1u8; 7], wgpu::BufferUsages::UNIFORM);
+    }));
+    let error = pollster::block_on(scope.pop());
+    assert!(made.is_ok(), "a failed allocation must not panic");
+    assert!(error.is_some(), "the failed allocation reaches the error scope");
+}
+
 /// Precomp layers (not collapsed) render their nested comp resident on the GPU
 /// (`walk::draw_precomp`): match the CPU (nested blend modes, effects inside and outside,
 /// transforms, opacity, a blend mode on the precomp layer, half resolution,

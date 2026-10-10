@@ -1901,3 +1901,50 @@ fn roto_brush_ctrl_drag_resizes_the_brush() {
     assert_eq!(s.len(), 1);
     assert!((s[0].radius - dia / 2.0).abs() < 1e-6, "{} vs {dia}", s[0].radius);
 }
+
+/// #553: the Pen slot's tools work on a motion path as in After Effects: Add Vertex (and the
+/// Pen) add a keyframe where the path is clicked, Convert Vertex switches a keyframe between
+/// Linear and Auto Bezier, Delete Vertex removes it; the pointer is the tool's pen.
+#[test]
+fn vertex_tools_edit_motion_path_keyframes() {
+    let mut h = harness();
+    let box_id: LayerId = h.state().session.active_comp().unwrap().layers[0].id;
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 0.0, "value": [100, 100, 0]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": box_id.0, "path": "transform/position", "time": 2.0, "value": [500, 100, 0]})).unwrap();
+    s.execute("view.snapping", json!({"value": false})).unwrap();
+    s.set_time(effectcraft_engine::time::Tick::from_seconds_f64(3.0));
+    let keys = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/position").unwrap().keys.clone()
+    };
+    h.state_mut().ui.tool = Tool::PenAdd;
+    h.run_steps(3);
+    let mid = screen(&h, [300.0, 100.0]);
+    h.input_mut().events.push(Event::PointerMoved(mid));
+    h.step();
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "the pen is painted in place of the system pointer");
+    click(&mut h, mid);
+    let k = keys(&h);
+    assert_eq!(k.len(), 3, "Add Vertex adds a keyframe on the path");
+    let v = k[1].value.as_vec3();
+    assert!((v[0] - 300.0).abs() < 10.0 && (v[1] - 100.0).abs() < 1.0, "{v:?}");
+    assert!((k[1].time.seconds() - 1.0).abs() < 0.1, "{:?}", k[1].time);
+    // Convert Vertex: the new key's handles go (Linear), then come back (Auto Bezier).
+    h.state_mut().ui.tool = Tool::PenConvert;
+    let at = screen(&h, [v[0] as f32, v[1] as f32]);
+    click(&mut h, at);
+    let k = keys(&h);
+    assert!(!k[1].spatial_auto && k[1].spatial_in == [0.0; 3] && k[1].spatial_out == [0.0; 3], "Linear");
+    click(&mut h, at);
+    assert!(keys(&h)[1].spatial_auto, "Auto Bezier");
+    // Delete Vertex removes it.
+    h.state_mut().ui.tool = Tool::PenDelete;
+    click(&mut h, at);
+    assert_eq!(keys(&h).len(), 2);
+    // The Pen adds one too.
+    h.state_mut().ui.tool = Tool::Pen;
+    let quarter = screen(&h, [200.0, 100.0]);
+    click(&mut h, quarter);
+    assert_eq!(keys(&h).len(), 3);
+}

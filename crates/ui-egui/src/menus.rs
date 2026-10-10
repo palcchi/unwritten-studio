@@ -1200,7 +1200,31 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     {
         return None;
     }
-    let mut p = params.as_object().cloned().unwrap_or_default();
+    const MEDIA: &[&str] = &[
+        "mp4", "mov", "m4v", "mkv", "webm", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "wav", "aif", "aiff", "mp3", "flac", "ogg",
+        "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "gltf", "glb", "obj", "json", "csv", "tsv",
+    ];
+    // A host whose modal dialogs would run a nested event loop inside this frame (macOS: a
+    // drag over the window then re-entered winit's event handler and aborted, #511) shows the
+    // dialog without blocking; the command continues when the answer arrives.
+    if let Some(spawn) = app.hooks.file_dialog_async.as_ref() {
+        let request = match ask {
+            Ask::Folder => crate::FileDialog::Folder,
+            Ask::Import => crate::FileDialog::Open { exts: MEDIA.iter().map(|e| e.to_string()).collect(), many: key == "paths" },
+            Ask::OpenProject => crate::FileDialog::OpenProject,
+            Ask::Open(exts) => crate::FileDialog::Open { exts: exts.iter().map(|e| e.to_string()).collect(), many: false },
+            Ask::Save(default) => crate::FileDialog::save(default),
+        };
+        let tx = app.dialog_answers.0.clone();
+        let answer = crate::DialogAnswer { command: id.to_string(), key, params: params.clone(), paths: Vec::new() };
+        spawn(
+            request,
+            Box::new(move |paths| {
+                let _ = tx.send(crate::DialogAnswer { paths, ..answer });
+            }),
+        );
+        return Some(Ok(json!({"dialog": id})));
+    }
     let picked: Option<Value> = match ask {
         Ask::Folder => {
             let Some(f) = app.hooks.pick_folder.as_ref() else { return Some(Err("no folder dialog available (pass `folder`)".into())) };
@@ -1208,15 +1232,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
         }
         Ask::Import => {
             let Some(f) = app.hooks.pick_files.as_ref() else { return Some(Err("no file dialog available (pass `paths`)".into())) };
-            let paths = f(&[
-                "mp4", "mov", "m4v", "mkv", "webm", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "wav", "aif", "aiff", "mp3", "flac",
-                "ogg", "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "gltf", "glb", "obj", "json", "csv", "tsv",
-            ]);
-            match (paths.is_empty(), key) {
-                (true, _) => None,
-                (false, "paths") => Some(json!(paths)),
-                (false, _) => paths.first().map(|s| json!(s)),
-            }
+            picked_value(key, f(MEDIA))
         }
         Ask::OpenProject => {
             let Some(f) = app.hooks.pick_open_project.as_ref() else { return Some(Err("no file dialog available (pass `path`)".into())) };
@@ -1232,6 +1248,30 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
         }
     };
     let Some(v) = picked else { return Some(Ok(Value::Null)) };
+    Some(run_with_picked(app, id, key, params, v))
+}
+
+/// The dialog's answer as the command's `key` parameter (`None`: cancelled).
+fn picked_value(key: &str, paths: Vec<String>) -> Option<Value> {
+    match (paths.is_empty(), key) {
+        (true, _) => None,
+        (false, "paths") => Some(json!(paths)),
+        (false, _) => paths.into_iter().next().map(Value::from),
+    }
+}
+
+/// A file dialog shown without blocking ([`crate::Hooks::file_dialog_async`]) answered: run its
+/// command with the picked path (nothing when it was cancelled).
+pub(crate) fn dialog_answered(app: &mut EffectcraftApp, answer: crate::DialogAnswer) {
+    let Some(v) = picked_value(answer.key, answer.paths) else { return };
+    if let Err(e) = run_with_picked(app, &answer.command, answer.key, &answer.params, v) {
+        app.ui.status = e;
+    }
+}
+
+/// Run command `id` with the path picked for it in parameter `key`.
+fn run_with_picked(app: &mut EffectcraftApp, id: &str, key: &str, params: &Value, v: Value) -> Result<Value, String> {
+    let mut p = params.as_object().cloned().unwrap_or_default();
     p.insert(key.to_string(), v);
     // Picked files import in the background, with the Importing card showing progress (#270).
     if matches!(id, "file.import" | "file.importMultiple") {
@@ -1243,7 +1283,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     if id == "file.import" && crate::panels::dialogs::open_form(app, id, &picked)
         || matches!(id, "file.import" | "file.importMultiple") && crate::panels::forms::open_import_sequence(app, &picked)
     {
-        return Some(Ok(json!({"dialog": id})));
+        return Ok(json!({"dialog": id}));
     }
     // Save (untitled) becomes Save As.
     let id = if id == "file.save" { "file.saveAs" } else { id };
@@ -1251,7 +1291,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     if let Err(e) = &r {
         app.ui.status = e.clone();
     }
-    Some(r)
+    r
 }
 
 /// A menu entry for display / `ui.menu.list`.
@@ -1979,6 +2019,41 @@ mod tests {
         asked.borrow_mut().clear();
         invoke(&mut app, &ctx, "comp.saveFrameAs", json!({})).unwrap();
         assert_eq!(*asked.borrow(), ["project Frame.png"]);
+    }
+
+    /// #511: with a host's non-blocking dialogs, a command's file dialog opens without running
+    /// a nested event loop inside the frame (a drag over the window then aborted the app on
+    /// macOS); the command runs on a later frame with the answer, and a cancelled one not at all.
+    #[test]
+    fn file_dialogs_can_answer_on_a_later_frame() {
+        use std::sync::{Arc, Mutex};
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("comp.new", json!({"name": "A", "width": 64, "height": 36, "frameRate": 30, "duration": 1})).unwrap();
+        let ctx = egui::Context::default();
+        app.hooks.pick_save = Some(Box::new(|_: &str| panic!("the blocking dialog is not used")));
+        let pending: Arc<Mutex<Vec<(crate::FileDialog, crate::DialogDone)>>> = Arc::default();
+        let queue = pending.clone();
+        app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| queue.lock().unwrap().push((dialog, done))));
+        assert_eq!(invoke(&mut app, &ctx, "file.saveAs", json!({})).unwrap(), json!({"dialog": "file.saveAs"}));
+        let (dialog, done) = pending.lock().unwrap().pop().expect("a dialog was shown");
+        assert_eq!(dialog, crate::FileDialog::Save { default: "Untitled Project.ecproj".into(), ext: "ecproj".into(), project: true });
+        assert!(app.session.path.is_none(), "nothing saved until the dialog answers");
+        let dir = std::env::temp_dir().join(format!("ec-dialog-answer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Answered.ecproj");
+        // Answered from another thread, as the host's dialog does.
+        std::thread::spawn(move || done(vec![path.to_string_lossy().to_string()])).join().unwrap();
+        app.run_dialog_answers();
+        assert_eq!(app.session.path.as_deref(), Some(dir.join("Answered.ecproj").to_string_lossy().as_ref()));
+        assert!(dir.join("Answered.ecproj").is_file());
+        // Cancelled: nothing runs.
+        invoke(&mut app, &ctx, "comp.saveFrameAs", json!({})).unwrap();
+        let (dialog, done) = pending.lock().unwrap().pop().expect("a dialog was shown");
+        assert_eq!(dialog, crate::FileDialog::Save { default: "Frame.png".into(), ext: "png".into(), project: false });
+        done(Vec::new());
+        app.run_dialog_answers();
+        assert!(!dir.join("Frame.png").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

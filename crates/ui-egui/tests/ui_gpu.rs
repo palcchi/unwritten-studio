@@ -86,3 +86,30 @@ fn viewer_draws_gpu_frames_that_match_the_cpu() {
         cpu_shot.save(format!("{d}/ui_cpu_viewer.png")).unwrap();
     }
 }
+
+/// Once the graphics device is lost, eframe's renderer cannot stage buffers and egui-wgpu
+/// panicked on the main thread drawing the next frame (#591). The app now draws nothing,
+/// auto-saves unsaved changes and closes its window instead.
+#[test]
+fn a_lost_device_draws_nothing_autosaves_and_closes() {
+    let dir = std::env::temp_dir().join(format!("ec-device-lost-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut s = Session { autosave_folder_override: Some(dir.clone()), ..Default::default() };
+    s.execute("comp.new", json!({"name": "Unsaved", "width": 64, "height": 64, "duration": 1})).unwrap();
+    assert!(s.is_dirty());
+    let mut h = Harness::builder().with_size(egui::vec2(1200.0, 800.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    assert!(!h.output().shapes.is_empty(), "the UI draws before the loss");
+    let bridge = effectcraft_ui_egui::gpu_failure::GpuFailureBridge::new(&h.ctx);
+    h.state_mut().set_gpu_failure_bridge(bridge.clone());
+    bridge.report("GPU device lost (Unknown): Device is lost", true);
+    h.step();
+    let closing = h.output().viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.contains(&egui::ViewportCommand::Close));
+    assert!(closing, "the window closes");
+    assert!(h.output().shapes.is_empty(), "nothing for the lost renderer to stage");
+    h.step();
+    assert!(h.output().shapes.is_empty());
+    let saved = h.state().session.autosave.last_path.clone().expect("unsaved changes auto-saved");
+    assert!(std::path::Path::new(&saved).is_file(), "{saved}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

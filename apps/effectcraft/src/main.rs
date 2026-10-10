@@ -21,6 +21,9 @@ mod control_server;
 mod launch_guard;
 #[cfg(target_os = "macos")]
 mod native_menu;
+// Built everywhere so it stays checked; only the macOS app uses it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod sheet_dialogs;
 
 use effectcraft_ui_egui::EffectcraftApp;
 use serde_json::json;
@@ -227,6 +230,9 @@ fn main() -> eframe::Result {
             }));
             #[cfg(target_os = "macos")]
             {
+                // The commands' file dialogs open as sheets instead of nested modal loops (#511).
+                let ctx = cc.egui_ctx.clone();
+                app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| sheet_dialogs::show(dialog, done, ctx.clone())));
                 app.hooks.app_action = Some(Box::new(native_menu::app_action));
                 app.hooks.clipboard_text = Some(Box::new(native_menu::clipboard_text));
             }

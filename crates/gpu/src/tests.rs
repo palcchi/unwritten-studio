@@ -942,3 +942,40 @@ fn texture_reuse_does_not_change_output() {
     assert!(off.is_some_and(|off| off.data == on.data), "texture reuse changed the frame");
     check("texture reuse vs CPU", compare_at(&s, opts(), t), 0.0);
 }
+
+/// Static layer buffers (here adjustment-layer footprints) upload once while they fit the upload budget, and upload again every frame
+/// when they do not (least recently used first); the frame is the same either way.
+#[test]
+fn upload_budget_bounds_the_layer_textures_kept() {
+    let Some(g) = gpu() else { return };
+    let mut s = Scene::new(BitDepth::Bpc8);
+    for (i, c) in [[0.8, 0.2, 0.1], [0.1, 0.3, 0.9]].into_iter().enumerate() {
+        let mut l = s.solid(c, 200, 200);
+        set(&mut l, "transform/position", v3(60.0 + 30.0 * i as f64, 40.0));
+        // Adjustment layers: their footprints are cached layer buffers the GPU uploads.
+        l.switches.adjustment = true;
+        s.effect(&mut l, "ec.color.levels", &[("gamma", n(1.1 + 0.2 * i as f64))]);
+        s.push(l);
+    }
+    let frame = |cache: &effectcraft_render::cache::LayerCache, k: u64| {
+        let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+        r.accel = Some(g);
+        r.cache = Some(cache);
+        let before = g.ctx.transfer_stats().upload_bytes;
+        let img = g.render(&r, s.cid, Tick::from_seconds_f64(k as f64 / 30.0)).expect("the GPU renders the frame");
+        (img.data, g.ctx.transfer_stats().upload_bytes - before)
+    };
+    let fits = effectcraft_render::cache::LayerCache::new(64 << 20);
+    let (a, _) = frame(&fits, 0);
+    let (b, up) = frame(&fits, 1);
+    assert_eq!(up, 0, "static layers re-uploaded within the default budget");
+    // A budget smaller than the two 640 KB footprints: each upload evicts the other.
+    let default = g.ctx.upload_budget();
+    g.ctx.set_upload_budget(1 << 20);
+    let tight = effectcraft_render::cache::LayerCache::new(64 << 20);
+    let _ = frame(&tight, 0);
+    let (c, up) = frame(&tight, 1);
+    g.ctx.set_upload_budget(default);
+    assert!(up > 0, "over budget, the footprints must upload again");
+    assert!(a == b && b == c, "the upload budget changed the frame");
+}

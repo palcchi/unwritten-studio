@@ -37,7 +37,7 @@ const EXT_ENTRIES: &[&str] = &["classic3d"];
 /// 8/16 bpc are emulated by clamping and quantising, as on the CPU).
 pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
 
-/// Uploaded layer buffers kept on the GPU (bytes).
+/// Uploaded layer buffers kept on the GPU by default (bytes; [`GpuContext::set_upload_budget`]).
 const UPLOAD_BUDGET: usize = 1536 << 20;
 
 /// Working textures kept for reuse once their last image is dropped (bytes).
@@ -296,6 +296,8 @@ pub struct GpuContext {
     dummy_tex: wgpu::TextureView,
     dummy_buf: wgpu::Buffer,
     uploads: Mutex<Uploads>,
+    upload_budget: std::sync::atomic::AtomicUsize,
+    upload_full_warned: std::sync::atomic::AtomicBool,
     pool: Arc<Mutex<Pool>>,
     /// CPU ↔ GPU traffic (diagnostics: `bench --gpu`).
     pub(crate) transfers: Transfers,
@@ -641,6 +643,8 @@ impl GpuContext {
             dummy,
             dummy_buf,
             uploads: Mutex::new(Uploads::default()),
+            upload_budget: std::sync::atomic::AtomicUsize::new(UPLOAD_BUDGET),
+            upload_full_warned: Default::default(),
             pool: Default::default(),
             staging: Default::default(),
             transfers: Default::default(),
@@ -869,6 +873,17 @@ impl GpuContext {
         (GpuImage { texture, width: w, height: h, _lease: Some(lease), levels: None }, was_reused)
     }
 
+    /// Bytes of uploaded layer textures the context keeps (default 1536 MB). An application that
+    /// knows the device's memory can raise it (static layers of a big frame upload once) or lower
+    /// it (a small GPU); the least recently used textures go first.
+    pub fn set_upload_budget(&self, bytes: usize) {
+        self.upload_budget.store(bytes.max(1 << 20), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn upload_budget(&self) -> usize {
+        self.upload_budget.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Uploads and readbacks so far (images; uploads of cached layers count once).
     pub fn transfer_stats(&self) -> TransferStats {
         use std::sync::atomic::Ordering::Relaxed;
@@ -925,7 +940,8 @@ impl GpuContext {
             }
             u.bytes += bytes;
             // Drop textures of freed buffers, then the least recently used over budget.
-            if u.bytes > UPLOAD_BUDGET {
+            let budget = self.upload_budget();
+            if u.bytes > budget {
                 let dead: Vec<usize> = u.map.iter().filter(|(_, e)| e.buf.strong_count() == 0).map(|(k, _)| *k).collect();
                 for k in dead {
                     if let Some(e) = u.map.remove(&k) {
@@ -933,7 +949,14 @@ impl GpuContext {
                     }
                 }
             }
-            while u.bytes > UPLOAD_BUDGET {
+            if u.bytes > budget && !self.upload_full_warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                log::warn!(
+                    target: "effectcraft_gpu",
+                    "GPU upload cache full ({} MB): evicting layer textures, which upload again when next used; a frame whose static layers exceed it re-uploads them every frame",
+                    budget >> 20
+                );
+            }
+            while u.bytes > budget {
                 let Some(k) = u.map.iter().min_by_key(|(_, e)| e.last_use).map(|(k, _)| *k) else { break };
                 if let Some(e) = u.map.remove(&k) {
                     u.bytes -= e.bytes;

@@ -153,6 +153,20 @@ fn headless_workflow() {
     let mid = call_json(&mut s, "get_property", json!({"layer": l, "path": "transform/position", "time": 1.0}));
     assert!((mid["value"][0].as_f64().unwrap() - 160.0).abs() < 1.0, "{mid}");
 
+    // Comp-time keys on an offset layer (#257): the key lands where the Timeline shows it.
+    call_json(&mut s, "execute_command", json!({"command": "layer.timing", "params": {"layer": l, "start": 1.0}}));
+    let p = call_json(
+        &mut s,
+        "add_keyframe",
+        json!({"layer": l, "path": "transform/scale", "keys": [{"time": 1.5, "value": [50, 50]}, {"time": 2.5, "value": [100, 100]}], "timeBase": "comp", "interpolation": "hold"}),
+    );
+    let times: Vec<f64> = p["keys"].as_array().unwrap().iter().map(|k| k["time"].as_f64().unwrap()).collect();
+    assert!((times[0] - 0.5).abs() < 1e-6 && (times[1] - 1.5).abs() < 1e-6, "layer-time keys: {times:?}");
+    assert_eq!(p["keys"][0]["out"], "Hold", "the comp-time keys were selected for the interpolation");
+    call_json(&mut s, "set_property", json!({"layer": l, "path": "transform/scale", "value": [75, 75], "time": 3.0, "timeBase": "comp"}));
+    let p = call_json(&mut s, "get_property", json!({"layer": l, "path": "transform/scale"}));
+    assert!(p["keys"].as_array().unwrap().iter().any(|k| (k["time"].as_f64().unwrap() - 2.0).abs() < 1e-6), "{p}");
+
     // Expression via set_property.
     let p = call_json(&mut s, "set_property", json!({"layer": l, "path": "transform/rotation", "expression": "time * 90"}));
     assert_eq!(p["expression"], "time * 90");

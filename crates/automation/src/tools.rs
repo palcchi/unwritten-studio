@@ -319,6 +319,9 @@ fn set_property(b: &mut Backend, a: &Value) -> Result<Reply> {
         match time {
             Some(t) => {
                 p["time"] = t.clone();
+                if let Some(tb) = get(a, "timeBase") {
+                    p["timeBase"] = tb.clone();
+                }
                 b.exec("prop.addKey", p)?;
             }
             None => {
@@ -351,6 +354,9 @@ fn add_keyframe(b: &mut Backend, a: &Value) -> Result<Reply> {
         if let Some(v) = get(k, "value") {
             p["value"] = v.clone();
         }
+        if let Some(tb) = get(a, "timeBase") {
+            p["timeBase"] = tb.clone();
+        }
         b.exec("prop.addKey", p)?;
     }
     let info = b.exec("prop.get", obj(&base))?;
@@ -360,7 +366,11 @@ fn add_keyframe(b: &mut Backend, a: &Value) -> Result<Reply> {
             b.exec("comp.open", json!({"comp": c}))?;
         }
         let sel: Vec<Value> = keys.iter().map(|k| json!({"layer": info["layer"], "prop": info["uid"], "time": k["time"]})).collect();
-        b.exec("keys.select", json!({"keys": sel}))?;
+        let mut select = json!({"keys": sel});
+        if let Some(tb) = get(a, "timeBase") {
+            select["timeBase"] = tb.clone();
+        }
+        b.exec("keys.select", select)?;
         match interp.to_ascii_lowercase().as_str() {
             "easyease" | "ease" => b.exec("keys.easyEase", json!({}))?,
             "easyeasein" => b.exec("keys.easyEase", json!({"which": "in"}))?,
@@ -628,6 +638,7 @@ static TOOLS: &[ToolDef] = &[
                 json!({
                     "layer": layer_s(), "path": path_s(), "value": value_s(), "comp": comp_s(),
                     "time": {"type": "number", "description": "Keyframe time in seconds (layer time; equals comp time unless the layer is offset/stretched)."},
+                    "timeBase": {"type": "string", "enum": ["layer", "comp"], "description": "What `time` counts: layer time (the default) or comp time, as the Timeline shows it."},
                     "expression": {"type": "string", "description": "Expression text; empty string removes the expression."}
                 }),
                 &["layer", "path"],
@@ -644,6 +655,7 @@ static TOOLS: &[ToolDef] = &[
                 json!({
                     "layer": layer_s(), "path": path_s(), "comp": comp_s(),
                     "time": {"type": "number", "description": "Key time in seconds (layer time)."},
+                    "timeBase": {"type": "string", "enum": ["layer", "comp"], "description": "What `time` counts: layer time (the default) or comp time, as the Timeline shows it."},
                     "value": value_s(),
                     "keys": {"type": "array", "items": {"type": "object", "properties": {"time": {"type": "number"}, "value": value_s()}, "required": ["time"]}, "description": "Several keys at once."},
                     "interpolation": {"type": "string", "enum": ["linear", "bezier", "hold", "easyEase", "easyEaseIn", "easyEaseOut"]}

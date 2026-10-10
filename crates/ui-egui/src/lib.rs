@@ -261,6 +261,9 @@ pub struct EffectcraftApp {
     gpu_checked: bool,
     gpu_failures: Option<gpu_failure::GpuFailureBridge>,
     gpu_failure_applied: Option<bool>,
+    /// The graphics device was lost and the window is closing (see `close_after_device_loss`);
+    /// `true` keeps crash recovery for the next launch.
+    device_lost_close: Option<bool>,
     /// Commands from the native menu bar.
     pub command_inbox: Option<Receiver<String>>,
     /// Pointer position in comp pixels (Info panel).
@@ -347,6 +350,7 @@ impl EffectcraftApp {
             gpu_checked: false,
             gpu_failures: None,
             gpu_failure_applied: None,
+            device_lost_close: None,
             command_inbox: None,
             pointer_comp: None,
             dialog_state: Default::default(),
@@ -641,6 +645,26 @@ impl EffectcraftApp {
         };
         log::warn!("GPU preview retired: {}", failure.reason);
         ctx.request_repaint();
+    }
+
+    /// After the graphics device is lost, eframe's renderer cannot draw again: any mesh makes
+    /// egui-wgpu panic on the main thread when it cannot stage its index buffer (#591). Draw
+    /// nothing from then on, auto-save a project with unsaved changes (keeping the crash
+    /// recovery marker, so the next launch offers it) and close the window.
+    fn close_after_device_loss(&mut self, ctx: &egui::Context) {
+        if self.device_lost_close.is_some() {
+            return;
+        }
+        let keep_recovery = self.session.is_dirty();
+        if keep_recovery {
+            match self.session.autosave_now().and_then(|path| self.session.autosave_wait().map(|()| path)) {
+                Ok(path) => log::warn!("graphics device lost: auto-saved {path}; the next launch offers to recover it"),
+                Err(e) => log::error!("graphics device lost: {e}"),
+            }
+        }
+        self.device_lost_close = Some(keep_recovery);
+        log::warn!("graphics device lost: closing the window");
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
     /// Set up the GPU compositor on egui-wgpu's device (once). Without an adapter that runs
@@ -1672,8 +1696,11 @@ impl EffectcraftApp {
 
 impl eframe::App for EffectcraftApp {
     fn on_exit(&mut self) {
-        // Clean exit: no crash recovery next launch.
-        self.session.end_recovery();
+        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
+        // unsaved changes, which are in the auto-save it offers).
+        if self.device_lost_close != Some(true) {
+            self.session.end_recovery();
+        }
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -1732,6 +1759,10 @@ impl eframe::App for EffectcraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.gpu_failure_applied == Some(true) {
+            self.close_after_device_loss(ui.ctx());
+            return;
+        }
         self.init_gpu(frame);
         if !self.fonts_ready {
             ui.ctx().request_repaint();

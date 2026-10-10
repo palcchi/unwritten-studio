@@ -14,7 +14,8 @@
 //! * **Blend Colors Using 1.0 Gamma**: only blending is linear. Each layer's finished pixels
 //!   are linearised just before they are transformed and blended, the comp accumulates in linear
 //!   and is encoded back to the working space when the comp is done (so precomps hand encoded
-//!   pixels to their parent). Without a working space the sRGB curve is used.
+//!   pixels to their parent). Without a working space the Working Gamma's curve is used (sRGB
+//!   at 2.2, a pure 2.4 power curve at 2.4); so is it for Interpret As Linear Light footage.
 
 use effectcraft_color::{ColorSpace, Conversion};
 use effectcraft_project::{Footage, HdrMode, ProjectSettings};
@@ -36,6 +37,8 @@ pub struct Pipe {
     pub out: ColorSpace,
     /// HDR handling for standard-dynamic-range output.
     pub hdr: HdrMode,
+    /// Unmanaged with Working Gamma 2.4: the pure 2.4 power curve instead of sRGB's.
+    pub gamma24: bool,
 }
 
 impl Pipe {
@@ -49,12 +52,20 @@ impl Pipe {
             linear_blend: s.blend_linear && !linear,
             out: s.output_space.unwrap_or(ColorSpace::Srgb),
             hdr: s.hdr,
+            gamma24: s.working_space.is_none() && s.working_gamma_24(),
         }
     }
 
-    /// The space whose curve encodes working-space pixels (sRGB when unmanaged).
+    /// The space whose curve encodes working-space pixels (unmanaged: the Working Gamma's, sRGB
+    /// at 2.2 and Rec. 709's pure 2.4 power curve at 2.4).
     fn curve(&self) -> ColorSpace {
-        self.space.unwrap_or(ColorSpace::Srgb)
+        self.space.unwrap_or(if self.gamma24 { ColorSpace::Rec709 } else { ColorSpace::Srgb })
+    }
+
+    /// The space Interpret As Linear Light encodes footage `f` in: its colour profile, else sRGB
+    /// (managed; the working space converts from there) or the Working Gamma's curve (unmanaged).
+    pub fn linear_footage_space(&self, f: &Footage) -> ColorSpace {
+        f.color_profile.unwrap_or(if self.space.is_some() { ColorSpace::Srgb } else { self.curve() })
     }
 
     /// Footage `f` from its colour profile (`None` = sRGB) → working space; nothing for
@@ -149,6 +160,7 @@ impl Pipe {
         k = k.wrapping_mul(31).wrapping_add(self.space.map_or(7, |s| s as u64 + 11));
         k = k.wrapping_mul(31).wrapping_add(self.linear as u64 * 2 + self.linear_blend as u64);
         k = k.wrapping_mul(31).wrapping_add(self.out as u64 * 4 + self.hdr as u64);
+        k = k.wrapping_mul(31).wrapping_add(self.gamma24 as u64);
         k
     }
 }

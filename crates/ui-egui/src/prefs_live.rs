@@ -88,7 +88,10 @@ pub fn dropped_files(app: &mut EffectcraftApp, ui: &egui::Ui, bounds: Rect) {
             None
         };
 
-        let params = json!({
+        // Dropped files import as stills and folders' numbered stills as sequences; Alt-drag
+        // imports a folder's files one by one (After Effects).
+        let alt = ctx.input(|i| i.modifiers.alt);
+        let mut params = json!({
             "paths": rest,
             "drag": true,
             "importAs": app.session.prefs.drag_import_as(),
@@ -96,6 +99,9 @@ pub fn dropped_files(app: &mut EffectcraftApp, ui: &egui::Ui, bounds: Rect) {
             "position": at,
             "background": true
         });
+        if alt {
+            params["sequence"] = json!(false);
+        }
 
         if let Err(e) = crate::menus::invoke(app, &ctx, "file.import", params) {
             errors.push(crate::i18n::tr_args("Cannot import dropped files: {}", &[&e]));

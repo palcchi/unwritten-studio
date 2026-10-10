@@ -280,8 +280,11 @@ fn comp_content_with(project: &Project, comp: ItemId, addr: impl Fn(ItemId, &Arc
     h.finish()
 }
 
-/// Hash of render options (part of [`FrameKey`] and of the disk key).
+/// Hash of render options (part of [`FrameKey`] and of the disk key). The scale counts as the
+/// key's thousandths ([`FrameKey::scale`]): a series rebuilt from the key (the cache bars) has
+/// the same options as the frames rendered at 1/3 = 0.333… (#595).
 pub fn opts_hash(o: &RenderOpts) -> u64 {
+    let o = RenderOpts { scale: (o.scale * 1000.0).round() / 1000.0, ..*o };
     let mut h = disk_cache::Hash128::default();
     h.write(format!("{o:?}").as_bytes());
     h.finish() as u64

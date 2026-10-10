@@ -79,6 +79,46 @@ pub fn reveal_applied(app: &mut EffectcraftApp, params: &serde_json::Value) {
     app.raise_panel(crate::dock::PanelKind::EffectControls);
 }
 
+/// After Effects asks for an effect's file as it applies it (Apply Color LUT opens the file
+/// dialog for its LUT). For the instances `effect.apply` made (`applied`, its result), open the
+/// file dialog for their first empty file parameter and set the file on each; cancelling
+/// leaves the effect without one. Does nothing without a file dialog (tests, agents).
+pub fn choose_files_after_apply(app: &mut EffectcraftApp, applied: &serde_json::Value) {
+    let Some(pick) = app.hooks.pick_files.as_ref() else { return };
+    let Some(comp) = app.session.active_comp() else { return };
+    let uids: Vec<u64> = applied.get("effects").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_u64()).collect()).unwrap_or_default();
+    let mut targets = vec![];
+    let mut filters: Vec<String> = vec![];
+    for uid in uids {
+        for l in &comp.layers {
+            let Some(g) = l.props.find_group(uid) else { continue };
+            let mut found = None;
+            g.walk("", &mut |_, pr| {
+                if found.is_none()
+                    && let ParamUi::File { filters } = &pr.ui
+                    && matches!(&pr.value, Value::Str(s) if s.trim().is_empty())
+                {
+                    found = Some((pr.uid, filters.clone()));
+                }
+            });
+            if let Some((prop, f)) = found {
+                targets.push((l.id.0, prop));
+                filters = f;
+            }
+        }
+    }
+    if targets.is_empty() {
+        return;
+    }
+    let exts: Vec<&str> = filters.iter().map(String::as_str).collect();
+    let Some(path) = pick(&exts).into_iter().next() else { return };
+    for (layer, prop) in targets {
+        if let Err(e) = app.session.execute("prop.set", json!({"layer": layer, "prop": prop, "value": path})) {
+            app.ui.status = e.to_string();
+        }
+    }
+}
+
 /// An undo-merge key for one gesture on `id`: a new key each time a drag starts, so separate
 /// drags are separate undo steps while one drag is one step.
 pub(super) fn gesture_key(ui: &egui::Ui, id: egui::Id, started: bool) -> String {
@@ -416,6 +456,59 @@ fn prop_row(
         Value::Str(s) if super::fx_editors::is_extractor_channel(group, prop) => {
             let dr = Rect::from_min_size(pos2(vx, cy - 9.0), vec2((r.max.x - vx - 56.0).clamp(80.0, 200.0), 18.0));
             super::fx_editors::channel_popup(app, ui, layer, prop, s, dr, actions);
+        }
+        // A file parameter (Apply Color LUT's LUT, an OCIO config): its file name and Choose…,
+        // as in After Effects.
+        Value::Str(s) if matches!(prop.ui, ParamUi::File { .. }) => {
+            let bw = 70.0;
+            let br = Rect::from_min_size(pos2(vx, cy - 9.0), vec2(bw, 18.0));
+            if widgets::text_button(ui, br, crate::i18n::tr("Choose..."), false, &t, egui::Id::new(("ec-file", uid))).clicked() {
+                let filters: Vec<&str> = match &prop.ui {
+                    ParamUi::File { filters } => filters.iter().map(String::as_str).collect(),
+                    _ => vec![],
+                };
+                match app.hooks.pick_files.as_ref() {
+                    Some(pick) => {
+                        if let Some(path) = pick(&filters).into_iter().next() {
+                            actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": path})));
+                        }
+                    }
+                    None => app.ui.status = "no file dialog available: set the path with prop.set".into(),
+                }
+            }
+            app.auto.add(&format!("effectControls.prop.{uid}.choose"), br, &prop.name);
+            let shown = if s.trim().is_empty() {
+                crate::i18n::tr("None").to_string()
+            } else if s.contains('\n') {
+                prop.name.clone()
+            } else {
+                effectcraft_engine::sequence::file_name(s)
+            };
+            let nr = Rect::from_min_max(pos2(br.max.x + 8.0, r.min.y), pos2(r.max.x - 8.0, r.max.y));
+            let np = p.with_clip_rect(nr.intersect(p.clip_rect()));
+            np.text(pos2(nr.min.x, cy), Align2::LEFT_CENTER, &shown, Tokens::ui(12.0), if s.trim().is_empty() { t.text_dim } else { t.text });
+            let hover = ui.interact(nr, egui::Id::new(("ec-file-name", uid)), Sense::hover());
+            if !s.trim().is_empty() && !s.contains('\n') {
+                hover.on_hover_text(s.as_str());
+            }
+            app.auto.add(&format!("effectControls.prop.{uid}.value"), nr, &shown);
+        }
+        // A text parameter (Cryptomatte's Selection, Colorama's Output Cycle, config names):
+        // typed in a field, set when it loses the focus (Esc keeps the old text).
+        Value::Str(s) if matches!(prop.ui, ParamUi::Text) => {
+            let fr = Rect::from_min_size(pos2(vx, cy - 9.0), vec2((r.max.x - vx - 12.0).clamp(80.0, 320.0), 18.0));
+            let bid = egui::Id::new(("ec-text", uid));
+            let mut buf: String = ui.data(|d| d.get_temp(bid)).unwrap_or_else(|| s.clone());
+            let resp = widgets::text_field(ui, fr, &mut buf, "", &t);
+            app.auto.add(&format!("effectControls.prop.{uid}.value"), fr, &prop.name);
+            if resp.lost_focus() {
+                if buf != *s && !ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": buf})));
+                }
+                ui.data_mut(|d| d.remove::<String>(bid));
+            } else if resp.has_focus() {
+                ui.data_mut(|d| d.insert_temp(bid, buf));
+            }
         }
         Value::Gradient(g) => {
             let gr = Rect::from_min_size(pos2(vx, cy - 7.0), vec2((r.max.x - vx - 56.0).clamp(60.0, 180.0), 14.0));

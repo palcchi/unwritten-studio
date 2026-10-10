@@ -430,6 +430,10 @@ pub(crate) fn p(id: &'static str, name: &'static str, default: Value, ui: ParamU
 pub(crate) fn slider(min: f64, max: f64, smin: f64, smax: f64, decimals: u8) -> ParamUi {
     ParamUi::Slider { min, max, slider_min: smin, slider_max: smax, decimals }
 }
+/// A file parameter offering files with these extensions (Effect Controls' Choose…).
+pub(crate) fn file_ui(exts: &[&str]) -> ParamUi {
+    ParamUi::File { filters: exts.iter().map(|s| s.to_string()).collect() }
+}
 pub(crate) fn popup(opts: &[&str]) -> ParamUi {
     ParamUi::Popup { options: opts.iter().map(|s| s.to_string()).collect() }
 }

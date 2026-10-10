@@ -750,6 +750,26 @@ fn pen_mask_undoes_step_by_step_and_double_click_moves_the_whole_mask() {
     assert!(back.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, *c)), "{back:?}");
 }
 
+/// #513: clicking away from a mask's path, even on its own layer, deselects the mask's points;
+/// the layer stays selected.
+#[test]
+fn clicking_off_a_mask_deselects_its_points() {
+    let mut h = harness();
+    let plate = layer_id(&h, "Plate");
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [plate]})).unwrap();
+    s.execute("mask.new", json!({"layer": plate, "vertices": [[100.0, 60.0], [500.0, 60.0], [500.0, 300.0], [100.0, 300.0]], "closed": true})).unwrap();
+    h.state_mut().ui.tool = Tool::Selection;
+    h.run_steps(2);
+    let at = screen(&h, [500.0, 60.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_vertices.len(), 1, "a click on a point selects it");
+    let away = screen(&h, [200.0, 250.0]);
+    click(&mut h, away);
+    assert!(h.state().session.state.selected_vertices.is_empty(), "a click off the path deselects its points");
+    assert_eq!(h.state().session.state.selected_layers, vec![LayerId(plate)], "the layer stays selected");
+}
+
 /// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
 /// one pulls the path into a curve (#290).
 #[test]
@@ -1816,4 +1836,41 @@ fn full_resolution_frames_wider_than_the_texture_limit_fit() {
     }
     assert!(full(&mut h), "the full-size frame is shown (and stays readable): {:?}", h.state().ui.viewer.res);
     assert_eq!(h.state().viewer_texture_size(), Some([800, 134]), "2400×400 averaged by 3");
+}
+
+/// #509: ⌘/Ctrl-drag in the Layer panel resizes the Roto Brush (as in After Effects) without
+/// painting, the next stroke uses the new size, and the tool options show the Diameter.
+#[test]
+fn roto_brush_ctrl_drag_resizes_the_brush() {
+    let mut h = harness();
+    let id = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Box").unwrap().id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [id]})).unwrap();
+    h.state_mut().ui.layer_panel = Some(id);
+    h.state_mut().show_panel(effectcraft_ui_egui::dock::PanelKind::Layer);
+    h.state_mut().ui.tool = Tool::RotoBrush;
+    h.run_steps(3);
+    assert!(h.state().auto.find("header.roto.diameter").is_some(), "the Diameter field");
+    let canvas = rect(&h, "layerPanel.canvas");
+    let zoom = canvas.width() / 80.0;
+    let c = canvas.center();
+    h.input_mut().events.push(Event::ModifiersChanged(egui::Modifiers::COMMAND));
+    drag(&mut h, c, c + vec2(20.0 * zoom, 0.0));
+    h.input_mut().events.push(Event::ModifiersChanged(egui::Modifiers::NONE));
+    h.run_steps(2);
+    let dia = h.state().session.state.roto.diameter;
+    assert!((dia - 40.0).abs() <= 1.0, "a 20 px drag makes a 40 px brush: {dia}");
+    let strokes = |h: &Harness<'_, EffectcraftApp>| {
+        let l = h.state().session.active_comp().unwrap().layer(LayerId(id)).unwrap().clone();
+        let roto = effectcraft_engine::effects::roto::ID;
+        let g = l
+            .effects()
+            .and_then(|fx| fx.groups().find(|g| matches!(&g.kind, effectcraft_engine::project::GroupKind::Effect { effect } if effect == roto)).cloned());
+        g.map(|g| effectcraft_engine::effects::roto::data(&effectcraft_engine::effects::flatten_params(&g, &mut |p| p.value.clone())).strokes.clone())
+            .unwrap_or_default()
+    };
+    assert!(strokes(&h).is_empty(), "resizing paints nothing");
+    drag(&mut h, c - vec2(10.0 * zoom, 0.0), c + vec2(10.0 * zoom, 0.0));
+    let s = strokes(&h);
+    assert_eq!(s.len(), 1);
+    assert!((s[0].radius - dia / 2.0).abs() < 1e-6, "{} vs {dia}", s[0].radius);
 }

@@ -278,6 +278,8 @@ fn field(ui: &mut Ui, rect: Rect, text: &mut String, hint: &str, t: &Tokens, sea
             .hint_text(hint)
             .frame(egui::Frame::NONE)
             .desired_width(inner.width())
+            // As tall as the field, so the text and the hint sit on its middle (they sat high, #581).
+            .min_size(inner.size())
             .font(Tokens::ui(12.0))
             .vertical_align(egui::Align::Center),
     )
@@ -564,4 +566,48 @@ pub fn popup_is_open(ui: &Ui, id: egui::Id) -> bool {
 
 pub fn open_popup(ui: &Ui, id: egui::Id) {
     ui.data_mut(|d| d.insert_temp(id.with("open"), true));
+}
+
+/// Linked values after component `d` of `c` became `v`: the others scale by the same ratio
+/// (Constrain Proportions); from 0 the others that are 0 too follow the value.
+pub(crate) fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
+    let Some(&old) = c.get(d) else { return c.to_vec() };
+    c.iter()
+        .enumerate()
+        .map(|(e, &x)| {
+            if e == d {
+                v
+            } else if old.abs() > 1e-9 {
+                x * v / old
+            } else if x.abs() <= 1e-9 {
+                v
+            } else {
+                x
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #581: a field's text edit fills it, so its text and hint sit on the field's middle line
+    /// (it was a row at the top of the field, its text high).
+    #[test]
+    fn field_text_is_vertically_centred() {
+        let ctx = egui::Context::default();
+        let t = Tokens::for_kind(Default::default());
+        for h in [22.0, 26.0, 30.0] {
+            let field = Rect::from_min_size(pos2(20.0, 40.0), vec2(220.0, h));
+            let mut text = String::new();
+            let mut got = None;
+            let mut out = ctx.run_ui(Default::default(), |ui| {
+                got = Some(search_field(ui, field, &mut text, "Filter recent files", &t).rect);
+            });
+            out.textures_delta.clear();
+            let r = got.expect("the field was drawn");
+            assert!((r.center().y - field.center().y).abs() < 0.5 && r.height() >= h - 2.5, "{h}: {r:?} in {field:?}");
+        }
+    }
 }

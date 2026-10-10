@@ -154,8 +154,9 @@ fn is_pdf(p: &Value) -> bool {
 /// File ▸ Import ▸ File… picked numbered stills that import as image sequences: ask, as After
 /// Effects' "<format> Sequence" checkbox in its Import dialog does (rfd's native dialog can't
 /// carry a checkbox), with Force Alphabetical Order and the frame rate. `p`: the import's
-/// parameters. Returns whether the dialog opened. Dropped files and agents' `file.import`
-/// don't ask (`sequence` defaults to on).
+/// parameters. Returns whether the dialog opened. The checkbox starts off, as in After Effects:
+/// unticked, the picked files import as stills. Dropped files and agents' `file.import` don't
+/// ask (files import as stills, folders' runs as sequences).
 pub fn open_import_sequence(app: &mut EffectcraftApp, p: &Value) -> bool {
     if has(p, &["sequence", "alphabetical"]) {
         return false;
@@ -187,7 +188,7 @@ fn sequence_fields(app: &EffectcraftApp, runs: &[Vec<String>]) -> Vec<Field> {
     };
     vec![
         Field::note("note", &note),
-        Field::bool("sequence", &format!("{ext} Sequence"), true),
+        Field::bool("sequence", &format!("{ext} Sequence"), false),
         Field::bool("alphabetical", "Force alphabetical order", false),
         Field::num("frameRate", "Frame rate (fps)", app.session.prefs.import.sequence_fps),
         Field::note("after", "Change the frame rate, alpha and start frame later with File ▸ Interpret Footage."),
@@ -546,6 +547,8 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
                         ],
                         st.working_space.map_or(0, |c| 1 + effectcraft_engine::project::ColorSpace::WORKING.iter().position(|x| *x == c).unwrap_or(0)),
                     ),
+                    // With Working Space None (After Effects' Working Gamma, 2.2 or 2.4).
+                    Field::choice("workingGamma", "Working gamma", &[("2.2", json!(2.2)), ("2.4", json!(2.4))], usize::from(st.working_gamma_24())),
                     Field::bool("linearize", "Linearize working space", st.linearize),
                     Field::bool("blendLinear", "Blend colors using 1.0 gamma", st.blend_linear),
                     Field::choice(

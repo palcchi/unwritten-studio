@@ -53,8 +53,10 @@ struct Entry {
 }
 
 /// Conformed audio files written by builds before this version are ignored (and written again):
-/// version 1 files of sources longer than about 12:36 at 48 kHz were silent from there on (#172).
-const CONFORM_VERSION: u32 = 2;
+/// version 1 files of sources longer than about 12:36 at 48 kHz were silent from there on (#172);
+/// version 2 files were written silent where the source failed to decode, and kept the footage
+/// silent from then on (#324).
+const CONFORM_VERSION: u32 = 3;
 
 /// Footage longer than this (24 hours) is read from its decoder rather than conformed: its
 /// duration comes from the file's header, and a damaged one claiming days of audio had the
@@ -200,6 +202,10 @@ struct Inner {
     /// Conformed files being written right now.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     conforming: Mutex<HashSet<std::path::PathBuf>>,
+    /// Conformed files that failed to write (the source didn't decode) this session: their
+    /// audio is read from the decoder instead of trying again on every read.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    conform_failed: Mutex<HashSet<std::path::PathBuf>>,
 }
 
 /// Decodes footage for the renderer: stills, image sequences and movies (FilmCraft codecs), plus
@@ -266,6 +272,7 @@ impl MediaPool {
                 opened: AtomicU64::new(0),
                 conform: Mutex::default(),
                 conforming: Mutex::default(),
+                conform_failed: Mutex::default(),
             }),
         }
     }
@@ -397,18 +404,23 @@ impl MediaPool {
     /// thread (once).
     #[cfg(not(target_arch = "wasm32"))]
     fn conform(&self, footage: &Footage, file: std::path::PathBuf, frames: usize, rate: u32) {
-        if !lock(&self.inner.conforming).insert(file.clone()) {
+        if lock(&self.inner.conform_failed).contains(&file) || !lock(&self.inner.conforming).insert(file.clone()) {
             return;
         }
         let (pool, f) = (self.clone(), footage.clone());
         let spawned = std::thread::Builder::new().name("ec-conform-audio".into()).spawn(move || {
             let tmp = file.with_extension("tmp");
-            let ok = file.parent().is_some_and(|d| std::fs::create_dir_all(d).is_ok())
-                && pool.write_conformed(&f, &tmp, frames, rate).is_ok()
-                && std::fs::rename(&tmp, &file).is_ok();
-            if !ok {
+            let written = match file.parent().map(std::fs::create_dir_all) {
+                Some(Ok(())) => pool.write_conformed(&f, &tmp, frames, rate).and_then(|()| std::fs::rename(&tmp, &file)),
+                Some(Err(e)) => Err(e),
+                None => Err(std::io::Error::other("no folder")),
+            };
+            // A failed decode leaves no file: one written silent would keep the footage silent
+            // in every later session (#324).
+            if let Err(e) = written {
                 let _ = std::fs::remove_file(&tmp);
-                log::warn!("media: could not write conformed audio {}", file.display());
+                log::warn!("media: could not write conformed audio {} of {}: {e}", file.display(), f.path);
+                lock(&pool.inner.conform_failed).insert(file.clone());
             }
             lock(&pool.inner.conforming).remove(&file);
         });
@@ -419,6 +431,7 @@ impl MediaPool {
 
     /// Write `frames` sample frames of `footage`'s audio at `rate` to `path` (raw interleaved
     /// stereo `f32`) a chunk at a time: the whole track was held in memory before it was written.
+    /// Fails when any chunk doesn't decode.
     #[cfg(not(target_arch = "wasm32"))]
     fn write_conformed(&self, footage: &Footage, path: &std::path::Path, frames: usize, rate: u32) -> std::io::Result<()> {
         use std::io::Write;
@@ -426,7 +439,7 @@ impl MediaPool {
         let mut at = 0usize;
         while at < frames {
             let n = (frames - at).min(1 << 16);
-            for v in self.decode_audio(footage, sample_time(at, rate), n, rate) {
+            for v in self.try_decode_audio(footage, sample_time(at, rate), n, rate).map_err(std::io::Error::other)? {
                 out.write_all(&v.to_le_bytes())?;
             }
             at += n;
@@ -470,19 +483,27 @@ impl MediaPool {
     /// applied the edit list's priming offset twice and ramped the start of every read: AAC
     /// footage not at the mix rate stuttered in previews and exports (#274).
     fn decode_audio(&self, footage: &Footage, start: Tick, frames: usize, rate: u32) -> Vec<f32> {
+        self.try_decode_audio(footage, start, frames, rate).unwrap_or_else(|e| {
+            log::warn!("media: audio of {}: {e}", footage.path);
+            vec![0.0; frames * 2]
+        })
+    }
+
+    /// [`MediaPool::decode_audio`], failing when the source can't be opened or read.
+    fn try_decode_audio(&self, footage: &Footage, start: Tick, frames: usize, rate: u32) -> std::result::Result<Vec<f32>, String> {
         let path: Arc<str> = footage.path.as_str().into();
-        let Some(src) = self.inner.source(&path) else { return vec![0.0; frames * 2] };
+        let src = self.inner.source(&path).ok_or("the file can't be opened")?;
         let s0 = start.to_units_floor(rate as i64);
         let native = src.info().audio.as_ref().map_or(rate, |a| a.sample_rate);
         if native == 0 || rate == 0 || native == rate {
-            return read_stereo(&src, &path, s0, frames, rate);
+            return read_stereo(&src, s0, frames, rate);
         }
         // Output sample `n` sits at source position n × native / rate.
         let (native_i, rate_i) = (i128::from(native), i128::from(rate));
         let first = (i128::from(s0) * native_i).div_euclid(rate_i);
         let last = ((i128::from(s0) + frames as i128) * native_i).div_euclid(rate_i) + 1;
-        let (Ok(first64), Ok(count)) = (i64::try_from(first), usize::try_from(last - first + 1)) else { return vec![0.0; frames * 2] };
-        let buf = read_stereo(&src, &path, first64, count, native);
+        let (Ok(first64), Ok(count)) = (i64::try_from(first), usize::try_from(last - first + 1)) else { return Ok(vec![0.0; frames * 2]) };
+        let buf = read_stereo(&src, first64, count, native)?;
         let mut out = Vec::with_capacity(frames * 2);
         for k in 0..frames as i128 {
             let pos = (i128::from(s0) + k) * native_i;
@@ -494,7 +515,7 @@ impl MediaPool {
                 out.push(a + (b - a) * f);
             }
         }
-        out
+        Ok(out)
     }
 
     /// A thumbnail of `footage` (its first frame) fitting in `max_side` × `max_side`, aspect kept.
@@ -710,6 +731,13 @@ impl Inner {
                 if let Some(img) = crate::layered::decode(path, &bytes, footage, op)? {
                     return Ok(img);
                 }
+                // (an OpenEXR compression the decoder lacks came out transparent or as a missing
+                // channel error)
+                if path.to_ascii_lowercase().ends_with(".exr")
+                    && let Some(why) = crate::exr_channels::unsupported_compression(&bytes)
+                {
+                    return Err(MediaError::Decode(format!("{path}: {why}")));
+                }
                 let img = match image::load_from_memory(&bytes) {
                     Ok(img) => img,
                     // A multi-layer OpenEXR file without an unnamed RGB layer: its colour layer.
@@ -800,27 +828,21 @@ impl FootageSource for MediaPool {
 
 /// `frames` stereo sample frames (interleaved) of `src` from sample `s0` at `rate` Hz, which
 /// FilmCraft serves as decoded when it is the source's own rate. Mono is duplicated to both
-/// channels; silence before the start and where decoding fails.
-fn read_stereo(src: &SharedSource, path: &str, s0: i64, frames: usize, rate: u32) -> Vec<f32> {
+/// channels; silence before the start. An error where decoding fails.
+fn read_stereo(src: &SharedSource, s0: i64, frames: usize, rate: u32) -> std::result::Result<Vec<f32>, String> {
     let mut out = vec![0.0; frames * 2];
     let skip = usize::try_from(s0.saturating_neg()).unwrap_or(0);
     if skip >= frames {
-        return out;
+        return Ok(out);
     }
-    let buf = match src.audio(s0.max(0), frames - skip, rate) {
-        Ok(b) => b,
-        Err(e) => {
-            log::warn!("media: audio of {path}: {e}");
-            return out;
-        }
-    };
-    let (Some(l), Some(r)) = (buf.channels.first(), buf.channels.get(1).or(buf.channels.first())) else { return out };
-    let Some(dst) = skip.checked_mul(2).and_then(|i| out.get_mut(i..)) else { return out };
+    let buf = src.audio(s0.max(0), frames - skip, rate).map_err(|e| e.to_string())?;
+    let (Some(l), Some(r)) = (buf.channels.first(), buf.channels.get(1).or(buf.channels.first())) else { return Ok(out) };
+    let Some(dst) = skip.checked_mul(2).and_then(|i| out.get_mut(i..)) else { return Ok(out) };
     for ([o0, o1], (a, b)) in dst.as_chunks_mut::<2>().0.iter_mut().zip(l.iter().zip(r)) {
         *o0 = *a;
         *o1 = *b;
     }
-    out
+    Ok(out)
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -880,6 +902,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #324: audio that fails to decode isn't conformed. A conformed file of silence was written
+    /// instead, and as it is found by the file's path, size and date the footage stayed silent
+    /// in every later session (a renamed copy played).
+    #[test]
+    fn audio_that_fails_to_decode_is_not_conformed() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-conform-fail");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("song.mp3");
+        std::fs::write(&path, b"ID3, not really").unwrap();
+        let footage = Footage {
+            path: path.to_string_lossy().into(),
+            kind: FootageKind::Audio,
+            duration: Tick::from_seconds_f64(2.0),
+            has_audio: true,
+            ..Default::default()
+        };
+        let pool = MediaPool::new();
+        let conformed = dir.join("conformed");
+        pool.set_conform_folder(Some(conformed.clone()));
+        let file = pool.conformed_path(&footage.path, 48_000).unwrap();
+        assert!(pool.audio_samples(&footage, Tick::ZERO, 1024, 48_000).iter().all(|v| *v == 0.0));
+        for _ in 0..500 {
+            if lock(&pool.inner.conforming).is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(lock(&pool.inner.conforming).is_empty(), "the conform thread finished");
+        assert!(!file.exists() && !file.with_extension("tmp").exists(), "no conformed file was left");
+        assert!(lock(&pool.inner.conform_failed).contains(&file));
+        // Later reads go to the decoder without trying again.
+        pool.audio_samples(&footage, Tick::ZERO, 1024, 48_000);
+        assert!(lock(&pool.inner.conforming).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn frame_index_loops_and_clamps() {
         let r = FrameRate::FPS_30;
@@ -909,6 +968,32 @@ mod tests {
         assert_eq!(c.spare.len(), MAX_SPARE);
         assert_eq!(c.take_spare(256).len(), 256);
         assert!(c.take_spare(17).is_empty());
+    }
+
+    /// #482: an OpenEXR file with HTJ2K compression (which the decoder lacks) says so on import
+    /// and when its frame is read, instead of "no non-deep rgb channels" or a transparent frame.
+    #[test]
+    fn htj2k_exr_is_reported_as_unsupported() {
+        use exr::prelude::*;
+        let channels =
+            AnyChannels::sort(vec![AnyChannel::new("R", FlatSamples::F32(vec![0.5; 4])), AnyChannel::new("G", FlatSamples::F32(vec![0.5; 4]))].into());
+        let image = exr::image::Image::from_layer(Layer::new((2, 2), LayerAttributes::default(), Encoding::UNCOMPRESSED, channels));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let mut bytes = bytes.into_inner();
+        assert_eq!(crate::exr_channels::unsupported_compression(&bytes), None);
+        // The header's compression attribute (name, type, size 1, value) says HTJ2K32 (11).
+        let tag = b"compression\0compression\0\x01\0\0\0";
+        let at = bytes.windows(tag.len()).position(|w| w == tag).unwrap() + tag.len();
+        bytes[at] = 11;
+        let b: Arc<[u8]> = bytes.into();
+        let e = crate::probe_bytes("/shot.exr", b.clone()).unwrap_err().to_string();
+        assert!(e.contains("/shot.exr: OpenEXR HTJ2K compression isn't supported yet"), "{e}");
+        let pool = MediaPool::new();
+        pool.add_bytes("/shot.exr", b);
+        let f = Footage { path: "/shot.exr".into(), kind: FootageKind::Still, width: 2, height: 2, has_video: true, ..Default::default() };
+        let e = pool.frame_at(&f, Tick::ZERO).unwrap_err().to_string();
+        assert!(e.contains("HTJ2K compression isn't supported yet"), "{e}");
     }
 
     /// #411: Interpret Footage ▸ Preserve RGB reads a float OpenEXR's values as the file stores

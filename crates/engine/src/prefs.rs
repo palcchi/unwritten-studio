@@ -309,6 +309,25 @@ page!(Scripting {
     error_banner: bool = true,
 });
 
+impl Scripting {
+    /// Whether `other` grants scripts the same as this: Application Scripting (file and network
+    /// access, the warning before executing files, the debugger). Scripts can't change these
+    /// ([`crate::Session::execute_for_script`]): a script could otherwise give itself the
+    /// access the user withheld.
+    pub fn same_permissions(&self, other: &Scripting) -> bool {
+        self.allow_scripts_write_files == other.allow_scripts_write_files
+            && self.warn_executing_files == other.warn_executing_files
+            && self.enable_js_debugger == other.enable_js_debugger
+    }
+
+    /// Take `from`'s Application Scripting settings (see [`Scripting::same_permissions`]).
+    pub fn keep_permissions(&mut self, from: &Scripting) {
+        self.allow_scripts_write_files = from.allow_scripts_write_files;
+        self.warn_executing_files = from.warn_executing_files;
+        self.enable_js_debugger = from.enable_js_debugger;
+    }
+}
+
 /// One editable label: name and `#rrggbb` colour.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LabelPref {

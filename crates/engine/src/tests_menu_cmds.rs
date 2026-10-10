@@ -346,6 +346,53 @@ fn keyframe_clipboard_paste_and_paste_reversed() {
     assert_eq!((keys[0].value.as_f64(), keys[1].value.as_f64()), (0.0, 100.0));
 }
 
+/// #493: Edit ▸ Copy with a property selected copies that property (its value when it isn't
+/// animated, its keys when it is), and Paste sets the same property of the selected layer, as
+/// in After Effects, instead of copying the whole layer.
+#[test]
+fn copy_a_selected_property_pastes_onto_the_same_property() {
+    let mut s = comp();
+    let a = solid(&mut s, "#ff0000");
+    let b = solid(&mut s, "#00ff00");
+    let n_layers = s.active_comp().unwrap().layers.len();
+    s.execute("prop.set", json!({"layer": a, "path": "transform/position", "value": [10, 20]})).unwrap();
+    s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
+    s.execute("prop.select", json!({"layer": a, "path": "transform/position"})).unwrap();
+    s.execute("edit.copy", json!({})).unwrap();
+    assert!(s.state.clipboard.is_empty(), "the layer isn't copied");
+    s.execute("layer.select", json!({"layers": [b]})).unwrap();
+    let undo = s.history.undo.len();
+    s.execute("edit.paste", json!({})).unwrap();
+    assert_eq!(s.active_comp().unwrap().layers.len(), n_layers);
+    assert_eq!(layer(&s, b).props.prop("transform/position").unwrap().value.as_vec3()[..2], [10.0, 20.0]);
+    assert_eq!(layer(&s, b).props.prop("transform/rotation").unwrap().value.as_f64(), 0.0, "only the copied property");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_ne!(layer(&s, b).props.prop("transform/position").unwrap().value.as_vec3()[..2], [10.0, 20.0]);
+    assert_eq!(s.history.undo.len(), undo);
+    // The Transform group with an animated Opacity: its keys (at the CTI) and the other values,
+    // in one undo step.
+    s.execute("prop.toggleAnimation", json!({"layer": a, "path": "transform/opacity"})).unwrap();
+    s.execute("time.set", json!({"time": 1.0})).unwrap();
+    s.execute("prop.set", json!({"layer": a, "path": "transform/opacity", "value": 0})).unwrap();
+    let transform = layer(&s, a).props.sub("transform").unwrap().uid;
+    s.execute("prop.select", json!({"layer": a, "prop": transform})).unwrap();
+    s.execute("edit.copy", json!({})).unwrap();
+    s.execute("layer.select", json!({"layers": [b]})).unwrap();
+    s.execute("time.set", json!({"time": 2.0})).unwrap();
+    let undo = s.history.undo.len();
+    s.execute("edit.paste", json!({})).unwrap();
+    assert_eq!(s.history.undo.len(), undo + 1);
+    let l = layer(&s, b);
+    let keys = &l.props.prop("transform/opacity").unwrap().keys;
+    assert_eq!(keys.len(), 2);
+    assert!((keys[0].time.seconds() - 2.0).abs() < 1e-6 && keys[1].value.as_f64() == 0.0);
+    assert_eq!(l.props.prop("transform/rotation").unwrap().value.as_f64(), 30.0);
+    assert_eq!(s.active_comp().unwrap().layers.len(), n_layers);
+    s.execute("edit.undo", json!({})).unwrap();
+    let l = layer(&s, b);
+    assert!(l.props.prop("transform/opacity").unwrap().keys.is_empty() && l.props.prop("transform/rotation").unwrap().value.as_f64() == 0.0);
+}
+
 #[test]
 fn property_links_and_expression_only() {
     let mut s = comp();

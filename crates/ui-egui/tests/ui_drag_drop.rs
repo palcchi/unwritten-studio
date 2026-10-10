@@ -408,7 +408,7 @@ fn footage_items(h: &Harness<'_, EffectcraftApp>) -> Vec<(String, usize)> {
 
 /// #297: File ▸ Import ▸ File… on one numbered still asks, as After Effects' "PNG Sequence"
 /// checkbox does, whether to import its whole run as one image sequence (and at what frame
-/// rate); unticked, the file imports as a still.
+/// rate); unticked (the default, as in After Effects), the file imports as a still.
 #[test]
 fn import_dialog_offers_the_image_sequence_option() {
     let (mut h, _) = harness();
@@ -424,35 +424,41 @@ fn import_dialog_offers_the_image_sequence_option() {
     assert_eq!(label(&h, "form.field.sequence").as_deref(), Some("PNG Sequence"));
     assert!(label(&h, "form.field.alphabetical").is_some() && label(&h, "form.field.frameRate").is_some());
     assert!(footage_items(&h).is_empty(), "nothing imported before OK");
+    // Unticked (the default, #431): the picked file alone, as a still.
     click_id(&mut h, "form.ok");
     step_until(&mut h, |h| !footage_items(h).is_empty());
-    assert_eq!(footage_items(&h), [("frame_[0001-0003].png".to_string(), 3)]);
+    assert_eq!(footage_items(&h), [("frame_0002.png".to_string(), 0)]);
 
-    // Unticked: the picked file alone, as a still.
+    // Ticked: the whole run as one sequence.
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "file.import", json!({})).unwrap();
     h.run_steps(2);
     click_id(&mut h, "form.field.sequence");
     click_id(&mut h, "form.ok");
     step_until(&mut h, |h| footage_items(h).len() == 2);
-    assert_eq!(footage_items(&h)[1], ("frame_0002.png".to_string(), 0));
+    assert_eq!(footage_items(&h)[1], ("frame_[0001-0003].png".to_string(), 3));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// #297: every frame of a sequence dropped on the window arrives as one image sequence (it used
-/// to make one item per frame), and Interpret Footage shows its frames and Start Timecode (missing frames
-/// always show colour bars, as in After Effects: there is no Missing Frames choice).
+/// #297: a folder of frames dropped on the window arrives as one image sequence, and Interpret
+/// Footage shows its frames and Start Timecode (missing frames always show colour bars, as in
+/// After Effects: there is no Missing Frames choice). #431: dropped files import as stills, one
+/// item each, as in After Effects.
 #[test]
-fn dropped_frames_import_as_one_sequence_with_sequence_interpretation() {
+fn a_dropped_folder_imports_as_one_sequence_with_sequence_interpretation() {
     let (mut h, _) = harness();
     let dir = frames("drop", 4);
     h.state_mut().session.importer = Some(Arc::new(Stills));
-    for k in 1..=4 {
+    for k in 1..=2 {
         h.input_mut().dropped_files.push(Arc::new(Dropped(dir.join(format!("frame_{k:04}.png")))));
     }
     h.run_steps(2);
-    step_until(&mut h, |h| !footage_items(h).is_empty());
+    step_until(&mut h, |h| footage_items(h).len() == 2);
+    assert_eq!(footage_items(&h), [("frame_0001.png".to_string(), 0), ("frame_0002.png".to_string(), 0)]);
+    h.input_mut().dropped_files.push(Arc::new(Dropped(dir.clone())));
     h.run_steps(2);
-    assert_eq!(footage_items(&h), [("frame_[0001-0004].png".to_string(), 4)]);
+    step_until(&mut h, |h| footage_items(h).len() == 3);
+    h.run_steps(2);
+    assert_eq!(footage_items(&h)[2], ("frame_[0001-0004].png".to_string(), 4));
     assert!(h.state().dialog.is_none(), "drops don't ask");
     // Interpret Footage on it (the import selected it).
     let ctx = h.ctx.clone();

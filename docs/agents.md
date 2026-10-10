@@ -253,7 +253,8 @@ build real projects through these interfaces; they are worked examples of everyt
   `{"colors":[[0,"#0080ff"],[1,[1,1,0]]],"opacities":[[0,1],[1,0.5]]}`.
 * **Image sequences**: `file.import {"paths":["/r/shot_0001.png"]}` imports the file's whole
   numbered run as one item (several picked frames: that range; a folder: each run in it;
-  `"sequence": false`: one still; `"alphabetical": true`: Force Alphabetical Order, the files
+  `"sequence": false`: one still; dropped files, `"drag": true`, import as stills unless
+  `"sequence": true`, as in After Effects; `"alphabetical": true`: Force Alphabetical Order, the files
   play one after another) at `frameRate` or 30 fps (Settings ▸ Import). Missing frames show
   colour bars, as in After Effects. `file.interpretFootage {"items":[id], "frameRate":12,
   "startTimecode":1001}` conforms them and sets Override Start (the item and layers that ran to its end get the new

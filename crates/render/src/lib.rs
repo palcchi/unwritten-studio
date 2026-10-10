@@ -623,6 +623,30 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// A precomp layer's nested comp for an accelerator to render resident (no CPU render and
+    /// upload of the nested frame): the renderer one level down, the comp, its time and the
+    /// buffer scale, exactly as [`Self::layer_source`]'s comp branch would render it. `None`
+    /// when that branch does more (composition proxy, Essential Properties overrides, frame
+    /// blending, recursion) or draws nothing (outside the nested comp's span): use the CPU path.
+    pub fn precomp_source(&self, ctx: &EvalCtx, layer: &Layer) -> Option<(Renderer<'a>, ItemId, Tick, f64)> {
+        let LayerSource::Comp { item } = layer.source else { return None };
+        if layer.switches.adjustment || self.project.comp_contains(item, ctx.comp_id) {
+            return None;
+        }
+        let nc = self.project.comp(item)?;
+        let lt = ctx.nested_time(layer);
+        if self.content_times(ctx, layer).is_some() {
+            return None;
+        }
+        if !nc.covers(lt) || self.proxy_for(item).is_some() || !essential_overrides(ctx, layer).is_empty() || frame_blend_mode(ctx, layer) != FrameBlend::Off {
+            return None;
+        }
+        let s = self.opts.scale;
+        let bs = if s < 1.0 && nc.preserve_resolution { 1.0 } else { s };
+        let base = self.nested_through(layer);
+        Some((Renderer { opts: RenderOpts { scale: bs, ..base.opts }, ..base }, item, lt, bs))
+    }
+
     /// The nested comp of a precomp layer whose transformations collapse into this comp: the
     /// Collapse Transformations switch is on and the layer has no masks, effects or layer
     /// styles (those force a flattened render of the precomp, as in After Effects).
@@ -1986,6 +2010,15 @@ impl<'a> Renderer<'a> {
     pub fn run_effects_on(&self, ctx: &EvalCtx, layer: &Layer, adjustment: bool, target: &mut dyn FxTarget) {
         // `target` is used as it is: the comp below for adjustment layers (the callers).
         self.run_effect_stack(ctx, layer, adjustment, usize::MAX, None, [0.0; 2], target);
+    }
+
+    /// [`Renderer::run_effects_on`] for a (non-adjustment) layer's own pixels: `target` holds
+    /// them in effect space (as [`Renderer::layer_input`] hands them out) and the result stays
+    /// there. Returns the effect-space origin in layer coordinates (rebase by its negation).
+    pub fn run_layer_effects_on(&self, ctx: &EvalCtx, layer: &Layer, target: &mut dyn FxTarget) -> [f64; 2] {
+        let origin = ctx.effect_bounds(layer).1;
+        self.run_effect_stack(ctx, layer, false, usize::MAX, None, origin, target);
+        origin
     }
 
     /// An adjustment layer's footprint (its source with masks applied, layer space): where

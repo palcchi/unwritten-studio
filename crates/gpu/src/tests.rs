@@ -745,3 +745,43 @@ fn within_memory_returns_the_work_when_there_is_room() {
     let img = g.within_memory(|| g.ctx.image(64, 32)).expect("room for a 64×32 texture");
     assert_eq!((img.width, img.height), (64, 32));
 }
+
+/// Precomp layers (not collapsed) render their nested comp resident on the GPU
+/// (`walk::draw_precomp`): match the CPU (nested blend modes, effects inside and outside,
+/// transforms, opacity, a blend mode on the precomp layer, half resolution,
+/// two instances at different times of the same nested comp).
+#[test]
+fn nested_precomps_render_resident() {
+    for depth in [BitDepth::Bpc8, BitDepth::Bpc32] {
+        let mut s = Scene::new(depth);
+        let inner = Comp::new(60, 40, FrameRate::FPS_30, Tick::from_seconds_f64(2.0));
+        let inner_id = s.p.add_item("Inner", Label::Sandstone, None, ItemKind::Comp(inner.clone().into()));
+        {
+            let mut ins = Scene { p: std::mem::take(&mut s.p), cid: inner_id, comp: inner };
+            let mut a = ins.footage(50, 30);
+            ins.effect(&mut a, "ec.blur.gaussian", &[("blurriness", n(3.0))]);
+            ins.push(a);
+            let mut b = ins.solid([0.2, 0.7, 0.4], 30, 20);
+            b.blend_mode = BlendMode::Difference;
+            set(&mut b, "transform/rotation", Value::Scalar(15.0));
+            ins.push(b);
+            s.p = ins.p;
+        }
+        let bg = s.footage(97, 61);
+        s.push(bg);
+        let mut pre = build::layer(&mut s.p, &s.comp, "Inner", LayerSource::Comp { item: inner_id }, (60, 40), None);
+        set(&mut pre, "transform/rotation", Value::Scalar(25.0));
+        set(&mut pre, "transform/opacity", Value::Scalar(80.0));
+        s.effect(&mut pre, "ec.color.levels", &[("gamma", n(1.3))]);
+        pre.blend_mode = BlendMode::Screen;
+        s.push(pre);
+        // A second instance, later in the nested comp's time.
+        let mut pre2 = build::layer(&mut s.p, &s.comp, "Inner 2", LayerSource::Comp { item: inner_id }, (60, 40), None);
+        set(&mut pre2, "transform/position", v3(70.0, 40.0));
+        pre2.start_time = Tick::from_seconds_f64(-0.5);
+        s.push(pre2);
+        check(&format!("nested precomps {depth:?}"), compare_at(&s, opts(), Tick::from_seconds_f64(0.2)), 0.0);
+        let half = RenderOpts { scale: 0.5, ..opts() };
+        check(&format!("nested precomps half {depth:?}"), compare_at(&s, half, Tick::from_seconds_f64(0.2)), 0.0);
+    }
+}

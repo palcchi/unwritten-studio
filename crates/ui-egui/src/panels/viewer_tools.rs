@@ -636,7 +636,7 @@ pub(crate) fn bottom_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui, bar: Rect,
     }
     let v = &app.ui.viewer;
     let items = vec![
-        ("Title/action safe".to_string(), v.safe_margins),
+        ("Title/Action Safe".to_string(), v.safe_margins),
         ("Proportional Grid".to_string(), v.proportional_grid),
         ("Grid".to_string(), v.grid),
         ("Guides".to_string(), v.guides),

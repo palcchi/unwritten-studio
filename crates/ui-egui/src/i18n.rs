@@ -54,11 +54,49 @@ fn system_language() -> &'static str {
     #[cfg(not(target_arch = "wasm32"))]
     {
         static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-        LANGUAGE.get_or_init(|| supported(sys_locale::get_locale().as_deref()))
+        LANGUAGE.get_or_init(|| {
+            let locale = sys_locale::get_locale();
+            // `C` / `POSIX` (and variants like `C.UTF-8`) mean "no particular locale": don't force
+            // English, ask the macOS preferred-languages list instead.
+            if locale.as_deref().is_some_and(is_c_locale) {
+                #[cfg(target_os = "macos")]
+                if let Some(l) = macos_preferred_language() {
+                    return l;
+                }
+                return "en";
+            }
+            supported(locale.as_deref())
+        })
     }
     // No system locale in the browser build: English.
     #[cfg(target_arch = "wasm32")]
     supported(None)
+}
+
+/// True when `locale` names the generic `C` / `POSIX` locale (or a variant like `C.UTF-8`).
+fn is_c_locale(locale: &str) -> bool {
+    let base = locale.split(['.', '@']).next().unwrap_or("").to_ascii_lowercase();
+    matches!(base.as_str(), "c" | "posix")
+}
+
+/// The first supported language in the macOS `defaults read -g AppleLanguages` list.
+#[cfg(target_os = "macos")]
+fn macos_preferred_language() -> Option<&'static str> {
+    let out = std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .split(['(', ')', ',', '"', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .find_map(|tag| {
+            let lang = supported(Some(tag));
+            (lang != "en").then_some(lang)
+        })
 }
 
 /// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`, `zh-Hans-CN` → `zh-hans`,

@@ -36,19 +36,8 @@ fn apply_settings(c: &mut Comp, p: &Value) {
         let dy = (c.height as f64 - oh as f64) * (a / 3) as f64 / 2.0;
         if dx != 0.0 || dy != 0.0 {
             for l in c.layers.iter_mut().filter(|l| l.parent.is_none()) {
-                let Some(pr) = l.props.prop_mut("transform/position") else { continue };
-                let shift = |v: &mut effectcraft_keyframe::Value| {
-                    if let effectcraft_keyframe::Value::Vec2(x) = v {
-                        x[0] += dx;
-                        x[1] += dy;
-                    } else if let effectcraft_keyframe::Value::Vec3(x) = v {
-                        x[0] += dx;
-                        x[1] += dy;
-                    }
-                };
-                shift(&mut pr.value);
-                for k in &mut pr.keys {
-                    shift(&mut k.value);
+                if let Some(tr) = l.transform_mut() {
+                    super::layer::offset_position(tr, dx, dy);
                 }
             }
         }

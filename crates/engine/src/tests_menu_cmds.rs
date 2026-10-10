@@ -104,6 +104,100 @@ fn transform_dialog_values_and_center_anchor() {
     assert_eq!(layer(&s, a).auto_orient, effectcraft_project::AutoOrient::AlongPath);
 }
 
+/// Inclusive bounds of samples whose alpha is above one half, plus the frame size and the count.
+fn opaque_bounds(s: &Session, t: Tick) -> (u32, u32, i64, i64, i64, i64, u32) {
+    let img = s.render(s.active_comp_id().unwrap(), t, Default::default());
+    let mut n = 0u32;
+    let mut x0 = i64::MAX;
+    let mut y0 = i64::MAX;
+    let mut x1 = i64::MIN;
+    let mut y1 = i64::MIN;
+    for y in 0..img.height as i64 {
+        for x in 0..img.width as i64 {
+            if img.get(x, y)[3] > 0.5 {
+                n += 1;
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    (img.width, img.height, x0, y0, x1, y1, n)
+}
+
+#[test]
+fn separated_position_follows_canvas_resize_and_crop() {
+    let square = |separated: bool| {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Test", "width": 100, "height": 100, "frameRate": 10, "duration": 2})).unwrap();
+        let a = s.execute("layer.newSolid", json!({"name": "Square", "color": "#ffffff", "width": 10, "height": 10})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.setTransform", json!({"layer": a, "prop": "position", "value": [40, 50]})).unwrap();
+        if separated {
+            s.execute("prop.separateDimensions", json!({"layer": a, "value": true})).unwrap();
+        }
+        (s, a)
+    };
+    let placed = |s: &Session, a: u64, t: f64, x: f64, y: f64| {
+        let l = layer(s, a);
+        let tr = l.transform().unwrap();
+        let at = Tick::from_seconds_f64(t);
+        if tr.get("positionX").is_some() {
+            assert!((tr.get("positionX").unwrap().value_at(at).as_f64() - x).abs() < 1e-6);
+            assert!((tr.get("positionY").unwrap().value_at(at).as_f64() - y).abs() < 1e-6);
+        }
+        let p = tr.get("position").unwrap().value_at(at).as_vec3();
+        assert!((p[0] - x).abs() < 1e-6 && (p[1] - y).abs() < 1e-6, "combined {p:?}");
+    };
+
+    let (mut combined, a) = square(false);
+    let (mut separated, b) = square(true);
+    assert_eq!(opaque_bounds(&combined, Tick::ZERO), opaque_bounds(&separated, Tick::ZERO));
+    combined.execute("comp.settings", json!({"width": 200})).unwrap();
+    separated.execute("comp.settings", json!({"width": 200})).unwrap();
+    placed(&separated, b, 0.0, 90.0, 50.0);
+    placed(&combined, a, 0.0, 90.0, 50.0);
+    assert_eq!(opaque_bounds(&separated, Tick::ZERO), (200, 100, 85, 45, 94, 54, 100));
+    assert_eq!(opaque_bounds(&combined, Tick::ZERO), opaque_bounds(&separated, Tick::ZERO));
+
+    let (mut separated, b) = square(true);
+    separated.execute("view.setRegionOfInterest", json!({"rect": [10, 20, 70, 70]})).unwrap();
+    separated.execute("comp.cropToRegionOfInterest", json!({})).unwrap();
+    placed(&separated, b, 0.0, 30.0, 30.0);
+    assert_eq!(opaque_bounds(&separated, Tick::ZERO), (70, 70, 25, 25, 34, 34, 100));
+
+    let (mut separated, b) = square(true);
+    separated.execute("layer.select", json!({"layers": [b]})).unwrap();
+    separated.execute("comp.cropToLayerBounds", json!({})).unwrap();
+    let bounds = opaque_bounds(&separated, Tick::ZERO);
+    assert_eq!((bounds.0, bounds.1, bounds.6), (10, 10, 100));
+    assert!(bounds.2 == 0 && bounds.3 == 0, "the square fills the cropped frame: {bounds:?}");
+
+    // Two Position keys keep their spacing after the same canvas offset.
+    let (mut separated, b) = square(true);
+    separated.execute("edit.undo", json!({})).unwrap();
+    separated.execute("prop.addKey", json!({"layer": b, "path": "transform/position", "time": 0, "value": [40, 50]})).unwrap();
+    separated.execute("prop.addKey", json!({"layer": b, "path": "transform/position", "time": 1, "value": [60, 50]})).unwrap();
+    separated.execute("prop.separateDimensions", json!({"layer": b, "value": true})).unwrap();
+    separated.execute("comp.settings", json!({"width": 200})).unwrap();
+    placed(&separated, b, 0.0, 90.0, 50.0);
+    placed(&separated, b, 1.0, 110.0, 50.0);
+    assert_eq!(opaque_bounds(&separated, Tick::ZERO).2, 85);
+    assert_eq!(opaque_bounds(&separated, Tick::from_seconds_f64(1.0)).2, 105);
+
+    let (mut separated, b) = square(true);
+    separated.execute("edit.undo", json!({})).unwrap();
+    separated.execute("prop.addKey", json!({"layer": b, "path": "transform/position", "time": 0, "value": [40, 50]})).unwrap();
+    separated.execute("prop.addKey", json!({"layer": b, "path": "transform/position", "time": 1, "value": [60, 50]})).unwrap();
+    separated.execute("prop.separateDimensions", json!({"layer": b, "value": true})).unwrap();
+    separated.execute("view.setRegionOfInterest", json!({"rect": [10, 20, 70, 70]})).unwrap();
+    separated.execute("comp.cropToRegionOfInterest", json!({})).unwrap();
+    placed(&separated, b, 0.0, 30.0, 30.0);
+    placed(&separated, b, 1.0, 50.0, 30.0);
+    assert_eq!(opaque_bounds(&separated, Tick::ZERO), (70, 70, 25, 25, 34, 34, 100));
+    assert_eq!(opaque_bounds(&separated, Tick::from_seconds_f64(1.0)), (70, 70, 45, 25, 54, 34, 100));
+}
+
 #[test]
 fn mask_menu_on_existing_masks() {
     let mut s = comp();

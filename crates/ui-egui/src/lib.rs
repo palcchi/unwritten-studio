@@ -295,6 +295,17 @@ pub struct EffectcraftApp {
     pub(crate) template_list: Option<(Vec<String>, Vec<effectcraft_engine::templates::TemplateInfo>)>,
 }
 
+/// The saved workspaces in the settings store ([`effectcraft_engine::config::ConfigStore`]).
+pub const WORKSPACES_FILE: &str = "workspaces.json";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedWorkspaces {
+    #[serde(default)]
+    workspaces: std::collections::BTreeMap<String, dock::DockNode>,
+    #[serde(default)]
+    floating: std::collections::BTreeMap<String, Vec<dock::Floating>>,
+}
+
 impl EffectcraftApp {
     pub fn new(session: Session) -> Self {
         EffectcraftApp {
@@ -353,6 +364,34 @@ impl EffectcraftApp {
             template_list: None,
         }
         .with_ui_commands()
+        .with_saved_workspaces()
+    }
+
+    /// The workspaces saved in an earlier session (Window ▸ Workspace ▸ Save as New Workspace,
+    /// Save Changes to this Workspace), from the settings store. A file that doesn't read is
+    /// ignored.
+    fn with_saved_workspaces(mut self) -> Self {
+        let text = self.session.config.as_ref().and_then(|c| c.read(WORKSPACES_FILE));
+        match text.map(|t| serde_json::from_str::<SavedWorkspaces>(&t)) {
+            Some(Ok(w)) => {
+                self.ui.saved_workspaces = w.workspaces;
+                self.ui.saved_floating = w.floating;
+            }
+            Some(Err(e)) => log::warn!("{WORKSPACES_FILE}: {e}"),
+            None => {}
+        }
+        self
+    }
+
+    /// Keep the saved workspaces for the next session (see [`EffectcraftApp::new`]): After
+    /// Effects' saved workspaces last until they are deleted (#320).
+    pub(crate) fn store_saved_workspaces(&self) {
+        let Some(c) = &self.session.config else { return };
+        let w = SavedWorkspaces { workspaces: self.ui.saved_workspaces.clone(), floating: self.ui.saved_floating.clone() };
+        let written = serde_json::to_string(&w).map_err(std::io::Error::other).and_then(|t| c.write(WORKSPACES_FILE, &t));
+        if let Err(e) = written {
+            log::warn!("{WORKSPACES_FILE}: {e}");
+        }
     }
 
     /// Offer the frontend's commands (tools, timeline navigation…) for keyboard shortcuts.

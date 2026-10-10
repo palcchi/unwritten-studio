@@ -216,6 +216,10 @@ pub struct EditorState {
     /// The last copy was keyframes (Paste pastes keys at the CTI).
     #[serde(skip)]
     pub clip_is_keys: bool,
+    /// Values of selected unanimated properties (match path, value), copied with Edit ▸ Copy;
+    /// Paste sets the same properties of the selected layers.
+    #[serde(skip)]
+    pub value_clipboard: Vec<(String, effectcraft_keyframe::Value)>,
     /// Copied effect instances (Edit ▸ Copy with effects selected); Paste adds them to the
     /// selected layers.
     #[serde(skip)]

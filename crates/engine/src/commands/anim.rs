@@ -105,7 +105,7 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
     if plan.is_empty() {
         return Err(bad("keys.paste", "no compatible property to paste into (select a property of the same type)"));
     }
-    s.edit("Paste Keyframes", None, |proj, st| {
+    s.edit("Paste Keyframes", merge_p(p), |proj, st| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let mut sel = vec![];
         for (lid, uid, ci) in &plan {

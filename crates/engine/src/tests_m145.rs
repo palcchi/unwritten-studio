@@ -682,3 +682,13 @@ fn dynamic_menus_and_window_viewer_labels() {
         assert!(labels.iter().any(|x| x == l), "{l}");
     }
 }
+
+#[test]
+fn unsaved_project_renders_to_movies_or_home_not_the_working_directory() {
+    // A Finder-launched app has `/` as its working directory, where renders fail (#446).
+    let home = tmp("home446");
+    assert_eq!(crate::render_queue::default_output_base(Some(home.clone())), Some(home.clone()));
+    std::fs::create_dir_all(home.join("Movies")).unwrap();
+    assert_eq!(crate::render_queue::default_output_base(Some(home.clone())), Some(home.join("Movies")));
+    assert_eq!(crate::render_queue::default_output_base(None), None);
+}

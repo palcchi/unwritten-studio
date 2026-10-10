@@ -274,7 +274,7 @@ fn prop_row(
     app.auto.add(&format!("effectControls.prop.{uid}.name"), name_clip, &prop.name);
     let merge = format!("ec-{uid}");
     // With several layers selected the edit applies to the same effect property of each (#491).
-    let scrub = ui.ctx().dragged_id().is_some();
+    let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
     let set = |actions: &mut Actions, v: serde_json::Value| {
         actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
     };

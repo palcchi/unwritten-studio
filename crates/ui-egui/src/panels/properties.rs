@@ -247,7 +247,7 @@ fn transform_row(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter,
     let merge = format!("props-{uid}");
     // With several layers selected the edit applies to all: a scrub by the same change, a typed
     // value as it is.
-    let scrub = ui.ctx().dragged_id().is_some();
+    let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
     let set = |actions: &mut Actions, v: serde_json::Value| {
         actions.push(("prop.set".into(), json!({"layer": lid, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
     };

@@ -2403,7 +2403,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         ui_actions.push(UiAct::SetTime(layer.comp_time(k.time)));
                     }
                     if ui.interact(mid, egui::Id::new(("kmid", uid)), Sense::click()).clicked() {
-                        actions.push(("prop.toggleKey".into(), json!({"layer": layer.id.0, "prop": uid, "selected": true})));
+                        actions.push(("prop.toggleKey".into(), json!({"layer": layer.id.0, "prop": uid})));
                     }
                     app.auto.add(&format!("timeline.prop.{uid}.addKey"), mid, "Add or remove keyframe");
                 }
@@ -2426,11 +2426,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             actions.push(("prop.setExpression".into(), json!({"layer": layer.id.0, "prop": uid})));
                         }
                     } else if let Some((value, merge)) = switch_gesture(ui, &resp, r, "stopwatch", prop.is_animated()) {
-                        actions
-                            .push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "value": value, "merge": merge, "selected": true})));
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "value": value, "merge": merge})));
                     } else if resp.clicked() && !resp.clicked_by(egui::PointerButton::Primary) {
                         // Keyboard or accessibility activation.
-                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "selected": true})));
+                        actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
                     }
                 }
                 let name_x = indent + 12.0;
@@ -3513,7 +3512,7 @@ fn value_editor(
     let merge = format!("scrub-{uid}");
     // With several layers selected the edit applies to all of them (#491): a scrub by the same
     // change, a typed value as it is.
-    let scrub = ui.ctx().dragged_id().is_some();
+    let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
     let set = |actions: &mut Vec<(String, serde_json::Value)>, v: serde_json::Value| {
         actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
     };

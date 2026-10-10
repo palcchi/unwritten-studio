@@ -1456,6 +1456,27 @@ mod tests {
         assert_eq!(PanelKind::from_name("effects & presets"), Some(PanelKind::EffectsPresets));
     }
 
+    /// Ported from #630 (Ni-zav): the reporter's reproduction on the Minimal workspace.
+    #[test]
+    fn window_panels_reopen_after_last_panel_is_closed() {
+        use PanelKind::*;
+        for reopen in [Composition, Timeline, Project] {
+            let mut d = workspace("Minimal");
+            d.close(Composition);
+            d.close(Timeline);
+            assert_eq!(d.panel_count(), 0);
+            d.open_near(reopen, EffectsPresets);
+            assert_eq!(d.panel_count(), 1);
+            assert!(d.is_visible(reopen), "{reopen:?} must be visible");
+        }
+        let mut d = tabs(&[Audio], 0);
+        d.open_near(History, Project);
+        assert_eq!(d, tabs(&[Audio, History], 1));
+        let mut d = workspace("Minimal");
+        d.open_near(EffectsPresets, Timeline);
+        assert_eq!(d.path_of(EffectsPresets), d.path_of(Timeline));
+    }
+
     #[test]
     fn closing_earlier_inactive_tab_keeps_the_shown_panel() {
         use PanelKind::*;

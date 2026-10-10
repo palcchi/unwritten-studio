@@ -1350,6 +1350,7 @@ dependencies = [
  "effectcraft-svg",
  "effectcraft-time",
  "exr",
+ "gif",
  "image",
  "rayon",
  "serde_json",

@@ -4,9 +4,7 @@
 
     wix build effectcraft.wxs installer-ui.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
 
-  Per-machine install into Program Files (or a folder the user picks), a Start Menu shortcut, `.pcraft` owned by EffectCraft,
-  and EffectCraft offered under "Open with" for PSD/PSB and the image formats it reads (without
-  taking over the user's default app for them).
+  Per-machine install into Program Files (or a folder the user picks) and a Start Menu shortcut.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package

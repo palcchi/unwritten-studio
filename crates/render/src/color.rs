@@ -195,12 +195,20 @@ pub fn quantize(img: &mut Image, levels: f32) {
 #[allow(clippy::manual_clamp)] // max/min map NaN to 0; clamp would keep NaN
 #[inline(always)]
 fn quantize_px(p: &mut [f32; 4], levels: f32, inv: f32) {
-    let a = (p[3].max(0.0).min(1.0) * levels + 0.5) as u32 as f32 * inv;
+    let a = round_half_up(p[3].max(0.0).min(1.0) * levels) * inv;
     let hi = [a, a, a, a];
     for c in 0..3 {
-        p[c] = (p[c].max(0.0).min(hi[c]) * levels + 0.5) as u32 as f32 * inv;
+        p[c] = round_half_up(p[c].max(0.0).min(hi[c]) * levels) * inv;
     }
     p[3] = a;
+}
+
+/// `v` (0..=65 535) rounded half up. The same either way; the fastest on each target: x86-64's
+/// baseline converts to integers in one instruction but has no `floor` (SSE4.1), while in wasm
+/// `floor` is one instruction and converting back from `u32` several (about 1.5× faster there).
+#[inline(always)]
+fn round_half_up(v: f32) -> f32 {
+    if cfg!(target_arch = "wasm32") { (v + 0.5).floor() } else { (v + 0.5) as u32 as f32 }
 }
 
 /// [`quantize`] restricted to a rectangle (already clamped to the image), row-parallel.
@@ -267,4 +275,23 @@ pub fn output_hdr(img: &mut Image, to_linear: Option<Conversion>, mode: HdrMode,
         let o = encode.apply(c);
         *p = [o[0] * a, o[1] * a, o[2] * a, a];
     });
+}
+
+#[cfg(test)]
+mod tests {
+    /// Both forms `round_half_up` picks between agree on everything quantising feeds it:
+    /// 0..=levels, exact halves included.
+    #[test]
+    fn rounding_forms_agree() {
+        for levels in [255.0f32, 32_768.0] {
+            for i in 0..=(levels as u32 * 16) {
+                let v = i as f32 / 16.0;
+                assert_eq!((v + 0.5).floor(), (v + 0.5) as u32 as f32, "{v}");
+            }
+            for i in 0..=100_000 {
+                let v = (i as f32 / 100_000.0) * levels;
+                assert_eq!((v + 0.5).floor(), (v + 0.5) as u32 as f32, "{v}");
+            }
+        }
+    }
 }

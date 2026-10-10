@@ -586,8 +586,18 @@ impl Prefs {
     /// budgets, scaled down so together they leave **RAM Reserved for Other Applications** free,
     /// and halved while the system is low on memory when **Reduce Cache Size When System Is Low
     /// on Memory** is on. `mem` = the system's memory (`None` = unknown: configured budgets).
+    /// In the browser the layer and footage caches also stay within [`WEB_LAYER_CACHE`] and
+    /// [`WEB_MEDIA_CACHE`].
     pub fn cache_budgets(&self, mem: Option<crate::sysinfo::SysMemory>) -> CacheBudgets {
+        self.cache_budgets_in(mem, cfg!(target_arch = "wasm32"))
+    }
+
+    /// [`Prefs::cache_budgets`], in the browser's memory (`web`) or not.
+    pub(crate) fn cache_budgets_in(&self, mem: Option<crate::sysinfo::SysMemory>, web: bool) -> CacheBudgets {
         let (mut l, mut m, mut p) = (self.layer_cache_bytes() as u64, self.media_cache_bytes() as u64, self.preview_cache_bytes() as u64);
+        if web {
+            (l, m) = (l.min(WEB_LAYER_CACHE), m.min(WEB_MEDIA_CACHE));
+        }
         let floor = 64u64 << 20;
         let mut capped = false;
         let mut reduced = false;
@@ -731,6 +741,15 @@ fn push_mru(list: &mut Vec<String>, v: &str, max: usize) {
     list.insert(0, v.to_string());
     list.truncate(max.max(1));
 }
+
+/// The most the layer cache holds in the browser. A wasm32 page addresses at most 4 GiB, which
+/// these caches share with the app and with the decoders' own decoded frames (FilmCraft keeps
+/// up to 384 MB per open movie): with the desktop's 1 GB defaults, eight stacked 1080p clips ran
+/// the page out of memory a few seconds into playback.
+pub const WEB_LAYER_CACHE: u64 = 512 << 20;
+
+/// The most the footage frame cache holds in the browser (see [`WEB_LAYER_CACHE`]).
+pub const WEB_MEDIA_CACHE: u64 = 256 << 20;
 
 /// Effective cache budgets in bytes (see [`Prefs::cache_budgets`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

@@ -405,11 +405,20 @@ fn is_chinese(language: &str) -> bool {
     matches!(language, "zh-hans" | "zh-hant")
 }
 
+/// egui's theme preference for an appearance mode showing a `light` (or dark) theme. Sync with
+/// System leaves it at System: a concrete preference makes egui set the native window's
+/// appearance, and on macOS a window with its own appearance no longer hears when the system's
+/// changes (#642). A fixed Light or Dark mode pins the window to match.
+pub fn theme_preference(appearance_mode: &str, light: bool) -> egui::ThemePreference {
+    match appearance_mode {
+        "auto" => egui::ThemePreference::System,
+        _ if light => egui::ThemePreference::Light,
+        _ => egui::ThemePreference::Dark,
+    }
+}
+
 pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
     let light = t.kind.is_light();
-    // egui keeps one style per light/dark theme and by default picks it by the system appearance;
-    // pin it to ours so a fixed Dark or Light mode isn't swapped for egui's defaults.
-    ctx.set_theme(if light { egui::ThemePreference::Light } else { egui::ThemePreference::Dark });
     let mut v = if light { Visuals::light() } else { Visuals::dark() };
     v.panel_fill = t.panel_bg;
     v.window_fill = t.panel_bg;
@@ -444,8 +453,10 @@ pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
     v.widgets.active.fg_stroke = Stroke::new(1.0, t.tab_text_active);
     v.widgets.open.bg_fill = t.hover;
     v.widgets.open.weak_bg_fill = t.hover;
-    ctx.set_visuals(v);
-    ctx.global_style_mut(|s| {
+    // egui keeps one style per light/dark theme and picks it by its theme preference (see
+    // [`theme_preference`]); both get ours, so whichever it picks, egui's defaults never show.
+    ctx.all_styles_mut(|s| {
+        s.visuals = v.clone();
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(8.0, 3.0);
         s.spacing.interact_size.y = 22.0;

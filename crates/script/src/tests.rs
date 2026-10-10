@@ -524,3 +524,22 @@ fn comp_preserves_nested_frame_rate_and_resolution() {
     let (_, c) = comp_named(&s, "Nested");
     assert!(c.preserve_frame_rate && c.preserve_resolution);
 }
+
+#[test]
+fn add_solid_keeps_the_requested_pixel_aspect() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("PA", 64, 32, 1, 1, 10);
+        var square = c.layers.addSolid([1, 0, 0], "Square", 16, 16, 1);
+        var wide = c.layers.addSolid([0, 1, 0], "Wide", 16, 16, 2);
+        var inherited = c.layers.addSolid([0, 0, 1], "Inherited", 16, 16);
+        [c.pixelAspect, square.source.pixelAspect, wide.source.pixelAspect, inherited.source.pixelAspect,
+         wide.source.width, wide.source.height]
+        "#,
+    );
+    assert_eq!(o.result, json!([1, 1, 2, 1, 16, 16]));
+    let bad = run_code(&mut s, r#"app.project.items.addComp("Q", 8, 8, 1, 1, 10).layers.addSolid([1, 1, 1], "Bad", 8, 8, 0)"#, "bad.jsx");
+    assert!(bad.error.is_some_and(|e| e.message.contains("pixelAspect")));
+}

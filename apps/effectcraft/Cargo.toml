@@ -21,6 +21,11 @@ rfd = { workspace = true }
 cpal = { workspace = true }
 log = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Settings ▸ Appearance ▸ Sync with System: the XDG desktop portal's colour scheme. Already in
+# Cargo.lock (accesskit, through eframe); pinned exactly to the same version.
+zbus = "=5.19.0"
+
 [build-dependencies]
 # Icon + VERSIONINFO for effectcraft.exe; build.rs only uses it when targeting Windows.
 winresource = "0.1"

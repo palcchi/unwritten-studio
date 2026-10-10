@@ -26,6 +26,19 @@ impl ThemeKind {
             _ => None,
         }
     }
+
+    /// The settings value (`appearance.theme`, `appearance.darkTheme`, `appearance.lightTheme`).
+    pub fn name(self) -> &'static str {
+        match self {
+            ThemeKind::Dark => "dark",
+            ThemeKind::Darker => "darker",
+            ThemeKind::Light => "light",
+        }
+    }
+
+    pub fn is_light(self) -> bool {
+        self == ThemeKind::Light
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -213,8 +226,9 @@ impl Tokens {
     }
 
     /// Theme tokens for the current settings: theme, UI brightness and label colours.
-    pub fn from_prefs(p: &effectcraft_engine::prefs::Prefs) -> Tokens {
-        let kind = ThemeKind::from_name(&p.appearance.theme).unwrap_or_default();
+    /// The tokens for theme `kind` (resolved from the appearance mode) with the rest of the
+    /// Appearance settings: brightness, label colours, gradients.
+    pub fn from_prefs(p: &effectcraft_engine::prefs::Prefs, kind: ThemeKind) -> Tokens {
         let mut t = Tokens::for_kind(kind).with_brightness(p.appearance.brightness as f32);
         for (i, l) in effectcraft_color::Label::ALL.iter().enumerate() {
             let [r, g, b] = p.label_rgb(*l);
@@ -387,7 +401,11 @@ fn is_chinese(language: &str) -> bool {
 }
 
 pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
-    let mut v = if t.kind == ThemeKind::Light { Visuals::light() } else { Visuals::dark() };
+    let light = t.kind.is_light();
+    // egui keeps one style per light/dark theme and by default picks it by the system appearance;
+    // pin it to ours so a fixed Dark or Light mode isn't swapped for egui's defaults.
+    ctx.set_theme(if light { egui::ThemePreference::Light } else { egui::ThemePreference::Dark });
+    let mut v = if light { Visuals::light() } else { Visuals::dark() };
     v.panel_fill = t.panel_bg;
     v.window_fill = t.panel_bg;
     v.extreme_bg_color = t.field_bg;

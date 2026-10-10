@@ -32,11 +32,28 @@ pub const UI_SCALES: &[(&str, &str)] = &[("75%", "75"), ("100%", "100"), ("125%"
 /// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).
 pub const WINDOW_GRAPHICS: &[(&str, &str)] = &[("Automatic", "auto"), ("OpenGL (compatibility)", "gl")];
 
+/// Settings ▸ Appearance ▸ Appearance Mode: (label, `appearance.appearanceMode` value). Auto
+/// follows the operating system's light or dark appearance.
+pub const APPEARANCE_MODES: &[(&str, &str)] = &[("Sync with System", "auto"), ("Dark", "dark"), ("Light", "light")];
+
+/// The dark family of themes: (label, `appearance.darkTheme` value).
+pub const DARK_THEMES: &[(&str, &str)] = &[("Dark", "dark"), ("Darker", "darker")];
+
+/// The light family of themes: (label, `appearance.lightTheme` value).
+pub const LIGHT_THEMES: &[(&str, &str)] = &[("Light", "light")];
+
+/// Every theme (the legacy single-theme `appearance.theme`).
+pub const THEMES: &[(&str, &str)] = &[("Dark", "dark"), ("Darker", "darker"), ("Light", "light")];
+
 /// The settings whose value must be one of their choices.
 fn choices(key: &str) -> Option<&'static [(&'static str, &'static str)]> {
     match key {
         "general.language" => Some(LANGUAGES),
         "startup.windowGraphics" => Some(WINDOW_GRAPHICS),
+        "appearance.appearanceMode" => Some(APPEARANCE_MODES),
+        "appearance.darkTheme" => Some(DARK_THEMES),
+        "appearance.lightTheme" => Some(LIGHT_THEMES),
+        "appearance.theme" => Some(THEMES),
         _ => None,
     }
 }
@@ -140,8 +157,16 @@ page!(Previews {
 });
 
 page!(Appearance {
-    /// `dark`, `darker` or `light`.
+    /// The single theme before appearance modes (`dark`, `darker` or `light`), kept for older
+    /// settings files and automation: setting it picks its family's mode and theme. While the mode
+    /// is Dark or Light it mirrors the theme in use.
     theme: String = "dark".into(),
+    /// `auto` (follow the operating system), `dark` or `light`. New installs stay Dark.
+    appearance_mode: String = "dark".into(),
+    /// The theme used in dark appearance: `dark` or `darker`.
+    dark_theme: String = "dark".into(),
+    /// The theme used in light appearance: `light`.
+    light_theme: String = "light".into(),
     /// User interface brightness, -1 (darker) … 1 (lighter).
     brightness: f64 = 0.0,
     /// The size of the whole interface in percent (75–200), on top of the display's own scale.
@@ -408,8 +433,59 @@ pub fn migrate(mut v: Value) -> Value {
             obj.insert("labels".into(), serde_json::to_value(labels).unwrap_or_default());
         }
     }
+    // Settings saved before appearance modes had one theme: keep showing it, as a fixed Dark or
+    // Light mode, instead of switching established users to Auto.
+    if let Some(a) = obj.get_mut("appearance").and_then(Value::as_object_mut)
+        && !a.contains_key("appearanceMode")
+        && let Some(theme) = a.get("theme").and_then(Value::as_str).map(str::to_string)
+        && let Some((mode, slot)) = theme_family(&theme)
+    {
+        a.insert("appearanceMode".into(), json!(mode));
+        a.insert(slot.into(), json!(theme));
+    }
     obj.insert("version".into(), json!(PREFS_VERSION));
     v
+}
+
+/// The appearance mode and the per-mode setting a theme belongs to (`darker` → (`dark`,
+/// `darkTheme`)); `None` for an unknown theme.
+pub fn theme_family(theme: &str) -> Option<(&'static str, &'static str)> {
+    if is_choice(DARK_THEMES, theme) {
+        Some(("dark", "darkTheme"))
+    } else if is_choice(LIGHT_THEMES, theme) {
+        Some(("light", "lightTheme"))
+    } else {
+        None
+    }
+}
+
+impl Appearance {
+    /// Show the legacy single `theme`: fix the mode to its family and remember it as that
+    /// family's theme. An unknown theme changes nothing.
+    pub fn select_theme(&mut self) {
+        match theme_family(&self.theme) {
+            Some((mode, "darkTheme")) => {
+                self.appearance_mode = mode.into();
+                self.dark_theme = self.theme.clone();
+            }
+            Some((mode, _)) => {
+                self.appearance_mode = mode.into();
+                self.light_theme = self.theme.clone();
+            }
+            None => {}
+        }
+    }
+
+    /// The theme to show: the light or dark family's choice by the mode; Auto follows `system_light`
+    /// (`None` = the system said nothing: dark).
+    pub fn resolved_theme(&self, system_light: Option<bool>) -> &str {
+        let light = match self.appearance_mode.as_str() {
+            "light" => true,
+            "auto" => system_light == Some(true),
+            _ => false,
+        };
+        if light { &self.light_theme } else { &self.dark_theme }
+    }
 }
 
 impl Prefs {
@@ -459,6 +535,24 @@ impl Prefs {
         let a = &mut self.auto_save;
         a.interval_minutes = a.interval_minutes.clamp(1, 240);
         a.max_versions = a.max_versions.clamp(1, 99);
+        let ap = &mut self.appearance;
+        if !is_choice(APPEARANCE_MODES, &ap.appearance_mode) {
+            ap.appearance_mode = Appearance::default().appearance_mode;
+        }
+        if !is_choice(DARK_THEMES, &ap.dark_theme) {
+            ap.dark_theme = Appearance::default().dark_theme;
+        }
+        if !is_choice(LIGHT_THEMES, &ap.light_theme) {
+            ap.light_theme = Appearance::default().light_theme;
+        }
+        // The legacy single theme mirrors the theme a fixed mode shows (Auto depends on the
+        // system, so it keeps the last one).
+        match ap.appearance_mode.as_str() {
+            "dark" => ap.theme = ap.dark_theme.clone(),
+            "light" => ap.theme = ap.light_theme.clone(),
+            _ if !is_choice(THEMES, &ap.theme) => ap.theme = ap.dark_theme.clone(),
+            _ => {}
+        }
         self.appearance.brightness = self.appearance.brightness.clamp(-1.0, 1.0);
         self.appearance.ui_scale = self.appearance.ui_scale.clamp(75, 200);
         let defaults = default_labels();
@@ -498,12 +592,20 @@ impl Prefs {
             let all: Vec<&str> = c.iter().map(|(_, v)| *v).collect();
             return Err(format!("`{key}` expects one of {}", all.join(", ")));
         }
+        // Older clients set the single theme (by key, or inside the page object): it still picks
+        // a visible theme, fixing the mode to its family.
+        let legacy_theme = key == "appearance.theme" || (key == "appearance" && value.get("theme").is_some() && value.get("appearanceMode").is_none());
         let mut v = serde_json::to_value(&*self).map_err(|e| e.to_string())?;
         let ptr = format!("/{}", key.replace('.', "/"));
         let slot = v.pointer_mut(&ptr).ok_or_else(|| format!("unknown setting `{key}`"))?;
         let value = coerce(slot, value).ok_or_else(|| format!("`{key}` expects a {}", kind_name(slot)))?;
         *slot = value;
         let mut next: Prefs = serde_json::from_value(v).map_err(|e| format!("`{key}`: {e}"))?;
+        let (a, b) = (&self.appearance, &next.appearance);
+        let only_theme_changed = a.theme != b.theme && a.appearance_mode == b.appearance_mode && a.dark_theme == b.dark_theme && a.light_theme == b.light_theme;
+        if legacy_theme || only_theme_changed {
+            next.appearance.select_theme();
+        }
         next.normalize();
         *self = next;
         Ok(())
@@ -1014,7 +1116,9 @@ pub fn pages() -> Vec<Page> {
             id: "appearance",
             title: "Appearance",
             items: vec![
-                s("appearance.theme", "Theme", Kind::Choice(&[("Dark", "dark"), ("Darker", "darker"), ("Light", "light")]), true),
+                s("appearance.appearanceMode", "Appearance Mode", Kind::Choice(APPEARANCE_MODES), true),
+                s("appearance.lightTheme", "Light Theme", Kind::Choice(LIGHT_THEMES), true),
+                s("appearance.darkTheme", "Dark Theme", Kind::Choice(DARK_THEMES), true),
                 s("appearance.brightness", "Brightness", Kind::Slider(-1.0, 1.0), true),
                 s("appearance.uiScale", "UI Scale", Kind::Choice(UI_SCALES), true),
                 Section("Labels and Colors"),

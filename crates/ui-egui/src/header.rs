@@ -1,7 +1,7 @@
 //! The Tools bar: home, the tool slots, tool options, snapping, workspaces and the community
 //! buttons (Discord is always one click away).
 
-use crate::i18n::tr;
+use crate::i18n::{tr, tr_args};
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
 
@@ -198,6 +198,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add(&format!("header.{}", &id[4..]), r, tip);
         rx = r.min.x - 4.0;
     }
+    // Appearance: Sync with System, Light, Dark (a monitor, sun or moon), one click to the next.
+    let (icon, mode) = match app.session.prefs.appearance.appearance_mode.as_str() {
+        "auto" => (Icon::Monitor, tr("Sync with System")),
+        "light" => (Icon::Sun, tr("Light")),
+        _ => (Icon::Moon, tr("Dark")),
+    };
+    let tip = tr_args("Appearance Mode: {}", &[&mode]);
+    let r = Rect::from_min_max(pos2(rx - 26.0, cy - 13.0), pos2(rx, cy + 13.0));
+    if widgets::icon_button(ui, r, icon, false, &t, egui::Id::new("hdr-appearance")).on_hover_text(&tip).clicked() {
+        app.cycle_appearance(ui.ctx());
+    }
+    app.auto.add("header.appearance", r, &tip);
+    rx = r.min.x - 4.0;
     rx -= 10.0;
     p.line_segment([pos2(rx, cy - 10.0), pos2(rx, cy + 10.0)], Stroke::new(1.0, t.separator));
     rx -= 10.0;

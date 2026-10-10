@@ -46,6 +46,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("view.safeMargins", "Title/Action Safe", [], None),
     uic!("view.transparencyGrid", "Transparency Grid", [], None),
     uic!("view.fastPreviews", "Fast Previews", [], None),
+    uic!("view.theme.toggle", "Next Appearance Mode", [], None),
     uic!("view.theme.dark", "Theme: Dark", [], None),
     uic!("view.theme.darker", "Theme: Darker", [], None),
     uic!("view.theme.light", "Theme: Light", [], None),
@@ -462,6 +463,10 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
     if id == "view.res.auto" {
         app.ui.viewer.res = Resolution::Auto;
         return Ok(Value::Null);
+    }
+    if id == "view.theme.toggle" {
+        app.cycle_appearance(ctx);
+        return Ok(json!({"appearanceMode": app.session.prefs.appearance.appearance_mode}));
     }
     if let Some(th) = id.strip_prefix("view.theme.") {
         let k = crate::theme::ThemeKind::from_name(th).ok_or("unknown theme")?;

@@ -204,6 +204,127 @@ fn nested_bomb_in_the_second_flate_filter_is_refused() {
     assert_eq!(object::decode_stream_within(&file, &chain, &raw, MAX).map(|v| v.len()), None);
 }
 
+fn bounded_filter(dict: &str, raw: &[u8], max: usize) -> Option<Vec<u8>> {
+    let object::Obj::Dict(d) = object::Lexer::new(dict.as_bytes(), 0).next().unwrap() else { panic!("not a dictionary") };
+    object::decode_stream_within(&object::File::parse(b""), &d, raw, max)
+}
+
+#[test]
+fn predictor_huge_columns_decode_to_nothing() {
+    // A row of a petabyte used to be allocated before looking at the data (an allocation
+    // failure aborts the process, so this test took the whole test binary down).
+    let raw = miniz_oxide::deflate::compress_to_vec_zlib(&[0, 42], 6);
+    let dict = "<< /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 1000000000000000 >> >>";
+    assert_eq!(bounded_filter(dict, &raw, 16), Some(vec![]));
+}
+
+#[test]
+fn predictor_overflow_and_empty_rows_decode_to_nothing() {
+    let raw = miniz_oxide::deflate::compress_to_vec_zlib(&[0, 42], 6);
+    for parms in [
+        format!("/Columns {} /Colors 2 /BitsPerComponent 8", usize::MAX),
+        format!("/Columns 1 /Colors {} /BitsPerComponent 8", usize::MAX),
+        "/Columns 0".into(),
+        // A row is two bytes plus its tag byte: longer than the two bytes of data.
+        "/Columns 2".into(),
+    ] {
+        assert_eq!(bounded_filter(&format!("<< /Filter /FlateDecode /DecodeParms << /Predictor 12 {parms} >> >>"), &raw, 16), Some(vec![]));
+    }
+}
+
+#[test]
+fn run_length_chain_is_bounded() {
+    // Each stage expands repetitions of 0x81, which is itself an RL repeat code.
+    let raw = [0x81, 0x81, 128];
+    let chain = "<< /Filter [/RunLengthDecode /RL /RunLengthDecode] >>";
+    assert_eq!(bounded_filter(chain, &raw, 128).map(|v| v.len()), None);
+    assert_eq!(bounded_filter("<< /Filter /RL >>", &raw, 128), Some(vec![0x81; 128]));
+    // An over-limit intermediate stage must fail even if the next stage shrinks it.
+    assert_eq!(bounded_filter("<< /Filter [/RL /AHx] >>", &raw, 127), None);
+}
+
+fn lzw_codes(codes: impl IntoIterator<Item = u16>, early: bool) -> Vec<u8> {
+    let mut w = crate::ccitt::tests::W::default();
+    let (mut bits, mut entries, mut prev) = (9, 258, false);
+    for code in codes {
+        w.put(code, bits);
+        match code {
+            256 => (bits, entries, prev) = (9, 258, false),
+            257 => break,
+            _ => {
+                if prev && entries < 4096 {
+                    entries += 1;
+                }
+                prev = true;
+                if entries + usize::from(early) >= (1 << bits) && bits < 12 {
+                    bits += 1;
+                }
+            }
+        }
+    }
+    w.bytes
+}
+
+#[test]
+fn lzw_long_run_is_bounded_and_full_table_decodes() {
+    // Grow strings of A until the 12-bit table is full, then send literal A codes.
+    // Both old and new implementations use well under 100 MB for this fixture.
+    for early in [false, true] {
+        let raw = lzw_codes([256, 65].into_iter().chain(258..=4095).chain(std::iter::repeat_n(65, 62_500)).chain([257]), early);
+        assert!((95_000..105_000).contains(&raw.len()));
+        let dict = format!("<< /Filter /LZWDecode /DecodeParms << /EarlyChange {} >> >>", usize::from(early));
+        assert_eq!(bounded_filter(&dict, &raw, 1 << 20).map(|v| v.len()), None);
+        let expected = 3839 * 3840 / 2 + 62_500;
+        assert_eq!(bounded_filter(&dict, &raw, expected), Some(vec![b'A'; expected]));
+        // Clear restores the initial dictionary and code width after saturation.
+        let cleared = lzw_codes([256, 65].into_iter().chain(258..=4095).chain([256, 66, 257]), early);
+        let mut expected = vec![b'A'; 3839 * 3840 / 2];
+        expected.push(b'B');
+        assert_eq!(bounded_filter(&dict, &cleared, expected.len()), Some(expected));
+    }
+}
+
+#[test]
+fn ccitt_declared_and_unknown_rows_are_bounded() {
+    // Eight white Group 4 rows. The old decoder pads declared missing rows to white.
+    assert_eq!(bounded_filter("<< /Filter /CCF /DecodeParms << /K -1 /Columns 64 /Rows 1024 >> >>", &[0xFF], 16), None);
+    assert_eq!(bounded_filter("<< /Filter /CCF /DecodeParms << /K -1 /Columns 64 >> >>", &[0xFF], 16), None);
+    assert_eq!(bounded_filter("<< /Filter /CCF /DecodeParms << /K -1 /Columns 8 /Rows 8 >> >>", &[0xFF], 8), Some(vec![0xFF; 8]));
+    // Padding below the limit remains unchanged.
+    assert_eq!(bounded_filter("<< /Filter /CCF /DecodeParms << /K -1 /Columns 8 /Rows 16 >> >>", &[0xFF], 16), Some(vec![0xFF; 16]));
+    // Without `/Rows` the size is never computed up front: 2^20 rows of 4096 bytes overflow a
+    // 32-bit `usize`, but eight rows of this width decode on every target.
+    assert_eq!(bounded_filter("<< /Filter /CCF /DecodeParms << /K -1 /Columns 32768 >> >>", &[0xFF], 32768), Some(vec![0xFF; 32768]));
+}
+
+#[test]
+fn ascii85_and_hex_outputs_are_bounded() {
+    assert_eq!(bounded_filter("<< /Filter /A85 >>", b"zz", 7), None);
+    assert_eq!(bounded_filter("<< /Filter /A85 >>", b"zz", 8), Some(vec![0; 8]));
+    assert_eq!(bounded_filter("<< /Filter /A85 >>", b"87cURD]i,\"Ebo80", 12), Some(b"Hello World!".to_vec()));
+    assert_eq!(bounded_filter("<< /Filter /A85 >>", b"87cURD]i,\"Ebo80", 11), None);
+    assert_eq!(bounded_filter("<< /Filter /AHx >>", b"4142434>", 3), None);
+    assert_eq!(bounded_filter("<< /Filter /AHx >>", b"4142434>", 4), Some(b"ABC@".to_vec()));
+}
+
+#[test]
+fn predictors_and_normal_lzw_decode_within_limit() {
+    for predictor in [1, 2, 12] {
+        let (data, expected) = if predictor == 12 { (vec![0, 10, 20, 2, 1, 2], vec![10, 20, 11, 22]) } else { (vec![10, 20], vec![10, 20]) };
+        let raw = miniz_oxide::deflate::compress_to_vec_zlib(&data, 6);
+        let dict = format!("<< /Filter /FlateDecode /DecodeParms << /Predictor {predictor} /Columns 2 >> >>");
+        assert_eq!(bounded_filter(&dict, &raw, data.len()), Some(expected));
+    }
+    for early in [false, true] {
+        let raw = lzw_codes([256, 65, 66, 258, 257], early);
+        assert_eq!(bounded_filter("<< /Filter /LZW >>", &raw, 4), Some(b"ABAB".to_vec()));
+        assert_eq!(bounded_filter("<< /Filter /LZW >>", &raw, 3), None);
+    }
+    assert_eq!(bounded_filter("<< /Filter /RL >>", &[2, b'a', b'b', b'c', 254, b'd', 128], 6), Some(b"abcddd".to_vec()));
+    assert_eq!(bounded_filter("<< /Filter /RL >>", &[2, b'a', b'b', b'c', 128], 2), None);
+    assert_eq!(bounded_filter("<< /Filter /RL >>", &[128], 0), Some(vec![]));
+}
+
 // ------------------------------------------------------------------ M13.6: text, images,
 // patterns, soft masks, blend modes, pages
 

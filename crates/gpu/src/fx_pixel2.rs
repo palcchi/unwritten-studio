@@ -476,6 +476,10 @@ fn wire_removal(e: &mut Enc, ctx: &EffectCtx, b: GBuf) -> Option<GBuf> {
     if half <= 0.0 {
         return Some(b);
     }
+    // Frame Offset reads another frame from the effect host: that renders on the CPU.
+    if ctx.params.e("removalStyle") == 1 && ctx.params.f("frameOffset").round() != 0.0 && ctx.env.host.is_some() {
+        return None;
+    }
     let slope = (ctx.params.f("slope") / 100.0).clamp(0.0, 1.0) as f32;
     let mirror = (ctx.params.f("mirrorBlend") / 100.0).clamp(0.0, 1.0) as f32;
     let a = b.to_px(ctx.params.v2("pointA"));

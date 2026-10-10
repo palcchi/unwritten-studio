@@ -878,12 +878,7 @@ pub fn layout(ui: &mut egui::Ui, node: &mut DockNode, rect: Rect, t: &Tokens, pa
             let g = t.gap;
             let total = if *vertical { rect.height() } else { rect.width() };
             let avail = (total - g).max(0.0);
-            let first = match *size {
-                SplitSize::Ratio(r) => avail * r,
-                SplitSize::FixedA(px) => px.min(avail - 20.0),
-                SplitSize::FixedB(px) => avail - px.min(avail - 20.0),
-            }
-            .clamp(20.0_f32.min(avail), (avail - 20.0).max(0.0));
+            let first = split_first(*size, avail);
             let (ra, gutter_rect, rb) = if *vertical {
                 (
                     Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + first)),
@@ -898,7 +893,7 @@ pub fn layout(ui: &mut egui::Ui, node: &mut DockNode, rect: Rect, t: &Tokens, pa
                 )
             };
             if let Some(d) = gutter(ui, gutter_rect, *vertical, path, t, reg) {
-                let nf = (first + d).clamp(40.0, (avail - 40.0).max(40.0));
+                let nf = clamp_ordered(first + d, 40.0, avail - 40.0);
                 *size = match *size {
                     SplitSize::Ratio(_) => SplitSize::Ratio(nf / avail.max(1.0)),
                     SplitSize::FixedA(_) => SplitSize::FixedA(nf),
@@ -963,6 +958,27 @@ fn stack_bodies(entries: &[StackEntry], avail: f32) -> Vec<f32> {
             (true, false) => size(e.height.unwrap_or(min).max(min)),
         })
         .collect()
+}
+
+/// `v` held to `lo..=hi`, never panicking: when the room is too small for both minimums
+/// (`hi < lo`), `lo` wins; a non-finite `v` gives `lo`.
+fn clamp_ordered(v: f32, lo: f32, hi: f32) -> f32 {
+    let lo = if lo.is_finite() { lo } else { 0.0 };
+    let hi = if hi.is_finite() { hi.max(lo) } else { lo };
+    if v.is_finite() { v.max(lo).min(hi) } else { lo }
+}
+
+/// The size of a split's first side in `avail` points (both sides keep 20 pt when there is room).
+/// `f32::clamp` panics when its bounds cross, which a split shorter than 40 pt did (#306).
+fn split_first(size: SplitSize, avail: f32) -> f32 {
+    let avail = if avail.is_finite() { avail.max(0.0) } else { 0.0 };
+    let first = match size {
+        SplitSize::Ratio(r) => avail * r,
+        SplitSize::FixedA(px) => px.min(avail - 20.0),
+        SplitSize::FixedB(px) => avail - px.min(avail - 20.0),
+    };
+    let lo = 20.0_f32.min(avail);
+    clamp_ordered(first, lo, avail - 20.0).min(avail)
 }
 
 /// Drag the gap between the open stacked panels `above` and `below` (laid out at `bodies`) by
@@ -1325,6 +1341,38 @@ mod tests {
             .collect();
         for w in WORKSPACES {
             assert!(menu.iter().any(|m| m == w), "{w} missing from Window > Workspace");
+        }
+    }
+
+    #[test]
+    fn short_splits_lay_out_without_panicking() {
+        // #306: a split 0 < avail < 40 pt tall made `f32::clamp` panic (its bounds crossed).
+        for avail in [0.0, 5.0, 19.0, 20.0, 30.0, 39.0, 40.0, 41.0, -10.0, f32::NAN, f32::INFINITY] {
+            for size in [SplitSize::Ratio(0.5), SplitSize::Ratio(f32::NAN), SplitSize::FixedA(300.0), SplitSize::FixedB(300.0), SplitSize::FixedA(-5.0)] {
+                let f = split_first(size, avail);
+                assert!(f.is_finite() && f >= 0.0, "{size:?} {avail}: {f}");
+                if avail.is_finite() && avail > 0.0 {
+                    assert!(f <= avail, "{size:?} {avail}: {f}");
+                }
+            }
+        }
+        assert_eq!(split_first(SplitSize::FixedA(300.0), 30.0), 20.0);
+        assert_eq!(split_first(SplitSize::Ratio(0.5), 200.0), 100.0);
+        assert_eq!(clamp_ordered(5.0, 40.0, -4.0), 40.0);
+        // Every workspace, laid out in rects too short and too narrow for its minimums.
+        let ctx = egui::Context::default();
+        let t = Tokens::for_kind(crate::theme::ThemeKind::Dark);
+        for w in WORKSPACES {
+            for (wd, ht) in [(30.0, 30.0), (800.0, 36.0), (800.0, 45.0), (36.0, 600.0), (1.0, 1.0), (0.0, 0.0)] {
+                let mut node = workspace(w);
+                let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    let mut out = vec![];
+                    let mut reg = crate::automation::Registry::default();
+                    layout(ui, &mut node, Rect::from_min_size(pos2(0.0, 0.0), vec2(wd, ht)), &t, "", &mut out, &mut reg);
+                    assert!(!out.is_empty(), "{w}");
+                });
+                frame.textures_delta.clear();
+            }
         }
     }
 

@@ -298,3 +298,30 @@ fn project_empty_area_double_click_and_dropped_files_import() {
     h.run_steps(2);
     assert_eq!(imports(&h), 2, "the dropped file was imported");
 }
+
+/// Issue #306: dragging the viewer/Timeline divider far up made a nested split shorter than its
+/// two 20 pt minimums, and `f32::clamp` panicked with crossed bounds, closing the app.
+#[test]
+fn dragging_the_viewer_timeline_divider_far_up_does_not_crash() {
+    let (mut h, _, _) = harness();
+    // The horizontal gutter right above the Timeline.
+    let tl = rect(&h, "panel.Timeline");
+    let gutter = |h: &Harness<'_, EffectcraftApp>| {
+        h.state()
+            .auto
+            .previous
+            .iter()
+            .filter(|e| e.id.starts_with("dock.gutter.") && e.rect[2] > e.rect[3])
+            .map(|e| (e.id.clone(), egui::Rect::from_min_size(pos2(e.rect[0], e.rect[1]), egui::vec2(e.rect[2], e.rect[3]))))
+            .filter(|(_, g)| g.x_range().contains(tl.center().x) && g.max.y <= tl.min.y + 1.0)
+            .min_by(|a, b| (tl.min.y - a.1.max.y).total_cmp(&(tl.min.y - b.1.max.y)))
+            .expect("the gutter above the Timeline")
+    };
+    let (id, g) = gutter(&h);
+    drag(&mut h, g.center(), g.center() - egui::vec2(0.0, 2000.0));
+    let g2 = rect(&h, &id);
+    assert!(g2.center().y < g.center().y - 100.0, "the divider moved up: {g:?} → {g2:?}");
+    // And back down past the bottom.
+    drag(&mut h, g2.center(), g2.center() + egui::vec2(0.0, 3000.0));
+    h.run_steps(2);
+}

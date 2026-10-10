@@ -375,6 +375,37 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
             });
             r.response.rect
         }
+        // Scale keeps its Constrain Proportions link, on by default, as in After Effects (#338).
+        // The link is the property's own, shared with the Timeline's chain link.
+        ControlType::Point if p.match_id == "scale" && matches!(p.ui, ParamUi::Percent) => {
+            let comps = v.components();
+            let linked = !app.ui.timeline.unlinked.contains(&p.uid);
+            let (lr, link) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::click());
+            let t = app.tokens;
+            crate::icons::paint(ui.painter(), lr, crate::icons::Icon::Link, if linked { t.accent } else { t.text_faint });
+            let link = link.on_hover_text(tr("Constrain Proportions"));
+            app.auto.add(&format!("{auto}.link"), lr, "Constrain Proportions");
+            if link.clicked() && !app.ui.timeline.unlinked.remove(&p.uid) {
+                app.ui.timeline.unlinked.insert(p.uid);
+            }
+            let mut rect = lr;
+            for (d, &old) in comps.iter().enumerate() {
+                let mut x = old;
+                let r = ui.add(egui::DragValue::new(&mut x).speed(0.5).suffix(if d + 1 == comps.len() { "%" } else { "" }).max_decimals(1));
+                app.auto.add(&format!("{auto}.{d}"), r.rect, &p.name);
+                rect = rect.union(r.rect);
+                if r.changed() {
+                    // Alt edits one value of a linked pair, as in the Timeline.
+                    let next = if linked && !ui.input(|i| i.modifiers.alt) {
+                        widgets::constrained(&comps, d, x)
+                    } else {
+                        comps.iter().enumerate().map(|(e, &c)| if e == d { x } else { c }).collect()
+                    };
+                    out = Some(json!(next));
+                }
+            }
+            rect
+        }
         ControlType::Point => {
             let mut a = v.as_vec2();
             let r1 = ui.add(egui::DragValue::new(&mut a[0]).speed(1.0).max_decimals(1));

@@ -3440,26 +3440,6 @@ fn fmt_num(v: f64, d: usize) -> String {
     format!("{v:.d$}")
 }
 
-/// Linked values after component `d` of `c` became `v`: the others scale by the same ratio
-/// (Constrain Proportions); from 0 the others that are 0 too follow the value.
-fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
-    let Some(&old) = c.get(d) else { return c.to_vec() };
-    c.iter()
-        .enumerate()
-        .map(|(e, &x)| {
-            if e == d {
-                v
-            } else if old.abs() > 1e-9 {
-                x * v / old
-            } else if x.abs() <= 1e-9 {
-                v
-            } else {
-                x
-            }
-        })
-        .collect()
-}
-
 /// Inline value editor for a property row; pushes `prop.set` actions. Returns the rects of a
 /// multi-dimension value's fields, one per dimension (none for other values).
 fn value_editor(
@@ -3535,7 +3515,7 @@ fn value_editor(
                     // Alt edits one value of a linked pair.
                     let shown = if linked && !ui.input(|i| i.modifiers.alt) { n.min(c.len()) } else { 1 };
                     let from = if shown == 1 { d } else { 0 };
-                    for (e, v) in constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
+                    for (e, v) in widgets::constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
                         if let Some(slot) = nc.get_mut(from + e) {
                             *slot = v;
                         }

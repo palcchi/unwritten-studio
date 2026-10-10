@@ -180,7 +180,7 @@ fn key_navigator(
             match what {
                 "prev" => actions.push(("time.go".into(), json!({"to": "prevKey", "prop": uid}))),
                 "next" => actions.push(("time.go".into(), json!({"to": "nextKey", "prop": uid}))),
-                _ => actions.push(("prop.toggleKey".into(), json!({"layer": layer.id.0, "prop": uid}))),
+                _ => actions.push(("prop.toggleKey".into(), json!({"layer": layer.id.0, "prop": uid, "selected": true}))),
             }
         }
     }
@@ -241,7 +241,7 @@ fn prop_row(
         );
         app.auto.add(&format!("effectControls.prop.{uid}.stopwatch"), swr, &prop.name);
         if resp.clicked() {
-            actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid})));
+            actions.push(("prop.toggleAnimation".into(), json!({"layer": layer.id.0, "prop": uid, "selected": true})));
         }
     }
     if prop.is_animated() {
@@ -273,8 +273,11 @@ fn prop_row(
     ui.interact(name_clip, egui::Id::new(("ec-prop-name", uid)), Sense::click());
     app.auto.add(&format!("effectControls.prop.{uid}.name"), name_clip, &prop.name);
     let merge = format!("ec-{uid}");
-    let set =
-        |actions: &mut Actions, v: serde_json::Value| actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge})));
+    // With several layers selected the edit applies to the same effect property of each (#491).
+    let scrub = ui.ctx().dragged_id().is_some();
+    let set = |actions: &mut Actions, v: serde_json::Value| {
+        actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
+    };
     let twirl_open = |app: &mut EffectcraftApp, ui: &mut egui::Ui| {
         let open = app.ui.fx_slider_open.contains(&uid);
         let tw = Rect::from_center_size(pos2(swr.min.x - 9.0, cy), vec2(10.0, 10.0));

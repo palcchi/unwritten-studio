@@ -233,26 +233,44 @@ struct SpatialSeg {
 
 const ARC_N: usize = 96;
 
+/// 5-point Gauss-Legendre nodes and weights on -1..1.
+const GAUSS: [(f64, f64); 5] = [
+    (0.0, 0.568_888_888_888_888_9),
+    (-0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
+    (0.538_469_310_105_683_1, 0.478_628_670_499_366_5),
+    (-0.906_179_845_938_664, 0.236_926_885_056_189_1),
+    (0.906_179_845_938_664, 0.236_926_885_056_189_1),
+];
+
 impl SpatialSeg {
     fn new(p: [[f64; 3]; 4]) -> SpatialSeg {
         let mut table = Vec::with_capacity(ARC_N + 1);
         table.push(0.0);
-        let mut prev = Self::point(&p, 0.0);
         let mut acc = 0.0;
         for i in 1..=ARC_N {
-            let q = Self::point(&p, i as f64 / ARC_N as f64);
-            acc += ((q[0] - prev[0]).powi(2) + (q[1] - prev[1]).powi(2) + (q[2] - prev[2]).powi(2)).sqrt();
+            acc += Self::arc(&p, (i - 1) as f64 / ARC_N as f64, i as f64 / ARC_N as f64);
             table.push(acc);
-            prev = q;
         }
         SpatialSeg { p, table }
     }
     fn point(p: &[[f64; 3]; 4], u: f64) -> [f64; 3] {
         [bez(p[0][0], p[1][0], p[2][0], p[3][0], u), bez(p[0][1], p[1][1], p[2][1], p[3][1], u), bez(p[0][2], p[1][2], p[2][2], p[3][2], u)]
     }
+    /// |dB/du|.
+    fn tangent_len(p: &[[f64; 3]; 4], u: f64) -> f64 {
+        (0..3).map(|k| bez_d(p[0][k], p[1][k], p[2][k], p[3][k], u).powi(2)).sum::<f64>().sqrt()
+    }
+    /// Arc length between `a` and `b` (Gauss-Legendre; exact enough on one table cell).
+    fn arc(p: &[[f64; 3]; 4], a: f64, b: f64) -> f64 {
+        let (m, h) = ((a + b) * 0.5, (b - a) * 0.5);
+        GAUSS.iter().map(|(x, w)| w * Self::tangent_len(p, m + h * x)).sum::<f64>() * h
+    }
     fn length(&self) -> f64 {
         *self.table.last().unwrap_or(&0.0)
     }
+    /// The point at arc length `s`. The table cell's linear guess is refined with Newton steps
+    /// on the true arc length, so the position (and the speed graph, its derivative) is smooth
+    /// along curved paths instead of piecewise linear per cell (#456).
     fn at_length(&self, s: f64) -> [f64; 3] {
         let len = self.length();
         if len <= 0.0 {
@@ -260,9 +278,21 @@ impl SpatialSeg {
         }
         let s = s.clamp(0.0, len);
         let i = self.table.partition_point(|&v| v < s).clamp(1, ARC_N);
-        let (a, b) = (self.table[i - 1], self.table[i]);
-        let f = if b > a { (s - a) / (b - a) } else { 0.0 };
-        Self::point(&self.p, (i as f64 - 1.0 + f) / ARC_N as f64)
+        let (Some(&a), Some(&b)) = (self.table.get(i - 1), self.table.get(i)) else { return self.p[0] };
+        let (u0, u1) = ((i - 1) as f64 / ARC_N as f64, i as f64 / ARC_N as f64);
+        let mut u = u0 + if b > a { (s - a) / (b - a) } else { 0.0 } * (u1 - u0);
+        for _ in 0..4 {
+            let d = Self::tangent_len(&self.p, u);
+            if d <= 1e-12 {
+                break;
+            }
+            let e = a + Self::arc(&self.p, u0, u) - s;
+            u = (u - e / d).clamp(u0, u1);
+            if e.abs() <= 1e-12 * len.max(1.0) {
+                break;
+            }
+        }
+        Self::point(&self.p, u)
     }
 }
 
@@ -762,6 +792,24 @@ mod tests {
         let keys = vec![Keyframe::new(s(0.0), Value::Vec2([0.0, 0.0])), Keyframe::new(s(1.0), Value::Vec2([300.0, 400.0]))];
         let p = evaluate(&keys, s(0.5), true).unwrap().as_vec2();
         assert!((p[0] - 150.0).abs() < 0.5 && (p[1] - 200.0).abs() < 0.5, "{p:?}");
+    }
+
+    /// #456: along a curved spatial path with linear (constant-speed) keys the speed graph is
+    /// flat, not a sawtooth from a piecewise-linear arc-length table.
+    #[test]
+    fn spatial_curved_path_has_smooth_constant_speed() {
+        let mut a = Keyframe::new(s(0.0), Value::Vec2([0.0, 0.0]));
+        let mut b = Keyframe::new(s(2.0), Value::Vec2([400.0, 0.0]));
+        a.spatial_auto = false;
+        b.spatial_auto = false;
+        a.spatial_out = [50.0, -300.0, 0.0];
+        b.spatial_in = [80.0, 250.0, 0.0];
+        let keys = vec![a, b];
+        let len = spatial_segment_length(&keys, 0);
+        let speeds: Vec<f64> = (1..400).map(|i| speed(&keys, s(i as f64 * 0.005), true)).collect();
+        for v in &speeds {
+            assert!((v - len / 2.0).abs() < 1e-3 * len, "speed {v} vs {}", len / 2.0);
+        }
     }
 
     #[test]

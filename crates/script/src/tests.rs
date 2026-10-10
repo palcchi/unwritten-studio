@@ -611,3 +611,32 @@ fn add_solid_keeps_the_requested_pixel_aspect() {
     let bad = run_code(&mut s, r#"app.project.items.addComp("Q", 8, 8, 1, 1, 10).layers.addSolid([1, 1, 1], "Bad", 8, 8, 0)"#, "bad.jsx");
     assert!(bad.error.is_some_and(|e| e.message.contains("pixelAspect")));
 }
+
+#[test]
+fn property_selected_false_preserves_other_property_and_key_selections() {
+    let mut s = session();
+    let out = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Selection", 64, 64, 1, 1, 10);
+        c.openInViewer();
+        var layer = c.layers.addSolid([1, 0, 0], "Layer", 8, 8, 1);
+        var opacity = layer.transform.opacity;
+        var rotation = layer.transform.rotation;
+        rotation.setValueAtTime(0, 0);
+        rotation.setValueAtTime(0.5, 45);
+        app.run("edit.deselectAll", {});
+        rotation.selected = true;
+        opacity.selected = true;
+        var states = [[opacity.selected, rotation.selected]];
+        opacity.selected = false;
+        states.push([opacity.selected, rotation.selected]);
+        opacity.selected = false;
+        states.push([opacity.selected, rotation.selected]);
+        opacity.selected = true;
+        states.push([opacity.selected, rotation.selected]);
+        [states, rotation.selectedKeys.length, c.selectedProperties.length];
+        "#,
+    );
+    assert_eq!(out.result, json!([[[true, true], [false, true], [false, true], [true, true]], 2, 2]));
+}

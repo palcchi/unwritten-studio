@@ -459,6 +459,19 @@ fn select_prop(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Deselect only the named property, preserving unrelated property, layer, key and
+/// mask-vertex selections. Selected keys also imply selectedProperties in the script API.
+fn deselect_prop(s: &mut Session, params: &Value) -> Result<Value> {
+    let (_, lid, uid) = prop_ref(s, params, "prop.deselect")?;
+    let mask = s.active_comp().and_then(|c| c.layer(lid)).and_then(|l| path_points(l, uid, l.layer_time(s.time()))).map(|(mask, _)| mask);
+    s.state.selected_props.retain(|(layer, prop)| *layer != lid || *prop != uid);
+    s.state.selected_keys.retain(|key| key.layer != lid || key.prop != uid);
+    if let Some(mask) = mask {
+        s.state.selected_vertices.retain(|v| v.layer != lid || v.mask != mask);
+    }
+    Ok(Value::Null)
+}
+
 /// The mask or shape Path item that `uid` (the group, or its Path property) is, with its number
 /// of points at layer time `lt`.
 fn path_points(l: &Layer, uid: Uid, lt: Tick) -> Option<(Uid, usize)> {
@@ -967,6 +980,7 @@ pub fn specs() -> Vec<CommandSpec> {
             reset
         ),
         cmd!("prop.select", "Select Property", [], None, "{layer?, path|prop, add?, selectKeys?}", has_layers, select_prop),
+        cmd!("prop.deselect", "Deselect Property", [], None, "{layer?, path|prop}", has_layers, deselect_prop),
         cmd!(
             "prop.convertExpressionToKeyframes",
             "Convert Expression to Keyframes",

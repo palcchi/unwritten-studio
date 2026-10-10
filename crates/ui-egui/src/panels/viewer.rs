@@ -2358,8 +2358,10 @@ mod tests {
         assert_eq!(front.len(), 4);
         let crossing = project_clipped(&m, &box_corners([-50.0, -150.0, 50.0, 50.0]));
         assert_eq!(crossing.len(), 4, "{crossing:?}");
-        // Every point is in front: none flipped to the other side (y < 0 here means behind).
-        assert!(crossing.iter().all(|p| p[0].is_finite() && p[1].abs() < 1e4 && p[0].abs() < 1e4), "{crossing:?}");
+        // Nothing flipped through infinity: a corner behind the camera (y = −150, w = −50) would
+        // land at y = +300 if it were projected as is; clipped at the near plane it runs off far
+        // above (negative y) instead, and the front corners stay where they were.
+        assert!(crossing.iter().all(|p| p[0].is_finite() && p[1].is_finite() && p[1] < 34.0), "{crossing:?}");
         assert!(project_clipped(&m, &box_corners([-50.0, -400.0, 50.0, -200.0])).is_empty(), "wholly behind");
     }
 

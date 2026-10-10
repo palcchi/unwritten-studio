@@ -1640,6 +1640,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             _ => {
                 if pick(app, &ectx, cpt, mods.shift).is_none() {
                     let _ = app.session.execute("edit.deselectAll", json!({}));
+                } else if !mods.shift && !app.session.state.selected_vertices.is_empty() && ov::segment_at(&paths, &map, pos, 6.0).is_none() {
+                    // A click away from the paths, even on their layer, deselects the mask
+                    // points (the layer stays selected), as in After Effects (#513).
+                    let _ = app.session.execute("mask.selectVertices", json!({"vertices": []}));
                 }
             }
         }

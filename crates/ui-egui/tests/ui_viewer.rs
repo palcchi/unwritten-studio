@@ -750,6 +750,26 @@ fn pen_mask_undoes_step_by_step_and_double_click_moves_the_whole_mask() {
     assert!(back.vertices.iter().zip(&moved.vertices).all(|(v, c)| near(*v, *c)), "{back:?}");
 }
 
+/// #513: clicking away from a mask's path, even on its own layer, deselects the mask's points;
+/// the layer stays selected.
+#[test]
+fn clicking_off_a_mask_deselects_its_points() {
+    let mut h = harness();
+    let plate = layer_id(&h, "Plate");
+    let s = &mut h.state_mut().session;
+    s.execute("layer.select", json!({"layers": [plate]})).unwrap();
+    s.execute("mask.new", json!({"layer": plate, "vertices": [[100.0, 60.0], [500.0, 60.0], [500.0, 300.0], [100.0, 300.0]], "closed": true})).unwrap();
+    h.state_mut().ui.tool = Tool::Selection;
+    h.run_steps(2);
+    let at = screen(&h, [500.0, 60.0]);
+    click(&mut h, at);
+    assert_eq!(h.state().session.state.selected_vertices.len(), 1, "a click on a point selects it");
+    let away = screen(&h, [200.0, 250.0]);
+    click(&mut h, away);
+    assert!(h.state().session.state.selected_vertices.is_empty(), "a click off the path deselects its points");
+    assert_eq!(h.state().session.state.selected_layers, vec![LayerId(plate)], "the layer stays selected");
+}
+
 /// A straight two-key motion path shows Bezier handles at both keys (it had none), and dragging
 /// one pulls the path into a curve (#290).
 #[test]

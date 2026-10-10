@@ -21,6 +21,7 @@ mod color2;
 mod color3;
 mod color_fx;
 pub mod controls;
+pub mod fidelity;
 mod distort;
 mod distort2;
 mod distort3;

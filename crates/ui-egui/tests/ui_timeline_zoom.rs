@@ -59,6 +59,34 @@ fn alt_wheel_zooms_out_until_the_whole_comp_shows() {
     assert!(h.state().ui.timeline.pps.is_some());
 }
 
+/// #428: Ctrl/Cmd+wheel and a trackpad pinch zoom time over the layers, as Alt+wheel does (egui
+/// hands them over as a zoom factor, which the Timeline ignored).
+#[test]
+fn ctrl_wheel_and_pinch_zoom_time() {
+    let (mut h, layer) = harness();
+    h.state_mut().ui.timeline.pps = Some(200.0);
+    h.run_steps(2);
+    let pps = |h: &Harness<'_, EffectcraftApp>| h.state().ui.timeline.pps.unwrap_or(0.0);
+    let start = pps(&h);
+    assert!(start > 0.0);
+    let at = over_bar(&h, layer);
+    h.event(Event::PointerMoved(at));
+    h.event(Event::Zoom(0.5));
+    h.step();
+    let pinched = pps(&h);
+    assert!(pinched > 0.0 && pinched < start * 0.75, "a pinch in zooms out: {start} -> {pinched}");
+    let at = over_bar(&h, layer);
+    h.event(Event::PointerMoved(at));
+    h.event(Event::ModifiersChanged(Modifiers::COMMAND));
+    h.event(Event::MouseWheel { unit: MouseWheelUnit::Point, delta: vec2(0.0, 240.0), modifiers: Modifiers::COMMAND, phase: egui::TouchPhase::Move });
+    h.step();
+    h.event(Event::ModifiersChanged(Modifiers::NONE));
+    h.step();
+    assert!(pps(&h) > pinched, "Ctrl/Cmd+wheel up zooms in: {pinched} -> {}", pps(&h));
+    // Over the layers, so the rows did not scroll.
+    assert_eq!(h.state().ui.timeline.scroll_y, 0.0);
+}
+
 fn rect(h: &Harness<'_, EffectcraftApp>, id: &str) -> egui::Rect {
     let e = h.state().auto.find(id).unwrap_or_else(|| panic!("no {id}")).clone();
     egui::Rect::from_min_size(pos2(e.rect[0], e.rect[1]), vec2(e.rect[2], e.rect[3]))

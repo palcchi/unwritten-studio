@@ -224,6 +224,20 @@ pub fn ease_progress(out_speed_n: f64, out_inf: f64, in_speed_n: f64, in_inf: f6
     bez(0.0, out_speed_n * i0, 1.0 - in_speed_n * i1, 1.0, u)
 }
 
+/// Whether control point `c` lies on the segment `a`–`b` (within rounding), so a cubic with
+/// such handles traces the straight chord.
+fn on_chord(a: [f64; 3], c: [f64; 3], b: [f64; 3]) -> bool {
+    let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    if dd <= 1e-24 {
+        return false;
+    }
+    let t = (v[0] * d[0] + v[1] * d[1] + v[2] * d[2]) / dd;
+    let off = [v[0] - d[0] * t, v[1] - d[1] * t, v[2] - d[2] * t];
+    (0.0..=1.0).contains(&t) && off[0] * off[0] + off[1] * off[1] + off[2] * off[2] <= dd * 1e-18
+}
+
 /// Spatial cubic segment with an arc-length table.
 struct SpatialSeg {
     p: [[f64; 3]; 4],
@@ -529,7 +543,13 @@ pub fn segment_value(keys: &[Keyframe], i: usize, t: Tick, spatial: bool) -> Val
             let ei = if lin_in { Ease { speed: len / dur, influence: 1.0 / 3.0 } } else { effective_ease(keys, i + 1, 0, true, false) };
             ease_progress(eo.speed * dur / len, eo.influence, ei.speed * dur / len, ei.influence, x)
         };
-        let p = seg.at_length(f * len);
+        // A straight path (both handles on the chord, as auto-Bezier keys on a line have) is the
+        // chord itself: interpolate it exactly instead of through the arc-length table.
+        let p = if on_chord(p0, seg.p[1], p3) && on_chord(p0, seg.p[2], p3) {
+            [p0[0] + (p3[0] - p0[0]) * f, p0[1] + (p3[1] - p0[1]) * f, p0[2] + (p3[2] - p0[2]) * f]
+        } else {
+            seg.at_length(f * len)
+        };
         return a.value.with_components(&p);
     }
     if lin_out && lin_in {
@@ -817,6 +837,13 @@ mod tests {
         // Curved: the midpoint of the first segment lies off the straight line.
         let m = evaluate(&keys, s(0.5), true).unwrap().as_vec2();
         assert!((m[0] - m[1]).abs() > 1.0, "{m:?}");
+    }
+
+    #[test]
+    fn straight_auto_bezier_path_is_exact() {
+        // Auto-Bezier ends now have handles along the line; the chord is still hit exactly.
+        let keys = vec![Keyframe::new(s(0.0), Value::Vec2([40.0, 50.0])), Keyframe::new(s(2.0), Value::Vec2([120.0, 50.0]))];
+        assert_eq!(segment_value(&keys, 0, s(1.0), true), Value::Vec2([80.0, 50.0]));
     }
 
     #[test]

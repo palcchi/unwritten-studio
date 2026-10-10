@@ -339,8 +339,8 @@ const SCRIPT_PROBES: &[(char, &str)] = &[
 /// Japanese-locale machine would be drawn with the Japanese face. The interface language is the
 /// better signal, so the probe for its script comes first — kana for Japanese, a Han character for
 /// the Chinese catalogs. Both scripts are registered, so file, layer and template names in the
-/// other one still render. Hangul comes next, since the Japanese and Chinese faces may lack it
-/// (Hiragino Sans on macOS has none); then [`SCRIPT_PROBES`]. The web build has no system fonts
+/// other one still render; then [`SCRIPT_PROBES`], then Hangul, since the Japanese and Chinese faces
+/// may lack it (Hiragino Sans on macOS has none). The web build has no system fonts
 /// and installs nothing.
 fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) -> Vec<String> {
     #[cfg(target_arch = "wasm32")]
@@ -355,16 +355,17 @@ fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) 
         // language's face draws them.
         const KANA: (char, &str) = ('あ', "japanese-system");
         const HAN: (char, &str) = ('文', "chinese-system");
-        // Hangul is probed after kana and Han so their order is unchanged; a face that already covers it
-        // is skipped as seen.
+        // Hangul is probed last: with no Korean font installed the lookup can land on a catch-all
+        // face (Unifont) that also covers Arabic or Indic text but can't shape it, so the
+        // script-specific faces must be registered ahead of it. A face already seen is skipped.
         const HANGUL: (char, &str) = ('한', "korean-system");
         // Han text follows the interface language, not the operating system's locale.
         fonts::set_cjk_locale(cjk_locale(language));
         let base = fonts::resolve("Inter", "Regular").face;
-        let cjk = if is_chinese(language) { [HAN, KANA, HANGUL] } else { [KANA, HAN, HANGUL] };
+        let cjk = if is_chinese(language) { [HAN, KANA] } else { [KANA, HAN] };
         let mut names = Vec::new();
         let mut seen = Vec::new();
-        for &(probe, name) in cjk.iter().chain(SCRIPT_PROBES) {
+        for &(probe, name) in cjk.iter().chain(SCRIPT_PROBES).chain(std::iter::once(&HANGUL)) {
             let id = fonts::fallback_for(probe, base);
             if seen.contains(&id) {
                 continue;

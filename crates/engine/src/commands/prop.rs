@@ -13,10 +13,23 @@ pub(crate) fn prop_ref(s: &Session, p: &Value, cmd: &str) -> Result<(ItemId, Lay
     let (cid, lid) = layer_p(s, p, cmd)?;
     let layer = s.project.comp(cid).and_then(|c| c.layer(lid)).ok_or(EngineError::NoComp)?;
     if let Some(u) = p.get("prop").and_then(Value::as_u64) {
-        return layer.props.find(u).map(|pr| (cid, lid, pr.uid)).ok_or_else(|| bad(cmd, format!("no property @{u}")));
+        return layer.props.find(u).map(|pr| (cid, lid, pr.uid)).ok_or_else(|| {
+            if layer.props.find_group(u).is_some() {
+                bad(cmd, format!("@{u} is a property group; use layer.tree (MCP: get_layer) to inspect its children, then select a leaf property"))
+            } else {
+                bad(cmd, format!("no property @{u}"))
+            }
+        });
     }
     let path = str_p(p, "path").ok_or_else(|| bad(cmd, "missing `path` (e.g. transform/position) or `prop` uid"))?;
-    let pr = layer.props.prop(path).ok_or_else(|| bad(cmd, format!("no property `{path}`")))?;
+    let pr = layer.props.prop(path).ok_or_else(|| {
+        let group = layer.props.group(path).or_else(|| path.trim().strip_prefix('@')?.parse().ok().and_then(|uid| layer.props.find_group(uid)));
+        if group.is_some() {
+            bad(cmd, format!("`{path}` is a property group; use layer.tree (MCP: get_layer) to inspect its children, then select a leaf property"))
+        } else {
+            bad(cmd, format!("no property `{path}`"))
+        }
+    })?;
     Ok((cid, lid, pr.uid))
 }
 

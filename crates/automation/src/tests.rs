@@ -36,6 +36,24 @@ fn call_json(s: &mut McpServer, name: &str, args: Value) -> Value {
 }
 
 #[test]
+fn property_group_error_points_to_layer_inspection() {
+    let mut s = server();
+    call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "Main"}}));
+    let l = call_json(&mut s, "execute_command", json!({"command": "layer.newText", "params": {"text": "Hi"}}))["layer"].clone();
+    call_json(&mut s, "execute_command", json!({"command": "comp.renderer", "params": {"renderer": "advanced3d"}}));
+    for tool in ["get_property", "set_property", "add_keyframe"] {
+        let (content, err) = call(&mut s, tool, json!({"layer": l, "path": "geometryOptions", "value": 0, "time": 0}));
+        assert!(err, "{tool}: {content:?}");
+        let text = content[0]["text"].as_str().unwrap();
+        assert!(text.contains("is a property group"), "{tool}: {text}");
+        assert!(text.contains("get_layer"), "{tool}: {text}");
+    }
+    let tree = call_json(&mut s, "get_layer", json!({"layer": l, "flat": true}));
+    assert!(tree["properties"].as_array().unwrap().iter().any(|p| p["path"] == "geometryOptions/extrusionDepth"));
+    assert!(call_json(&mut s, "get_property", json!({"layer": l, "path": "geometryOptions/extrusionDepth"}))["value"].is_number());
+}
+
+#[test]
 fn initialize_and_list_tools() {
     let mut s = server();
     let r = rpc(&mut s, 1, "initialize", json!({"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}));

@@ -403,6 +403,26 @@ fn set_text_paragraph_fill_and_leading() {
 }
 
 #[test]
+fn property_groups_report_actionable_errors() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "T"})).unwrap();
+    let l = s.execute("layer.newText", json!({"text": "Hi"})).unwrap()["layer"].as_u64().unwrap();
+    let uid = s.active_comp().unwrap().layer(crate::project::LayerId(l)).unwrap().props.group("text/pathOptions").unwrap().uid;
+    for selector in [json!({"path": "text"}), json!({"path": "text/pathOptions"}), json!({"path": format!("@{uid}")}), json!({"prop": uid})] {
+        let mut params = selector;
+        params["layer"] = json!(l);
+        for cmd in ["prop.get", "prop.set"] {
+            let err = s.execute(cmd, params.clone()).unwrap_err().to_string();
+            assert!(err.contains("is a property group"), "{cmd}: {err}");
+            assert!(err.contains("get_layer"), "{cmd}: {err}");
+        }
+    }
+    assert!(s.execute("prop.get", json!({"layer": l, "path": "text/sourceText"})).is_ok());
+    let err = s.execute("prop.get", json!({"layer": l, "path": "missing"})).unwrap_err().to_string();
+    assert!(err.contains("no property `missing`"), "{err}");
+}
+
+#[test]
 fn prop_get_and_render_rgba8() {
     let mut s = Session::default();
     s.execute("comp.new", json!({"name": "T", "width": 320, "height": 180, "duration": 2.0, "frameRate": 30})).unwrap();

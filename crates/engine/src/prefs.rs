@@ -23,8 +23,15 @@ pub const PREFS_VERSION: u32 = 2;
 pub const PREFS_FILE: &str = "prefs.json";
 
 /// Settings ▸ General ▸ Language: (label, `general.language` value).
-pub const LANGUAGES: &[(&str, &str)] =
-    &[("Match System", "system"), ("English", "en"), ("日本語", "ja"), ("简体中文", "zh-hans"), ("繁體中文", "zh-hant"), ("Українська", "uk")];
+pub const LANGUAGES: &[(&str, &str)] = &[
+    ("Match System", "system"),
+    ("English", "en"),
+    ("日本語", "ja"),
+    ("简体中文", "zh-hans"),
+    ("繁體中文", "zh-hant"),
+    ("Українська", "uk"),
+    ("Español", "es"),
+];
 
 /// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).
 pub const UI_SCALES: &[(&str, &str)] = &[("75%", "75"), ("100%", "100"), ("125%", "125"), ("150%", "150"), ("175%", "175"), ("200%", "200")];

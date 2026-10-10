@@ -44,3 +44,8 @@ display_name = "Asquareportal"
 real_name = "Tyler Jennings"
 display_name = "tylerjenningsw"
 sync_github_name = false
+
+[people.llopjulen]
+real_name = "Julen Llop"
+display_name = "Julen Llop"
+sync_github_name = false

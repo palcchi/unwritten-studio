@@ -606,6 +606,11 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     uk.load_settings();
     assert_eq!(uk.prefs.general.language, "uk");
     assert_eq!(Prefs::from_json(r#"{"general":{"language":"uk"}}"#).general.language, "uk");
+    // es is registered the same way.
+    s.execute("prefs.set", json!({"key": "general.language", "value": "es"})).unwrap();
+    let mut es = Session { config: Some(store.clone()), ..Default::default() };
+    es.load_settings();
+    assert_eq!(es.prefs.general.language, "es");
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let mut reloaded = Session { config: Some(store), ..Default::default() };
     reloaded.load_settings();

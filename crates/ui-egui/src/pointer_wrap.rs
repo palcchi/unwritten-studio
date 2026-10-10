@@ -187,6 +187,8 @@ mod tests {
         warps: Vec<Pos2>,
         standard: bool,
         ordinary: bool,
+        angle: bool,
+        angle_rects: Option<(Rect, Rect)>,
         modifiers: Modifiers,
     }
 
@@ -201,6 +203,8 @@ mod tests {
                 warps: Vec::new(),
                 standard: false,
                 ordinary: false,
+                angle: false,
+                angle_rects: None,
                 modifiers: Modifiers::NONE,
             }
         }
@@ -224,6 +228,19 @@ mod tests {
                     );
                 } else if self.ordinary {
                     ui.interact(Rect::from_min_size(pos2(100.0, 100.0), vec2(60.0, 20.0)), Id::new("ordinary"), egui::Sense::drag());
+                } else if self.angle {
+                    let (rr, dr, value) = crate::panels::fx_widgets::angle_field(
+                        ui,
+                        pos2(100.0, 100.0),
+                        Id::new("scrub"),
+                        self.value,
+                        1,
+                        &crate::theme::Tokens::for_kind(crate::theme::ThemeKind::Dark),
+                    );
+                    self.angle_rects = Some((rr, dr));
+                    if let Some(v) = value {
+                        self.value = v;
+                    }
                 } else {
                     let (_, value, _) = crate::widgets::hot_number_at(
                         ui,
@@ -259,6 +276,42 @@ mod tests {
                 true,
             );
             self.move_to(p + vec2(10.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn angle_degrees_continue_across_zero_and_repeated_monitor_wraps() {
+        for initial in [0.0, 359.5, -359.5, 720.0, -720.0] {
+            for direction in [-1.0, 1.0] {
+                let mut s = Scrub::new();
+                s.angle = true;
+                s.value = initial;
+                s.frame(vec![], true);
+                let p = s.angle_rects.unwrap().1.center();
+                s.frame(
+                    vec![Event::PointerMoved(p), Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE }],
+                    true,
+                );
+                let mut last = p;
+                let mut expected = initial;
+                // Feed small real movements, including zero/whole-turn crossings, then
+                // the synthetic OS warp. Every real pixel contributes exactly once.
+                for step in 0..800 {
+                    let direction = if step < 400 { direction } else { -direction };
+                    let next = pos2((last.x + direction * 13.0).clamp(1.0, 799.0), last.y);
+                    expected += f64::from(next.x - last.x) * 0.5;
+                    let count = s.warps.len();
+                    s.move_to(next);
+                    assert!((s.value - expected).abs() < 1e-6, "initial={initial}, direction={direction}, actual={}, expected={expected}", s.value);
+                    last = next;
+                    if s.warps.len() > count {
+                        last = *s.warps.last().unwrap();
+                        s.move_to(last);
+                        assert!((s.value - expected).abs() < 1e-6, "the teleport must not reset the angle");
+                    }
+                }
+                assert!(s.warps.len() >= 5);
+            }
         }
     }
 
@@ -385,13 +438,13 @@ mod tests {
     }
 
     #[test]
-    fn real_properties_and_textbox_drags_keep_each_gesture_in_one_undo_step() {
+    fn real_properties_angles_and_textbox_drags_keep_each_gesture_in_one_undo_step() {
         use crate::{EffectcraftApp, dock::PanelKind};
         use effectcraft_engine::project::LayerId;
         use eframe::App;
         use serde_json::json;
 
-        for textbox in [false, true] {
+        for (textbox, angle) in [(false, false), (false, true), (true, false)] {
             let mut session = effectcraft_host::session();
             // This patch also works without the optional TextBox plugin.
             if textbox && effectcraft_engine::effects::plugin::plugin("org.effectcraft.text-box").is_none() {
@@ -402,13 +455,25 @@ mod tests {
             if textbox {
                 session.execute("effect.apply", json!({"layer": lid, "effect": "TextBox"})).unwrap();
             }
-            let path = if textbox { "effects/#1/paddingX" } else { "transform/position" };
+            let path = if textbox {
+                "effects/#1/paddingX"
+            } else if angle {
+                "transform/rotation"
+            } else {
+                "transform/position"
+            };
             let prop = session.active_comp().unwrap().layer(LayerId(lid)).unwrap().props.prop(path).unwrap();
             let uid = prop.uid;
             let original = prop.value.clone();
             let undo = session.history.undo.len();
             let panel = if textbox { PanelKind::EffectControls } else { PanelKind::Properties };
-            let id = if textbox { format!("effectControls.prop.{uid}.value") } else { format!("properties.prop.{uid}.value.0") };
+            let id = if textbox {
+                format!("effectControls.prop.{uid}.value")
+            } else if angle {
+                format!("properties.prop.{uid}.value")
+            } else {
+                format!("properties.prop.{uid}.value.0")
+            };
             let mut app = EffectcraftApp::new(session);
             app.show_panel(panel);
             app.toggle_maximize(panel);
@@ -435,21 +500,27 @@ mod tests {
                 step(&mut app, vec![]);
             }
             for gesture in 1..=2 {
+                let direction = if gesture == 1 { -1.0 } else { 1.0 };
                 let r = app.auto.find(&id).unwrap().rect;
                 let p = pos2(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
                 step(
                     &mut app,
                     vec![Event::PointerMoved(p), Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE }],
                 );
-                step(&mut app, vec![Event::PointerMoved(p + vec2(10.0, 0.0))]);
+                step(&mut app, vec![Event::PointerMoved(p + vec2(direction * 10.0, 0.0))]);
                 let mut last = p;
                 for _ in 0..3 {
-                    let target = step(&mut app, vec![Event::PointerMoved(pos2(1599.0, p.y))]).expect("real property scrubs wrap");
+                    let edge = if direction < 0.0 { 1.0 } else { 1599.0 };
+                    let target = step(&mut app, vec![Event::PointerMoved(pos2(edge, p.y))]).expect("real property scrubs wrap");
                     let before = app.session.active_comp().unwrap().layer(LayerId(lid)).unwrap().props.find(uid).unwrap().value.clone();
                     step(&mut app, vec![Event::PointerMoved(target)]);
                     assert_eq!(app.session.active_comp().unwrap().layer(LayerId(lid)).unwrap().props.find(uid).unwrap().value, before);
-                    last = target + vec2(10.0, 0.0);
+                    last = target + vec2(direction * 10.0, 0.0);
                     step(&mut app, vec![Event::PointerMoved(last)]);
+                    if angle {
+                        let value = app.session.active_comp().unwrap().layer(LayerId(lid)).unwrap().props.find(uid).unwrap().value.as_f64();
+                        assert!((value - before.as_f64() - f64::from(direction) * 5.0).abs() < 1e-6);
+                    }
                 }
                 step(&mut app, vec![Event::PointerButton { pos: last, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE }]);
                 assert_eq!(app.session.history.undo.len(), undo + gesture, "each drag is one undo step: {panel:?}");

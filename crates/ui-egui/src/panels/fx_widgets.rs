@@ -51,7 +51,10 @@ pub fn angle_field(ui: &mut egui::Ui, at: Pos2, id: egui::Id, v: f64, decimals: 
     let (dr, new_deg, _) = widgets::hot_number_at(ui, pos2(sign.max.x - 2.0, at.y), id, deg.abs(), 0.5, (-1e9, 1e9), decimals, "°", t);
     let out = match (new_rev, new_deg) {
         (Some(r), _) => Some(r as f64 * 360.0 + deg),
-        // The degrees field shows the remainder's size; its sign stays.
+        // Scrubbing changes the full signed angle. Reapplying the displayed
+        // remainder's sign would reverse the next delta after crossing zero.
+        (None, Some(d)) if ui.ctx().is_being_dragged(id) => Some(v + (d - deg.abs())),
+        // Typing replaces the remainder's size and keeps its displayed sign.
         (None, Some(d)) => Some(rev as f64 * 360.0 + if deg < 0.0 || (deg == 0.0 && v < 0.0) { -d } else { d }),
         (None, None) => None,
     };

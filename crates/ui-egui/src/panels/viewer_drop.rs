@@ -24,12 +24,15 @@ pub(crate) fn show(app: &mut EffectcraftApp, ui: &egui::Ui, painter: &egui::Pain
     let stroke = Stroke::new(2.0, app.tokens.accent);
     let at = map.to_comp(ptr);
     let actions: Vec<(&str, Value)> = match payload.as_ref() {
-        DragPayload::Effect(effect) => layer_at(ectx, at).map(|l| {
-            if let Some((_, q, _)) = layer_quad(ectx, l) {
-                painter.add(egui::Shape::closed_line(q.iter().map(|c| map.to_screen(*c)).collect(), stroke));
-            }
-            ("effect.apply", json!({"effect": effect, "layers": [l.id.0]}))
-        }).into_iter().collect(),
+        DragPayload::Effect(effect) => layer_at(ectx, at)
+            .map(|l| {
+                if let Some((_, q, _)) = layer_quad(ectx, l) {
+                    painter.add(egui::Shape::closed_line(q.iter().map(|c| map.to_screen(*c)).collect(), stroke));
+                }
+                ("effect.apply", json!({"effect": effect, "layers": [l.id.0]}))
+            })
+            .into_iter()
+            .collect(),
         DragPayload::Item(item) => {
             // The layer's frame, centred on the pointer.
             if let Some([w, h]) = app.session.project.item(ItemId(*item)).and_then(|it| frame_size(&it.kind, ectx.comp.pixel_aspect)) {
@@ -37,11 +40,7 @@ pub(crate) fn show(app: &mut EffectcraftApp, ui: &egui::Ui, painter: &egui::Pain
             }
             // New layers go above the current selection, so insert in reverse
             // to preserve the order of the dragged Project items.
-            crate::panels::project_drop_items(app, *item)
-                .into_iter()
-                .rev()
-                .map(|item| ("layer.addItem", json!({"item": item, "position": at})))
-                .collect()
+            crate::panels::project_drop_items(app, *item).into_iter().rev().map(|item| ("layer.addItem", json!({"item": item, "position": at}))).collect()
         }
         DragPayload::Files(paths) => vec![("mediaBrowser.import", json!({"paths": paths, "addToComp": true, "position": at}))],
         DragPayload::Property { .. } => vec![],

@@ -2964,7 +2964,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     crate::panels::DragPayload::Item(id) => {
                         // Insert each selected item at the drop point, in selection order.
                         for (offset, item) in crate::panels::project_drop_items(app, *id).into_iter().enumerate() {
-                            actions.push(("layer.addItem".into(), json!({"item": item, "index": index + offset, "time": time.clone()})));
+                            actions.push(("layer.addItem".into(), json!({"item": item, "index": index.saturating_add(offset), "time": time.clone()})));
                         }
                     }
                     crate::panels::DragPayload::Files(paths) => {

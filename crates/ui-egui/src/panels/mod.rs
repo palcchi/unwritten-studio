@@ -88,7 +88,9 @@ pub(crate) fn project_drop_items(app: &EffectcraftApp, dragged: u64) -> Vec<u64>
     let candidates: Vec<u64> = if selected.iter().any(|id| id.0 == dragged) {
         selected.iter().map(|id| id.0).collect()
     } else {
-        vec![dragged]
+        // One unselected item goes through as is, so a folder or data file still gets the
+        // engine's error instead of a silent no-op.
+        return vec![dragged];
     };
     candidates
         .into_iter()

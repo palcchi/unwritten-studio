@@ -129,10 +129,11 @@ fn project_items_dropped_on_the_viewer_land_under_the_pointer() {
 fn dragging_selected_project_items_adds_every_item_to_the_timeline() {
     let (mut h, clip) = harness();
     let main = h.state().session.active_comp_id().unwrap().0;
-    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"].as_u64().unwrap();
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
     h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
-    h.state_mut().session.state.project_selection =
-        vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
     h.run_steps(3);
     let from = rect(&h, &format!("project.item.{clip}.name")).center();
     let top = rect(&h, &format!("timeline.layer.{}.row", layer_id(&h, "Top")));
@@ -145,10 +146,11 @@ fn dragging_selected_project_items_adds_every_item_to_the_timeline() {
 fn dragging_selected_project_items_adds_every_item_to_the_viewer() {
     let (mut h, clip) = harness();
     let main = h.state().session.active_comp_id().unwrap().0;
-    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"].as_u64().unwrap();
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
     h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
-    h.state_mut().session.state.project_selection =
-        vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
     h.run_steps(3);
     let from = rect(&h, &format!("project.item.{clip}.name")).center();
     let to = comp_to_screen(&h.ctx, [80.0, 45.0]).unwrap();

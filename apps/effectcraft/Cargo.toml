@@ -18,6 +18,7 @@ egui = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "accesskit", "links", "wayland", "x11"] }
 serde_json = { workspace = true }
 rfd = { workspace = true }
+pollster = { workspace = true }
 cpal = { workspace = true }
 log = { workspace = true }
 

@@ -98,6 +98,39 @@ pub enum Dialog {
 /// winit no theme). `None` = the host does not know.
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
+/// A file dialog a host shows without blocking the frame ([`Hooks::file_dialog_async`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileDialog {
+    /// Files to open or import with these extensions; several when `many`.
+    Open { exts: Vec<String>, many: bool },
+    /// An EffectCraft project to open.
+    OpenProject,
+    /// A folder.
+    Folder,
+    /// Where to save `default` (a file name or path) with extension `ext` (empty: no filter);
+    /// `project`: the project save dialog, given the file name.
+    Save { default: String, ext: String, project: bool },
+}
+
+impl FileDialog {
+    /// The save dialog for `default`, as [`Hooks::save_dialog`] picks it.
+    pub fn save(default: &str) -> Self {
+        let ext = std::path::Path::new(default).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        Self::Save { default: default.to_string(), project: ext.eq_ignore_ascii_case("ecproj"), ext }
+    }
+}
+
+/// Called with the paths a [`FileDialog`] picked (empty: cancelled), from any thread.
+pub type DialogDone = Box<dyn FnOnce(Vec<String>) + Send>;
+
+/// A non-blocking file dialog's answer for the command that asked (`menus::dialog_answered`).
+pub(crate) struct DialogAnswer {
+    pub command: String,
+    pub key: &'static str,
+    pub params: serde_json::Value,
+    pub paths: Vec<String>,
+}
+
 /// Host hooks provided by the native app (file pickers etc.).
 #[derive(Default)]
 pub struct Hooks {
@@ -121,6 +154,11 @@ pub struct Hooks {
     /// Application actions the OS performs (`app.hide`, `app.hideOthers`, `app.showAll` on
     /// macOS). Returns false when the host doesn't handle the id.
     pub app_action: Option<Box<dyn Fn(&str) -> bool>>,
+    /// Shows a command's file dialog without blocking the frame and calls `done` with the
+    /// answer (the host then asks for a repaint). Used in place of the blocking pickers above for
+    /// the commands' dialogs (File ▸ Import, Open, Save As…) where a modal dialog's nested event
+    /// loop inside a frame is unsafe: on macOS a drag over the window then aborted the app (#511).
+    pub file_dialog_async: Option<Box<dyn Fn(FileDialog, DialogDone)>>,
 }
 
 impl Hooks {
@@ -261,6 +299,11 @@ pub struct EffectcraftApp {
     gpu_checked: bool,
     gpu_failures: Option<gpu_failure::GpuFailureBridge>,
     gpu_failure_applied: Option<bool>,
+    /// The graphics device was lost and the window is closing (see `close_after_device_loss`);
+    /// `true` keeps crash recovery for the next launch.
+    device_lost_close: Option<bool>,
+    /// Answers of file dialogs shown without blocking ([`Hooks::file_dialog_async`]).
+    pub(crate) dialog_answers: (Sender<DialogAnswer>, Receiver<DialogAnswer>),
     /// Commands from the native menu bar.
     pub command_inbox: Option<Receiver<String>>,
     /// Pointer position in comp pixels (Info panel).
@@ -347,6 +390,8 @@ impl EffectcraftApp {
             gpu_checked: false,
             gpu_failures: None,
             gpu_failure_applied: None,
+            device_lost_close: None,
+            dialog_answers: std::sync::mpsc::channel(),
             command_inbox: None,
             pointer_comp: None,
             dialog_state: Default::default(),
@@ -641,6 +686,33 @@ impl EffectcraftApp {
         };
         log::warn!("GPU preview retired: {}", failure.reason);
         ctx.request_repaint();
+    }
+
+    /// After the graphics device is lost, eframe's renderer cannot draw again: any mesh makes
+    /// egui-wgpu panic on the main thread when it cannot stage its index buffer (#591). Draw
+    /// nothing from then on, auto-save a project with unsaved changes (keeping the crash
+    /// recovery marker, so the next launch offers it) and close the window.
+    fn close_after_device_loss(&mut self, ctx: &egui::Context) {
+        if self.device_lost_close.is_some() {
+            return;
+        }
+        let keep_recovery = self.session.is_dirty();
+        if keep_recovery {
+            match self.session.autosave_now().and_then(|path| self.session.autosave_wait().map(|()| path)) {
+                Ok(path) => log::warn!("graphics device lost: auto-saved {path}; the next launch offers to recover it"),
+                Err(e) => log::error!("graphics device lost: {e}"),
+            }
+        }
+        self.device_lost_close = Some(keep_recovery);
+        log::warn!("graphics device lost: closing the window");
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Run the commands whose non-blocking file dialogs have been answered.
+    pub(crate) fn run_dialog_answers(&mut self) {
+        while let Ok(answer) = self.dialog_answers.1.try_recv() {
+            menus::dialog_answered(self, answer);
+        }
     }
 
     /// Set up the GPU compositor on egui-wgpu's device (once). Without an adapter that runs
@@ -1483,6 +1555,7 @@ impl EffectcraftApp {
     fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.apply_gpu_failure(&ctx);
+        self.run_dialog_answers();
         self.auto.begin_frame();
         self.frames.set_context(&ctx);
         if self.session.render_job.is_some() {
@@ -1672,8 +1745,11 @@ impl EffectcraftApp {
 
 impl eframe::App for EffectcraftApp {
     fn on_exit(&mut self) {
-        // Clean exit: no crash recovery next launch.
-        self.session.end_recovery();
+        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
+        // unsaved changes, which are in the auto-save it offers).
+        if self.device_lost_close != Some(true) {
+            self.session.end_recovery();
+        }
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
@@ -1732,6 +1808,10 @@ impl eframe::App for EffectcraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.gpu_failure_applied == Some(true) {
+            self.close_after_device_loss(ui.ctx());
+            return;
+        }
         self.init_gpu(frame);
         if !self.fonts_ready {
             ui.ctx().request_repaint();

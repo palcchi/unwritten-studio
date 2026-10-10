@@ -5,7 +5,6 @@ use std::sync::{Arc, Mutex, Weak};
 
 use effectcraft_effects::Buf;
 use effectcraft_raster::Image;
-use wgpu::util::DeviceExt;
 
 /// Compute entry points in `kernels.wgsl` (one pipeline each).
 const ENTRIES: &[&str] = &[
@@ -325,7 +324,34 @@ fn init_resource<T>(_device: &wgpu::Device, _label: &str, create: impl FnOnce() 
     Ok(create())
 }
 
+/// A buffer holding `contents` (padded to 4 bytes), written through the queue. Unlike
+/// `DeviceExt::create_buffer_init`, which maps the buffer at creation and panics when the
+/// allocation failed (a driver reports it as an internal error, not out-of-memory: Adreno's
+/// `ERROR_INITIALIZATION_FAILED`, #591), a failed allocation only yields an invalid buffer and
+/// an error for the caller's error scope.
+pub(crate) fn buffer_init(device: &wgpu::Device, queue: &wgpu::Queue, label: Option<&str>, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
+    let align = wgpu::COPY_BUFFER_ALIGNMENT as usize;
+    let padded = contents.len().div_ceil(align).saturating_mul(align);
+    let buffer =
+        device.create_buffer(&wgpu::BufferDescriptor { label, size: padded as u64, usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+    if padded > 0 {
+        if padded == contents.len() {
+            queue.write_buffer(&buffer, 0, contents);
+        } else {
+            let mut data = contents.to_vec();
+            data.resize(padded, 0);
+            queue.write_buffer(&buffer, 0, &data);
+        }
+    }
+    buffer
+}
+
 impl GpuContext {
+    /// [`buffer_init`] on this context's device.
+    pub(crate) fn buffer_init(&self, label: Option<&str>, contents: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
+        buffer_init(&self.device, &self.queue, label, contents, usage)
+    }
+
     /// Build on an existing device (the desktop app shares egui-wgpu's). `Err` when the
     /// adapter cannot run the compositor (no compute shaders, e.g. WebGL2; no float storage
     /// textures) or the device was created with limits below what its pipelines bind.
@@ -549,9 +575,8 @@ impl GpuContext {
                 view_formats: &[],
             })
         })?;
-        let dummy_buf = init_resource(&device, "dummy storage buffer", || {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("dummy"), contents: &[0u8; 16], usage: wgpu::BufferUsages::STORAGE })
-        })?;
+        let dummy_buf =
+            init_resource(&device, "dummy storage buffer", || buffer_init(&device, &queue, Some("dummy"), &[0u8; 16], wgpu::BufferUsages::STORAGE))?;
         let dummy_tex = init_resource(&device, "dummy texture view", || dummy.create_view(&Default::default()))?;
         let max_dim = device.limits().max_texture_dimension_2d;
         Ok(GpuContext {
@@ -996,7 +1021,7 @@ impl<'g> Enc<'g> {
             self.missing = true;
             return;
         };
-        let ub = g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: &p.bytes(), usage: wgpu::BufferUsages::UNIFORM });
+        let ub = g.buffer_init(None, &p.bytes(), wgpu::BufferUsages::UNIFORM);
         let sv = src.texture.create_view(&Default::default());
         let av = aux.map(|a| a.texture.create_view(&Default::default()));
         let ov = out.texture.create_view(&Default::default());
@@ -1229,7 +1254,7 @@ impl<'g> Enc<'g> {
         while bytes.len() < 16 || !bytes.len().is_multiple_of(4) {
             bytes.push(0);
         }
-        self.g.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("data"), contents: &bytes, usage: wgpu::BufferUsages::STORAGE })
+        self.g.buffer_init(Some("data"), &bytes, wgpu::BufferUsages::STORAGE)
     }
 
     /// Convert to the viewer's premultiplied RGBA8 texture (egui-wgpu's native texture format),

@@ -104,8 +104,8 @@ See [MCP conventions](mcp.md) for core tools, resources, strict arguments, and r
 | `get_project` / `get_comp {comp?}` | Project items, comp settings and layers. |
 | `get_layer {layer, comp?, time?, depth?, flat?}` | A layer's property tree (`depth` limits how many group levels expand). Every node has a `path`. |
 | `get_property {layer, path, comp?, time?}` | A leaf property's value at a time, keyframes and expression. Group paths (for example `geometryOptions`) contain children: inspect them with `get_layer`, then query a leaf such as `geometryOptions/extrusionDepth`. |
-| `set_property {layer, path, value?, time?, expression?, comp?}` | Sets a static value. With `time` it sets a keyframe; with `expression` it sets an expression. |
-| `add_keyframe {layer, path, time+value \| keys:[...], interpolation?, comp?}` | Adds keys, then optionally applies linear/bezier/hold/easyEase. |
+| `set_property {layer, path, value?, time?, timeBase?, expression?, comp?}` | Sets a static value. With `time` it sets a keyframe (`timeBase: "comp"` for comp seconds); with `expression` it sets an expression. |
+| `add_keyframe {layer, path, time+value \| keys:[...], timeBase?, interpolation?, comp?}` | Adds keys (layer seconds, or comp seconds with `timeBase: "comp"`), then optionally applies linear/bezier/hold/easyEase. |
 | `list_effects {filter?}` | Effect ids, names, categories, GPU / 32-bpc support and parameters. |
 | `list_fonts {query?, rescan?}` | Font families text layers can use, bundled and installed, with their styles, origin and own-language name; `rescan` picks up fonts installed since launch. |
 | `add_effect {layer, effect, values?, comp?}` | Apply an effect and set its parameters in one call and one undo step (a failing value leaves nothing applied); returns the instance path (`effects/#n`) and its parameter paths. |
@@ -130,7 +130,7 @@ stretched.
 
 Use MCP `execute_command` for engine commands `prop.set`, `prop.addKey`, `keys.set` and
 `keys.select` with `timeBase: "layer" | "comp"`; omitted means `layer`. The convenience tools
-`set_property` and `add_keyframe` retain their layer-time interface. The input base applies to
+`set_property` and `add_keyframe` take the same `timeBase` (layer time when omitted). The input base applies to
 both `keys.set.time` and `newTime`, and to every `keys.select.keys[].time`.
 Omitted `prop.set` or `prop.addKey` times use the target comp's CTI. Supplied write times snap
 to its nearest comp frame before conversion to stored layer time, including stretched or
@@ -189,8 +189,8 @@ the Progress panel, `jobs.list`); headless sessions run `footage.check` when the
 Things that tripped up a long agent-driven session (a multi-scene 3D piece built entirely over MCP).
 
 - **Layer time vs comp time.** `add_keyframe` and `set_property` with `time` take layer time;
-  `get_property` and `render_frame` take comp time. Engine keyframe commands default to layer
-  time; use `execute_command` with `timeBase: "comp"` to supply comp seconds on offset or
+  `get_property` and `render_frame` take comp time. Those tools and the engine keyframe commands
+  default to layer time; pass `timeBase: "comp"` to supply comp seconds on offset or
   stretched layers. `run_script`'s `setValueAtTime` and `keyTime` also use comp time. Without an
   explicit engine time base, subtract the layer's start time before keying an unstretched layer
   ([#257](https://github.com/storytold/effectcraft/issues/257)).

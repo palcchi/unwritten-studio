@@ -251,7 +251,10 @@ fn h264_frames_at_reduced_sizes() {
         assert_eq!((sized.width, sized.height), (w, h));
         let db = psnr(&sized, &effectcraft_raster::resample(&full, w, h));
         eprintln!("h264 frame {n} at {w}×{h}: {db:.2} dB against the resampled full frame");
-        assert!(db > 55.0, "frame {n} at {w}×{h}: {db:.2} dB");
+        // Converting at half size averages before the YUV→RGB clip, so saturated pixels differ
+        // slightly; how much depends on the encoder that made the fixture (50 dB with x264 from
+        // ffmpeg 6.1, above 55 with newer ones), all well past visible.
+        assert!(db > 45.0, "frame {n} at {w}×{h}: {db:.2} dB");
         assert!(Arc::ptr_eq(&sized, &pool.frame_at_size(ItemId(1), &f, t, w, h).expect("frame")), "cached");
     }
 }

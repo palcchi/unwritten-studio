@@ -42,7 +42,11 @@ fn property_group_error_points_to_layer_inspection() {
     let l = call_json(&mut s, "execute_command", json!({"command": "layer.newText", "params": {"text": "Hi"}}))["layer"].clone();
     call_json(&mut s, "execute_command", json!({"command": "comp.renderer", "params": {"renderer": "advanced3d"}}));
     for tool in ["get_property", "set_property", "add_keyframe"] {
-        let (content, err) = call(&mut s, tool, json!({"layer": l, "path": "geometryOptions", "value": 0, "time": 0}));
+        let mut args = json!({"layer": l, "path": "geometryOptions", "time": 0});
+        if tool != "get_property" {
+            args["value"] = json!(0);
+        }
+        let (content, err) = call(&mut s, tool, args);
         assert!(err, "{tool}: {content:?}");
         let text = content[0]["text"].as_str().unwrap();
         assert!(text.contains("is a property group"), "{tool}: {text}");
@@ -161,11 +165,12 @@ fn headless_workflow() {
         json!({"layer": l, "path": "transform/scale", "keys": [{"time": 1.5, "value": [50, 50]}, {"time": 2.5, "value": [100, 100]}], "timeBase": "comp", "interpolation": "hold"}),
     );
     let times: Vec<f64> = p["keys"].as_array().unwrap().iter().map(|k| k["time"].as_f64().unwrap()).collect();
-    assert!((times[0] - 0.5).abs() < 1e-6 && (times[1] - 1.5).abs() < 1e-6, "layer-time keys: {times:?}");
+    // Comp times snap to the comp's frames (29.97 fps) before becoming layer time.
+    assert!((times[0] - 0.5).abs() < 0.02 && (times[1] - 1.5).abs() < 0.02, "layer-time keys: {times:?}");
     assert_eq!(p["keys"][0]["out"], "Hold", "the comp-time keys were selected for the interpolation");
     call_json(&mut s, "set_property", json!({"layer": l, "path": "transform/scale", "value": [75, 75], "time": 3.0, "timeBase": "comp"}));
     let p = call_json(&mut s, "get_property", json!({"layer": l, "path": "transform/scale"}));
-    assert!(p["keys"].as_array().unwrap().iter().any(|k| (k["time"].as_f64().unwrap() - 2.0).abs() < 1e-6), "{p}");
+    assert!(p["keys"].as_array().unwrap().iter().any(|k| (k["time"].as_f64().unwrap() - 2.0).abs() < 0.02), "{p}");
 
     // Expression via set_property.
     let p = call_json(&mut s, "set_property", json!({"layer": l, "path": "transform/rotation", "expression": "time * 90"}));

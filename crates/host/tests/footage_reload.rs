@@ -171,9 +171,13 @@ fn background_scan_reloads_changed_footage() {
 
 #[test]
 fn image_sequences_reload_by_themselves_only_with_all_footage() {
-    let (a, b) = (tmp("seq_0001.psd"), tmp("seq_0002.psd"));
-    std::fs::write(&a, flat(RED, false)).unwrap();
-    std::fs::write(&b, flat(RED, false)).unwrap();
+    let png = |path: &str, v: u8| {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([v, 0, 0, 255])).save(path).unwrap();
+    };
+    let (a, b) = (tmp("seq_0001.png"), tmp("seq_0002.png"));
+    png(&a, 255);
+    png(&b, 255);
     let mut s = effectcraft_host::session();
     let r = s.execute_checked("file.import", json!({"paths": [&a], "sequence": true})).unwrap();
     let item = ItemId(r["items"][0].as_u64().unwrap());
@@ -181,11 +185,12 @@ fn image_sequences_reload_by_themselves_only_with_all_footage() {
     // Non-Sequence Footage (the default, as in After Effects): sequences are never stamped.
     assert_eq!(s.prefs.import.auto_reload_footage, "nonSequence");
     assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
-    save(&a, &flat(BLUE, true));
+    png(&a, 0);
     assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
     // All Footage: every frame is watched (first seen now, so only remembered).
     s.prefs.import.auto_reload_footage = "all".into();
     assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
-    save(&b, &flat(GREEN, true));
+    std::fs::write(&b, b"not yet a png").unwrap();
+    png(&b, 128);
     assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap()["files"], json!(1));
 }

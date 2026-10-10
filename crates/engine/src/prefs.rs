@@ -31,6 +31,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("繁體中文", "zh-hant"),
     ("Українська", "uk"),
     ("Español", "es"),
+    ("Português (Brasil)", "pt-br"),
 ];
 
 /// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).

@@ -339,3 +339,68 @@ fn dragging_out_of_the_marker_bin_adds_a_comp_marker() {
     h.run_steps(2);
     assert_eq!(markers(&h), vec![13.0, 20.0]);
 }
+
+/// #468: zoomed in, a CTI scrub held past the right end of the ruler scrolls the timeline (the
+/// CTI rides the edge), past the left end scrolls it back; during playback the view pages to
+/// keep the CTI in sight.
+#[test]
+fn the_timeline_follows_the_cti_past_its_edges() {
+    let (mut h, _) = harness();
+    // (Opening the comp showed all of it.)
+    h.state_mut().ui.timeline.pps = Some(200.0);
+    h.run_steps(2);
+    let ruler = rect(&h, "timeline.ruler");
+    let (s0, e0) = visible(&h);
+    assert_eq!(s0, 0.0);
+    let y = ruler.max.y - 4.0;
+    let from = pos2(ruler.center().x, y);
+    let past = pos2(ruler.max.x + 60.0, y);
+    h.event(Event::PointerMoved(from));
+    h.step();
+    h.event(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for k in 1..=4 {
+        h.event(Event::PointerMoved(from + (past - from) * (k as f32 / 4.0)));
+        h.step();
+    }
+    // Held still past the edge: it keeps scrolling (the view is read once the button is up).
+    h.run_steps(30);
+    let release = |h: &mut Harness<'_, EffectcraftApp>, at: Pos2| {
+        h.event(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(2);
+    };
+    release(&mut h, past);
+    let (s1, e1) = visible(&h);
+    let cti = h.state().session.time().seconds();
+    assert!(s1 > 0.5, "the view scrolled right: {s0}..{e0} → {s1}..{e1}");
+    assert!(cti > e0 && cti >= s1 && cti <= e1 + 0.05, "the CTI rides the right edge: {cti} in {s1}..{e1}");
+    // Pressed again and held past the left end: back to the left.
+    let left = pos2(ruler.min.x - 60.0, y);
+    h.event(Event::PointerMoved(from));
+    h.step();
+    h.event(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    for k in 1..=4 {
+        h.event(Event::PointerMoved(from + (left - from) * (k as f32 / 4.0)));
+        h.step();
+    }
+    h.run_steps(5);
+    release(&mut h, left);
+    let (s2, _) = visible(&h);
+    let cti = h.state().session.time().seconds();
+    assert!(s2 < s1 && (cti - s2).abs() < 0.05, "the view scrolled back left: {s1} → {s2}, CTI {cti}");
+
+    // Playback past the visible span pages the view to the CTI.
+    let (s3, e3) = visible(&h);
+    let t = e3 + 20.0;
+    h.state_mut().session.set_time(effectcraft_engine::time::Tick::from_seconds_f64(t));
+    let now = h.ctx.input(|i| i.time);
+    h.state_mut().play(now);
+    assert!(h.state().playback.playing);
+    h.step();
+    h.state_mut().stop();
+    h.step();
+    let cti = h.state().session.time().seconds();
+    let (s4, e4) = visible(&h);
+    assert!(s4 > s3 && cti >= s4 && cti <= e4, "paged from {s3}..{e3} to {s4}..{e4} for the CTI at {cti}");
+}

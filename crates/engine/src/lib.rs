@@ -372,6 +372,9 @@ pub struct Session {
     /// Why there is no [`Session::accel`] (`render.backend`'s `why`): the host's reason, e.g. a
     /// headless start without `--gpu` or the compositor's setup error.
     pub accel_note: Option<String>,
+    /// The graphics adapter and backend the window draws with (`NVIDIA GeForce RTX 4070
+    /// (Vulkan)`), as the host reports it: the System Compatibility Report shows it.
+    pub window_adapter: Option<String>,
     /// Expression syntax checker (set by the host that links the expression engine).
     pub expr_check: Option<fn(&str) -> std::result::Result<(), String>>,
     pub importer: Option<Arc<dyn Importer>>,
@@ -523,6 +526,7 @@ impl Default for Session {
             expr: None,
             accel: None,
             accel_note: None,
+            window_adapter: None,
             expr_check: None,
             importer: None,
             exporter: None,

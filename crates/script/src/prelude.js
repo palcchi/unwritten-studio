@@ -1696,6 +1696,8 @@ Project.prototype = {
   set linearizeWorkingSpace(v) { __call("file.projectSettings", { linearize: !!v }); },
   get workingSpace() { return this.__info().workingSpace; },
   set workingSpace(v) { __call("file.projectSettings", { workingSpace: String(v) || "none" }); },
+  get workingGamma() { return this.__info().workingGamma; },
+  set workingGamma(v) { __call("file.projectSettings", { workingGamma: __num(v) }); },
   get timeDisplayType() { return this.__info().timeDisplayFrames ? TimeDisplayType.FRAMES : TimeDisplayType.TIMECODE; },
   set timeDisplayType(v) { __call("file.projectSettings", { timeDisplay: v === TimeDisplayType.FRAMES ? "frames" : "timecode" }); },
   get expressionEngine() { return "javascript-1.0"; },

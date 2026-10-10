@@ -667,7 +667,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let frame = comp.frame_rate.frame_at(time);
     let key = app.frame_key(cid, frame, scale);
     app.request_frame_urgent(cid, frame, scale);
-    if let Some(img) = app.frames.get(&key) {
+    if let Some((key, img)) = app.frames.get_for_viewer(&key, app.viewer_shown.as_ref().map(|(_, k)| k)) {
         let stale = app.viewer_shown.as_ref().is_none_or(|(_, k)| *k != key);
         // A CPU frame goes up again when the magnification calls for another factor.
         let minify = minify_factor(app.session.prefs.viewer_zoom_smooth(), scale, (zoom * ppp) as f64);

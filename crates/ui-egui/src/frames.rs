@@ -701,6 +701,12 @@ impl Frames {
             c.bytes = 0;
             c.gpu_bytes = 0;
         }
+        // Disk keys hash the footage files' size and time, but are remembered per revision; a
+        // file reloaded from disk without a new revision (a re-rendered image sequence) must be
+        // keyed again, or the disk cache serves the frames from before.
+        if let Ok(mut k) = self.content_keys.lock() {
+            k.clear();
+        }
     }
 
     /// Queue a prefetch frame (no-op if cached or already queued/rendering).

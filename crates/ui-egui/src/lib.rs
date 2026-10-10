@@ -1565,7 +1565,7 @@ impl EffectcraftApp {
         let focused = ctx.input(|i| i.focused);
         let was_focused: bool = ctx.data(|d| d.get_temp(focus_key)).unwrap_or(focused);
         ctx.data_mut(|d| d.insert_temp(focus_key, focused));
-        if !self.session.prefs.import.reload_changed_footage || self.session.project.items.is_empty() {
+        if self.session.prefs.import.auto_reload_footage == "off" || self.session.project.items.is_empty() {
             return;
         }
         let last: f64 = ctx.data(|d| d.get_temp(last_key)).unwrap_or(0.0);

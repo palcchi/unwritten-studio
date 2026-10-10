@@ -1,6 +1,6 @@
 //! Footage changed on disk by another app, through the fully wired session (media decoding
 //! included): File ▸ Reload Footage shows the new pixels and keeps a Photoshop layer item on its
-//! layer, and `footage.reloadChanged` (Settings ▸ Import ▸ Reload Footage Changed on Disk) finds
+//! layer, and `footage.reloadChanged` (Settings ▸ Import ▸ Automatically Reload Footage) finds
 //! changed files by itself.
 
 use effectcraft_engine::render::RenderOpts;
@@ -167,4 +167,25 @@ fn background_scan_reloads_changed_footage() {
     assert_eq!(scan(&mut s), json!({"files": 1, "reloaded": 1}));
     assert!(near(pixel(&s, cid, 32, 24), GREEN));
     assert!(s.footage_scan.is_none());
+}
+
+#[test]
+fn image_sequences_reload_by_themselves_only_with_all_footage() {
+    let (a, b) = (tmp("seq_0001.psd"), tmp("seq_0002.psd"));
+    std::fs::write(&a, flat(RED, false)).unwrap();
+    std::fs::write(&b, flat(RED, false)).unwrap();
+    let mut s = effectcraft_host::session();
+    let r = s.execute_checked("file.import", json!({"paths": [&a], "sequence": true})).unwrap();
+    let item = ItemId(r["items"][0].as_u64().unwrap());
+    assert_eq!(footage(&s, item).sequence.len(), 2, "imported as a sequence");
+    // Non-Sequence Footage (the default, as in After Effects): sequences are never stamped.
+    assert_eq!(s.prefs.import.auto_reload_footage, "nonSequence");
+    assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
+    save(&a, &flat(BLUE, true));
+    assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
+    // All Footage: every frame is watched (first seen now, so only remembered).
+    s.prefs.import.auto_reload_footage = "all".into();
+    assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap(), json!({"files": 0, "reloaded": 0}));
+    save(&b, &flat(GREEN, true));
+    assert_eq!(s.execute_checked("footage.reloadChanged", json!({})).unwrap()["files"], json!(1));
 }

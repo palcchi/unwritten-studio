@@ -109,7 +109,8 @@ Commands (CLI, MCP, control channel):
 - `type.fontNamesInEnglish`: off, fonts with a native-language family name show it
 - `import.reportMissingFrames`: gaps in an image sequence's numbering are reported on import
   (they show as colour-bar placeholders, as in After Effects; see [footage.md](footage.md))
-- `import.reloadChangedFootage`: Reload Footage Changed on Disk (on by default). Every two seconds,
+- `import.autoReloadFootage`: Automatically Reload Footage, `off`, `nonSequence` (the default, as
+  in After Effects) or `all` (image sequences too). Every two seconds,
   and as soon as the window comes back to the front, the desktop app compares each footage file's
   size and modification time with what they were, and reloads what another app saved: a
   Photoshop file edited in PhotoCraft or Photoshop shows its new pixels without File ▸ Reload

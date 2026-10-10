@@ -182,9 +182,10 @@ page!(Import {
     still_seconds: f64 = 5.0,
     sequence_fps: f64 = 30.0,
     report_missing_frames: bool = true,
-    /// Reload footage whose file another app changed (size or modification time), checked every
-    /// two seconds and when the window comes back to the front.
-    reload_changed_footage: bool = true,
+    /// Automatically Reload Footage whose file another app changed (size or modification time),
+    /// checked every two seconds and when the window comes back to the front: `off`,
+    /// `nonSequence` (the default, as in After Effects: image sequences are left alone) or `all`.
+    auto_reload_footage: String = "nonSequence".into(),
     /// Interpret unlabeled alpha as: `ask`, `guess`, `ignore`, `straight`, `premultiplied`.
     unlabeled_alpha: String = "ask".into(),
     /// Default drag import as: `footage`, `comp`, `compLayerSizes`.
@@ -1087,7 +1088,12 @@ pub fn pages() -> Vec<Page> {
                 s("import.stillSeconds", "Still Duration", Kind::Float(0.04, 86_400.0, "s"), true),
                 s("import.sequenceFps", "Sequence Footage", Kind::Float(1.0, 999.0, "frames per second"), true),
                 s("import.reportMissingFrames", "Report Missing Frames", B, true),
-                s("import.reloadChangedFootage", "Reload Footage Changed on Disk", B, true),
+                s(
+                    "import.autoReloadFootage",
+                    "Automatically Reload Footage",
+                    Kind::Choice(&[("Off", "off"), ("Non-Sequence Footage", "nonSequence"), ("All Footage", "all")]),
+                    true,
+                ),
                 s(
                     "import.unlabeledAlpha",
                     "Interpret Unlabeled Alpha As",

@@ -980,7 +980,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Reload Changed Footage",
             [],
             None,
-            "{} — reload the footage whose file changed on disk since it was last seen (size or modification time; Settings ▸ Import ▸ Reload Footage Changed on Disk runs this in the background); files seen for the first time are only remembered. Returns {files, reloaded}",
+            "{} — reload the footage whose file changed on disk since it was last seen (size or modification time; Settings ▸ Import ▸ Automatically Reload Footage runs this in the background; image sequences only with All Footage); files seen for the first time are only remembered. Returns {files, reloaded}",
             has_items,
             crate::footage_reload::command
         ),

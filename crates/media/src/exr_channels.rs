@@ -283,10 +283,8 @@ mod tests {
             let list: Vec<AnyChannel<FlatSamples>> = chans.iter().map(|c| AnyChannel::new(*c, FlatSamples::F32(vec![v; w * h]))).collect();
             Layer::new((w, h), LayerAttributes::named(name), Encoding::FAST_LOSSLESS, AnyChannels::sort(list.into()))
         };
-        let layers = vec![
-            part("ViewLayer.Depth", &["ViewLayer.Depth.Z"], 4.0),
-            part("ViewLayer.Combined", &["ViewLayer.Combined.R", "ViewLayer.Combined.G"], 0.5),
-        ];
+        let layers =
+            vec![part("ViewLayer.Depth", &["ViewLayer.Depth.Z"], 4.0), part("ViewLayer.Combined", &["ViewLayer.Combined.R", "ViewLayer.Combined.G"], 0.5)];
         let image = Image::from_layers(ImageAttributes::with_size((w, h)), layers);
         let mut bytes = std::io::Cursor::new(Vec::new());
         image.write().to_buffered(&mut bytes).unwrap();

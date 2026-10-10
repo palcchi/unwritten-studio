@@ -29,11 +29,17 @@ pub type Stamp = (u64, u128);
 /// Stamps taken on a worker thread, waiting for [`poll_scan`].
 pub type Scan = Arc<Mutex<Option<Vec<(String, Option<Stamp>)>>>>;
 
-/// The files footage items read: each item's file and every frame of an image sequence.
+/// The files footage items read: each item's file and every frame of an image sequence. Image
+/// sequences count only with Automatically Reload Footage set to All Footage (After Effects'
+/// default, Non-Sequence Footage, leaves them alone: thousands of frames on a share add up).
 fn watched(s: &Session) -> BTreeSet<String> {
+    let sequences = s.prefs.import.auto_reload_footage == "all";
     let mut paths = BTreeSet::new();
     for it in s.project.items.values() {
         if let ItemKind::Footage(f) = &it.kind {
+            if !f.sequence.is_empty() && !sequences {
+                continue;
+            }
             if !f.path.is_empty() {
                 paths.insert(f.path.clone());
             }

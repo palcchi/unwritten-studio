@@ -556,13 +556,7 @@ fn text_document_baseline_flags_reflect_pending_edits_and_applied_value() {
         [pendingSuper, appliedSuper, pendingSub, appliedSub, cleared, appliedClear, repeatClear];
         "#,
     );
-    assert_eq!(
-        o.result,
-        json!([
-            [true, false], ["super", true, false], [false, true], [false, true],
-            [false, false], [false, false], [false, false]
-        ])
-    );
+    assert_eq!(o.result, json!([[true, false], ["super", true, false], [false, true], [false, true], [false, false], [false, false], [false, false]]));
 }
 
 #[test]
@@ -587,10 +581,7 @@ fn setting_item_selected_false_preserves_other_project_items() {
           + "|" + JSON.stringify(states);
         "#,
     );
-    assert_eq!(
-        o.result,
-        json!("Keep,Target|[[true,true],[false,true],[false,true],[true,true]]")
-    );
+    assert_eq!(o.result, json!("Keep,Target|[[true,true],[false,true],[false,true],[true,true]]"));
 }
 
 #[test]
@@ -639,4 +630,29 @@ fn property_selected_false_preserves_other_property_and_key_selections() {
         "#,
     );
     assert_eq!(out.result, json!([[[true, true], [false, true], [false, true], [true, true]], 2, 2]));
+}
+
+#[test]
+fn group_selected_false_deselects_masks_and_effects() {
+    let mut s = session();
+    let out = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Groups", 64, 64, 1, 1, 10);
+        c.openInViewer();
+        var l = c.layers.addSolid([1, 0, 0], "Layer", 64, 64, 1);
+        var m = l.property("ADBE Mask Parade").addProperty("ADBE Mask Atom");
+        var fx = l.property("ADBE Effect Parade").addProperty("Gaussian Blur");
+        app.run("edit.deselectAll", {});
+        m.selected = true;
+        fx.selected = true;
+        var states = [[m.selected, fx.selected]];
+        m.selected = false;
+        states.push([m.selected, fx.selected]);
+        fx.selected = false;
+        states.push([m.selected, fx.selected]);
+        states;
+        "#,
+    );
+    assert_eq!(out.result, json!([[true, true], [false, true], [false, false]]));
 }

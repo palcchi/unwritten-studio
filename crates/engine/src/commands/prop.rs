@@ -462,7 +462,12 @@ fn select_prop(s: &mut Session, p: &Value) -> Result<Value> {
 /// Deselect only the named property, preserving unrelated property, layer, key and
 /// mask-vertex selections. Selected keys also imply selectedProperties in the script API.
 fn deselect_prop(s: &mut Session, params: &Value) -> Result<Value> {
-    let (_, lid, uid) = prop_ref(s, params, "prop.deselect")?;
+    // Groups (masks, effects) are selected by uid too, so resolve the uid as prop.select does.
+    let (_, lid) = layer_p(s, params, "prop.deselect")?;
+    let uid = match params.get("prop").and_then(Value::as_u64) {
+        Some(u) => u,
+        None => prop_ref(s, params, "prop.deselect")?.2,
+    };
     let mask = s.active_comp().and_then(|c| c.layer(lid)).and_then(|l| path_points(l, uid, l.layer_time(s.time()))).map(|(mask, _)| mask);
     s.state.selected_props.retain(|(layer, prop)| *layer != lid || *prop != uid);
     s.state.selected_keys.retain(|key| key.layer != lid || key.prop != uid);

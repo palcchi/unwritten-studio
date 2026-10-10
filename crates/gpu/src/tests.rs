@@ -745,3 +745,35 @@ fn within_memory_returns_the_work_when_there_is_room() {
     let img = g.within_memory(|| g.ctx.image(64, 32)).expect("room for a 64×32 texture");
     assert_eq!((img.width, img.height), (64, 32));
 }
+
+/// #613: an effect kernel the device's shader compiler rejects (FXC on DirectX 12 aborting on
+/// `pointwise`) no longer turns the whole GPU compositor off: the context is built without it,
+/// lists it, and the effects that need it render on the CPU, matching the CPU render.
+#[test]
+fn effects_whose_kernels_failed_render_on_the_cpu() {
+    if gpu().is_none() {
+        return;
+    }
+    let Ok(mut ctx) = pollster::block_on(crate::context::GpuContext::request()) else { return };
+    ctx.drop_kernel("pointwise");
+    ctx.drop_kernel("box_h");
+    let names: Vec<&str> = ctx.unavailable_kernels().iter().map(|(e, _)| *e).collect();
+    assert_eq!(names, ["pointwise", "box_h"]);
+    let g = Gpu::from_context(ctx);
+    for depth in [BitDepth::Bpc8, BitDepth::Bpc32] {
+        let mut s = Scene::new(depth);
+        let mut l = s.footage(80, 50);
+        s.effect(&mut l, "ec.color.exposure", &[("master/exposure", n(0.7))]);
+        s.effect(&mut l, "ec.color.tint", &[("black", c(0.1, 0.0, 0.3)), ("amount", n(80.0))]);
+        s.effect(&mut l, "ec.blur.gaussian", &[("blurriness", n(5.0))]);
+        s.effect(&mut l, "ec.channel.invert", &[("blend", n(50.0))]);
+        s.push(l);
+        let cpu = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Cpu, ..opts() }).comp_frame_cpu(s.cid, Tick::ZERO);
+        let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+        r.accel = Some(&g);
+        let img = g.render(&r, s.cid, Tick::ZERO).expect("the GPU renders the frame");
+        let mut d = diff(&cpu, &img, tolerance(depth));
+        d.quantized = depth != BitDepth::Bpc32;
+        check(&format!("missing kernels {depth:?}"), Some(d), 0.0);
+    }
+}

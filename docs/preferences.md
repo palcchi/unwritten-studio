@@ -109,6 +109,13 @@ Commands (CLI, MCP, control channel):
 - `type.fontNamesInEnglish`: off, fonts with a native-language family name show it
 - `import.reportMissingFrames`: gaps in an image sequence's numbering are reported on import
   (they show as colour-bar placeholders, as in After Effects; see [footage.md](footage.md))
+- `import.reloadChangedFootage`: Reload Footage Changed on Disk (on by default). Every two seconds,
+  and as soon as the window comes back to the front, the desktop app compares each footage file's
+  size and modification time with what they were, and reloads what another app saved: a
+  Photoshop file edited in PhotoCraft or Photoshop shows its new pixels without File ▸ Reload
+  Footage. It is not an undo step and doesn't modify the project; a layer item stays on its layer
+  (found again by name), and a file still being written is tried again on the next check.
+  `footage.reloadChanged` runs the same check once (CLI, agents)
 - `import.unlabeledAlpha`: alpha of TGA / TIFF / movie footage (Ask opens Interpret Footage;
   Guess takes premultiplied for movies, straight for stills)
 - `import.dragImportAs`: layered files dropped on the window import as footage or a comp

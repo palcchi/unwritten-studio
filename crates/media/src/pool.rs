@@ -326,6 +326,8 @@ impl MediaPool {
             c.lru.remove(&k);
         }
         c.last.remove(path);
+        drop(c);
+        crate::exr_channels::forget(path);
     }
 
     /// Provide the contents of `path` from memory (used instead of the file system; web builds).
@@ -754,6 +756,9 @@ impl FootageSource for MediaPool {
     }
     fn purge(&self) {
         self.clear_frames();
+    }
+    fn forget(&self, path: &str) {
+        MediaPool::forget(self, path);
     }
     fn cache_budget(&self) -> Option<usize> {
         Some(self.budget())

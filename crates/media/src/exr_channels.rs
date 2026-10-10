@@ -166,10 +166,21 @@ pub fn layered_image(bytes: &[u8]) -> Option<image::DynamicImage> {
 
 type Cache = Mutex<Vec<(String, Option<Arc<AuxChannels>>)>>;
 
+fn cache() -> &'static Cache {
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Drop the cached channels of `path` (the file changed on disk).
+pub(crate) fn forget(path: &str) {
+    if let Ok(mut c) = cache().lock() {
+        c.retain(|(p, _)| p != path);
+    }
+}
+
 /// Read (and cache, a few files) the channels of the EXR at `path` via `read`.
 pub(crate) fn cached(path: &str, read: impl FnOnce() -> Option<Arc<[u8]>>) -> Option<Arc<AuxChannels>> {
-    static CACHE: OnceLock<Cache> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    let cache = cache();
     if let Some(v) = cache.lock().ok().and_then(|c| c.iter().find(|(p, _)| p == path).map(|(_, v)| v.clone())) {
         return v;
     }

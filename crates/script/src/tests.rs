@@ -564,3 +564,31 @@ fn text_document_baseline_flags_reflect_pending_edits_and_applied_value() {
         ])
     );
 }
+
+#[test]
+fn setting_item_selected_false_preserves_other_project_items() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var target = app.project.items.addFolder("Target");
+        var keep = app.project.items.addFolder("Keep");
+        app.run("project.select", {items: []});
+        keep.selected = true;
+        target.selected = true;
+        var states = [[target.selected, keep.selected]];
+        target.selected = false;
+        states.push([target.selected, keep.selected]);
+        target.selected = false; // idempotent: never remove Keep
+        states.push([target.selected, keep.selected]);
+        target.selected = true;
+        states.push([target.selected, keep.selected]);
+        app.project.selection.map(function (item) { return item.name; }).join(",")
+          + "|" + JSON.stringify(states);
+        "#,
+    );
+    assert_eq!(
+        o.result,
+        json!("Keep,Target|[[true,true],[false,true],[false,true],[true,true]]")
+    );
+}

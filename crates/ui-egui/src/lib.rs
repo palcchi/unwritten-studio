@@ -92,9 +92,16 @@ pub enum Dialog {
     DeleteItems,
 }
 
+/// The desktop's light or dark appearance where egui cannot see it (Wayland compositors that send
+/// winit no theme). `None` = the host does not know.
+pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
+
 /// Host hooks provided by the native app (file pickers etc.).
 #[derive(Default)]
 pub struct Hooks {
+    /// The system appearance for Settings ▸ Appearance ▸ Sync with System (the desktop app reads
+    /// the Linux desktop portal); without it, what egui reports.
+    pub system_theme: Option<SystemThemeFn>,
     pub pick_files: Option<Box<dyn Fn(&[&str]) -> Vec<String>>>,
     pub pick_save: Option<Box<dyn Fn(&str) -> Option<String>>>,
     pub pick_open_project: Option<Box<dyn Fn() -> Option<String>>>,
@@ -269,7 +276,8 @@ pub struct EffectcraftApp {
     /// Last reveal shortcut and when (double-press shortcuts such as LL).
     pub(crate) last_reveal: Option<(String, f64)>,
     /// Settings revision applied to the theme, tooltips and caches.
-    applied_prefs: Option<u64>,
+    /// The settings revision and system appearance (light?) last applied.
+    applied_prefs: Option<(u64, Option<bool>)>,
     /// A previous run that didn't exit cleanly (shown by `Dialog::Recovery`).
     pub recovery: Option<effectcraft_engine::autosave::Recovery>,
     /// Docked groups laid out last frame: (active panel, group rect) — `~` maximizes the one
@@ -367,13 +375,16 @@ impl EffectcraftApp {
 
     /// Apply changed settings: theme and brightness, label colours, tool tips, preview caches.
     pub fn apply_prefs(&mut self, ctx: &egui::Context) {
-        if self.applied_prefs == Some(self.session.prefs_revision) {
+        // Sync with System re-applies when the system appearance changes (the host wakes the UI;
+        // nothing polls).
+        let system = if self.session.prefs.appearance.appearance_mode == "auto" { self.system_light(ctx) } else { None };
+        if self.applied_prefs == Some((self.session.prefs_revision, system)) {
             return;
         }
-        self.applied_prefs = Some(self.session.prefs_revision);
+        self.applied_prefs = Some((self.session.prefs_revision, system));
         let p = &self.session.prefs;
-        self.ui.theme = theme::ThemeKind::from_name(&p.appearance.theme).unwrap_or_default();
-        self.tokens = Tokens::from_prefs(p);
+        self.ui.theme = theme::ThemeKind::from_name(p.appearance.resolved_theme(system)).unwrap_or_default();
+        self.tokens = Tokens::from_prefs(p, self.ui.theme);
         theme::apply_visuals(ctx, &self.tokens);
         let tips = p.general.show_tool_tips;
         ctx.all_styles_mut(|s| s.interaction.tooltip_delay = if tips { 0.5 } else { f32::INFINITY });
@@ -399,13 +410,32 @@ impl EffectcraftApp {
         self
     }
 
+    /// Show theme `k`: the appearance mode becomes its family's (Dark or Light), and `k` that
+    /// family's theme.
     pub fn set_theme(&mut self, ctx: &egui::Context, k: theme::ThemeKind) {
-        let name = match k {
-            theme::ThemeKind::Dark => "dark",
-            theme::ThemeKind::Darker => "darker",
-            theme::ThemeKind::Light => "light",
+        if let Err(e) = self.set_pref("appearance.theme", json!(k.name())) {
+            self.ui.status = e;
+        }
+        self.apply_prefs(ctx);
+    }
+
+    /// The system appearance: light (`Some(true)`), dark, or unknown. The host's answer (the Linux
+    /// desktop portal) wins over egui's, which Wayland compositors often leave empty.
+    pub fn system_light(&self, ctx: &egui::Context) -> Option<bool> {
+        self.hooks.system_theme.as_ref().and_then(|read| read(ctx)).or_else(|| ctx.system_theme()).map(|t| t == egui::Theme::Light)
+    }
+
+    /// The Tools bar's appearance button (`view.theme.toggle`): Sync with System, then Light, then
+    /// Dark, then Sync with System again. The light and dark theme choices are kept.
+    pub fn cycle_appearance(&mut self, ctx: &egui::Context) {
+        let next = match self.session.prefs.appearance.appearance_mode.as_str() {
+            "auto" => "light",
+            "light" => "dark",
+            _ => "auto",
         };
-        let _ = self.set_pref("appearance.theme", json!(name));
+        if let Err(e) = self.set_pref("appearance.appearanceMode", json!(next)) {
+            self.ui.status = e;
+        }
         self.apply_prefs(ctx);
     }
 
@@ -1745,5 +1775,76 @@ mod gpu_failure_tests {
         assert!(app.session.project.comp(comp).unwrap().layers.is_empty());
         app.session.execute("edit.redo", json!({})).unwrap();
         assert_eq!(app.session.render(comp, Tick::ZERO, RenderOpts::default()).data, before.data);
+    }
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::*;
+    use crate::theme::ThemeKind;
+
+    fn app() -> EffectcraftApp {
+        EffectcraftApp::new(effectcraft_engine::Session::default())
+    }
+
+    /// The Tools bar's appearance button: Sync with System, Light, Dark, then Sync with System
+    /// again, showing the saved theme of each family without losing either choice.
+    #[test]
+    fn appearance_button_cycles_modes_without_losing_theme_choices() {
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.hooks.system_theme = Some(Box::new(|_| Some(egui::Theme::Dark)));
+        app.set_pref("appearance.darkTheme", json!("darker")).unwrap();
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Darker);
+        for (mode, shown) in [("auto", ThemeKind::Darker), ("light", ThemeKind::Light), ("dark", ThemeKind::Darker), ("auto", ThemeKind::Darker)] {
+            menus::invoke(&mut app, &ctx, "view.theme.toggle", json!({})).unwrap();
+            assert_eq!(app.session.prefs.appearance.appearance_mode, mode);
+            assert_eq!(app.ui.theme, shown, "{mode}");
+            assert_eq!(app.tokens.kind, shown);
+            assert_eq!(app.session.prefs.appearance.dark_theme, "darker");
+            assert_eq!(app.session.prefs.appearance.light_theme, "light");
+        }
+    }
+
+    /// Sync with System follows the host's answer (the Linux portal) when it changes, and falls
+    /// back to Dark when nothing reports a system appearance.
+    #[test]
+    fn auto_follows_a_stubbed_system_theme() {
+        use std::sync::{Arc, Mutex};
+        let ctx = egui::Context::default();
+        let mut app = app();
+        let system = Arc::new(Mutex::new(Some(egui::Theme::Light)));
+        let read = Arc::clone(&system);
+        app.hooks.system_theme = Some(Box::new(move |_| *read.lock().unwrap_or_else(std::sync::PoisonError::into_inner)));
+        app.set_pref("appearance.appearanceMode", json!("auto")).unwrap();
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Light);
+        *system.lock().unwrap() = Some(egui::Theme::Dark);
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Dark, "a system change applies without a settings change");
+        *system.lock().unwrap() = None;
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Dark);
+        // A fixed mode ignores the system.
+        *system.lock().unwrap() = Some(egui::Theme::Light);
+        app.set_pref("appearance.appearanceMode", json!("dark")).unwrap();
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Dark);
+    }
+
+    /// Picking a theme (`view.theme.*`, `ui.set {theme}`) fixes the mode to its family.
+    #[test]
+    fn picking_a_theme_fixes_its_mode() {
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.set_pref("appearance.appearanceMode", json!("auto")).unwrap();
+        menus::invoke(&mut app, &ctx, "view.theme.light", json!({})).unwrap();
+        assert_eq!(app.session.prefs.appearance.appearance_mode, "light");
+        assert_eq!(app.ui.theme, ThemeKind::Light);
+        menus::invoke(&mut app, &ctx, "view.theme.darker", json!({})).unwrap();
+        assert_eq!(app.session.prefs.appearance.appearance_mode, "dark");
+        assert_eq!(app.session.prefs.appearance.dark_theme, "darker");
+        assert_eq!(app.ui.theme, ThemeKind::Darker);
     }
 }

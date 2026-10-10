@@ -11,6 +11,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 // Built everywhere so its tests run on every platform; only Linux AppImages use it.
+mod appearance;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod appimage;
 #[cfg(target_os = "macos")]
@@ -196,6 +197,7 @@ fn main() -> eframe::Result {
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file().map(|p| p.to_string_lossy().to_string())
             }));
+            app.hooks.system_theme = appearance::service();
             app.hooks.audio_device = Some(Box::new(audio_out::open));
             app.hooks.audio_devices = Some(Box::new(audio_out::devices));
             app.hooks.pick_folder = Some(Box::new(|| rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().to_string())));

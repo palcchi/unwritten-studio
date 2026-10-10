@@ -320,13 +320,7 @@ fn text_section(
     // Font family and style.
     let fr = Rect::from_min_size(pos2(x0, y), vec2(w, 22.0));
     let pop = egui::Id::new("props-font-pop");
-    if widgets::dropdown(ui, fr, &doc.font, &t, egui::Id::new("props-font")).clicked() {
-        widgets::open_popup(ui, pop);
-    }
-    app.auto.add("properties.text.font", fr, "Font family");
-    // Every installed family (built only while the menu is open: it can be long).
-    let fams: Vec<String> = if widgets::popup_is_open(ui, pop) { effectcraft_engine::text_families() } else { vec![] };
-    if let Some(f) = widgets::popup_menu(ui, pop, fr.left_bottom(), &fams, fams.iter().position(|f| *f == doc.font)).and_then(|i| fams.get(i)) {
+    if let Some(f) = super::text_panels::font_picker(app, ui, pop, fr, &doc.font, "properties.text.font", true) {
         set(actions, json!({"font": f}));
     }
     y += 28.0;

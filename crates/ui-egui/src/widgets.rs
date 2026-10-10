@@ -530,13 +530,18 @@ pub fn popup_list<R>(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, anchor: Rect, r
             egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height((est - 16.0).min(max_h)).show(ui, |ui| chosen = body(ui));
         });
     });
-    let pass = ui.ctx().cumulative_pass_nr();
-    ui.ctx().data_mut(|d| d.insert_temp(popup_list_pass_id(), pass));
+    note_open_popup_list(ui.ctx());
     let outside = pressed_outside(ui.ctx(), &area.response) && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| anchor.contains(p));
     if chosen.is_some() || outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         ui.data_mut(|d| d.insert_temp(id.with("open"), false));
     }
     chosen
+}
+
+/// Custom popup lists also hold the app's keyboard shortcuts while open.
+pub(crate) fn note_open_popup_list(ctx: &egui::Context) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(popup_list_pass_id(), pass));
 }
 
 /// The pass a [`popup_list`] was last drawn in.

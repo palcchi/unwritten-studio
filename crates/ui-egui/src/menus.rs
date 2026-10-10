@@ -122,6 +122,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("app.home", "Home", [], None),
     uic!("markers.dialog", "Marker Settings...", [], None),
     uic!("window.maximizePanel", "Maximize Panel Under Pointer", [], Some("`")),
+    uic!("window.maximizeApp", "Maximize or Restore Application Window", [], Some("Cmd+\\")),
     uic!("window.dockPanel", "Dock Panel", [], None),
     uic!("window.floatPanel", "Undock Panel", [], None),
     uic!("window.closePanel", "Close Panel", [], None),
@@ -415,6 +416,10 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             }
             _ => {}
         }
+    }
+    // A UI-only command (not in the engine's menus), so `frontend` gets it from here.
+    if id == "window.maximizeApp" {
+        return frontend(app, ctx, id, params);
     }
     // Docking: {panel, anchor, zone: center|left|right|top|bottom}, {panel, rect?}, {panel?}.
     if let Some(op) = id.strip_prefix("window.").filter(|o| matches!(*o, "maximizePanel" | "dockPanel" | "floatPanel" | "closePanel")) {
@@ -908,6 +913,12 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 }
             };
             Value::Null
+        }
+        // Ctrl+\ / Cmd+\, as in After Effects (#336): `{maximized}`, the window's new state.
+        "window.maximizeApp" => {
+            let maximized = !ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(maximized));
+            json!({"maximized": maximized})
         }
         "view.fullScreen" => {
             let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
@@ -1855,6 +1866,34 @@ mod tests {
                 seen.insert(key, target);
             }
         }
+    }
+
+    /// #336: Ctrl+\ (Cmd+\ on macOS) maximizes the application window, and again restores
+    /// it, as in After Effects.
+    #[test]
+    fn ctrl_backslash_maximizes_or_restores_the_window() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let (m, k) = parse_shortcut("Cmd+\\").unwrap();
+        assert!(m.command && k == egui::Key::Backslash, "{m:?} {k:?}");
+        assert!(bindings(&app.session).iter().any(|b| (b.0, b.1) == (m, k) && b.2 == "window.maximizeApp"));
+        let ctx = egui::Context::default();
+        let run = |app: &mut EffectcraftApp, maximized: bool| {
+            let input = egui::RawInput {
+                viewports: std::iter::once((egui::ViewportId::ROOT, egui::ViewportInfo { maximized: Some(maximized), ..Default::default() })).collect(),
+                ..Default::default()
+            };
+            let mut r = Value::Null;
+            let mut out = ctx.run_ui(input, |ui| r = invoke(app, ui.ctx(), "window.maximizeApp", json!({})).unwrap());
+            out.textures_delta.clear();
+            let cmds = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default();
+            (r, cmds)
+        };
+        let (r, cmds) = run(&mut app, false);
+        assert_eq!(r, json!({"maximized": true}));
+        assert!(cmds.contains(&egui::ViewportCommand::Maximized(true)), "{cmds:?}");
+        let (r, cmds) = run(&mut app, true);
+        assert_eq!(r, json!({"maximized": false}));
+        assert!(cmds.contains(&egui::ViewportCommand::Maximized(false)), "{cmds:?}");
     }
 
     #[test]

@@ -1627,7 +1627,8 @@ impl eframe::App for EffectcraftApp {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        if !self.synthetic.is_empty() {
+        let injected = !self.synthetic.is_empty();
+        if injected {
             // Pointer events go one per frame so egui sees press → moves → release as a real drag.
             let pointer = |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
             let n = if pointer(&self.synthetic[0]) {
@@ -1640,7 +1641,7 @@ impl eframe::App for EffectcraftApp {
             };
             raw_input.events.extend(self.synthetic.drain(..n));
         }
-        if pointer_wrap::prepare_input(ctx, raw_input) {
+        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
             self.session.history.merge_key = None;
         }
     }

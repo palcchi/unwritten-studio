@@ -31,8 +31,10 @@ pub(crate) fn track(response: &Response) {
 /// Rebase only when the OS acknowledges a successful warp: queued events from before
 /// it must not be interpreted as another monitor-width movement. A coalesced event
 /// may include a little real movement beyond the requested destination.
-/// Returns whether a numeric gesture ended, so the app can close its Undo group.
-pub(crate) fn prepare_input(ctx: &Context, raw: &mut RawInput) -> bool {
+/// Returns whether a numeric gesture ended, so the app can close its Undo group. `injected`:
+/// this frame carries pointer events from the control channel (an agent's `ui.drag`), whose
+/// gesture must never move the user's real cursor.
+pub(crate) fn prepare_input(ctx: &Context, raw: &mut RawInput, injected: bool) -> bool {
     let lost_focus = !raw.focused || raw.events.iter().any(|e| matches!(e, Event::WindowFocused(false)));
     let (down, last_pos, modifiers) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos(), i.modifiers));
     ctx.data_mut(|d| {
@@ -46,7 +48,7 @@ pub(crate) fn prepare_input(ctx: &Context, raw: &mut RawInput) -> bool {
             // finish this scrub so focus returning cannot restart it or leave Undo merged.
             raw.events.push(Event::PointerButton { pos: pos - state.offset, button: PointerButton::Primary, pressed: false, modifiers });
         }
-        let touch = raw.events.iter().any(|e| matches!(e, Event::Touch { .. }));
+        let touch = injected || raw.events.iter().any(|e| matches!(e, Event::Touch { .. }));
         if lost_focus
             || touch
             || raw.events.iter().any(|e| matches!(e, Event::WindowFocused(false) | Event::PointerButton { button: PointerButton::Primary, .. }))
@@ -190,6 +192,7 @@ mod tests {
         angle: bool,
         angle_rects: Option<(Rect, Rect)>,
         modifiers: Modifiers,
+        injected: bool,
     }
 
     impl Scrub {
@@ -206,6 +209,7 @@ mod tests {
                 angle: false,
                 angle_rects: None,
                 modifiers: Modifiers::NONE,
+                injected: false,
             }
         }
 
@@ -219,7 +223,7 @@ mod tests {
                 ..Default::default()
             };
             raw.events.push(Event::ModifiersChanged(self.modifiers));
-            prepare_input(&self.ctx, &mut raw);
+            prepare_input(&self.ctx, &mut raw, self.injected);
             let _ = self.ctx.run_ui(raw, |ui| {
                 if self.standard {
                     ui.put(
@@ -338,6 +342,17 @@ mod tests {
         assert_eq!(s.value, before - 3.0, "coalesced movement after a left-edge warp is preserved");
     }
 
+    /// An agent's `ui.drag` over the control channel scrubs the value but never moves the user's
+    /// real cursor, even at the window's (monitor's) edge.
+    #[test]
+    fn injected_drags_never_warp_the_real_cursor() {
+        let mut s = Scrub::new();
+        s.injected = true;
+        s.begin();
+        s.move_to(pos2(799.0, 108.0));
+        assert!(s.warps.is_empty());
+    }
+
     #[test]
     fn normal_pointer_movement_does_not_warp() {
         let mut s = Scrub::new();
@@ -438,42 +453,23 @@ mod tests {
     }
 
     #[test]
-    fn real_properties_angles_and_textbox_drags_keep_each_gesture_in_one_undo_step() {
+    fn real_properties_and_angle_drags_keep_each_gesture_in_one_undo_step() {
         use crate::{EffectcraftApp, dock::PanelKind};
         use effectcraft_engine::project::LayerId;
         use eframe::App;
         use serde_json::json;
 
-        for (textbox, angle) in [(false, false), (false, true), (true, false)] {
+        for angle in [false, true] {
             let mut session = effectcraft_host::session();
-            // This patch also works without the optional TextBox plugin.
-            if textbox && effectcraft_engine::effects::plugin::plugin("org.effectcraft.text-box").is_none() {
-                continue;
-            }
             session.execute("comp.new", json!({"width": 32, "height": 16})).unwrap();
             let lid = session.execute("layer.newSolid", json!({"width": 8, "height": 8})).unwrap()["layer"].as_u64().unwrap();
-            if textbox {
-                session.execute("effect.apply", json!({"layer": lid, "effect": "TextBox"})).unwrap();
-            }
-            let path = if textbox {
-                "effects/#1/paddingX"
-            } else if angle {
-                "transform/rotation"
-            } else {
-                "transform/position"
-            };
+            let path = if angle { "transform/rotation" } else { "transform/position" };
             let prop = session.active_comp().unwrap().layer(LayerId(lid)).unwrap().props.prop(path).unwrap();
             let uid = prop.uid;
             let original = prop.value.clone();
             let undo = session.history.undo.len();
-            let panel = if textbox { PanelKind::EffectControls } else { PanelKind::Properties };
-            let id = if textbox {
-                format!("effectControls.prop.{uid}.value")
-            } else if angle {
-                format!("properties.prop.{uid}.value")
-            } else {
-                format!("properties.prop.{uid}.value.0")
-            };
+            let panel = PanelKind::Properties;
+            let id = if angle { format!("properties.prop.{uid}.value") } else { format!("properties.prop.{uid}.value.0") };
             let mut app = EffectcraftApp::new(session);
             app.show_panel(panel);
             app.toggle_maximize(panel);

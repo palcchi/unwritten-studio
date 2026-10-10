@@ -719,9 +719,23 @@ pub(crate) fn bottom_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui, bar: Rect,
     x += 4.0;
     // 3D renderer + view.
     if comp.has_3d() {
+        // The comp's 3D renderer, as After Effects' Composition panel shows it: the menu switches
+        // it through Composition Settings (undoable), and the automation label is the renderer.
+        use effectcraft_engine::project::Renderer;
+        let renderers = [(Renderer::Classic3D, "Classic 3D", "classic3D"), (Renderer::Advanced3D, "Advanced 3D", "advanced3D")];
+        let current = renderers.iter().find(|(r, ..)| *r == comp.renderer).map_or("Classic 3D", |(_, label, _)| *label);
         let r = Rect::from_min_size(pos2(x, cy - 10.0), vec2(96.0, 20.0));
-        let _ = widgets::dropdown(ui, r, "Classic 3D", &t, egui::Id::new("vw-3d"));
-        app.auto.add("viewer.renderer3d", r, "3D Renderer");
+        if widgets::dropdown(ui, r, crate::i18n::tr(current), &t, egui::Id::new("vw-3d")).clicked() {
+            toggle_popup(ui, "vw-3d-pop");
+        }
+        app.auto.add("viewer.renderer3d", r, current);
+        let items: Vec<(String, bool)> = renderers.iter().map(|(r, label, _)| (label.to_string(), *r == comp.renderer)).collect();
+        if let Some((renderer, _, id)) = popup(app, ui, "vw-3d-pop", r, &items, "renderer3dItem").and_then(|i| renderers.get(i))
+            && *renderer != comp.renderer
+            && let Err(e) = app.session.execute("comp.settings", json!({"renderer": id}))
+        {
+            app.ui.status = e.to_string();
+        }
         x = r.max.x + 4.0;
         let cid = app.session.active_comp_id();
         let cur = cid.and_then(|c| app.session.state.views3d.get(&c)).map(|v| v.current).unwrap_or_default();

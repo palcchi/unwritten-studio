@@ -441,49 +441,53 @@ pub(crate) fn edit_keys(s: &mut Session, label: &str, merge: Option<&str>, f: im
     let sel = s.state.selected_keys.clone();
     s.edit(label, merge, |proj, st| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
-        let mut new_sel = vec![];
+        let mut remapped: std::collections::HashMap<KeyRef, KeyRef> = Default::default();
         let mut groups: std::collections::BTreeMap<(LayerId, Uid), Vec<Tick>> = Default::default();
         for k in &sel {
             groups.entry((k.layer, k.prop)).or_default().push(k.time);
         }
         for ((lid, uid), times) in groups {
             let Some(pr) = comp.layer_mut(lid).and_then(|l| l.props.find_mut(uid)) else { continue };
-            // Process in an order that avoids collisions when moving.
+            // Process each stored key once, in an order that avoids collisions when moving.
             let mut idx: Vec<(usize, Tick)> = times.iter().filter_map(|t| key_at(&pr.keys, *t).map(|i| (i, *t))).collect();
             idx.sort_by_key(|x| x.0);
-            let mut moved: Vec<Keyframe> = vec![];
-            let mut keep_times = vec![];
-            for (i, _) in idx.iter().rev() {
-                let mut t = pr.keys[*i].time;
+            idx.dedup_by_key(|x| x.0);
+            let mut moved: Vec<(Tick, Keyframe)> = vec![];
+            // Target time -> surviving source time. A moved key replaces an existing key at
+            // its destination, including its selection identity.
+            let mut targets: std::collections::HashMap<Tick, Tick> = Default::default();
+            for (i, old) in idx.iter().rev() {
+                let Some(key) = pr.keys.get(*i) else { continue };
+                let mut t = key.time;
                 if f(&mut pr.keys, *i, &mut t) {
-                    let mut k = pr.keys.remove(*i);
-                    k.time = t;
-                    moved.push(k);
-                } else if *i < pr.keys.len() {
-                    keep_times.push(pr.keys[*i].time);
+                    if *i < pr.keys.len() {
+                        let mut k = pr.keys.remove(*i);
+                        k.time = t;
+                        moved.push((*old, k));
+                    }
+                } else if key_at(&pr.keys, *old).is_some() {
+                    targets.insert(*old, *old);
                 }
             }
-            for k in moved {
-                new_sel.push(KeyRef { layer: lid, prop: uid, time: k.time });
+            for (old, k) in moved {
+                targets.insert(k.time, old);
                 match pr.keys.binary_search_by(|x| x.time.cmp(&k.time)) {
                     Ok(j) => pr.keys[j] = k,
                     Err(j) => pr.keys.insert(j, k),
                 }
             }
-            for t in keep_times {
-                new_sel.push(KeyRef { layer: lid, prop: uid, time: t });
-            }
-            // Roving keys follow their neighbours: re-time and keep the selection on them.
-            let before: Vec<Tick> = pr.keys.iter().map(|k| k.time).collect();
-            if effectcraft_keyframe::retime_roving(&mut pr.keys, pr.spatial) {
-                for r in new_sel.iter_mut().filter(|r| r.layer == lid && r.prop == uid) {
-                    if let Some(i) = before.iter().position(|t| *t == r.time) {
-                        r.time = pr.keys[i].time;
-                    }
+            // Resolve exact stored indices before roving changes their times. Deleted or
+            // stale references cannot select a neighbouring key.
+            let tracked: Vec<(Tick, usize)> = targets.into_iter().filter_map(|(at, old)| key_at(&pr.keys, at).map(|i| (old, i))).collect();
+            effectcraft_keyframe::retime_roving(&mut pr.keys, pr.spatial);
+            for (old, i) in tracked {
+                if let Some(key) = pr.keys.get(i) {
+                    remapped.insert(KeyRef { layer: lid, prop: uid, time: old }, KeyRef { layer: lid, prop: uid, time: key.time });
                 }
             }
         }
-        st.selected_keys = new_sel;
+        let mut seen = std::collections::HashSet::new();
+        st.selected_keys = sel.iter().filter_map(|k| remapped.get(k).copied()).filter(|k| seen.insert(*k)).collect();
         Ok(json!(st.selected_keys.len()))
     })
 }

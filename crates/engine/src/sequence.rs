@@ -42,15 +42,17 @@ impl SequenceOptions {
         SequenceOptions { sequence, folders: sequence, alphabetical: flag("alphabetical").unwrap_or(false) }
     }
 
-    /// `file.import`'s options, as in After Effects: picked or dropped files import as stills
-    /// unless `sequence: true` (the Import dialog's "<format> Sequence" checkbox, which is off
-    /// unless ticked), while a folder's numbered stills import as sequences unless
-    /// `sequence: false` (Alt-drag of a folder).
+    /// `file.import`'s options. Dropped files (`drag: true`) import as stills, as in After
+    /// Effects, while a folder's numbered stills import as sequences unless `sequence: false`
+    /// (Alt-drag of a folder). The Import dialog passes its "<format> Sequence" checkbox (off
+    /// unless ticked) as `sequence`. Without `sequence` or `drag` (scripts, agents) a numbered
+    /// still brings its run, as it always has.
     pub fn for_import(p: &serde_json::Value) -> SequenceOptions {
         let flag = |k: &str| p.get(k).and_then(serde_json::Value::as_bool);
         let (sequence, alphabetical) = (flag("sequence"), flag("alphabetical").unwrap_or(false));
+        let dropped = flag("drag").unwrap_or(false);
         // Force Alphabetical Order is part of the Sequence option.
-        SequenceOptions { sequence: sequence.unwrap_or(alphabetical), folders: sequence.unwrap_or(true), alphabetical }
+        SequenceOptions { sequence: sequence.unwrap_or(alphabetical || !dropped), folders: sequence.unwrap_or(true), alphabetical }
     }
 }
 

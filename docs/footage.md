@@ -52,9 +52,11 @@ Effects does, so every other frame stays at its number. Render or copy the missi
 folder and choose File ▸ Reload Footage to fill the gaps.
 
 Agents: `file.import {"paths": ["/shots/shot_0001.png"], "sequence": true, "frameRate": 24}`.
-Without `sequence`, picked files import as stills and a folder's numbered runs as sequences;
+Without `sequence`, a numbered file brings its whole run and a folder's numbered runs import as
+sequences, except dropped files (`"drag": true`), which import as stills as in After Effects.
 `"sequence": true` is the Sequence option (one file brings its whole run), `"sequence": false`
-imports a folder's files one by one, and `"alphabetical": true` is Force Alphabetical Order.
+imports stills and a folder's files one by one, and `"alphabetical": true` is Force Alphabetical
+Order.
 
 ## Interpret Footage
 

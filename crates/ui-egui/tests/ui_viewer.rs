@@ -368,6 +368,201 @@ fn tool_creates_mask_draws_a_mask_on_the_selected_shape_layer() {
     assert!(!h.state().session.state.shape_tool.creates_mask);
 }
 
+// ---- the shape tools' drag ghost
+
+/// Run frames until the viewer's background frame has landed, so the comp is painted (and not
+/// still black) before the drag begins: the ghost is then the only thing that changes.
+fn settle_viewer(h: &mut Harness<'_, EffectcraftApp>) {
+    for _ in 0..600 {
+        h.step();
+        if h.state().frames.inflight() == 0 && h.state().frames.last_ms.lock().map(|v| *v > 0.0).unwrap_or(false) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    h.run_steps(4);
+}
+
+/// Press at `from`, drag to `to` with `mods` held and return the frame drawn with the button still
+/// down — what the user sees mid-drag, before anything is committed. egui only takes modifiers
+/// from [`egui::Event::ModifiersChanged`], so they are set before the press and stay set.
+fn mid_drag(h: &mut Harness<'_, EffectcraftApp>, from: Pos2, to: Pos2, mods: egui::Modifiers) -> image::RgbaImage {
+    h.input_mut().events.push(Event::ModifiersChanged(mods));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: mods });
+    h.step();
+    for i in 1..=8 {
+        h.input_mut().events.push(Event::PointerMoved(from + (to - from) * (i as f32 / 8.0)));
+        h.step();
+    }
+    h.render().expect("the mid-drag frame")
+}
+
+/// Release the button where the drag left it.
+fn release(h: &mut Harness<'_, EffectcraftApp>, at: Pos2, mods: egui::Modifiers) {
+    h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: mods });
+    h.run_steps(2);
+}
+
+/// The pixel at a comp point of a rendered frame.
+fn px_at(img: &image::RgbaImage, h: &Harness<'_, EffectcraftApp>, p: [f32; 2]) -> [u8; 3] {
+    let s = screen(h, p);
+    let p = img.get_pixel(s.x.round() as u32, s.y.round() as u32).0;
+    [p[0], p[1], p[2]]
+}
+
+/// How different two pixels are, summed over the channels.
+fn delta(a: [u8; 3], b: [u8; 3]) -> u32 {
+    (0..3).map(|i| (a[i] as i32 - b[i] as i32).unsigned_abs()).sum()
+}
+
+/// The Tools-bar Fill as bytes, the colour a filled ghost carries.
+fn fill_rgb(h: &Harness<'_, EffectcraftApp>) -> [u8; 3] {
+    let c = h.state().session.state.shape_tool.fill.color;
+    std::array::from_fn(|i| (c[i].clamp(0.0, 1.0) * 255.0).round() as u8)
+}
+
+/// The shape tools show the shape they will draw under the cursor while the drag is still going:
+/// filled with the Tools bar's Fill, so it reads at any zoom where the 1 px outline it replaces was
+/// invisible, and in the tool's own form — only the Rectangle fills the corner of the box.
+#[test]
+fn shape_drag_ghost_shows_the_tools_own_shape_while_dragging() {
+    let (from, to) = ([140.0, 100.0], [400.0, 300.0]);
+    let centre = [270.0, 200.0];
+    // 6 comp px inside the box's top-left corner: inside a rectangle, outside every other kind.
+    let corner = [146.0, 106.0];
+    for (tool, fills_corner) in [(Tool::Rectangle, true), (Tool::RoundedRect, false), (Tool::Ellipse, false), (Tool::Polygon, false), (Tool::Star, false)] {
+        let mut h = harness();
+        h.state_mut().ui.tool = tool;
+        settle_viewer(&mut h);
+        let (a, b) = (screen(&h, from), screen(&h, to));
+        let before = h.render().expect("the frame before the drag");
+        let mid = mid_drag(&mut h, a, b, egui::Modifiers::default());
+        let fill = fill_rgb(&h);
+
+        // Drawn while the button is down, and painted with the Fill rather than left to a hairline.
+        let was = px_at(&before, &h, centre);
+        let now = px_at(&mid, &h, centre);
+        assert!(delta(was, now) > 30, "{tool:?}: no ghost drawn mid-drag ({was:?} → {now:?})");
+        assert!(delta(now, fill) < delta(was, fill), "{tool:?}: the ghost is not the Fill colour ({now:?} vs {was:?})");
+
+        // The tool's own form: only the Rectangle reaches the corner of its box.
+        let was_c = px_at(&before, &h, corner);
+        let now_c = px_at(&mid, &h, corner);
+        assert_eq!(delta(was_c, now_c) > 30, fills_corner, "{tool:?}: the ghost is not drawn in its own shape");
+
+        release(&mut h, b, egui::Modifiers::default());
+    }
+}
+
+/// The ghost and the shape the release commits share one normalisation, so nothing it shows is a
+/// lie: Shift squares the box and Alt (Option) draws it from the press point, both live.
+#[test]
+fn shape_drag_ghost_normalises_the_same_way_as_the_release() {
+    let from = [140.0f64, 100.0];
+    let to = [400.0f64, 260.0];
+    // (mods, centre, size): Shift squares the box from its top-left, Alt centres it on the press.
+    for (mods, centre, size) in [
+        (egui::Modifiers::default(), [270.0, 180.0], [260.0, 160.0]),
+        (egui::Modifiers::SHIFT, [270.0, 230.0], [260.0, 260.0]),
+        (egui::Modifiers::ALT, [140.0, 100.0], [520.0, 320.0]),
+        (egui::Modifiers { alt: true, shift: true, ..Default::default() }, [140.0, 100.0], [520.0, 520.0]),
+    ] {
+        let mut h = harness();
+        h.state_mut().ui.tool = Tool::Ellipse;
+        settle_viewer(&mut h);
+        let (a, b) = (screen(&h, from.map(|v| v as f32)), screen(&h, to.map(|v| v as f32)));
+        let before = h.render().expect("the frame before the drag");
+        // Measured with the button down, so this is the ghost and not the committed shape.
+        let mid = mid_drag(&mut h, a, b, mods);
+        let on = [centre[0] as f32 + size[0] as f32 / 4.0, centre[1] as f32 + size[1] as f32 / 4.0];
+        assert!(delta(px_at(&before, &h, on), px_at(&mid, &h, on)) > 30, "{mods:?}: the ghost is not where it will land");
+        release(&mut h, b, mods);
+
+        // And the shape it commits is that box: a new shape layer carries the position, its
+        // group sits at its own centre's origin.
+        let comp = h.state().session.active_comp().unwrap().clone();
+        let layer = comp.layers.first().expect("a new shape layer").clone();
+        assert!(matches!(layer.source, effectcraft_engine::project::LayerSource::Shape), "{mods:?}: no shape layer");
+        let at = layer.transform().unwrap().get("position").unwrap().value.components();
+        assert!((at[0] - centre[0]).abs() < 1.0 && (at[1] - centre[1]).abs() < 1.0, "{mods:?}: at {at:?}, not {centre:?}");
+        let group = layer.props.sub("contents").unwrap().groups().next().unwrap().clone();
+        let path = group.sub("contents").unwrap().sub("ellipse").unwrap();
+        let s = path.get("size").unwrap().value.components();
+        assert!((s[0] - size[0]).abs() < 1.0 && (s[1] - size[1]).abs() < 1.0, "{mods:?}: sized {s:?}, not {size:?}");
+    }
+}
+
+/// The ghost says where the shape lands: a mask on the selected layer is drawn in the mask colour
+/// and not painted with the Fill, where a shape drawn into the selected shape layer is.
+#[test]
+fn shape_drag_ghost_shows_where_the_shape_will_land() {
+    let (from, to) = ([140.0, 100.0], [400.0, 300.0]);
+    let centre = [270.0, 200.0];
+
+    // Nothing selected: the shape becomes a new layer, painted with the Fill.
+    let mut h = harness();
+    h.state_mut().ui.tool = Tool::Ellipse;
+    settle_viewer(&mut h);
+    let (a, b) = (screen(&h, from), screen(&h, to));
+    let shape_mid = mid_drag(&mut h, a, b, egui::Modifiers::default());
+    let shape_px = px_at(&shape_mid, &h, centre);
+    let fill = fill_rgb(&h);
+    assert!(delta(shape_px, fill) < delta(shape_px, [0xff, 0xc0, 0x00]), "a shape ghost is painted with the Fill, not the mask colour");
+    release(&mut h, b, egui::Modifiers::default());
+
+    // A solid selected: the same drag is a mask on it, in the mask colour.
+    let mut h = harness();
+    let plate = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Box").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate.0]})).unwrap();
+    h.state_mut().ui.tool = Tool::Ellipse;
+    settle_viewer(&mut h);
+    let (a, b) = (screen(&h, from), screen(&h, to));
+    let mask_mid = mid_drag(&mut h, a, b, egui::Modifiers::default());
+    let mask_px = px_at(&mask_mid, &h, centre);
+    assert!(delta(mask_px, shape_px) > 20, "a mask ghost must not look like the shape ghost ({mask_px:?} vs {shape_px:?})");
+    release(&mut h, b, egui::Modifiers::default());
+    let comp = h.state().session.active_comp().unwrap();
+    assert_eq!(comp.layer(plate).unwrap().props.sub("masks").unwrap().groups().count(), 1, "the drag drew a mask");
+}
+
+/// Dragging a layer moves its picture while the button is still down. Every pointer move replaces
+/// the comp's content identity, so the exact frame on screen is re-rendered at every step: waiting
+/// for it would freeze the viewer on the last completed frame for the whole drag.
+#[test]
+fn a_layer_drag_moves_the_picture_while_the_button_is_down() {
+    let mut h = harness();
+    let box_ = h.state().session.active_comp().unwrap().layers.iter().find(|l| l.name == "Box").unwrap().id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_.0]})).unwrap();
+    settle_viewer(&mut h);
+    let from = screen(&h, [320.0, 180.0]);
+    let to = screen(&h, [520.0, 180.0]);
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    // Where the layer is not (yet): the plate behind it.
+    let plate = px_at(&h.render().unwrap(), &h, [440.0, 200.0]);
+
+    // Drag in small steps, still holding the button, and give the renders a chance to land.
+    let mut moved = false;
+    for i in 1..=40 {
+        let p = from + (to - from) * (i as f32 / 40.0);
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.step();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        // 30 comp px behind the pointer: inside the layer, well away from its outline, its anchor
+        // icon and where it started.
+        let at = px_at(&h.render().expect("mid-drag frame"), &h, [320.0 + 200.0 * (i as f32 / 40.0) - 30.0, 200.0]);
+        if i >= 30 && delta(at, plate) > 30 {
+            moved = true;
+            break;
+        }
+    }
+    assert!(moved, "the layer's pixels did not follow the pointer while the button was down");
+    h.input_mut().events.push(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+}
+
 /// Clicking the word "Fill" opens Fill Options: a radial gradient in Multiply at 40% paints the
 /// next shape drawn (#227).
 #[test]

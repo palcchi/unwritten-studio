@@ -574,7 +574,9 @@ PropertyBase.prototype = {
     return false;
   },
   set selected(v) {
-    if (v) __call("prop.select", { comp: this.__layer.__comp, layer: this.__layer.__id, prop: this.__uid, add: true });
+    var ref = { comp: this.__layer.__comp, layer: this.__layer.__id, prop: this.__uid };
+    if (v) __call("prop.select", { comp: ref.comp, layer: ref.layer, prop: ref.prop, add: true });
+    else __call("prop.deselect", ref);
   },
   propertyGroup: function (n) {
     var p = this;

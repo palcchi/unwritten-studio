@@ -524,3 +524,32 @@ fn comp_preserves_nested_frame_rate_and_resolution() {
     let (_, c) = comp_named(&s, "Nested");
     assert!(c.preserve_frame_rate && c.preserve_resolution);
 }
+
+#[test]
+fn property_selected_false_preserves_other_property_and_key_selections() {
+    let mut s = session();
+    let out = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Selection", 64, 64, 1, 1, 10);
+        c.openInViewer();
+        var layer = c.layers.addSolid([1, 0, 0], "Layer", 8, 8, 1);
+        var opacity = layer.transform.opacity;
+        var rotation = layer.transform.rotation;
+        rotation.setValueAtTime(0, 0);
+        rotation.setValueAtTime(0.5, 45);
+        app.run("edit.deselectAll", {});
+        rotation.selected = true;
+        opacity.selected = true;
+        var states = [[opacity.selected, rotation.selected]];
+        opacity.selected = false;
+        states.push([opacity.selected, rotation.selected]);
+        opacity.selected = false;
+        states.push([opacity.selected, rotation.selected]);
+        opacity.selected = true;
+        states.push([opacity.selected, rotation.selected]);
+        [states, rotation.selectedKeys.length, c.selectedProperties.length];
+        "#,
+    );
+    assert_eq!(out.result, json!([[[true, true], [false, true], [false, true], [true, true]], 2, 2]));
+}

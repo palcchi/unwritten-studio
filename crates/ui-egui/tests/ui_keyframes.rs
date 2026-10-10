@@ -293,3 +293,58 @@ fn a_graph_handle_drag_moves_the_handles_of_every_selected_key() {
     assert_eq!(h.state().session.history.undo.len(), undo + 1, "one undo step");
     assert!((handle(&h, 0).x - k0.x - px_per_s * 0.2).abs() < 2.0, "key 0's handle moved on screen");
 }
+
+/// #457: on a Timeline narrower than the Graph Editor's whole button row, the buttons that don't
+/// fit go to a "»" menu at the end of the bar instead of being cut off; each stays reachable and
+/// works from there.
+#[test]
+fn graph_editor_buttons_that_do_not_fit_move_to_the_more_menu() {
+    let (mut h, _, _) = harness();
+    h.set_size(egui::vec2(1280.0, 800.0));
+    h.state_mut().ui.timeline.graph_editor = true;
+    h.run_steps(4);
+    let ids = [
+        "autoSelectGraphType",
+        "valueGraph",
+        "speedGraph",
+        "showSelected",
+        "autoZoom",
+        "fit",
+        "fitSelection",
+        "snap",
+        "reference",
+        "transformBox",
+        "separateDimensions",
+        "interpolationHold",
+        "interpolationLinear",
+        "interpolationAuto",
+        "easyEaseEasy",
+        "easyEaseInEase",
+        "easyEaseOutEase",
+    ];
+    let graph = h.state().auto.find("timeline.graph").expect("the Graph Editor is shown").rect;
+    let right = graph[0] + graph[2];
+    let shown: Vec<&str> = ids.iter().copied().filter(|id| h.state().auto.find(&format!("timeline.graph.{id}")).is_some()).collect();
+    for id in &shown {
+        let r = h.state().auto.find(&format!("timeline.graph.{id}")).unwrap().rect;
+        assert!(r[0] + r[2] <= right, "{id} is drawn past the bar's right edge");
+    }
+    let more = h.state().auto.find("timeline.graph.more").expect("the buttons that don't fit are in a menu").rect;
+    assert!(more[0] + more[2] <= right);
+    let p = pos2(more[0] + more[2] / 2.0, more[1] + more[3] / 2.0);
+    let click = |h: &mut Harness<'_, EffectcraftApp>, p: Pos2| {
+        h.input_mut().events.push(Event::PointerMoved(p));
+        h.input_mut().events.push(Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.run_steps(3);
+    };
+    click(&mut h, p);
+    let hidden: Vec<&str> = ids.iter().copied().filter(|id| h.state().auto.find(&format!("timeline.graph.more.{id}")).is_some()).collect();
+    assert_eq!(shown.len() + hidden.len(), ids.len(), "every button is on the bar or in the menu: {shown:?} + {hidden:?}");
+    assert!(hidden.contains(&"transformBox"), "{hidden:?}");
+    let before = h.state().ui.timeline.graph_transform_box;
+    let item = h.state().auto.find("timeline.graph.more.transformBox").unwrap().rect;
+    click(&mut h, pos2(item[0] + item[2] / 2.0, item[1] + item[3] / 2.0));
+    assert_eq!(h.state().ui.timeline.graph_transform_box, !before, "the menu item runs the button");
+}

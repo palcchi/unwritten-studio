@@ -1614,9 +1614,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let max_scroll = (total_h - rows_rect.height() + rh).max(0.0);
     if ui.rect_contains_pointer(rows_rect) {
         let (dy, dx, zoom) = ui.input(|i| (i.smooth_scroll_delta.y, i.smooth_scroll_delta.x, i.modifiers.alt));
-        if zoom && dy.abs() > 0.0 {
+        // Ctrl/Cmd+wheel and a trackpad pinch reach egui as a zoom factor rather than a scroll
+        // (#428); like Alt+wheel they zoom time.
+        let pinch = ui.input(|i| i.zoom_delta()) as f64;
+        let at_x = ui.input(|i| i.pointer.hover_pos()).map(|p| p.x).unwrap_or(graph_x0);
+        if (pinch - 1.0).abs() > 1e-4 {
+            set_zoom(&mut app.ui.timeline, &comp, tm.pps * pinch, fit_pps, tm.t(at_x), (at_x - tm.x0) as f64);
+        } else if zoom && dy.abs() > 0.0 {
             // Alt+wheel zooms around the pointer, out until the whole comp shows.
-            let at_x = ui.input(|i| i.pointer.hover_pos()).map(|p| p.x).unwrap_or(graph_x0);
             set_zoom(&mut app.ui.timeline, &comp, tm.pps * (dy as f64 / 200.0).exp(), fit_pps, tm.t(at_x), (at_x - tm.x0) as f64);
         } else {
             let over_outline = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| p.x < graph_x0);
@@ -3445,26 +3450,6 @@ fn fmt_num(v: f64, d: usize) -> String {
     format!("{v:.d$}")
 }
 
-/// Linked values after component `d` of `c` became `v`: the others scale by the same ratio
-/// (Constrain Proportions); from 0 the others that are 0 too follow the value.
-fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
-    let Some(&old) = c.get(d) else { return c.to_vec() };
-    c.iter()
-        .enumerate()
-        .map(|(e, &x)| {
-            if e == d {
-                v
-            } else if old.abs() > 1e-9 {
-                x * v / old
-            } else if x.abs() <= 1e-9 {
-                v
-            } else {
-                x
-            }
-        })
-        .collect()
-}
-
 /// Inline value editor for a property row; pushes `prop.set` actions. Returns the rects of a
 /// multi-dimension value's fields, one per dimension (none for other values).
 fn value_editor(
@@ -3540,7 +3525,7 @@ fn value_editor(
                     // Alt edits one value of a linked pair.
                     let shown = if linked && !ui.input(|i| i.modifiers.alt) { n.min(c.len()) } else { 1 };
                     let from = if shown == 1 { d } else { 0 };
-                    for (e, v) in constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
+                    for (e, v) in widgets::constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
                         if let Some(slot) = nc.get_mut(from + e) {
                             *slot = v;
                         }

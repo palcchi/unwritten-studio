@@ -568,6 +568,26 @@ pub fn open_popup(ui: &Ui, id: egui::Id) {
     ui.data_mut(|d| d.insert_temp(id.with("open"), true));
 }
 
+/// Linked values after component `d` of `c` became `v`: the others scale by the same ratio
+/// (Constrain Proportions); from 0 the others that are 0 too follow the value.
+pub(crate) fn constrained(c: &[f64], d: usize, v: f64) -> Vec<f64> {
+    let Some(&old) = c.get(d) else { return c.to_vec() };
+    c.iter()
+        .enumerate()
+        .map(|(e, &x)| {
+            if e == d {
+                v
+            } else if old.abs() > 1e-9 {
+                x * v / old
+            } else if x.abs() <= 1e-9 {
+                v
+            } else {
+                x
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

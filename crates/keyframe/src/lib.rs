@@ -426,7 +426,13 @@ pub fn retime_roving(keys: &mut [Keyframe], spatial: bool) -> bool {
             for (o, i) in (a + 1..b).enumerate() {
                 let f = if total > 1e-9 { acc[o + 1] / total } else { (o + 1) as f64 / (b - a) as f64 };
                 let span = i128::from(t1.0) - i128::from(t0.0);
-                let retimed = i128::from(t0.0) + (span as f64 * f).round() as i128;
+                let mut retimed = i128::from(t0.0) + (span as f64 * f).round() as i128;
+                // Keep every roving key strictly between its neighbours: a zero-length segment would otherwise
+                // put it on a fixed key's time, and two keys can't share a time.
+                let (lo, hi) = (i128::from(keys[i - 1].time.0) + 1, i128::from(t1.0) - (b - i) as i128);
+                if lo <= hi {
+                    retimed = retimed.clamp(lo, hi);
+                }
                 let nt = Tick(retimed.clamp(i128::from(i64::MIN), i128::from(i64::MAX)) as i64);
                 if nt != keys[i].time {
                     keys[i].time = nt;
@@ -815,6 +821,21 @@ mod tests {
         keys[0].roving = true;
         retime_roving(&mut keys, true);
         assert!(!keys[0].roving);
+    }
+
+    #[test]
+    fn roving_keys_never_share_a_time_with_a_fixed_key() {
+        // Zero-length last segment (issue #532) and zero-length first segment.
+        for xs in [[0.0, 40.0, 120.0, 120.0], [0.0, 0.0, 40.0, 120.0]] {
+            let mut keys: Vec<Keyframe> = xs.iter().enumerate().map(|(i, x)| Keyframe::new(s(i as f64), Value::Vec2([*x, 64.0]))).collect();
+            for k in &mut keys {
+                k.spatial_auto = false;
+            }
+            keys[1].roving = true;
+            keys[2].roving = true;
+            retime_roving(&mut keys, true);
+            assert!(keys.windows(2).all(|w| w[0].time < w[1].time), "{xs:?}: {:?}", keys.iter().map(|k| k.time).collect::<Vec<_>>());
+        }
     }
 
     #[test]

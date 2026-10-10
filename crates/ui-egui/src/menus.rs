@@ -1391,7 +1391,16 @@ pub fn shortcut_text(s: &str) -> String {
 pub fn parse_shortcut(s: &str) -> Option<(egui::Modifiers, egui::Key)> {
     let mut m = egui::Modifiers::NONE;
     let mut key = None;
-    let parts: Vec<&str> = if s == "+" { vec!["+"] } else { s.split('+').collect() };
+    // The plus key itself is written `+` or `Cmd++`.
+    let (head, plus) = match s.strip_suffix("++") {
+        Some(h) => (h, true),
+        None if s == "+" => ("", true),
+        None => (s, false),
+    };
+    let mut parts: Vec<&str> = if head.is_empty() { vec![] } else { head.split('+').collect() };
+    if plus {
+        parts.push("+");
+    }
     for p in parts {
         match p {
             "Cmd" => {

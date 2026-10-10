@@ -3591,6 +3591,17 @@ fn value_editor(
             if resp.clicked() {
                 widgets::open_popup(ui, pop);
             }
+            // The eyedropper after the swatch samples the Composition panel (shape Fill and
+            // Stroke colours, text and effect colours), as in After Effects' Timeline (#633).
+            let er = Rect::from_center_size(pos2(r.max.x + 12.0, at.y), vec2(16.0, 16.0));
+            let active = app.ui.fx_pick.as_ref().is_some_and(|k| k.prop == uid && k.kind == "color");
+            if super::fx_widgets::eyedropper_button(ui, er, active, egui::Id::new(("tl-eye", uid)), &t)
+                .on_hover_text(crate::i18n::tr("Eyedropper: click, then click in the Composition panel"))
+                .clicked()
+            {
+                super::effect_controls::toggle_pick(app, "color", layer, prop);
+            }
+            app.auto.add(&format!("timeline.prop.{uid}.eyedropper"), er, &prop.name);
             let mut rgb = [c[0] as f32, c[1] as f32, c[2] as f32];
             if crate::widgets::color_popup(ui, pop, r.left_bottom(), &mut rgb) {
                 set(actions, json!([rgb[0], rgb[1], rgb[2], 1.0]));

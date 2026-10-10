@@ -186,8 +186,9 @@ fn key_navigator(
     }
 }
 
-/// Toggle a viewer pick (crosshair / eyedropper) for a parameter.
-fn toggle_pick(app: &mut EffectcraftApp, kind: &str, layer: &Layer, prop: &Property) {
+/// Toggle a viewer pick (crosshair / eyedropper) for a parameter (also the Timeline's colour
+/// eyedroppers).
+pub(crate) fn toggle_pick(app: &mut EffectcraftApp, kind: &str, layer: &Layer, prop: &Property) {
     let pick = FxPick { kind: kind.into(), layer: layer.id.0, prop: prop.uid, name: prop.name.clone() };
     if app.ui.fx_pick.as_ref() == Some(&pick) {
         app.ui.fx_pick = None;

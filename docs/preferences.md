@@ -114,7 +114,7 @@ Commands (CLI, MCP, control channel):
   size and modification time with what they were, and reloads what another app saved: a
   Photoshop file edited in PhotoCraft or Photoshop shows its new pixels without File ▸ Reload
   Footage. It is not an undo step and doesn't modify the project; a layer item stays on its layer
-  (found again by name), and a file still being written is tried again on the next check.
+  (found again by name), and a file that can't be read yet (still being written) is tried again once it changes again.
   `footage.reloadChanged` runs the same check once (CLI, agents)
 - `import.unlabeledAlpha`: alpha of TGA / TIFF / movie footage (Ask opens Interpret Footage;
   Guess takes premultiplied for movies, straight for stills)

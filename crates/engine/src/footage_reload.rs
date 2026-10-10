@@ -184,8 +184,8 @@ fn forget(s: &mut Session, paths: &BTreeSet<String>) {
 /// time is only remembered; one whose stamp moved is reloaded: the items reading it get their
 /// size and duration from it again and its pixels are read again. A file that can't be stamped
 /// right now (an app saving by delete and rename) keeps its last stamp, and one that can't be
-/// read yet (still being written) keeps its old stamp so the next scan tries again; missing
-/// files are left to the footage check. Returns `{files, reloaded}`.
+/// read (still being written) is tried again once it changes again; missing files are left to
+/// the footage check. Returns `{files, reloaded}`.
 pub fn apply_stamps(s: &mut Session, now: Vec<(String, Option<Stamp>)>) -> crate::Result<Value> {
     let before = std::mem::take(&mut s.footage_stamps);
     let mut changed = BTreeSet::new();
@@ -209,10 +209,9 @@ pub fn apply_stamps(s: &mut Session, now: Vec<(String, Option<Stamp>)>) -> crate
     }
     let ids: Vec<ItemId> = s.project.items.values().filter(|i| matches!(&i.kind, ItemKind::Footage(f) if changed.contains(&f.path))).map(|i| i.id).collect();
     let (reloaded, failed) = if ids.is_empty() { (0, BTreeSet::new()) } else { reload(s, &ids, false)? };
+    // Not readable (still being written, or not a file the importer reads): its new stamp is kept,
+    // so it is tried again once it changes again, not on every look.
     for p in &failed {
-        if let Some(old) = before.get(p) {
-            s.footage_stamps.insert(p.clone(), *old);
-        }
         changed.remove(p);
     }
     if changed.is_empty() {

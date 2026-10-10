@@ -981,6 +981,8 @@ fn convert_expr_to_keys(s: &mut Session, p: &Value) -> Result<Value> {
         keys.push(Keyframe::new(layer.layer_time(t), ctx.value(&layer, &pr)));
         t += fd;
     }
+    // A time-reversed layer maps ascending comp times to descending layer times; keys must stay ordered by layer time.
+    keys.sort_by_key(|k| k.time);
     let n = keys.len();
     with_prop(s, "Convert Expression to Keyframes", None, cid, lid, uid, move |pr, _| {
         pr.keys = keys;

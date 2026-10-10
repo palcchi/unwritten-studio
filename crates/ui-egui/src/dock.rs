@@ -5,6 +5,8 @@
 use egui::{Align2, Rect, Sense, Stroke, pos2, vec2};
 use serde::{Deserialize, Serialize};
 
+use craft_ui::layout::{ResizeHandle, ResizeHandleStyle, SplitAxis, SplitSize as SharedSplitSize, split_rect};
+
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 
@@ -166,6 +168,16 @@ pub enum SplitSize {
     FixedA(f32),
     /// Second child has a fixed size in points.
     FixedB(f32),
+}
+
+impl SplitSize {
+    fn shared(self) -> SharedSplitSize {
+        match self {
+            Self::Ratio(value) => SharedSplitSize::Ratio(value),
+            Self::FixedA(value) => SharedSplitSize::FixedFirst(value),
+            Self::FixedB(value) => SharedSplitSize::FixedSecond(value),
+        }
+    }
 }
 
 /// One panel in a [`DockNode::Stack`].
@@ -411,39 +423,17 @@ impl DockNode {
     }
     /// Make `p` the active tab of its group. Returns false if not present.
     pub fn activate(&mut self, p: PanelKind) -> bool {
-        match self {
-            DockNode::Split { a, b, .. } => a.activate(p) || b.activate(p),
-            DockNode::Tabs { panels, active } => {
-                if let Some(i) = panels.iter().position(|x| *x == p) {
-                    *active = i;
-                    true
-                } else {
-                    false
-                }
-            }
-            DockNode::Stack { entries } => match entries.iter_mut().find(|e| e.panel == p) {
-                Some(e) => {
-                    e.open = true;
-                    true
-                }
-                None => false,
-            },
-        }
+        crate::dock_shared::apply_tree(self, craft_ui::docking::Action::Activate { panel: p })
     }
     /// Expand or collapse a stacked panel. Returns false if `p` is not in a stack.
     pub fn toggle_stacked(&mut self, p: PanelKind) -> bool {
-        match self {
-            DockNode::Split { a, b, .. } => a.toggle_stacked(p) || b.toggle_stacked(p),
-            DockNode::Tabs { .. } => false,
-            DockNode::Stack { entries } => match entries.iter_mut().find(|e| e.panel == p) {
-                Some(e) => {
-                    e.open = !e.open;
-                    true
-                }
-                None => false,
-            },
+        if crate::dock_shared::encode(self, &[]).is_err() {
+            return false;
         }
+        let open = !self.is_visible(p);
+        crate::dock_shared::apply_tree(self, craft_ui::docking::Action::SetStackOpen { panel: p, open })
     }
+
     pub fn is_visible(&self, p: PanelKind) -> bool {
         match self {
             DockNode::Split { a, b, .. } => a.is_visible(p) || b.is_visible(p),
@@ -453,57 +443,29 @@ impl DockNode {
     }
     /// Close a panel (remove its tab; empty groups collapse their split).
     pub fn close(&mut self, p: PanelKind) {
-        if let DockNode::Split { a, b, .. } = self {
-            a.close(p);
-            b.close(p);
-            let empty = |n: &DockNode| match n {
-                DockNode::Tabs { panels, .. } => panels.is_empty(),
-                DockNode::Stack { entries } => entries.is_empty(),
-                DockNode::Split { .. } => false,
-            };
-            if empty(a) {
-                *self = (**b).clone();
-            } else if empty(b) {
-                *self = (**a).clone();
-            }
-        } else if let DockNode::Tabs { panels, active } = self {
-            let shown = panels.get(*active).copied();
-            panels.retain(|x| *x != p);
-            *active = shown.and_then(|shown| panels.iter().position(|x| *x == shown)).unwrap_or((*active).min(panels.len().saturating_sub(1)));
-        } else if let DockNode::Stack { entries } = self {
-            entries.retain(|e| e.panel != p);
-        }
+        crate::dock_shared::close_tree(self, p);
     }
     /// Add a panel as a tab next to `near` (or into the first group).
     pub fn open_near(&mut self, p: PanelKind, near: PanelKind) {
-        if self.contains(p) {
-            self.activate(p);
+        if crate::dock_shared::encode(self, &[]).is_err() {
             return;
         }
-        fn add(n: &mut DockNode, p: PanelKind, near: PanelKind) -> bool {
-            match n {
-                DockNode::Split { a, b, .. } => add(a, p, near) || add(b, p, near),
-                DockNode::Tabs { panels, active } => {
-                    if panels.contains(&near) {
-                        panels.push(p);
-                        *active = panels.len() - 1;
-                        true
-                    } else {
-                        false
-                    }
-                }
-                DockNode::Stack { entries } => match entries.iter().position(|e| e.panel == near) {
-                    Some(i) => {
-                        entries.insert(i + 1, StackEntry { panel: p, open: true, height: None });
-                        true
-                    }
-                    None => false,
-                },
+        let anchor = [near, PanelKind::EffectsPresets, PanelKind::Project].into_iter().find(|panel| self.contains(*panel));
+        fn in_stack(node: &DockNode, panel: PanelKind) -> bool {
+            match node {
+                DockNode::Split { a, b, .. } => in_stack(a, panel) || in_stack(b, panel),
+                DockNode::Stack { entries } => entries.iter().any(|entry| entry.panel == panel),
+                DockNode::Tabs { .. } => false,
             }
         }
-        if !add(self, p, near) && !add(self, p, PanelKind::EffectsPresets) {
-            add(self, p, PanelKind::Project);
-        }
+        // Accordion entries open immediately after their anchor; ordinary tab groups append.
+        let action = match anchor {
+            Some(anchor) if !self.contains(p) && in_stack(self, anchor) => {
+                craft_ui::docking::Action::OpenAt { panel: p, anchor, placement: craft_ui::docking::Placement::Split(craft_ui::docking::Zone::Center) }
+            }
+            _ => craft_ui::docking::Action::Open { panel: p, anchor },
+        };
+        crate::dock_shared::apply_tree(self, action);
     }
 }
 
@@ -518,6 +480,16 @@ pub enum Zone {
 }
 
 impl Zone {
+    pub(crate) fn shared(self) -> craft_ui::docking::Zone {
+        match self {
+            Self::Center => craft_ui::docking::Zone::Center,
+            Self::Left => craft_ui::docking::Zone::Left,
+            Self::Right => craft_ui::docking::Zone::Right,
+            Self::Top => craft_ui::docking::Zone::Top,
+            Self::Bottom => craft_ui::docking::Zone::Bottom,
+        }
+    }
+
     pub fn from_name(s: &str) -> Option<Zone> {
         Some(match s.to_ascii_lowercase().as_str() {
             "center" | "tab" => Zone::Center,
@@ -534,26 +506,18 @@ impl Zone {
 /// strip and the middle of the group are Center; within a quarter of the size from an edge,
 /// the nearest edge.
 pub fn drop_zone(rect: Rect, tab_h: f32, pos: egui::Pos2) -> Zone {
-    if pos.y < rect.min.y + tab_h {
-        return Zone::Center;
+    match craft_ui::docking::drop_zone(rect, tab_h, pos) {
+        Some(craft_ui::docking::Zone::Left) => Zone::Left,
+        Some(craft_ui::docking::Zone::Right) => Zone::Right,
+        Some(craft_ui::docking::Zone::Top) => Zone::Top,
+        Some(craft_ui::docking::Zone::Bottom) => Zone::Bottom,
+        _ => Zone::Center,
     }
-    let fx = ((pos.x - rect.min.x) / rect.width().max(1.0)).clamp(0.0, 1.0);
-    let fy = ((pos.y - rect.min.y) / rect.height().max(1.0)).clamp(0.0, 1.0);
-    let d = [(fx, Zone::Left), (1.0 - fx, Zone::Right), (fy, Zone::Top), (1.0 - fy, Zone::Bottom)];
-    let (m, z) = d.into_iter().min_by(|a, b| a.0.total_cmp(&b.0)).unwrap_or((1.0, Zone::Center));
-    if m > 0.25 { Zone::Center } else { z }
 }
 
-/// The part of a group `rect` a drop into `zone` would occupy (the AE-style highlight).
+/// The shared preview region, or an empty rectangle for invalid geometry.
 pub fn zone_rect(rect: Rect, zone: Zone) -> Rect {
-    let c = rect.center();
-    match zone {
-        Zone::Center => rect,
-        Zone::Left => Rect::from_min_max(rect.min, pos2(c.x, rect.max.y)),
-        Zone::Right => Rect::from_min_max(pos2(c.x, rect.min.y), rect.max),
-        Zone::Top => Rect::from_min_max(rect.min, pos2(rect.max.x, c.y)),
-        Zone::Bottom => Rect::from_min_max(pos2(rect.min.x, c.y), rect.max),
-    }
+    craft_ui::docking::zone_rect(rect, zone.shared()).unwrap_or(Rect::NOTHING)
 }
 
 /// A panel group floating over the dock (undocked).
@@ -570,79 +534,13 @@ impl DockNode {
     /// (Center) or in a new group split off to one side. `p` is removed from its old place
     /// first. Returns false (tree unchanged) if `anchor` isn't docked or is `p` itself alone.
     pub fn dock_panel(&mut self, p: PanelKind, anchor: PanelKind, zone: Zone) -> bool {
-        if p == anchor || !self.contains(anchor) {
-            return false;
-        }
-        let before = self.clone();
-        self.close(p);
-        fn rec(n: &mut DockNode, p: PanelKind, anchor: PanelKind, zone: Zone) -> bool {
-            let here = match n {
-                DockNode::Split { a, b, .. } => return rec(a, p, anchor, zone) || rec(b, p, anchor, zone),
-                DockNode::Tabs { panels, .. } => panels.contains(&anchor),
-                DockNode::Stack { entries } => entries.iter().any(|e| e.panel == anchor),
-            };
-            if !here {
-                return false;
-            }
-            match (zone, &mut *n) {
-                (Zone::Center, DockNode::Tabs { panels, active }) => {
-                    let i = panels.iter().position(|x| *x == anchor).map_or(panels.len(), |i| i + 1);
-                    panels.insert(i, p);
-                    *active = i;
-                }
-                (Zone::Center, DockNode::Stack { entries }) => {
-                    let i = entries.iter().position(|e| e.panel == anchor).map_or(entries.len(), |i| i + 1);
-                    entries.insert(i, StackEntry { panel: p, open: true, height: None });
-                }
-                (z, node) => {
-                    let new = tabs(&[p], 0);
-                    let old = std::mem::replace(node, tabs(&[], 0));
-                    let vertical = matches!(z, Zone::Top | Zone::Bottom);
-                    let (a, b) = if matches!(z, Zone::Left | Zone::Top) { (new, old) } else { (old, new) };
-                    *node = DockNode::Split { vertical, size: SplitSize::Ratio(0.5), a: Box::new(a), b: Box::new(b) };
-                }
-            }
-            true
-        }
-        if rec(self, p, anchor, zone) {
-            true
-        } else {
-            *self = before;
-            false
-        }
+        crate::dock_shared::move_in_tree(self, p, anchor, craft_ui::docking::Placement::Split(zone.shared()))
     }
 
     /// Move panel `p` into the group that holds `anchor` as a tab before `before` (one of that
     /// group's panels) or last, and show it. False (tree unchanged) if `anchor` isn't docked.
     pub fn insert_tab(&mut self, p: PanelKind, anchor: PanelKind, before: Option<PanelKind>) -> bool {
-        if p == anchor || !self.contains(anchor) {
-            return false;
-        }
-        let saved = self.clone();
-        self.close(p);
-        fn rec(n: &mut DockNode, p: PanelKind, anchor: PanelKind, before: Option<PanelKind>) -> bool {
-            match n {
-                DockNode::Split { a, b, .. } => rec(a, p, anchor, before) || rec(b, p, anchor, before),
-                DockNode::Tabs { panels, active } if panels.contains(&anchor) => {
-                    let i = before.and_then(|b| panels.iter().position(|x| *x == b)).unwrap_or(panels.len());
-                    panels.insert(i, p);
-                    *active = i;
-                    true
-                }
-                DockNode::Stack { entries } if entries.iter().any(|e| e.panel == anchor) => {
-                    let i = before.and_then(|b| entries.iter().position(|e| e.panel == b)).unwrap_or(entries.len());
-                    entries.insert(i, StackEntry { panel: p, open: true, height: None });
-                    true
-                }
-                _ => false,
-            }
-        }
-        if rec(self, p, anchor, before) {
-            true
-        } else {
-            *self = saved;
-            false
-        }
+        crate::dock_shared::move_in_tree(self, p, anchor, craft_ui::docking::Placement::Tab { before })
     }
 
     /// Path of the group containing `p` (as in [`Group::path`]; stacks add `sN`).
@@ -674,98 +572,42 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// Undock `p` into a floating group at `rect` (no-op if it is the last docked panel).
+    /// Apply a shared transaction without replacing the persisted app schema.
+    pub fn apply(&mut self, action: craft_ui::docking::Action<PanelKind>) -> Result<(), String> {
+        crate::dock_shared::encode(&self.root, &self.floating)?.validate().map_err(|error| error.to_string())?;
+        let moving_to_float = match &action {
+            craft_ui::docking::Action::Float { panel, .. } => Some(*panel),
+            craft_ui::docking::Action::Move { panel, anchor, .. } if self.floating.iter().any(|group| group.panels.contains(anchor)) => Some(*panel),
+            _ => None,
+        };
+        if moving_to_float.is_some_and(|panel| self.root.contains(panel) && self.root.panel_count() <= 1) {
+            return Err("the last docked panel must remain in the workspace".into());
+        }
+        crate::dock_shared::apply(self, action)
+    }
+
+    /// Undock an existing panel; the final docked panel stays in the workspace.
     pub fn float(&mut self, p: PanelKind, rect: [f32; 4]) -> bool {
-        if self.root.contains(p) {
-            if self.root.panel_count() <= 1 {
-                return false;
-            }
-            self.root.close(p);
-        } else if !self.unfloat(p) {
-            return false;
-        }
-        self.floating.push(Floating { panels: vec![p], active: 0, rect });
-        true
+        self.apply(craft_ui::docking::Action::Float { panel: p, rect }).is_ok()
     }
 
-    /// Remove `p` from the floating groups (dropping emptied groups). True if it was floating.
+    /// Close an existing floating panel and collapse its empty group.
     pub fn unfloat(&mut self, p: PanelKind) -> bool {
-        let mut found = false;
-        for f in &mut self.floating {
-            if let Some(i) = f.panels.iter().position(|x| *x == p) {
-                let shown = f.panels.get(f.active).copied();
-                f.panels.remove(i);
-                f.active = shown.and_then(|shown| f.panels.iter().position(|x| *x == shown)).unwrap_or(f.active.min(f.panels.len().saturating_sub(1)));
-                found = true;
-            }
-        }
-        self.floating.retain(|f| !f.panels.is_empty());
-        found
+        crate::dock_shared::unfloat(self, p)
     }
 
-    /// Move `p` (docked or floating) into the group of `anchor` (docked or floating) as a tab
-    /// before `before` or last: where a tab dragged onto a tab strip lands.
+    /// Move or reorder a docked/floating tab through the shared transaction.
     pub fn insert_tab(&mut self, p: PanelKind, anchor: PanelKind, before: Option<PanelKind>) -> bool {
-        if p == anchor || before == Some(p) {
-            return false;
-        }
-        if self.floating.iter().any(|f| f.panels.contains(&anchor)) {
-            if self.root.contains(p) {
-                if self.root.panel_count() <= 1 {
-                    return false;
-                }
-                self.root.close(p);
-            } else {
-                self.unfloat(p);
-            }
-            // (Removing `p` may have dropped an emptied group: look the anchor up again.)
-            let Some(f) = self.floating.iter_mut().find(|f| f.panels.contains(&anchor)) else { return false };
-            let i = before.and_then(|b| f.panels.iter().position(|x| *x == b)).unwrap_or(f.panels.len());
-            f.panels.insert(i, p);
-            f.active = i;
-            return true;
-        }
-        if !self.root.contains(anchor) {
-            return false;
-        }
-        // A floating panel isn't in the tree, so insert_tab's removal is a no-op for it.
-        self.unfloat(p);
-        self.root.insert_tab(p, anchor, before)
+        self.apply(craft_ui::docking::Action::Move { panel: p, anchor, placement: craft_ui::docking::Placement::Tab { before } }).is_ok()
     }
 
-    /// Dock `p` (docked or floating) next to `anchor`; `anchor` may be floating too (then Center
-    /// adds a tab to that floating group).
+    /// Dock a panel beside an anchor; floating destinations accept tabs only.
     pub fn dock(&mut self, p: PanelKind, anchor: PanelKind, zone: Zone) -> bool {
-        if p == anchor {
-            return false;
-        }
-        if self.floating.iter().any(|f| f.panels.contains(&anchor)) {
-            if zone != Zone::Center {
-                return false;
-            }
-            if self.root.contains(p) {
-                if self.root.panel_count() <= 1 {
-                    return false;
-                }
-                self.root.close(p);
-            } else {
-                self.unfloat(p);
-            }
-            let Some(f) = self.floating.iter_mut().find(|f| f.panels.contains(&anchor)) else { return false };
-            f.panels.push(p);
-            f.active = f.panels.len() - 1;
-            return true;
-        }
-        if !self.root.contains(anchor) {
-            return false;
-        }
-        // A floating panel isn't in the tree, so dock_panel's removal is a no-op for it.
-        self.unfloat(p);
-        self.root.dock_panel(p, anchor, zone)
+        self.apply(craft_ui::docking::Action::Move { panel: p, anchor, placement: craft_ui::docking::Placement::Split(zone.shared()) }).is_ok()
     }
 
     pub fn contains(&self, p: PanelKind) -> bool {
-        self.root.contains(p) || self.floating.iter().any(|f| f.panels.contains(&p))
+        self.root.contains(p) || self.floating.iter().any(|group| group.panels.contains(&p))
     }
 }
 
@@ -838,6 +680,38 @@ pub struct TabDeco {
 
 /// Lay out the tree into group rects (with `gap` gutters) and handle gutter dragging.
 pub fn layout(ui: &mut egui::Ui, node: &mut DockNode, rect: Rect, t: &Tokens, path: &str, out: &mut Vec<Group>, reg: &mut crate::automation::Registry) {
+    let mut actions = Vec::new();
+    layout_with_actions(ui, node, rect, t, path, out, reg, &mut actions);
+    for action in actions {
+        crate::dock_shared::apply_tree(node, action);
+    }
+}
+
+/// Lay out chrome while returning mutations for the application's UI command route.
+pub fn layout_with_actions(
+    ui: &mut egui::Ui,
+    node: &mut DockNode,
+    rect: Rect,
+    t: &Tokens,
+    path: &str,
+    out: &mut Vec<Group>,
+    reg: &mut crate::automation::Registry,
+    actions: &mut Vec<craft_ui::docking::Action<PanelKind>>,
+) {
+    layout_inner(ui, node, rect, t, path, &[], out, reg, actions);
+}
+
+fn layout_inner(
+    ui: &mut egui::Ui,
+    node: &mut DockNode,
+    rect: Rect,
+    t: &Tokens,
+    path: &str,
+    tree_path: &[bool],
+    out: &mut Vec<Group>,
+    reg: &mut crate::automation::Registry,
+    actions: &mut Vec<craft_ui::docking::Action<PanelKind>>,
+) {
     match node {
         DockNode::Tabs { panels, active } => {
             let tab_h = if panels.len() == 1 && panels[0].compact() { 8.0 } else { t.tab_h };
@@ -871,42 +745,31 @@ pub fn layout(ui: &mut egui::Ui, node: &mut DockNode, rect: Rect, t: &Tokens, pa
                 y = r.max.y + g;
             }
             if let Some((above, below, d)) = drag {
-                resize_stacked(entries, &bodies, above, below, d);
+                let mut proposed = entries.clone();
+                resize_stacked(&mut proposed, &bodies, above, below, d);
+                for (before, after) in entries.iter().zip(proposed) {
+                    if before.height != after.height {
+                        actions.push(craft_ui::docking::Action::ResizeStack { panel: after.panel, height: after.height });
+                    }
+                }
             }
         }
         DockNode::Split { vertical, size, a, b } => {
-            let g = t.gap;
-            let total = if *vertical { rect.height() } else { rect.width() };
-            let avail = (total - g).max(0.0);
-            let first = match *size {
-                SplitSize::Ratio(r) => avail * r,
-                SplitSize::FixedA(px) => px.min(avail - 20.0),
-                SplitSize::FixedB(px) => avail - px.min(avail - 20.0),
+            let axis = if *vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
+            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, 20.0) else { return };
+            let response = resize_handle(split.divider, *vertical, path, t).value(split.first_size(), 0.0..=split.available()).show(ui);
+            reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
+            if response.delta != 0.0
+                && let Some(resized) = split.resized(size.shared(), response.delta, 40.0)
+            {
+                actions.push(craft_ui::docking::Action::ResizeSplit { path: tree_path.to_vec(), size: resized });
             }
-            .clamp(20.0_f32.min(avail), (avail - 20.0).max(0.0));
-            let (ra, gutter_rect, rb) = if *vertical {
-                (
-                    Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + first)),
-                    Rect::from_min_max(pos2(rect.min.x, rect.min.y + first), pos2(rect.max.x, rect.min.y + first + g)),
-                    Rect::from_min_max(pos2(rect.min.x, rect.min.y + first + g), rect.max),
-                )
-            } else {
-                (
-                    Rect::from_min_max(rect.min, pos2(rect.min.x + first, rect.max.y)),
-                    Rect::from_min_max(pos2(rect.min.x + first, rect.min.y), pos2(rect.min.x + first + g, rect.max.y)),
-                    Rect::from_min_max(pos2(rect.min.x + first + g, rect.min.y), rect.max),
-                )
-            };
-            if let Some(d) = gutter(ui, gutter_rect, *vertical, path, t, reg) {
-                let nf = (first + d).clamp(40.0, (avail - 40.0).max(40.0));
-                *size = match *size {
-                    SplitSize::Ratio(_) => SplitSize::Ratio(nf / avail.max(1.0)),
-                    SplitSize::FixedA(_) => SplitSize::FixedA(nf),
-                    SplitSize::FixedB(_) => SplitSize::FixedB(avail - nf),
-                };
-            }
-            layout(ui, a, ra, t, &format!("{path}a"), out, reg);
-            layout(ui, b, rb, t, &format!("{path}b"), out, reg);
+            let mut first_path = tree_path.to_vec();
+            first_path.push(false);
+            let mut second_path = tree_path.to_vec();
+            second_path.push(true);
+            layout_inner(ui, a, split.first, t, &format!("{path}a"), &first_path, out, reg, actions);
+            layout_inner(ui, b, split.second, t, &format!("{path}b"), &second_path, out, reg, actions);
         }
     }
 }
@@ -914,14 +777,16 @@ pub fn layout(ui: &mut egui::Ui, node: &mut DockNode, rect: Rect, t: &Tokens, pa
 /// A gap between dock areas that drags to resize them (`vertical`: up and down), with a slightly
 /// larger hit area than the gap. Returns the drag this frame.
 fn gutter(ui: &mut egui::Ui, gap: Rect, vertical: bool, path: &str, t: &Tokens, reg: &mut crate::automation::Registry) -> Option<f32> {
-    let hit = gap.expand2(if vertical { vec2(0.0, 3.0) } else { vec2(3.0, 0.0) });
-    let resp = ui.interact(hit, egui::Id::new(("dock-gutter", path.to_string())), Sense::drag());
-    reg.add(&format!("dock.gutter.{path}"), hit, "gutter");
-    if resp.hovered() || resp.dragged() {
-        ui.ctx().set_cursor_icon(if vertical { egui::CursorIcon::ResizeVertical } else { egui::CursorIcon::ResizeHorizontal });
-        ui.painter().rect_filled(gap, 0.0, t.focus.gamma_multiply(if resp.dragged() { 0.9 } else { 0.4 }));
-    }
-    resp.dragged().then(|| if vertical { resp.drag_delta().y } else { resp.drag_delta().x })
+    let response = resize_handle(gap, vertical, path, t).show(ui);
+    reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
+    (response.delta != 0.0).then_some(response.delta)
+}
+
+fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHandle<'static> {
+    let axis = if vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
+    let style = ResizeHandleStyle { hovered: t.focus.gamma_multiply(0.4), dragged: t.focus.gamma_multiply(0.9), focused: t.focus };
+    let label = if vertical { crate::i18n::tr("Height:") } else { crate::i18n::tr("Width:") };
+    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style)
 }
 
 /// The least body height of an open stacked panel (when the stack has room for it).
@@ -1068,6 +933,8 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                 let resp = ui.interact(r, egui::Id::new(("tab-overflow", g.path.clone())), Sense::click());
                 icons::paint(&painter, r.shrink(4.0).translate(vec2(-2.0, 0.0)), Icon::ChevronRight, t.tab_text);
                 icons::paint(&painter, r.shrink(4.0).translate(vec2(2.0, 0.0)), Icon::ChevronRight, t.tab_text);
+                crate::widgets::focus_outline(ui, &resp, t);
+                reg.add_response(&format!("panel.overflow.{}", g.path), &resp, "More tabs");
                 if resp.clicked()
                     && let Some(next) = entries.get((ai + 1) % entries.len())
                 {
@@ -1089,9 +956,9 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                 Some(id) => format!("panel.tab.{}.{id}", p.id()),
                 None => format!("panel.tab.{}", p.id()),
             };
-            reg.add(&auto_id, tab, &e.label);
+            reg.add_response(&auto_id, &resp, &e.label);
             if e.shown_doc {
-                reg.add(&format!("panel.tab.{}", p.id()), tab, &e.label);
+                reg.add_response(&format!("panel.tab.{}", p.id()), &resp, &e.label);
             }
             let mut label_x = tab.min.x + 8.0;
             if let Some(d) = e.deco {
@@ -1103,7 +970,8 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                     let kk = 3.5;
                     painter.line_segment([cr.center() + vec2(-kk, -kk), cr.center() + vec2(kk, kk)], Stroke::new(1.2, cc));
                     painter.line_segment([cr.center() + vec2(-kk, kk), cr.center() + vec2(kk, -kk)], Stroke::new(1.2, cc));
-                    reg.add(&format!("panel.tab.{}.close", p.id()), cr, "Close");
+                    reg.add_response(&format!("panel.tab.{}.close", p.id()), &cresp, "Close");
+                    crate::widgets::focus_outline(ui, &cresp, t);
                     if cresp.clicked() {
                         out.actions.push(close(e));
                     }
@@ -1124,7 +992,8 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                         t.text_faint
                     };
                     icons::paint(&painter, lr, Icon::Lock, lc);
-                    reg.add(&format!("panel.tab.{}.lock", p.id()), lr, if d.locked { "Unlock" } else { "Lock" });
+                    reg.add_response(&format!("panel.tab.{}.lock", p.id()), &lresp, if d.locked { "Unlock" } else { "Lock" });
+                    crate::widgets::focus_outline(ui, &lresp, t);
                     if lresp.clicked() {
                         out.actions.push(DockAction::ToggleLock(*p));
                     }
@@ -1137,17 +1006,19 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
             if is_active {
                 let mr = Rect::from_center_size(pos2(label_x + label_w + 12.0, text_y), vec2(12.0, 10.0));
                 let mresp = ui.interact(mr.expand(3.0), egui::Id::new(("tab-menu", g.path.clone())), Sense::click());
-                reg.add(&format!("panel.menu.{}", p.id()), mr, "panel menu");
+                reg.add_response(&format!("panel.menu.{}", p.id()), &mresp, "panel menu");
                 let mc = if mresp.hovered() { t.tab_text_active } else { t.tab_text };
                 for dy in [-3.5, 0.0, 3.5] {
                     painter.line_segment([pos2(mr.min.x, mr.center().y + dy), pos2(mr.max.x, mr.center().y + dy)], Stroke::new(1.5, mc));
                 }
                 let uy = strip.min.y + 23.0;
                 painter.line_segment([pos2(label_x, uy), pos2(mr.max.x, uy)], Stroke::new(1.0, t.tab_text_active));
+                crate::widgets::focus_outline(ui, &mresp, t);
                 if mresp.clicked() {
                     out.actions.push(DockAction::PanelMenu(*p, mr.left_bottom()));
                 }
             }
+            crate::widgets::focus_outline(ui, &resp, t);
             if resp.clicked() {
                 if g.stacked.is_some() {
                     out.actions.push(DockAction::ToggleStacked(*p));
@@ -1180,6 +1051,32 @@ pub fn placeholder(ui: &mut egui::Ui, rect: Rect, t: &Tokens, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The original split clamp panicked whenever 0 < available < 40. Run the actual dock
+    /// layout without the app's last-resort panic guard so that regression cannot be hidden.
+    #[test]
+    fn tiny_split_layouts_stay_inside_their_parent() {
+        let ctx = egui::Context::default();
+        let tokens = Tokens::for_kind(crate::theme::ThemeKind::Dark);
+        for extent in [20.0, 0.0, 1.0, 5.0, 15.0, 35.0, 39.9, 40.0, 80.0] {
+            for vertical in [false, true] {
+                for size in [SplitSize::Ratio(0.5), SplitSize::FixedA(300.0), SplitSize::FixedB(300.0)] {
+                    let rect = Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::splat(extent));
+                    let mut node =
+                        DockNode::Split { vertical, size, a: Box::new(tabs(&[PanelKind::Project], 0)), b: Box::new(tabs(&[PanelKind::Composition], 0)) };
+                    let mut groups = vec![];
+                    let mut registry = crate::automation::Registry::default();
+                    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| layout(ui, &mut node, rect, &tokens, "", &mut groups, &mut registry));
+                    output.textures_delta.clear();
+                    assert_eq!(groups.len(), 2);
+                    for group in groups {
+                        assert!(rect.contains_rect(group.rect), "{extent}, {vertical}: {:?}", group.rect);
+                        assert!(group.rect.width() >= 0.0 && group.rect.height() >= 0.0);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn stacked_panels_toggle_open_close() {
@@ -1461,8 +1358,10 @@ mod tests {
     #[test]
     fn removing_earlier_inactive_floating_tab_keeps_the_shown_panel() {
         use PanelKind::*;
-        let mut layout =
-            Layout { root: tabs(&[Composition], 0), floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active: 1, rect: [0.0; 4] }] };
+        let mut layout = Layout {
+            root: tabs(&[Composition], 0),
+            floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active: 1, rect: [0.0, 0.0, 300.0, 200.0] }],
+        };
         assert!(layout.unfloat(Properties));
         let f = &layout.floating[0];
         assert_eq!(f.panels.get(f.active), Some(&Align));
@@ -1475,8 +1374,10 @@ mod tests {
         for (active, closed, shown) in
             [(0, Properties, Align), (1, Align, EffectsPresets), (2, EffectsPresets, Align), (usize::MAX, Properties, EffectsPresets)]
         {
-            let mut layout =
-                Layout { root: tabs(&[Composition], 0), floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active, rect: [0.0; 4] }] };
+            let mut layout = Layout {
+                root: tabs(&[Composition], 0),
+                floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active, rect: [0.0, 0.0, 300.0, 200.0] }],
+            };
             assert!(layout.unfloat(closed));
             let f = &layout.floating[0];
             assert_eq!(f.panels.get(f.active), Some(&shown));

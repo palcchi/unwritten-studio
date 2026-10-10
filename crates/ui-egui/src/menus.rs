@@ -27,6 +27,7 @@ macro_rules! uic {
 
 /// UI-only commands (not in the AE menus; shortcuts and the command palette).
 pub const UI_COMMANDS: &[UiCommand] = &[
+    uic!("window.dockAction", "Docking Action", [], None),
     uic!("playback.ramPreview", "Preview (Numpad 0)", [], Some("Num0")),
     uic!("playback.preview.shiftSpacebar", "Preview (Shift+Spacebar)", [], Some("Shift+Space")),
     uic!("playback.preview.shiftNumpad0", "Preview (Shift+Numpad 0)", [], Some("Shift+Num0")),
@@ -416,6 +417,30 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             _ => {}
         }
     }
+    if id == "window.dockAction" {
+        let value = params.get("action").cloned().ok_or("missing docking action")?;
+        let action: craft_ui::docking::Action<PanelKind> = serde_json::from_value(value).map_err(|error| format!("invalid docking action: {error}"))?;
+        if matches!(&action, craft_ui::docking::Action::Open { .. } | craft_ui::docking::Action::OpenAt { .. }) {
+            return Err("use the panel open commands to preserve viewer and ScriptUI lifecycle callbacks".into());
+        }
+        if let craft_ui::docking::Action::Close { panel } = &action {
+            let mut layout = crate::dock_shared::encode(&app.ui.dock, &app.ui.floating)?;
+            layout.apply(action.clone()).map_err(|error| error.to_string())?;
+            app.close_panel(*panel);
+            return Ok(Value::Null);
+        }
+        let mut error = None;
+        if !app.edit_layout(|layout| match layout.apply(action) {
+            Ok(()) => true,
+            Err(reason) => {
+                error = Some(reason);
+                false
+            }
+        }) {
+            return Err(error.unwrap_or_else(|| "invalid docking layout".into()));
+        }
+        return Ok(Value::Null);
+    }
     // Docking: {panel, anchor, zone: center|left|right|top|bottom}, {panel, rect?}, {panel?}.
     if let Some(op) = id.strip_prefix("window.").filter(|o| matches!(*o, "maximizePanel" | "dockPanel" | "floatPanel" | "closePanel")) {
         let panel_of = |k: &str| params.get(k).and_then(Value::as_str).map(|s| PanelKind::from_name(s).ok_or(format!("unknown panel `{s}`")));
@@ -435,11 +460,10 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             }
             "floatPanel" => {
                 let p = panel_of("panel").ok_or("floatPanel: need `panel`")??;
-                let r = params.get("rect").and_then(Value::as_array).map(|a| {
-                    let g = |i: usize| a.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32;
-                    [g(0), g(1), g(2), g(3)]
-                });
-                let r = r.unwrap_or_else(|| crate::dock_ui::default_float_rect(ctx.content_rect()));
+                let r = match params.get("rect") {
+                    Some(value) => serde_json::from_value::<[f32; 4]>(value.clone()).map_err(|_| "rect must contain four finite numbers")?,
+                    None => crate::dock_ui::default_float_rect(ctx.content_rect()),
+                };
                 if !app.edit_layout(|l| l.float(p, r)) {
                     return Err(format!("can't undock {}", p.title()));
                 }
@@ -1483,9 +1507,15 @@ fn modifiers_at_start(ctx: &egui::Context) -> Option<egui::Modifiers> {
     let pass = ctx.cumulative_pass_nr();
     let now = ctx.input(|i| i.modifiers);
     ctx.data_mut(|d| {
-        let last = d.get_temp::<(u64, egui::Modifiers)>(id);
-        d.insert_temp(id, (pass, now));
-        last.and_then(|(p, m)| (p.checked_add(1) == Some(pass)).then_some(m))
+        let last = d.get_temp::<(u64, egui::Modifiers, Option<egui::Modifiers>)>(id);
+        if let Some((p, _, start)) = last
+            && p == pass
+        {
+            return start;
+        }
+        let start = last.and_then(|(p, m, _)| (p.checked_add(1) == Some(pass)).then_some(m));
+        d.insert_temp(id, (pass, now, start));
+        start
     })
 }
 
@@ -1496,9 +1526,21 @@ fn only_shift(m: egui::Modifiers) -> bool {
 
 /// Dispatch keyboard shortcuts (skipped while typing in a text field).
 pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    handle_shortcuts_impl(app, ctx, false);
+}
+
+/// Tab can acquire widget focus while the current frame is drawn. Dispatch its application
+/// binding only afterward, and only when no widget owned focus before or after layout.
+pub fn handle_tab_shortcut(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    if ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
+        handle_shortcuts_impl(app, ctx, true);
+    }
+}
+
+fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only: bool) {
     let start = modifiers_at_start(ctx);
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
-    if app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if !tab_only && app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         if crate::panels::shortcut_editor::recording(app) || egui::Popup::is_any_open(ctx) {
             return;
         }
@@ -1534,7 +1576,7 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
     // Text editing in the viewer takes the clipboard events itself.
     let clipboard = app.session.state.text_edit.is_none();
     let project = app.ui.focused == PanelKind::Project;
-    let events: Vec<(egui::Key, egui::Modifiers, bool)> = ctx.input(|i| {
+    let mut events: Vec<(egui::Key, egui::Modifiers, bool)> = ctx.input(|i| {
         // The windowing layer turns Ctrl+C / Ctrl+X / Ctrl+V into clipboard events instead of
         // key presses: map them back to the keys (with the modifiers held) so Edit ▸ Copy, Cut,
         // Paste and their variants (Ctrl+Alt+C…) run. Clipboard events carry no modifiers and
@@ -1574,9 +1616,10 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
         }
         out
     });
+    events.retain(|(key, _, _)| (*key == egui::Key::Tab) == tab_only);
     // Numpad * (or `*` typed with Shift+8): Add Marker (#275). egui has no key for it, so it
     // comes as text.
-    if clipboard && app.dialog.is_none() && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "*"))) {
+    if !tab_only && clipboard && app.dialog.is_none() && ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if t == "*"))) {
         let bound = app.session.shortcuts().bindings().into_iter().find(|(k, _)| *k == "Num*").map(|(_, b)| (b.command.clone(), b.params.clone()));
         if let Some((id, params)) = bound
             && let Err(e) = invoke(app, ctx, &id, if params.is_null() { json!({}) } else { params })
@@ -1827,6 +1870,27 @@ fn menu_entry(app: &EffectcraftApp, ui: &mut egui::Ui, e: &MenuEntry) -> egui::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcut_passes_share_frame_start_modifiers() {
+        let ctx = egui::Context::default();
+        let mut starts = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput { events: vec![egui::Event::ModifiersChanged(egui::Modifiers::SHIFT)], ..Default::default() }, |ui| {
+            let ctx = ui.ctx();
+            starts.push(modifiers_at_start(ctx));
+            starts.push(modifiers_at_start(ctx));
+        });
+        output.textures_delta.clear();
+        assert_eq!(starts, vec![None, None]);
+        starts.clear();
+        let mut output = ctx.run_ui(egui::RawInput { events: vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)], ..Default::default() }, |ui| {
+            let ctx = ui.ctx();
+            starts.push(modifiers_at_start(ctx));
+            starts.push(modifiers_at_start(ctx));
+        });
+        output.textures_delta.clear();
+        assert_eq!(starts, vec![Some(egui::Modifiers::SHIFT), Some(egui::Modifiers::SHIFT)]);
+    }
 
     #[test]
     fn every_ui_shortcut_parses() {

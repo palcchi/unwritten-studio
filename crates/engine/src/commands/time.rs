@@ -43,12 +43,17 @@ pub fn parse_display_time(s: &Session, comp: &Comp, text: &str, current: i64) ->
             let relative = text.trim().starts_with('+') || text.trim().starts_with('-');
             if relative {
                 Ok(parsed)
+            } else if st.time_display == TimeDisplayStyle::Frames
+                && let Ok(frame) = text.trim().parse::<i64>()
+            {
+                // Displayed digits are a plain frame count (00100 is frame 100, not 1 s) plus
+                // Start Numbering Frames At.
+                Ok(frame.saturating_sub(st.frame_start))
             } else if st.time_display == TimeDisplayStyle::Frames {
-                // Displayed digits are composition frame plus Start Numbering Frames At.
-                Ok(parsed - st.frame_start)
+                Ok(parsed.saturating_sub(st.frame_start))
             } else {
                 // Displayed timecode includes the composition Start Timecode offset.
-                Ok(parsed - fr.frame_at(comp.display_start))
+                Ok(parsed.saturating_sub(fr.frame_at(comp.display_start)))
             }
         }
     }

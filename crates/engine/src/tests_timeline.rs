@@ -413,11 +413,7 @@ fn time_set_snaps_to_the_nearest_frame_and_ae_timecode() {
 #[test]
 fn time_set_keeps_the_frame_shown_in_the_current_time_field() {
     let mut s = Session::default();
-    s.execute(
-        "comp.new",
-        json!({"name": "Example", "width": 64, "height": 64, "frameRate": 30, "duration": 0.6, "startTimecode": "0:00:00:05"}),
-    )
-    .unwrap();
+    s.execute("comp.new", json!({"name": "Example", "width": 64, "height": 64, "frameRate": 30, "duration": 0.6, "startTimecode": "0:00:00:05"})).unwrap();
     let r = s.execute("time.set", json!({"frame": 0})).unwrap();
     assert_eq!(r["display"], "0:00:00:05");
     let r = s.execute("time.set", json!({"timecode": "0:00:00:05"})).unwrap();
@@ -431,6 +427,17 @@ fn time_set_keeps_the_frame_shown_in_the_current_time_field() {
     assert_eq!((r["frame"].as_i64(), r["time"].as_f64()), (Some(12), Some(0.4)));
     let r = s.execute("time.set", json!({"timecode": "+1"})).unwrap();
     assert_eq!(r["frame"], 13);
+}
+
+/// Frames display style: typed digits are a frame count, so 00100 is frame 100, not 1 s (#530).
+#[test]
+fn time_set_reads_frames_style_digits_as_a_frame_count() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Long", "width": 64, "height": 64, "frameRate": 30, "duration": 10})).unwrap();
+    s.execute("file.projectSettings", json!({"timeDisplay": "frames"})).unwrap();
+    let r = s.execute("time.set", json!({"timecode": "00100"})).unwrap();
+    assert_eq!(r["frame"], 100);
+    assert_eq!(r["display"], "00100");
 }
 
 #[test]

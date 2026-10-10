@@ -588,6 +588,21 @@ fn set_output_module(s: &mut Session, p: &Value) -> Result<Value> {
     let m = module_p(s, i, p, "renderQueue.setOutputModule")?;
     let mut om = module_ref(&s.project.render_queue[i], m).clone();
     let changed = apply_output(&mut om, &s.project.render_templates, s.state.region_of_interest, p, "renderQueue.setOutputModule")?;
+
+    // When aspect is locked, an explicit height-only edit must drive the size.
+    // frame_size() derives height from width; calculate the matching width from the
+    // cropped render bounds before storing the updated module.
+    let width_given = p.get("resizeWidth").is_some() || p.get("resize").and_then(Value::as_object).is_some_and(|r| r.contains_key("width") || r.contains_key("preset"));
+    let height_given = p.get("resizeHeight").is_some() || p.get("resize").and_then(Value::as_object).is_some_and(|r| r.contains_key("height"));
+    if om.resize.enabled && om.resize.lock_aspect && height_given && !width_given {
+        let item = &s.project.render_queue[i];
+        let comp = s.project.comp(item.comp).ok_or(EngineError::NoComp)?;
+        let (w, h) = item.settings.output_size(comp);
+        let mut crop_only = om.clone();
+        crop_only.resize.enabled = false;
+        let (cw, ch) = crop_only.frame_size(w, h, item.settings.resolution.clamp(0.01, 4.0));
+        om.resize.width = ((om.resize.height as f64 * cw as f64 / ch as f64).round() as u32).clamp(1, 30_000);
+    }
     let post = match str_p(p, "postRenderAction") {
         Some(a) => Some(post_render_parse(a).ok_or_else(|| bad("renderQueue.setOutputModule", "postRenderAction: none|import|importAndReplace|setProxy"))?),
         None => None,

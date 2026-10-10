@@ -183,3 +183,28 @@ fn queue_add_accepts_render_settings_templates_without_output_module_namesakes()
     assert!(s.execute("renderQueue.add", json!({"comp":"C","template":"Unknown Settings"})).is_err());
     assert_eq!(s.project.render_queue.len(), count);
 }
+
+#[test]
+fn locked_resize_uses_height_for_height_only_output_module_updates() {
+    for change in [
+        json!({"resizeHeight": 32}),
+        json!({"resize": {"height": 32, "lockAspect": true}}),
+    ] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name":"Square","width":64,"height":64,"frameRate":10,"duration":1})).unwrap();
+        s.execute("renderQueue.add", json!({})).unwrap();
+        s.execute("renderQueue.setOutputModule", json!({"resize": {"width": 64, "lockAspect": true}})).unwrap();
+        s.execute("renderQueue.setOutputModule", change).unwrap();
+        let item = &s.project.render_queue[0];
+        let comp = s.project.comp(item.comp).unwrap();
+        assert_eq!(item.output.output_size(comp, &item.settings), (32, 32));
+        assert_eq!(item.output.resize.height, 32);
+    }
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name":"Square","width":64,"height":64,"duration":1})).unwrap();
+    s.execute("renderQueue.add", json!({})).unwrap();
+    s.execute("renderQueue.setOutputModule", json!({"resize": {"width": 32, "height": 54, "lockAspect": true}})).unwrap();
+    let item = &s.project.render_queue[0];
+    let comp = s.project.comp(item.comp).unwrap();
+    assert_eq!(item.output.output_size(comp, &item.settings), (32, 32), "explicit width retains precedence");
+}

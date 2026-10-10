@@ -165,6 +165,145 @@ fn property_reply(p: &Value, layer: &Layer, pr: &Property, time: Tick, value: Va
     }
 }
 
+// ---------------------------------------------------------------- several selected layers
+
+/// With `selected: true` (the Timeline, Properties and Effect Controls panels pass it): the same
+/// property (by match path, `transform/position`, `effects/<effect>#n/<param>`) of every other
+/// selected, unlocked layer of the comp whose value is of the same kind, as (layer, uid). Empty
+/// when `selected` is not set or the edited layer isn't selected. After Effects applies a value
+/// edit, the stopwatch and the keyframe button to all selected layers (#355, #491).
+fn selected_twins(s: &Session, p: &Value, cmd: &str) -> Result<Vec<(LayerId, Uid)>> {
+    if b_p(p, "selected") != Some(true) {
+        return Ok(vec![]);
+    }
+    let (cid, lid, uid) = prop_ref(s, p, cmd)?;
+    let Some(comp) = s.project.comp(cid) else { return Ok(vec![]) };
+    let Some(layer) = comp.layer(lid) else { return Ok(vec![]) };
+    let (Some(path), Some(pr)) = (layer.props.match_path_of(uid), layer.props.find(uid)) else { return Ok(vec![]) };
+    if !s.state.selected_layers.contains(&lid) {
+        return Ok(vec![]);
+    }
+    let kind = (pr.value.kind_name(), pr.value.components().len());
+    Ok(s.state
+        .selected_layers
+        .iter()
+        .filter(|o| **o != lid)
+        .filter_map(|o| comp.layer(*o))
+        .filter(|l| !l.switches.locked)
+        .filter_map(|l| l.props.prop(&path).filter(|q| (q.value.kind_name(), q.value.components().len()) == kind).map(|q| (l.id, q.uid)))
+        .collect())
+}
+
+/// `p` aimed at property `uid` of layer `lid` instead.
+fn twin_params(p: &Value, lid: LayerId, uid: Uid) -> Value {
+    let mut q = p.clone();
+    if let Some(o) = q.as_object_mut() {
+        o.remove("path");
+        o.remove("selected");
+        o.remove("offset");
+    }
+    q["layer"] = json!(lid.0);
+    q["prop"] = json!(uid);
+    q
+}
+
+/// The value of property `uid` of `lid` at the CTI as numbers (Position with Separate
+/// Dimensions: its X / Y / Z Position).
+fn current_components(s: &Session, cid: ItemId, lid: LayerId, uid: Uid) -> Option<Vec<f64>> {
+    let l = s.project.comp(cid)?.layer(lid)?;
+    let lt = l.layer_time(s.time_of(cid));
+    if let Some(tr) = l.transform()
+        && tr.get("position").is_some_and(|q| q.uid == uid)
+        && tr.get("positionX").is_some()
+    {
+        return Some(["positionX", "positionY", "positionZ"].iter().filter_map(|m| tr.get(m)).map(|q| q.value_at(lt).as_f64()).collect());
+    }
+    Some(l.props.find(uid)?.value_at(lt).components())
+}
+
+/// A JSON number or array of numbers.
+fn json_numbers(v: &Value) -> Option<Vec<f64>> {
+    match v {
+        Value::Number(n) => Some(vec![n.as_f64()?]),
+        Value::Array(a) => a.iter().map(Value::as_f64).collect(),
+        _ => None,
+    }
+}
+
+/// `prop.set`; with `selected`, also on the other selected layers: the same value, or with
+/// `offset` (a scrub) the same change from each layer's own value. One undo step (with `merge`,
+/// one that a continuing scrub keeps folding into).
+fn set_selected(s: &mut Session, p: &Value) -> Result<Value> {
+    let twins = selected_twins(s, p, "prop.set")?;
+    if twins.is_empty() {
+        return set(s, p);
+    }
+    let (cid, lid, uid) = prop_ref(s, p, "prop.set")?;
+    let new = p.get("value").and_then(json_numbers);
+    let delta = match (b_p(p, "offset"), &new, current_components(s, cid, lid, uid)) {
+        (Some(true), Some(n), Some(c)) => Some(n.iter().zip(c.iter().chain(std::iter::repeat(&0.0))).map(|(a, b)| a - b).collect::<Vec<f64>>()),
+        _ => None,
+    };
+    let run = |s: &mut Session| -> Result<Value> {
+        let out = set(s, p)?;
+        for (olid, ouid) in twins {
+            let mut q = twin_params(p, olid, ouid);
+            if let Some(d) = &delta
+                && let Some(c) = current_components(s, cid, olid, ouid)
+            {
+                let v: Vec<f64> = c.iter().enumerate().map(|(i, x)| x + d.get(i).copied().unwrap_or(0.0)).collect();
+                q["value"] = if p.get("value").is_some_and(Value::is_number) { json!(v.first().copied().unwrap_or(0.0)) } else { json!(v) };
+            }
+            // (a layer that can't take it, e.g. a clamped or static property, keeps its value)
+            let _ = set(s, &q);
+        }
+        Ok(out)
+    };
+    if merge_p(p).is_some() { run(s) } else { super::app_more::grouped(s, "Change Property", run) }
+}
+
+/// `prop.toggleAnimation`; with `selected`, the other selected layers' same property follows.
+fn toggle_anim_selected(s: &mut Session, p: &Value) -> Result<Value> {
+    let twins = selected_twins(s, p, "prop.toggleAnimation")?;
+    if twins.is_empty() {
+        return toggle_anim(s, p);
+    }
+    let run = |s: &mut Session| -> Result<Value> {
+        let on = toggle_anim(s, p)?;
+        for (olid, ouid) in twins {
+            let mut q = twin_params(p, olid, ouid);
+            q["value"] = on.clone();
+            let _ = toggle_anim(s, &q);
+        }
+        Ok(on)
+    };
+    // (a stopwatch drag over several rows keeps folding into the step its `merge` names)
+    if merge_p(p).is_some() { run(s) } else { super::app_more::grouped(s, "Toggle Animation", run) }
+}
+
+/// `prop.toggleKey`; with `selected`, the other selected layers' same property gets (or loses)
+/// its keyframe at the current time too.
+fn toggle_key_selected(s: &mut Session, p: &Value) -> Result<Value> {
+    let twins = selected_twins(s, p, "prop.toggleKey")?;
+    if twins.is_empty() {
+        return toggle_key(s, p);
+    }
+    let cid = prop_ref(s, p, "prop.toggleKey")?.0;
+    super::app_more::grouped(s, "Add/Remove Keyframe", |s| {
+        let added = toggle_key(s, p)?;
+        let want = added.as_bool().unwrap_or(true);
+        for (olid, ouid) in twins {
+            let _ = with_prop(s, "Add/Remove Keyframe", None, cid, olid, ouid, |pr, lt| {
+                if key_at(&pr.keys, lt).is_some() != want {
+                    toggle_key_at(pr, lt);
+                }
+                Ok(())
+            });
+        }
+        Ok(added)
+    })
+}
+
 fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, lid, uid) = prop_ref(s, p, "prop.set")?;
     // Position with Separate Dimensions: write the X/Y/Z Position properties instead.
@@ -1001,13 +1140,13 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Property Value",
             [],
             None,
-            "{layer?, path|prop, value, time? (layer s by default), timeBase?: layer|comp, merge?}",
+            "{layer?, path|prop, value, time? (layer s by default), timeBase?: layer|comp, merge?, selected? (also the other selected layers), offset? (them by the same change)}",
             has_layers,
-            set
+            set_selected
         ),
-        cmd!("prop.toggleAnimation", "Toggle Stopwatch", [], None, "{layer?, path|prop, value?, merge?}", has_layers, toggle_anim),
+        cmd!("prop.toggleAnimation", "Toggle Stopwatch", [], None, "{layer?, path|prop, value?, merge?, selected?}", has_layers, toggle_anim_selected),
         cmd!("prop.addKey", "Add Keyframe", [], None, "{layer?, path|prop, time? (layer s by default), timeBase?: layer|comp, value?}", has_layers, add_key),
-        cmd!("prop.toggleKey", "Add or Remove Keyframe at Current Time", [], None, "{layer?, path|prop}", has_layers, toggle_key),
+        cmd!("prop.toggleKey", "Add or Remove Keyframe at Current Time", [], None, "{layer?, path|prop, selected?}", has_layers, toggle_key_selected),
         cmd!(
             "keys.toggleTransform",
             "Add or Remove Transform Keyframe",

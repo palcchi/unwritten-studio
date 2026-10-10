@@ -3510,8 +3510,11 @@ fn value_editor(
     let uid = prop.uid;
     let mut dims = vec![];
     let merge = format!("scrub-{uid}");
+    // With several layers selected the edit applies to all of them (#491): a scrub by the same
+    // change, a typed value as it is.
+    let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
     let set = |actions: &mut Vec<(String, serde_json::Value)>, v: serde_json::Value| {
-        actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge})))
+        actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
     };
     let is_3d = layer.is_3d();
     let mut x = at.x;

@@ -405,6 +405,7 @@ const JAPANESE: &[(&str, &str)] = &[
     ("Select a command to change its shortcut.", "ショートカットを変更するコマンドを選択してください。"),
     ("Select a layer to see its effects", "レイヤーを選択するとエフェクトが表示されます"),
     ("Select a layer to see its properties", "レイヤーを選択するとプロパティが表示されます"),
+    ("({}) Selected Objects", "({}) 個の選択されたオブジェクト"),
     (
         "Select a layer with a mask or shape path (or the path property), or Puppet pins.",
         "マスクまたはシェイプパスのあるレイヤー（またはパスプロパティ）か、パペットピンを選択してください。",
@@ -840,6 +841,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("Select a command to change its shortcut.", "选择一条命令以更改其快捷键。"),
     ("Select a layer to see its effects", "选择图层以查看其效果"),
     ("Select a layer to see its properties", "选择图层以查看其属性"),
+    ("({}) Selected Objects", "({}) 个选定对象"),
     (
         "Select a layer with a mask or shape path (or the path property), or Puppet pins.",
         "请选择带蒙版或形状路径（或路径属性）的图层，或带有人偶定位点的图层。",
@@ -1364,6 +1366,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("Select a command to change its shortcut.", "選取一條命令以更改其快速鍵。"),
     ("Select a layer to see its effects", "選取圖層以查看其效果"),
     ("Select a layer to see its properties", "選取圖層以查看其屬性"),
+    ("({}) Selected Objects", "({}) 個選取的物件"),
     (
         "Select a layer with a mask or shape path (or the path property), or Puppet pins.",
         "請選取帶遮色片或形狀路徑（或路徑屬性）的圖層，或帶有人偶釘選點的圖層。",
@@ -1882,6 +1885,7 @@ const UKRAINIAN: &[(&str, &str)] = &[
     ("Select a command to change its shortcut.", "Виберіть команду, щоб змінити її клавіатурне скорочення."),
     ("Select a layer to see its effects", "Виділіть шар, щоб переглянути його ефекти"),
     ("Select a layer to see its properties", "Виділіть шар, щоб переглянути його властивості"),
+    ("({}) Selected Objects", "Вибрано об’єктів: ({})"),
     (
         "Select a layer with a mask or shape path (or the path property), or Puppet pins.",
         "Виділіть шар із маскою або контуром фігури (або властивість контуру) чи опорні точки деформації.",

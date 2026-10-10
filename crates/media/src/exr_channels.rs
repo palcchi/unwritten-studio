@@ -161,9 +161,20 @@ fn picture_layer<'a>(aux: &AuxChannels, layers: &[&'a str]) -> Option<&'a str> {
 /// that is not a data pass (never Cryptomatte, depth or normals, #412), else the first channel
 /// as grey. Linear, straight RGBA as the file stores it. `None` when it is not a readable EXR.
 pub fn layered_image(bytes: &[u8]) -> Option<image::DynamicImage> {
-    let aux = read_exr_channels(bytes)?;
+    picture_of(&read_exr_channels(bytes)?)
+}
+
+/// [`layered_image`] of the EXR at `path` from the channel cache, so the picture and EXtractoR /
+/// Cryptomatte share one decode of the file (#474).
+pub(crate) fn cached_layered_image(path: &str, bytes: Arc<[u8]>) -> Option<image::DynamicImage> {
+    let aux = cached(path, || Some(bytes))?;
+    picture_of(&aux)
+}
+
+/// The picture of decoded channels (see [`layered_image`]).
+fn picture_of(aux: &AuxChannels) -> Option<image::DynamicImage> {
     let layers = aux.layers();
-    let colour = picture_layer(&aux, &layers)?;
+    let colour = picture_layer(aux, &layers)?;
     let names = aux.layer_rgba(colour);
     // A layer without R, G and B channels shows its first channel as grey.
     let first = aux.names().into_iter().find(|n| split_channel(n).0 == colour).unwrap_or_default();
@@ -254,6 +265,27 @@ mod tests {
     /// #295: a multi-layer EXR whose colour is only in named layers (`diffuse.R`, as Blender and
     /// Nuke write them) failed to import ("does not contain non-deep rgb channels"); it now
     /// shows its colour layer and keeps every channel for EXtractoR.
+    /// #474: the picture and EXtractoR / Cryptomatte share one decode of a multi-layer file:
+    /// after the frame is decoded, the aux channels come from the cache without reading the file.
+    #[test]
+    fn picture_and_aux_channels_share_one_decode() {
+        use exr::prelude::*;
+        let (w, h) = (2usize, 2usize);
+        let ch = |n: &str, v: f32| AnyChannel::new(n, FlatSamples::F32(vec![v; w * h]));
+        let channels = AnyChannels::sort(vec![ch("Image.R", 0.5), ch("Image.G", 0.5), ch("Image.B", 0.5), ch("GlossDir.R", 0.25)].into());
+        let image = Image::from_layer(Layer::new((w, h), LayerAttributes::default(), Encoding::FAST_LOSSLESS, channels));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let b: Arc<[u8]> = bytes.into_inner().into();
+        let path = "/474-shared-decode.exr";
+        let pool = crate::MediaPool::new();
+        pool.add_bytes(path, b.clone());
+        let f = crate::probe_bytes(path, b).unwrap();
+        pool.frame_at(&f, effectcraft_time::Tick::ZERO).unwrap();
+        let aux = cached(path, || panic!("the frame's decode is reused, the file is not read again")).unwrap();
+        assert_eq!(aux.get("GlossDir.R").and_then(|p| p.first()).copied(), Some(0.25));
+    }
+
     #[test]
     fn layered_exr_without_an_unnamed_rgb_layer_imports() {
         use exr::prelude::*;

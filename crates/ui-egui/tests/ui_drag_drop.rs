@@ -277,7 +277,7 @@ fn dropped_file_without_local_path_explains_the_fallback() {
     h.input_mut().dropped_files.push(Arc::new(Dropped("relative.mp4".into())));
     h.run_steps(2);
     assert!(h.state().ui.status.contains("without a local path"), "{}", h.state().ui.status);
-    assert!(h.state().ui.status.contains("File > Import"));
+    assert!(h.state().ui.status.contains("File ▸ Import"));
 }
 
 #[test]

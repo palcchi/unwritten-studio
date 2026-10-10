@@ -323,6 +323,22 @@ fn alt_click_stopwatch_toggles_a_self_reference_expression() {
 }
 
 #[test]
+fn add_expression_without_path_uses_the_selected_property() {
+    let (mut s, l) = setup();
+    // Nothing selected: the same hint as Add Property to Essential Graphics.
+    let err = s.execute("prop.setExpression", json!({})).unwrap_err().to_string();
+    assert!(err.contains("select a property in the timeline"), "{err}");
+    assert!(prop(&s, l, "transform/opacity").expr.is_none());
+    // Animation > Add Expression sends no parameters.
+    s.execute("prop.select", json!({"layer": l, "path": "transform/opacity"})).unwrap();
+    s.execute("prop.setExpression", json!({})).unwrap();
+    assert_eq!(prop(&s, l, "transform/opacity").expr.unwrap().text, "transform.opacity");
+    // One undo step removes it.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(prop(&s, l, "transform/opacity").expr.is_none());
+}
+
+#[test]
 fn layer_comp_and_key_times_stay_frame_aligned() {
     let aligned = |fr: effectcraft_time::FrameRate, t: effectcraft_time::Tick| fr.snap(t) == t;
     // The demo project: every comp duration, layer in/out/start and key time is on a frame.

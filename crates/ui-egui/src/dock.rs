@@ -1177,6 +1177,21 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
             }
             x += w + 8.0;
         }
+        // A stacked panel's whole header bar expands/collapses it, not just its name (as in After
+        // Effects). A stack group holds one panel, so the rest of the strip is unambiguous.
+        if g.stacked.is_some()
+            && let Some(e) = entries.first()
+        {
+            let rest = Rect::from_min_max(pos2((x - 8.0).max(strip.min.x), strip.min.y), strip.max);
+            if rest.width() > 0.0 {
+                let resp = ui.interact(rest, egui::Id::new(("tab-rest", g.path.clone())), Sense::click());
+                reg.add(&format!("panel.header.{}", e.panel.id()), rest, &e.label);
+                if resp.clicked() {
+                    out.actions.push(DockAction::ToggleStacked(e.panel));
+                    out.actions.push(DockAction::Focus(e.panel));
+                }
+            }
+        }
     }
     // clicking anywhere in the panel focuses it
     if let Some(p) = active_panel

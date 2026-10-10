@@ -325,3 +325,23 @@ fn dragging_the_viewer_timeline_divider_far_up_does_not_crash() {
     drag(&mut h, g2.center(), g2.center() + egui::vec2(0.0, 3000.0));
     h.run_steps(2);
 }
+
+/// Issue #301: clicking anywhere on a stacked panel's header bar expands/collapses it, not only
+/// its name; the panel menu button keeps its own click.
+#[test]
+fn a_stacked_panels_whole_header_bar_toggles_it() {
+    let (mut h, _, _) = harness();
+    let open = |h: &Harness<'_, EffectcraftApp>| h.state().ui.dock.is_visible(PanelKind::Preview);
+    assert!(open(&h));
+    let bar = rect(&h, "panel.header.Preview");
+    let tab = rect(&h, "panel.tab.Preview");
+    assert!(bar.min.x >= tab.max.x - 1.0 && bar.width() > 40.0, "{bar:?} {tab:?}");
+    click_n(&mut h, pos2(bar.max.x - 6.0, bar.center().y), 1);
+    assert!(!open(&h), "a click at the bar's right end collapses Preview");
+    let bar = rect(&h, "panel.header.Preview");
+    click_n(&mut h, bar.center(), 1);
+    assert!(open(&h), "and expands it again");
+    let menu = rect(&h, "panel.menu.Preview");
+    click_n(&mut h, menu.center(), 1);
+    assert!(open(&h), "the panel menu button doesn't toggle the panel");
+}

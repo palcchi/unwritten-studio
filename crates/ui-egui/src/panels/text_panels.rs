@@ -580,10 +580,14 @@ fn font_popup(app: &EffectcraftApp, ui: &mut egui::Ui, id: egui::Id, pos: egui::
                         l
                     }
                 };
-                let o = pos2(resp.rect.max.x - 120.0, resp.rect.center().y + 5.0);
-                for poly in lines.iter() {
-                    let pts: Vec<egui::Pos2> = poly.iter().map(|p| o + vec2(p[0], p[1])).collect();
-                    ui.painter().add(egui::Shape::line(pts, egui::Stroke::new(1.0, t.text_dim)));
+                let room = Rect::from_min_max(pos2(resp.rect.max.x - 120.0, resp.rect.min.y + 1.0), pos2(resp.rect.max.x - 6.0, resp.rect.max.y - 1.0));
+                if let Some((k, o)) = fit_preview(&lines, room, resp.rect.center().y + 5.0) {
+                    let painter = ui.painter().with_clip_rect(resp.rect);
+                    for poly in lines.iter() {
+                        let pts: Vec<egui::Pos2> =
+                            poly.iter().filter(|p| p[0].is_finite() && p[1].is_finite()).map(|p| (o + vec2(p[0], p[1]) * k).to_pos2()).collect();
+                        painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0, t.text_dim)));
+                    }
                 }
             }
             if resp.clicked() {
@@ -592,6 +596,30 @@ fn font_popup(app: &EffectcraftApp, ui: &mut egui::Ui, id: egui::Id, pos: egui::
         }
         chosen
     })
+}
+
+/// Where a font's "Sample" outlines (`lines`, baseline at y = 0) go in `room`: `(scale, origin)`,
+/// a point `p` landing at `origin + p * scale`. At their natural size on `baseline` when they fit;
+/// fonts with large or odd metrics are scaled down (never up) and moved inside, so no preview
+/// spills out of its row (#577). `None`: nothing to draw.
+fn fit_preview(lines: &[Vec<[f32; 2]>], room: Rect, baseline: f32) -> Option<(f32, egui::Vec2)> {
+    let b = lines
+        .iter()
+        .flatten()
+        .filter(|p| p[0].is_finite() && p[1].is_finite())
+        .fold(Rect::NOTHING, |b, p| b.union(Rect::from_min_max(pos2(p[0], p[1]), pos2(p[0], p[1]))));
+    if !(b.min.x <= b.max.x && b.min.y <= b.max.y) || !room.is_positive() {
+        return None;
+    }
+    let k = (room.width() / b.width().max(1e-3)).min(room.height() / b.height().max(1e-3)).min(1.0);
+    let mut o = vec2(room.min.x - b.min.x * k, baseline);
+    let (top, bottom) = (o.y + b.min.y * k, o.y + b.max.y * k);
+    if top < room.min.y {
+        o.y += room.min.y - top;
+    } else if bottom > room.max.y {
+        o.y -= bottom - room.max.y;
+    }
+    Some((k, o))
 }
 
 /// Align panel: Align Layers to Selection / Composition, the six align buttons and the six
@@ -720,5 +748,41 @@ fn align_glyph(p: &egui::Painter, r: Rect, op: &str, distribute: bool, t: &Token
         };
         p.rect_filled(Rect::from_min_size(pos2(c.x - 8.0, off(14.0)), vec2(5.0, 14.0)), 1.0, t.text_dim);
         p.rect_filled(Rect::from_min_size(pos2(c.x + 3.0, off(9.0)), vec2(5.0, 9.0)), 1.0, t.text_dim);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #577: every font's "Sample" preview lands inside its row's preview box: at its natural size
+    /// when it fits, else scaled down; nothing for no outlines.
+    #[test]
+    fn font_previews_fit_their_row() {
+        let room = Rect::from_min_max(pos2(180.0, 101.0), pos2(294.0, 119.0));
+        let baseline = 115.0;
+        let inside = |lines: &[Vec<[f32; 2]>]| {
+            let (k, o) = fit_preview(lines, room, baseline).expect("a preview");
+            for p in lines.iter().flatten() {
+                let q = o + vec2(p[0], p[1]) * k;
+                assert!(room.expand(0.01).contains(pos2(q.x, q.y)), "{p:?} → {q:?} outside {room:?}");
+            }
+            k
+        };
+        // A plain 14 px sample fits as it is, on the baseline.
+        let plain = vec![vec![[0.0, -10.0], [60.0, -10.0], [60.0, 3.0], [0.0, 3.0]]];
+        assert_eq!(inside(&plain), 1.0);
+        assert_eq!(fit_preview(&plain, room, baseline).map(|(_, o)| o.y), Some(baseline));
+        // Huge, wide, tall, offset and negative-bearing outlines are scaled into the box.
+        for lines in [
+            vec![vec![[0.0, -80.0], [400.0, 30.0]]],
+            vec![vec![[-50.0, -5.0], [500.0, 2.0]]],
+            vec![vec![[10.0, -200.0], [12.0, 0.0]]],
+            vec![vec![[0.0, 20.0], [30.0, 40.0]]],
+        ] {
+            assert!(inside(&lines) <= 1.0);
+        }
+        assert!(fit_preview(&[], room, baseline).is_none());
+        assert!(fit_preview(&[vec![[f32::NAN, 1.0]]], room, baseline).is_none());
     }
 }

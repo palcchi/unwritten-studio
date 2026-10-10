@@ -1124,6 +1124,37 @@ fn set_text(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Move Position by `(dx, dy)`, including every key. Separated dimensions move X and Y as well
+/// as the combined property the channels were split from.
+pub(crate) fn offset_position(tr: &mut PropGroup, dx: f64, dy: f64) {
+    if dx == 0.0 && dy == 0.0 {
+        return;
+    }
+    if tr.get("positionX").is_some() {
+        for (name, d) in [("positionX", dx), ("positionY", dy)] {
+            if let Some(pr) = tr.get_mut(name) {
+                pr.value = KV::Scalar(pr.value.as_f64() + d);
+                for k in &mut pr.keys {
+                    k.value = KV::Scalar(k.value.as_f64() + d);
+                }
+            }
+        }
+    }
+    if let Some(pr) = tr.get_mut("position") {
+        let shift = |v: &KV| match v {
+            KV::Vec2(a) => KV::Vec2([a[0] + dx, a[1] + dy]),
+            other => {
+                let a = other.as_vec3();
+                KV::Vec3([a[0] + dx, a[1] + dy, a[2]])
+            }
+        };
+        pr.value = shift(&pr.value);
+        for k in &mut pr.keys {
+            k.value = shift(&k.value);
+        }
+    }
+}
+
 /// Set a layer's Position at layer time `lt` to `f(current)`: X/Y/Z Position when its dimensions
 /// are separated.
 pub(crate) fn update_position(tr: &mut PropGroup, lt: Tick, f: impl Fn([f64; 3]) -> [f64; 3]) {

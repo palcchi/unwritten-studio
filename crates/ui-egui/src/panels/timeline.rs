@@ -2959,9 +2959,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 rp.galley(tag.min, g, Color32::WHITE);
             }
             if released {
-                let (index, time) = (json!(index), json!(start.map(Tick::seconds)));
+                let time = json!(start.map(Tick::seconds));
                 match payload.as_ref() {
-                    crate::panels::DragPayload::Item(id) => actions.push(("layer.addItem".into(), json!({"item": id, "index": index, "time": time}))),
+                    crate::panels::DragPayload::Item(id) => {
+                        // Insert each selected item at the drop point, in selection order.
+                        for (offset, item) in crate::panels::project_drop_items(app, *id).into_iter().enumerate() {
+                            actions.push(("layer.addItem".into(), json!({"item": item, "index": index.saturating_add(offset), "time": time.clone()})));
+                        }
+                    }
                     crate::panels::DragPayload::Files(paths) => {
                         actions.push(("mediaBrowser.import".into(), json!({"paths": paths, "addToComp": true, "index": index, "time": time})))
                     }
@@ -3558,7 +3563,7 @@ fn value_editor(
                 widgets::open_popup(ui, pop);
             }
             let mut rgb = [c[0] as f32, c[1] as f32, c[2] as f32];
-            if crate::header::color_popup(ui, pop, r.left_bottom(), &mut rgb) {
+            if crate::widgets::color_popup(ui, pop, r.left_bottom(), &mut rgb) {
                 set(actions, json!([rgb[0], rgb[1], rgb[2], 1.0]));
             }
         }

@@ -243,6 +243,25 @@ fn graph_editor_key_and_handle_edits() {
 }
 
 #[test]
+fn convert_expression_to_keyframes_on_a_reversed_layer_keeps_values() {
+    let (mut s, l) = setup();
+    // These tests run without an expression host, so the conversion bakes the keyed ramp under the expression.
+    animate(&mut s, l, "transform/rotation", &[(0.0, json!(0)), (3.0, json!(30))]);
+    s.execute("prop.setExpression", json!({"layer": l, "path": "transform/rotation", "expression": "value"})).unwrap();
+    s.execute("layer.timeReverse", json!({"layers": [l]})).unwrap();
+    let at = |t: f64| json!({"layer": l, "path": "transform/rotation", "time": t});
+    let sample = |s: &mut Session| [0.5, 1.0, 2.0].map(|t| s.execute("prop.get", at(t)).unwrap()["value"].as_f64().unwrap());
+    let before = sample(&mut s);
+    assert!(before[0] > before[1] && before[1] > before[2], "{before:?}");
+    s.execute("prop.convertExpressionToKeyframes", json!({"layer": l, "path": "transform/rotation"})).unwrap();
+    let keys = prop(&s, l, "transform/rotation").keys;
+    assert!(keys.len() > 1);
+    assert!(keys.windows(2).all(|w| w[0].time < w[1].time));
+    let after = sample(&mut s);
+    assert!(before.iter().zip(after).all(|(b, a)| (b - a).abs() < 1e-6), "{before:?} -> {after:?}");
+}
+
+#[test]
 fn time_reverse_keyframes() {
     let (mut s, l) = setup();
     animate(&mut s, l, "transform/opacity", &[(0.0, json!(0)), (1.0, json!(30)), (3.0, json!(100))]);
@@ -389,6 +408,36 @@ fn time_set_snaps_to_the_nearest_frame_and_ae_timecode() {
     let fr = s.active_comp().unwrap().frame_rate;
     assert_eq!(effectcraft_time::format_timecode_ae(75, fr, false), "0:00:02:15");
     assert_eq!(effectcraft_time::format_timecode_ae(75, fr, true), "0;00;02;15");
+}
+
+#[test]
+fn time_set_keeps_the_frame_shown_in_the_current_time_field() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Example", "width": 64, "height": 64, "frameRate": 30, "duration": 0.6, "startTimecode": "0:00:00:05"})).unwrap();
+    let r = s.execute("time.set", json!({"frame": 0})).unwrap();
+    assert_eq!(r["display"], "0:00:00:05");
+    let r = s.execute("time.set", json!({"timecode": "0:00:00:05"})).unwrap();
+    assert_eq!((r["frame"].as_i64(), r["time"].as_f64()), (Some(0), Some(0.0)));
+
+    s.execute("file.projectSettings", json!({"timeDisplay": "frames"})).unwrap();
+    std::sync::Arc::make_mut(&mut s.project).settings.frame_start = 1;
+    let r = s.execute("time.set", json!({"frame": 12})).unwrap();
+    assert_eq!(r["display"], "00013");
+    let r = s.execute("time.set", json!({"timecode": "00013"})).unwrap();
+    assert_eq!((r["frame"].as_i64(), r["time"].as_f64()), (Some(12), Some(0.4)));
+    let r = s.execute("time.set", json!({"timecode": "+1"})).unwrap();
+    assert_eq!(r["frame"], 13);
+}
+
+/// Frames display style: typed digits are a frame count, so 00100 is frame 100, not 1 s (#530).
+#[test]
+fn time_set_reads_frames_style_digits_as_a_frame_count() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Long", "width": 64, "height": 64, "frameRate": 30, "duration": 10})).unwrap();
+    s.execute("file.projectSettings", json!({"timeDisplay": "frames"})).unwrap();
+    let r = s.execute("time.set", json!({"timecode": "00100"})).unwrap();
+    assert_eq!(r["frame"], 100);
+    assert_eq!(r["display"], "00100");
 }
 
 #[test]

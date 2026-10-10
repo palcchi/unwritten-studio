@@ -123,6 +123,46 @@ fn project_items_dropped_on_the_viewer_land_under_the_pointer() {
     assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
 }
 
+/// #351: dragging one of several selected Project items inserts all the items,
+/// in selection order, instead of only the item the drag started on.
+#[test]
+fn dragging_selected_project_items_adds_every_item_to_the_timeline() {
+    let (mut h, clip) = harness();
+    let main = h.state().session.active_comp_id().unwrap().0;
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{clip}.name")).center();
+    let top = rect(&h, &format!("timeline.layer.{}.row", layer_id(&h, "Top")));
+    drag(&mut h, from, pos2(top.center().x, top.max.y - 2.0), Modifiers::NONE);
+    assert_eq!(stack(&h), ["Top", "Clip", "Other", "Middle", "Bottom"]);
+    assert_eq!(in_point(&h, 1), in_point(&h, 2), "both layers use the drop time");
+}
+
+#[test]
+fn dragging_selected_project_items_adds_every_item_to_the_viewer() {
+    let (mut h, clip) = harness();
+    let main = h.state().session.active_comp_id().unwrap().0;
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{clip}.name")).center();
+    let to = comp_to_screen(&h.ctx, [80.0, 45.0]).unwrap();
+    drag(&mut h, from, to, Modifiers::NONE);
+    assert_eq!(stack(&h), ["Clip", "Other", "Top", "Middle", "Bottom"]);
+    for layer in &h.state().session.active_comp().unwrap().layers[..2] {
+        let Some(KV::Vec3(p)) = layer.props.prop("transform/position").map(|p| p.value.clone()) else { panic!("no position") };
+        let tol = 1.0 / last_fit(&h.ctx) as f64 + 1e-6;
+        assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
+    }
+}
+
 /// #88: an effect dragged from Effects & Presets onto the viewer goes on the layer under the
 /// pointer, not the selected one.
 #[test]

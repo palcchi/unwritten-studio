@@ -198,7 +198,7 @@ pub fn character(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         app.auto.add(&format!("character.{key}"), fs, label);
         let mut rgb = [c[0], c[1], c[2]];
-        if crate::header::color_popup(ui, pop, fs.left_bottom(), &mut rgb) {
+        if crate::widgets::color_popup(ui, pop, fs.left_bottom(), &mut rgb) {
             actions.push(json!({key: [rgb[0], rgb[1], rgb[2]], "merge": format!("char-{key}")}));
         }
         p.text(pos2(fs.max.x + 6.0, y + 10.0), Align2::LEFT_CENTER, label, Tokens::ui(11.5), t.text_dim);

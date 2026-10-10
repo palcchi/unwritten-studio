@@ -501,8 +501,27 @@ impl DockNode {
                 },
             }
         }
-        if !add(self, p, near) && !add(self, p, PanelKind::EffectsPresets) {
-            add(self, p, PanelKind::Project);
+        fn add_first(n: &mut DockNode, p: PanelKind) -> bool {
+            match n {
+                DockNode::Split { a, b, .. } => add_first(a, p) || add_first(b, p),
+                DockNode::Tabs { panels, active } if !panels.is_empty() => {
+                    panels.push(p);
+                    *active = panels.len() - 1;
+                    true
+                }
+                DockNode::Stack { entries } if !entries.is_empty() => {
+                    entries.push(StackEntry { panel: p, open: true, height: None });
+                    true
+                }
+                _ => false,
+            }
+        }
+        if self.panel_count() == 0 {
+            // Every panel was closed: there is no anchor, so the panel becomes the whole dock.
+            *self = tabs(&[p], 0);
+        } else if !add(self, p, near) && !add(self, p, PanelKind::EffectsPresets) && !add(self, p, PanelKind::Project) {
+            // None of the anchors is docked (e.g. Minimal with Timeline closed): use the first group.
+            add_first(self, p);
         }
     }
 }
@@ -1182,6 +1201,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn open_near_in_an_empty_dock_makes_the_panel_the_dock() {
+        for p in [PanelKind::Composition, PanelKind::Timeline, PanelKind::Project] {
+            let mut d = tabs(&[], 0);
+            d.open_near(p, PanelKind::EffectsPresets);
+            assert!(d.is_visible(p));
+            assert_eq!(d.panel_count(), 1);
+        }
+    }
+
+    #[test]
+    fn open_near_without_any_anchor_uses_the_first_group() {
+        let mut d = tabs(&[PanelKind::Composition], 0);
+        d.open_near(PanelKind::Timeline, PanelKind::EffectsPresets);
+        assert!(d.is_visible(PanelKind::Timeline));
+        assert_eq!(d.panel_count(), 2);
+    }
+
+    #[test]
     fn stacked_panels_toggle_open_close() {
         use PanelKind::*;
         let mut d = stack(&[(Preview, true, Some(46.0)), (Properties, true, None), (Align, false, None)]);
@@ -1417,6 +1454,27 @@ mod tests {
         let back: DockNode = serde_json::from_str(&s).unwrap();
         assert_eq!(back, d);
         assert_eq!(PanelKind::from_name("effects & presets"), Some(PanelKind::EffectsPresets));
+    }
+
+    /// Ported from #630 (Ni-zav): the reporter's reproduction on the Minimal workspace.
+    #[test]
+    fn window_panels_reopen_after_last_panel_is_closed() {
+        use PanelKind::*;
+        for reopen in [Composition, Timeline, Project] {
+            let mut d = workspace("Minimal");
+            d.close(Composition);
+            d.close(Timeline);
+            assert_eq!(d.panel_count(), 0);
+            d.open_near(reopen, EffectsPresets);
+            assert_eq!(d.panel_count(), 1);
+            assert!(d.is_visible(reopen), "{reopen:?} must be visible");
+        }
+        let mut d = tabs(&[Audio], 0);
+        d.open_near(History, Project);
+        assert_eq!(d, tabs(&[Audio, History], 1));
+        let mut d = workspace("Minimal");
+        d.open_near(EffectsPresets, Timeline);
+        assert_eq!(d.path_of(EffectsPresets), d.path_of(Timeline));
     }
 
     #[test]

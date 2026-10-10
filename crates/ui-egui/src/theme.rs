@@ -339,8 +339,9 @@ const SCRIPT_PROBES: &[(char, &str)] = &[
 /// Japanese-locale machine would be drawn with the Japanese face. The interface language is the
 /// better signal, so the probe for its script comes first — kana for Japanese, a Han character for
 /// the Chinese catalogs. Both scripts are registered, so file, layer and template names in the
-/// other one still render; then [`SCRIPT_PROBES`]. The web build has no system fonts and installs
-/// nothing.
+/// other one still render; then [`SCRIPT_PROBES`], then Hangul, since the Japanese and Chinese faces
+/// may lack it (Hiragino Sans on macOS has none). The web build has no system fonts
+/// and installs nothing.
 fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) -> Vec<String> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -354,13 +355,17 @@ fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) 
         // language's face draws them.
         const KANA: (char, &str) = ('あ', "japanese-system");
         const HAN: (char, &str) = ('文', "chinese-system");
+        // Hangul is probed last: with no Korean font installed the lookup can land on a catch-all
+        // face (Unifont) that also covers Arabic or Indic text but can't shape it, so the
+        // script-specific faces must be registered ahead of it. A face already seen is skipped.
+        const HANGUL: (char, &str) = ('한', "korean-system");
         // Han text follows the interface language, not the operating system's locale.
         fonts::set_cjk_locale(cjk_locale(language));
         let base = fonts::resolve("Inter", "Regular").face;
         let cjk = if is_chinese(language) { [HAN, KANA] } else { [KANA, HAN] };
         let mut names = Vec::new();
         let mut seen = Vec::new();
-        for &(probe, name) in cjk.iter().chain(SCRIPT_PROBES) {
+        for &(probe, name) in cjk.iter().chain(SCRIPT_PROBES).chain(std::iter::once(&HANGUL)) {
             let id = fonts::fallback_for(probe, base);
             if seen.contains(&id) {
                 continue;
@@ -595,6 +600,24 @@ mod tests {
         // And an English interface leaves the operating system's locale in charge.
         let mut english = FontDefinitions::default();
         install_script_fallbacks(&mut english, "en");
+    }
+
+    #[test]
+    fn hangul_gets_a_face_when_one_is_installed() {
+        use effectcraft_text::fonts;
+        let mut fonts_def = FontDefinitions::default();
+        install_script_fallbacks(&mut fonts_def, "en");
+        let base = fonts::resolve("Inter", "Regular").face;
+        let id = fonts::fallback_for('한', base);
+        let face = fonts::face(id);
+        if !face.has_char('한') {
+            eprintln!("no Hangul font is installed: nothing to check here");
+            return;
+        }
+        let Some(font) = face.font() else { return };
+        let bytes = font.data().as_bytes();
+        let covered = fonts_def.font_data.values().any(|d| d.font.as_ref() == bytes && d.index == face.info.index);
+        assert!(covered, "a face covering Hangul must be registered with egui");
     }
 
     #[test]

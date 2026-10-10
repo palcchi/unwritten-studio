@@ -522,10 +522,12 @@ fn locked_pane(app: &mut EffectcraftApp, ui: &mut egui::Ui, full: Rect, bg: Colo
     let cam = (lv.view != View3D::ActiveCamera && comp.has_3d())
         .then(|| app.session.state.views3d.get(&lv.comp).cloned().unwrap_or_default().cam(lv.view, comp.width as f64, comp.height as f64).state());
     let dc = effectcraft_engine::viewer::DisplayColor::of(&app.session);
+    // The display conversion's inputs, keyed as in the main viewer's texture caches.
+    let dc_key = format!("{cam:?}{}", super::viewer_tools::display_key(app, dc.is_some()));
     let key = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (app.session.revision, lv.comp.0, t.0, scale.to_bits(), format!("{cam:?}{}", dc.is_some())).hash(&mut h);
+        (app.session.revision, lv.comp.0, t.0, scale.to_bits(), dc_key).hash(&mut h);
         h.finish()
     };
     let id = egui::Id::new("viewer-locked");
@@ -1044,7 +1046,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
     }
     let gid = egui::Id::new("viewer-gesture");
-    if let Some(hp) = resp.hover_pos() {
+    // An overlay on top of the viewer (e.g. the camera tracker points) takes the hover, but the pointer is still over the viewer: keep wheel zoom working.
+    let hover_pos = resp.hover_pos().or_else(|| if resp.contains_pointer() { ui.input(|i| i.pointer.hover_pos()) } else { None });
+    if let Some(hp) = hover_pos {
         app.pointer_comp = Some({
             let c = map.to_comp(hp);
             [c[0] as f32, c[1] as f32]
@@ -2147,14 +2151,7 @@ pub(crate) fn minify_factor(smooth: bool, pixels: f64, screen: f64) -> usize {
     if smooth && k >= 1.0 { k.min(256.0) as usize } else { 1 }
 }
 
-pub(crate) fn hex_rgb(s: &str) -> Option<[u8; 3]> {
-    let h = s.trim().trim_start_matches('#');
-    if h.len() != 6 || !h.is_ascii() {
-        return None;
-    }
-    let p = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
-    Some([p(0)?, p(2)?, p(4)?])
-}
+pub(crate) use crate::widgets::hex_rgb;
 
 /// The Extended Viewer's render region for this frame (see [`ViewerState::extended`]):
 /// Settings ▸ 3D ▸ Extended Viewer on, the comp has 3D layers and the view is a custom 3D view

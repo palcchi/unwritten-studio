@@ -1927,9 +1927,11 @@ mod tests {
     /// The interface text that has moved into this catalog. Add a panel here when you convert it;
     /// the tests below then keep it translated.
     const CONVERTED: &[(&str, &str)] = &[
+        ("color_picker.rs", include_str!("../color_picker.rs")),
         ("credits.rs", include_str!("../credits.rs")),
         ("header.rs", include_str!("../header.rs")),
         ("menus.rs", include_str!("../menus.rs")),
+        ("widgets.rs", include_str!("../widgets.rs")),
         ("panels/anim_tools.rs", include_str!("../panels/anim_tools.rs")),
         ("panels/camera_tracker_ui.rs", include_str!("../panels/camera_tracker_ui.rs")),
         ("panels/comp_settings.rs", include_str!("../panels/comp_settings.rs")),

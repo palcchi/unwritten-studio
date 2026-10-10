@@ -173,7 +173,7 @@ fn new_text(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let layer_name = str_p(p, "name").map(str::to_string);
     apply_text_params("layer.newText", &q, &mut doc, None)?;
-    let mut pos = p.get("position").and_then(|v| v.as_array()).map(|a| [a[0].as_f64().unwrap_or(0.0), a.get(1).and_then(Value::as_f64).unwrap_or(0.0)]);
+    let mut pos = position_p(p, "layer.newText")?;
     if let Some([x, y, w, h]) = bx {
         let (w, h) = (w.abs().max(1.0), h.abs().max(1.0));
         doc.box_size = Some([w, h]);

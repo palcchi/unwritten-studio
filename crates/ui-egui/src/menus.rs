@@ -954,6 +954,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             let name = app.ui.workspace.clone();
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
+            app.store_saved_workspaces();
             json!({"workspace": name})
         }
         "window.saveWorkspaceAs" => {
@@ -970,6 +971,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
             app.ui.workspace = name.clone();
+            app.store_saved_workspaces();
             json!({"workspace": name})
         }
         "window.editWorkspaces" => {
@@ -994,6 +996,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.saved_workspaces.remove(&name).is_none() && !builtin {
                     return Err(format!("no workspace `{name}`"));
                 }
+                app.store_saved_workspaces();
                 if app.ui.workspace == name {
                     app.set_workspace("Default");
                 }
@@ -1011,6 +1014,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.workspace == name {
                     app.ui.workspace = new.to_string();
                 }
+                app.store_saved_workspaces();
                 return Ok(json!({"renamed": new}));
             }
             json!({"workspaces": app.workspace_names()})

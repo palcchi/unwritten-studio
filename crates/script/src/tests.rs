@@ -362,6 +362,47 @@ fn security_gate_for_files() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #590: a script can't give itself file and network access (or turn off the warning before
+/// executing files) by changing Settings ▸ Scripting & Expressions; the user still can.
+#[test]
+fn scripts_cant_change_what_scripts_may_do() {
+    let mut s = session();
+    let attempts = [
+        "app.run('prefs.set', {key: 'scripting.allowScriptsWriteFiles', value: true})",
+        "app.run('prefs.set', {values: {'scripting.warnExecutingFiles': false}})",
+        "app.run('prefs.set', {key: 'scripting', value: {allowScriptsWriteFiles: true}})",
+        "app.run('engine.batch', {steps: [{command: 'prefs.set', params: {key: 'scripting.enableJsDebugger', value: true}}]})",
+    ];
+    for code in attempts {
+        let o = run_code(&mut s, code, "grant.jsx");
+        let e = o.error.unwrap_or_else(|| panic!("`{code}` was allowed"));
+        assert!(e.message.contains("Scripts can't change what scripts are allowed to do"), "{code}: {e:?}");
+        let sc = &s.prefs.scripting;
+        assert!(!sc.allow_scripts_write_files && sc.warn_executing_files && !sc.enable_js_debugger, "{code}");
+    }
+    assert!(run_code(&mut s, "new Socket()", "net.jsx").error.is_some());
+    // Other settings, and the expression editor's, are still the script's to change.
+    ok(&mut s, "app.run('prefs.set', {values: {'general.undoLevels': 40, 'scripting.editorFontSize': 16}})");
+    assert_eq!((s.prefs.general.undo_levels, s.prefs.scripting.editor_font_size), (40, 16));
+    // The user grants access; a script's Reset Settings doesn't take it back or change it.
+    s.execute("prefs.set", json!({"key": "scripting.allowScriptsWriteFiles", "value": true})).unwrap();
+    ok(&mut s, "app.run('prefs.reset', {})");
+    assert!(s.prefs.scripting.allow_scripts_write_files);
+    assert_eq!(s.prefs.general.undo_levels, effectcraft_engine::prefs::Prefs::default().general.undo_levels);
+    // A command script file is a script too.
+    let dir = std::env::temp_dir().join(format!("ec-script-grant-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("grant.json");
+    std::fs::write(&f, r#"[{"command": "prefs.set", "params": {"key": "scripting.allowScriptsWriteFiles", "value": false}}]"#).unwrap();
+    let e = s.execute("file.runScript", json!({"path": f.to_string_lossy()})).unwrap_err().to_string();
+    assert!(e.contains("Scripts can't change"), "{e}");
+    assert!(s.prefs.scripting.allow_scripts_write_files);
+    // The user (UI, CLI, control channel) can take it back.
+    s.execute("prefs.set", json!({"key": "scripting.allowScriptsWriteFiles", "value": false})).unwrap();
+    assert!(!s.prefs.scripting.allow_scripts_write_files);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn engine_entry_points() {
     let mut s = session();

@@ -128,6 +128,42 @@ fn hover(h: &mut Harness<'_, EffectcraftApp>, p: Pos2) {
     h.run_steps(3);
 }
 
+/// Issue #320: saved workspaces last between sessions (they were only kept in memory): a new
+/// app on the same settings store lists them and brings their layout back; renamed and deleted
+/// ones stay that way.
+#[test]
+fn saved_workspaces_persist_across_sessions() {
+    use effectcraft_engine::config::{ConfigStore, MemoryConfig};
+    use effectcraft_ui_egui::menus::invoke;
+    let store = std::sync::Arc::new(MemoryConfig::default());
+    let launch = || {
+        let s = Session { config: Some(store.clone()), ..Default::default() };
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+        h.run_steps(2);
+        h
+    };
+    let mut h = launch();
+    let ctx = h.ctx.clone();
+    invoke(h.state_mut(), &ctx, "window.workspace", json!({"name": "Minimal"})).unwrap();
+    invoke(h.state_mut(), &ctx, "window.saveWorkspaceAs", json!({"name": "My Layout"})).unwrap();
+    invoke(h.state_mut(), &ctx, "window.saveWorkspaceAs", json!({"name": "Scratch"})).unwrap();
+    let saved = h.state().ui.dock.clone();
+    drop(h);
+    let mut h = launch();
+    assert_eq!(h.state().saved_workspace_names(), ["My Layout", "Scratch"]);
+    assert_eq!(h.state().ui.workspace, "Default");
+    let ctx = h.ctx.clone();
+    invoke(h.state_mut(), &ctx, "window.workspace", json!({"name": "My Layout"})).unwrap();
+    assert_eq!(h.state().ui.dock, saved);
+    invoke(h.state_mut(), &ctx, "window.editWorkspaces", json!({"name": "Scratch", "delete": true})).unwrap();
+    invoke(h.state_mut(), &ctx, "window.editWorkspaces", json!({"name": "My Layout", "rename": "Edit Bay"})).unwrap();
+    drop(h);
+    assert_eq!(launch().state().saved_workspace_names(), ["Edit Bay"]);
+    // A damaged file is ignored.
+    store.write(effectcraft_ui_egui::WORKSPACES_FILE, "{not json").unwrap();
+    assert!(launch().state().saved_workspace_names().is_empty());
+}
+
 /// Issue #191: a workspace saved with Save as New Workspace is listed in Window ▸ Workspace
 /// (below the built-ins, where the submenu used to be cut off) and choosing it there brings its
 /// layout back.

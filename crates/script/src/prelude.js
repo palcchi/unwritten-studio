@@ -480,9 +480,16 @@ TextDocument.prototype = {
   get smallCaps() { return this.__style("smallCaps", false); },
   set smallCaps(v) { this.__set("smallCaps", !!v); },
   get superscript() { return this.__style("baseline", "normal") === "superscript"; },
-  set superscript(v) { this.__set("superscript", !!v); },
+  set superscript(v) {
+    // The pending document reads the same canonical baseline that setValue will apply.
+    if (v) this.__set("baseline", "superscript");
+    else if (this.superscript) this.__set("baseline", "normal");
+  },
   get subscript() { return this.__style("baseline", "normal") === "subscript"; },
-  set subscript(v) { this.__set("subscript", !!v); },
+  set subscript(v) {
+    if (v) this.__set("baseline", "subscript");
+    else if (this.subscript) this.__set("baseline", "normal");
+  },
   get tsume() { return this.__style("tsume", 0); },
   set tsume(v) { this.__set("tsume", __num(v)); },
   get boxText() { return !!(this.__base && this.__base.box_size); },

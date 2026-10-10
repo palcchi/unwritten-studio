@@ -524,3 +524,43 @@ fn comp_preserves_nested_frame_rate_and_resolution() {
     let (_, c) = comp_named(&s, "Nested");
     assert!(c.preserve_frame_rate && c.preserve_resolution);
 }
+
+#[test]
+fn text_document_baseline_flags_reflect_pending_edits_and_applied_value() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Baseline", 64, 64, 1, 1, 24);
+        var src = comp.layers.addText("AB").text.sourceText;
+        var doc = src.value;
+        doc.superscript = true;
+        var pendingSuper = [doc.superscript, doc.subscript];
+        doc.text = doc.superscript ? "super" : "normal";
+        src.setValue(doc);
+        var appliedSuper = [src.value.text, src.value.superscript, src.value.subscript];
+        doc = src.value;
+        doc.subscript = true;
+        var pendingSub = [doc.superscript, doc.subscript];
+        src.setValue(doc);
+        var appliedSub = [src.value.superscript, src.value.subscript];
+        doc = src.value;
+        doc.subscript = false;
+        var cleared = [doc.superscript, doc.subscript];
+        src.setValue(doc);
+        var appliedClear = [src.value.superscript, src.value.subscript];
+        doc = src.value;
+        doc.superscript = true;
+        doc.superscript = false;
+        var repeatClear = [doc.superscript, doc.subscript];
+        [pendingSuper, appliedSuper, pendingSub, appliedSub, cleared, appliedClear, repeatClear];
+        "#,
+    );
+    assert_eq!(
+        o.result,
+        json!([
+            [true, false], ["super", true, false], [false, true], [false, true],
+            [false, false], [false, false], [false, false]
+        ])
+    );
+}

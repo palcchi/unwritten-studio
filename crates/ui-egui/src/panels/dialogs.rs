@@ -361,14 +361,14 @@ fn solid(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             let (ow, oh) = (size[0], size[1]);
             ui.label(tr("Width:"));
             ui.horizontal(|ui| {
-                let r = ui.add(egui::DragValue::new(&mut size[0]).range(1..=30000).suffix(" px"));
+                let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut size[0]).range(1..=30000).suffix(" px")));
                 auto.add("dialog.solid.width", r.rect, "Width");
                 let r = ui.checkbox(&mut lock, tr_args("Lock Aspect Ratio to {}", &[&(super::comp_settings::aspect_label(ow as f64, oh as f64))]));
                 auto.add("dialog.solid.lockAspect", r.rect, "Lock Aspect Ratio");
             });
             ui.end_row();
             ui.label(tr("Height:"));
-            let r = ui.add(egui::DragValue::new(&mut size[1]).range(1..=30000).suffix(" px"));
+            let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut size[1]).range(1..=30000).suffix(" px")));
             auto.add("dialog.solid.height", r.rect, "Height");
             ui.end_row();
             if lock && ow > 0 && oh > 0 {

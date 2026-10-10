@@ -679,11 +679,13 @@ pub(crate) fn bottom_bar(app: &mut EffectcraftApp, ui: &mut egui::Ui, bar: Rect,
     let mut ev = vo.exposure as f64;
     let resp = ui.put(
         er,
-        egui::DragValue::new(&mut ev)
-            .speed(0.05)
-            .range(-40.0..=40.0)
-            .fixed_decimals(1)
-            .custom_formatter(|v, _| if v == 0.0 { "0.0".into() } else { format!("{v:+.1}") }),
+        crate::widgets::drag_value(
+            egui::DragValue::new(&mut ev)
+                .speed(0.05)
+                .range(-40.0..=40.0)
+                .fixed_decimals(1)
+                .custom_formatter(|v, _| if v == 0.0 { "0.0".into() } else { format!("{v:+.1}") }),
+        ),
     );
     let resp = resp.on_hover_text(crate::i18n::tr("Adjust Exposure (stops)"));
     app.auto.add("viewer.exposure", er, "Adjust Exposure");

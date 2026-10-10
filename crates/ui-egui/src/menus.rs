@@ -300,6 +300,14 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             None => Err("select a Render Queue item first".into()),
         };
     }
+    // Shift+Delete deletes the Project panel's selection without asking; it does nothing in the
+    // other panels.
+    if id == "project.deleteWithoutConfirmation" {
+        if app.ui.focused != PanelKind::Project {
+            return Ok(Value::Null);
+        }
+        return crate::panels::delete_items::delete_confirmed(app, ctx, json!({}));
+    }
     let now = ctx.input(|i| i.time);
     // Closing a modified project asks to save it first; the command runs once answered.
     if crate::panels::unsaved::guard(app, id, &params) {
@@ -668,7 +676,7 @@ fn clipboard_note(s: &effectcraft_engine::Session) -> String {
     }
 }
 
-fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
     let r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
@@ -713,6 +721,8 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
         }
         // View ▸ New Viewer.
         "view.newViewer" => json!({"viewer": crate::panels::viewers::new_viewer(app)}),
+        // Run by id (control channel, MCP): the Project panel's selection, whatever has focus.
+        "project.deleteWithoutConfirmation" => crate::panels::delete_items::delete_confirmed(app, ctx, json!({}))?,
         "window.scriptPanel" => {
             let id = p.get("window").and_then(Value::as_u64).ok_or("no ScriptUI panel window")? as u32;
             app.show_panel(PanelKind::ScriptPanel(id));
@@ -1461,8 +1471,27 @@ fn space_tap_id() -> egui::Id {
     egui::Id::new("spacebar-tap")
 }
 
+/// The modifiers held when this frame's input began: the state the last pass ended with, if it
+/// ran this (egui keeps only the state after the frame's events). Records this pass's state.
+fn modifiers_at_start(ctx: &egui::Context) -> Option<egui::Modifiers> {
+    let id = egui::Id::new("shortcut-modifiers");
+    let pass = ctx.cumulative_pass_nr();
+    let now = ctx.input(|i| i.modifiers);
+    ctx.data_mut(|d| {
+        let last = d.get_temp::<(u64, egui::Modifiers)>(id);
+        d.insert_temp(id, (pass, now));
+        last.and_then(|(p, m)| (p.checked_add(1) == Some(pass)).then_some(m))
+    })
+}
+
+/// Only Shift held (Shift+Delete, not Ctrl/Alt+Shift+Delete).
+fn only_shift(m: egui::Modifiers) -> bool {
+    m.shift && !m.alt && !m.ctrl && !m.command && !m.mac_cmd
+}
+
 /// Dispatch keyboard shortcuts (skipped while typing in a text field).
 pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    let start = modifiers_at_start(ctx);
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
     if app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         if crate::panels::shortcut_editor::recording(app) || egui::Popup::is_any_open(ctx) {
@@ -1499,14 +1528,23 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
     }
     // Text editing in the viewer takes the clipboard events itself.
     let clipboard = app.session.state.text_edit.is_none();
+    let project = app.ui.focused == PanelKind::Project;
     let events: Vec<(egui::Key, egui::Modifiers, bool)> = ctx.input(|i| {
         // The windowing layer turns Ctrl+C / Ctrl+X / Ctrl+V into clipboard events instead of
         // key presses: map them back to the keys (with the modifiers held) so Edit ▸ Copy, Cut,
-        // Paste and their variants (Ctrl+Alt+C…) run.
-        let held = if i.modifiers.command { i.modifiers } else { egui::Modifiers::COMMAND };
-        i.events
-            .iter()
-            .filter_map(|e| match e {
+        // Paste and their variants (Ctrl+Alt+C…) run. Clipboard events carry no modifiers and
+        // `i.modifiers` is the state after all of the frame's events, so each is read with the
+        // modifiers where it is in the stream: walk the events from the frame's starting state.
+        // `None` when that isn't known.
+        let changed = i.events.iter().any(|e| matches!(e, egui::Event::ModifiersChanged(_) | egui::Event::WindowFocused(false)));
+        let mut at = if changed { start } else { Some(i.modifiers) };
+        let held = |at: Option<egui::Modifiers>| at.filter(|m| m.command).unwrap_or(egui::Modifiers::COMMAND);
+        let mut out = Vec::new();
+        for e in &i.events {
+            match e {
+                egui::Event::ModifiersChanged(m) => at = Some(*m),
+                // egui forgets the modifiers held when the window loses focus.
+                egui::Event::WindowFocused(false) => at = Some(egui::Modifiers::NONE),
                 egui::Event::Key { key, pressed: true, modifiers, repeat, .. }
                     if !*repeat
                         || matches!(
@@ -1514,15 +1552,22 @@ pub fn handle_shortcuts(app: &mut EffectcraftApp, ctx: &egui::Context) {
                             egui::Key::PageUp | egui::Key::PageDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown
                         ) =>
                 {
-                    Some((*key, *modifiers, true))
+                    out.push((*key, *modifiers, true));
                 }
-                egui::Event::Key { key: egui::Key::Space, pressed: false, .. } => Some((egui::Key::Space, egui::Modifiers::NONE, false)),
-                egui::Event::Copy if clipboard => Some((egui::Key::C, held, true)),
-                egui::Event::Cut if clipboard => Some((egui::Key::X, held, true)),
-                egui::Event::Paste(_) if clipboard => Some((egui::Key::V, held, true)),
-                _ => None,
-            })
-            .collect()
+                egui::Event::Key { key: egui::Key::Space, pressed: false, .. } => out.push((egui::Key::Space, egui::Modifiers::NONE, false)),
+                egui::Event::Copy if clipboard => out.push((egui::Key::C, held(at), true)),
+                // On Windows, Shift+Delete is the old Cut key and arrives as Cut too. The Project
+                // panel has no clipboard: there a Cut with only Shift held is Shift+Delete (Delete
+                // Project Items Without Confirmation). Never when the modifiers aren't known.
+                egui::Event::Cut if clipboard && project && at.is_some_and(only_shift) => {
+                    out.push((egui::Key::Delete, egui::Modifiers::SHIFT, true));
+                }
+                egui::Event::Cut if clipboard => out.push((egui::Key::X, held(at), true)),
+                egui::Event::Paste(_) if clipboard => out.push((egui::Key::V, held(at), true)),
+                _ => {}
+            }
+        }
+        out
     });
     // Numpad * (or `*` typed with Shift+8): Add Marker (#275). egui has no key for it, so it
     // comes as text.

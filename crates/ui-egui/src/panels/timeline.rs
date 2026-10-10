@@ -1217,10 +1217,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 .map(ItemId)
                 .filter(|id| {
                     app.session.project.item(*id).is_some_and(|item| match &item.kind {
-                        effectcraft_engine::project::ItemKind::Footage(footage) => {
-                            footage.kind != effectcraft_engine::project::FootageKind::Data
-                        }
-                        effectcraft_engine::project::ItemKind::Solid(_) => true,
+                        effectcraft_engine::project::ItemKind::Footage(footage) => footage.kind != effectcraft_engine::project::FootageKind::Data,
+                        effectcraft_engine::project::ItemKind::Solid(_) | effectcraft_engine::project::ItemKind::Comp(_) => true,
                         _ => false,
                     })
                 })

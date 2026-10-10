@@ -215,10 +215,10 @@ fn project_items_dropped_on_new_comp_make_a_composition() {
 #[test]
 fn project_footage_dropped_on_empty_timeline_creates_first_comp() {
     let mut s = Session::default();
-    let footage = s.execute(
-        "file.importPlaceholder",
-        json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5}),
-    ).unwrap()["item"].as_u64().unwrap();
+    let footage =
+        s.execute("file.importPlaceholder", json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5})).unwrap()["item"]
+            .as_u64()
+            .unwrap();
     let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     h.run_steps(3);
     assert!(h.state().session.active_comp().is_none());
@@ -241,10 +241,7 @@ fn multiple_selected_footage_dropped_on_empty_timeline_asks_how_to_create_comps(
     let mut s = Session::default();
     let first = s.execute("file.importPlaceholder", json!({"name": "First.png", "width": 160, "height": 90})).unwrap()["item"].as_u64().unwrap();
     let second = s.execute("file.importPlaceholder", json!({"name": "Second.png", "width": 300, "height": 200})).unwrap()["item"].as_u64().unwrap();
-    s.state.project_selection = vec![
-        effectcraft_engine::project::ItemId(first),
-        effectcraft_engine::project::ItemId(second),
-    ];
+    s.state.project_selection = vec![effectcraft_engine::project::ItemId(first), effectcraft_engine::project::ItemId(second)];
     let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     h.run_steps(3);
     let from = rect(&h, &format!("project.item.{first}.name")).center();

@@ -100,6 +100,7 @@ struct FxHost<'r, 'a, 'c> {
     origin: [f64; 2],
     /// Index of the effect being rendered (bounds `self_at` to effects before it).
     index: std::sync::atomic::AtomicUsize,
+    original: Option<&'c Buf>,
 }
 
 impl FxHost<'_, '_, '_> {
@@ -146,12 +147,16 @@ pub(crate) fn comp_scene(ctx: &EvalCtx, layer: &Layer) -> Option<effectcraft_eff
 const MAX_FX_DEPTH: usize = 8;
 
 impl EffectHost for FxHost<'_, '_, '_> {
+    fn original(&self) -> Option<&Buf> {
+        self.original
+    }
+
     fn particles(&self) -> Option<&dyn effectcraft_effects::psim::ParticleSim> {
         self.r.active_accel().and_then(|a| a.particles())
     }
     fn layer(&self, id: u64, masks_and_effects: bool) -> Option<LayerPixels> {
         let other = self.ctx.layer(effectcraft_project::LayerId(id))?;
-        if other.id == self.layer.id || self.r.depth > MAX_FX_DEPTH {
+        if (other.id == self.layer.id && masks_and_effects) || self.r.depth > MAX_FX_DEPTH {
             return None;
         }
         let sub = self.r.nested();
@@ -162,7 +167,7 @@ impl EffectHost for FxHost<'_, '_, '_> {
 
     fn layer_masks(&self, id: u64) -> Option<LayerPixels> {
         let other = self.ctx.layer(effectcraft_project::LayerId(id))?;
-        if other.id == self.layer.id || self.r.depth > MAX_FX_DEPTH {
+        if self.r.depth > MAX_FX_DEPTH {
             return None;
         }
         let sub = self.r.nested();
@@ -227,14 +232,17 @@ impl EffectHost for FxHost<'_, '_, '_> {
 
     fn layer_at(&self, id: u64, comp_time: f64, masks_and_effects: bool) -> Option<LayerPixels> {
         let other = self.ctx.layer(effectcraft_project::LayerId(id))?;
-        if other.id == self.layer.id || self.r.depth > MAX_FX_DEPTH {
+        if (other.id == self.layer.id && masks_and_effects) || !comp_time.is_finite() || self.r.depth > MAX_FX_DEPTH {
             return None;
         }
         let ctx = self.ctx.at(Tick::from_seconds_f64(comp_time));
         let sub = self.r.nested();
         Some(if masks_and_effects {
             self.pixels(other, (*sub.content_buf(&ctx, other)?).clone(), true)
+        } else if other.id == self.layer.id {
+            self.pixels(other, sub.source(&ctx, other)?, true)
         } else {
+            // Preserve other-layer reads: time effects historically see source + masks.
             self.pixels(other, (*sub.layer_input(&ctx, other, 0)?).clone(), false)
         })
     }
@@ -961,7 +969,18 @@ impl<'a> Renderer<'a> {
                 *q = [q[0] - origin[0], q[1] - origin[1]];
             }
         }
-        let host = FxHost { r: self, ctx, layer, origin, index: Default::default() };
+        // Capture once, before preceding effects can expand or replace the input. An
+        // adjustment stack's original is the comp below, not its solid source.
+        let needs_original =
+            fx.groups().take(limit).any(|g| g.enabled && matches!(&g.kind, GroupKind::Effect { effect } if effect == "ec.channel.cccomposite"));
+        let mut original = None;
+        if needs_original {
+            target.cpu(&mut |buf| {
+                original = Some(buf.clone());
+                buf
+            });
+        }
+        let host = FxHost { r: self, ctx, layer, origin, index: Default::default(), original: original.as_ref() };
         let env = EffectEnv {
             masks: &mask_shapes,
             host: Some(&host),

@@ -526,7 +526,12 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         }
     }
     apply_settings(&mut it.settings, &templates, p, "renderQueue.add")?;
-    apply_output(&mut it.output, &templates, s.state.region_of_interest, p, "renderQueue.add")?;
+    // "template" belongs to Render Settings on add, not Output Module.
+    let mut output_params = p.clone();
+    if let Some(object) = output_params.as_object_mut() {
+        object.remove("template");
+    }
+    apply_output(&mut it.output, &templates, s.state.region_of_interest, &output_params, "renderQueue.add")?;
     if let Some(l) = enum_p(p, "log", "renderQueue.add", RenderLog::parse, "errorsOnly|plusSettings|plusPerFrameInfo")? {
         it.log = l;
     }

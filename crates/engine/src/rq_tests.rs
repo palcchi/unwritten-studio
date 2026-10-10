@@ -165,3 +165,21 @@ fn without_exporter() {
     assert_eq!(f["formats"].as_array().unwrap().len(), 12);
     assert_eq!(f["formats"][0]["available"], false);
 }
+
+#[test]
+fn queue_add_accepts_render_settings_templates_without_output_module_namesakes() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name":"C","width":64,"height":64,"duration":1})).unwrap();
+    let all = s.execute("renderQueue.templates", json!({})).unwrap();
+    let names = all["renderSettings"].as_array().unwrap();
+    assert!(!names.is_empty());
+    for row in names {
+        let name = row["name"].as_str().unwrap();
+        let expected = s.project.render_templates.render_settings(name).unwrap();
+        s.execute("renderQueue.add", json!({"comp":"C","template":name})).unwrap();
+        assert_eq!(s.project.render_queue.last().unwrap().settings, expected);
+    }
+    let count = s.project.render_queue.len();
+    assert!(s.execute("renderQueue.add", json!({"comp":"C","template":"Unknown Settings"})).is_err());
+    assert_eq!(s.project.render_queue.len(), count);
+}

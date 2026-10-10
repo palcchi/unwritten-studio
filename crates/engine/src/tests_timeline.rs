@@ -243,6 +243,25 @@ fn graph_editor_key_and_handle_edits() {
 }
 
 #[test]
+fn convert_expression_to_keyframes_on_a_reversed_layer_keeps_values() {
+    let (mut s, l) = setup();
+    // These tests run without an expression host, so the conversion bakes the keyed ramp under the expression.
+    animate(&mut s, l, "transform/rotation", &[(0.0, json!(0)), (3.0, json!(30))]);
+    s.execute("prop.setExpression", json!({"layer": l, "path": "transform/rotation", "expression": "value"})).unwrap();
+    s.execute("layer.timeReverse", json!({"layers": [l]})).unwrap();
+    let at = |t: f64| json!({"layer": l, "path": "transform/rotation", "time": t});
+    let sample = |s: &mut Session| [0.5, 1.0, 2.0].map(|t| s.execute("prop.get", at(t)).unwrap()["value"].as_f64().unwrap());
+    let before = sample(&mut s);
+    assert!(before[0] > before[1] && before[1] > before[2], "{before:?}");
+    s.execute("prop.convertExpressionToKeyframes", json!({"layer": l, "path": "transform/rotation"})).unwrap();
+    let keys = prop(&s, l, "transform/rotation").keys;
+    assert!(keys.len() > 1);
+    assert!(keys.windows(2).all(|w| w[0].time < w[1].time));
+    let after = sample(&mut s);
+    assert!(before.iter().zip(after).all(|(b, a)| (b - a).abs() < 1e-6), "{before:?} -> {after:?}");
+}
+
+#[test]
 fn time_reverse_keyframes() {
     let (mut s, l) = setup();
     animate(&mut s, l, "transform/opacity", &[(0.0, json!(0)), (1.0, json!(30)), (3.0, json!(100))]);

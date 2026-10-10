@@ -50,14 +50,14 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
         match *item {
             Item::Section(title) => {
                 ui.add_space(6.0);
-                ui.label(RichText::new(title).font(Tokens::semibold(12.5)).color(t.tab_text_active));
+                ui.label(RichText::new(tr(title)).font(Tokens::semibold(12.5)).color(t.tab_text_active));
                 ui.separator();
             }
             Item::Note(text) => {
-                ui.label(RichText::new(text).color(t.text_dim));
+                ui.label(RichText::new(tr(text)).color(t.text_dim));
             }
             Item::Button { label, command, params } => {
-                let r = ui.button(label);
+                let r = ui.button(tr(label));
                 reg(app, &format!("settings.button.{}", label.trim_end_matches('.')), &r, label);
                 if r.clicked() {
                     acts.push(Act::Run(command.into(), serde_json::from_str(params).unwrap_or(json!({}))));
@@ -96,7 +96,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                 match kind {
                     Kind::Bool => {
                         let mut b = v.as_bool().unwrap_or(false);
-                        let r = ui.checkbox(&mut b, label);
+                        let r = ui.checkbox(&mut b, tr(label));
                         if r.changed() {
                             acts.push(Act::Set(key.into(), json!(b)));
                         }
@@ -104,7 +104,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                     }
                     _ => {
                         ui.horizontal(|ui| {
-                            ui.add_sized(vec2(label_w, 18.0), egui::Label::new(format!("{label}:")).truncate());
+                            ui.add_sized(vec2(label_w, 18.0), egui::Label::new(format!("{}:", tr(label))).truncate());
                             let r = match kind {
                                 Kind::Int(lo, hi, unit) => {
                                     let mut x = v.as_i64().unwrap_or(0);
@@ -146,11 +146,11 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                     let curv = v.as_str().map_or_else(|| v.to_string(), str::to_string);
                                     let shown = opts.iter().find(|o| o.1 == curv).map(|o| o.0).unwrap_or(curv.as_str()).to_string();
                                     egui::ComboBox::from_id_salt(("settings", key))
-                                        .selected_text(shown)
+                                        .selected_text(tr(&shown))
                                         .width(220.0)
                                         .show_ui(ui, |ui| {
                                             for (l, val) in opts {
-                                                if ui.selectable_label(*val == curv, *l).clicked() {
+                                                if ui.selectable_label(*val == curv, tr(l)).clicked() {
                                                     acts.push(Act::Set(key.into(), json!(val)));
                                                 }
                                             }
@@ -449,7 +449,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                         ui.painter().text(
                             r.left_center() + vec2(10.0, 0.0),
                             egui::Align2::LEFT_CENTER,
-                            p.title,
+                            tr(p.title),
                             Tokens::ui(12.5),
                             if sel { Color32::WHITE } else { t.text },
                         );
@@ -466,7 +466,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 // dialog scrolled sideways a little (#284).
                 ui.set_width(ui.available_width());
                 let p = &all[idx];
-                ui.label(RichText::new(p.title).font(Tokens::semibold(14.0)).color(t.tab_text_active));
+                ui.label(RichText::new(tr(p.title)).font(Tokens::semibold(14.0)).color(t.tab_text_active));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical().max_height(body_h - 30.0).auto_shrink([false, false]).show(ui, |ui| {
                     page_ui(app, ui, p, &cur, t, &mut acts);

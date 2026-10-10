@@ -145,9 +145,16 @@ pub fn apply(ctx: &EvalCtx, layer: &Layer, buf: &mut Buf, blur: MaskBlur) -> boo
     let n = (buf.img.width * buf.img.height) as usize;
     let first_sub = matches!(list[0].kind, GroupKind::Mask { mode: MaskMode::Subtract, .. });
     let mut acc = vec![if first_sub { 1.0f32 } else { 0.0 }; n];
+    // The first mask has nothing to combine with. Intersect and Darken would multiply or
+    // minimise against that empty coverage and hide the layer; they cover like Add instead.
+    // Lighten and Difference already do. Filling the accumulator first would make Add show
+    // the whole layer.
+    let mut first = true;
     for g in list {
         let GroupKind::Mask { mode, inverted, .. } = g.kind else { continue };
         let Some(mut cov) = coverage(ctx, layer, g, buf, blur) else { continue };
+        let mode = if first && matches!(mode, MaskMode::Intersect | MaskMode::Darken) { MaskMode::Add } else { mode };
+        first = false;
         let op = (ctx.f(layer, g, "opacity", 100.0) / 100.0) as f32;
         cov.data.par_iter_mut().for_each(|c| {
             if inverted {

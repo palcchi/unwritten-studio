@@ -43,6 +43,23 @@ Desktop, Cursor and the like) take the same `command` and `args`.
 - **Bridge** (`["mcp", "--bridge", "9877"]`): drives a running `effectcraft --control 9877`, so you
   see every change live. Bridge mode adds `screenshot` and the `ui_*` tools.
 
+### From an installed release
+
+The release packages ship `effectcraft-cli` alongside the desktop app, so no build is needed:
+
+| Install | CLI |
+|---|---|
+| Windows (MSI) | `C:\Program Files\EffectCraft\effectcraft-cli.exe` by default (wherever you installed it otherwise), not on `PATH` |
+| Linux (deb, rpm) | `/usr/bin/effectcraft-cli` |
+| macOS | the separate `effectcraft-cli-<version>-macos-<arch>.zip` release asset (the `.app` holds only the desktop app) |
+
+```sh
+# Windows, default install folder
+claude mcp add effectcraft -- "C:\Program Files\EffectCraft\effectcraft-cli.exe" mcp
+# Linux, or macOS with the CLI unzipped onto PATH
+claude mcp add effectcraft -- effectcraft-cli mcp
+```
+
 The server speaks JSON-RPC 2.0 over stdio, one message per line, and supports MCP protocol versions
 2025-06-18, 2025-03-26 and 2024-11-05 (`initialize`, `ping`, `tools/list`, `tools/call`).
 

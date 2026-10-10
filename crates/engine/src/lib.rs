@@ -472,7 +472,15 @@ pub struct Session {
     pub footage_stamps: std::collections::HashMap<String, footage_reload::Stamp>,
     /// The stamps being taken on a worker thread ([`footage_reload::start_scan`]).
     pub footage_scan: Option<footage_reload::Scan>,
+    /// How many script-issued commands are running ([`Session::execute_for_script`]): while one
+    /// is, settings that guard what scripts may do can't change (see
+    /// [`prefs::Scripting::same_permissions`]).
+    pub script_calls: ScriptCalls,
 }
+
+/// The count behind [`Session::running_for_script`]; only the engine changes it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ScriptCalls(u32);
 
 /// A thumbnail render ([`Session::thumbnail_job`]): (width, height, RGBA8).
 pub type ThumbnailJob = Box<dyn FnOnce() -> Option<(u32, u32, Vec<u8>)> + Send>;
@@ -559,6 +567,7 @@ impl Default for Session {
             check_footage_on_open: false,
             footage_stamps: Default::default(),
             footage_scan: None,
+            script_calls: ScriptCalls::default(),
         }
     }
 }
@@ -599,6 +608,22 @@ impl Session {
         let spec = commands::find(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         commands::check_params(spec, &params)?;
         self.execute(id, params)
+    }
+
+    /// [`Session::execute`] for a command a script asked for (the JavaScript engine's
+    /// `app.run`, ScriptUI callbacks…). The command and everything it runs count as the script's:
+    /// it may not change the settings that limit scripts (Settings ▸ Scripting & Expressions ▸
+    /// Application Scripting), which only the user can, from the UI, CLI or control channel.
+    pub fn execute_for_script(&mut self, id: &str, params: Value) -> Result<Value> {
+        self.script_calls.0 = self.script_calls.0.saturating_add(1);
+        let r = self.execute(id, params);
+        self.script_calls.0 = self.script_calls.0.saturating_sub(1);
+        r
+    }
+
+    /// Whether the command running was issued by a script ([`Session::execute_for_script`]).
+    pub fn running_for_script(&self) -> bool {
+        self.script_calls.0 > 0
     }
 
     pub fn is_enabled(&self, id: &str) -> bool {

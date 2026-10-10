@@ -465,6 +465,8 @@ fn run_script(s: &mut Session, p: &Value) -> Result<Value> {
         }
         _ => return Err(bad("file.runScript", "missing `path` (or inline `steps`)")),
     };
+    // A command script read from a file is a script: it can't change what scripts may do.
+    let from_file = p.get("steps").is_none();
     let mut results = vec![];
     for (i, step) in steps.iter().enumerate() {
         let (id, params) = match (step.get("command").or(step.get("id")).and_then(Value::as_str), step.get("method").and_then(Value::as_str)) {
@@ -478,7 +480,8 @@ fn run_script(s: &mut Session, p: &Value) -> Result<Value> {
         if id == "file.runScript" || id == "script.run" {
             return Err(bad("file.runScript", "scripts can't run scripts"));
         }
-        let r = s.execute(&id, params).map_err(|e| EngineError::Other(format!("step {} ({id}): {e}", i + 1)))?;
+        let r = if from_file { s.execute_for_script(&id, params) } else { s.execute(&id, params) };
+        let r = r.map_err(|e| EngineError::Other(format!("step {} ({id}): {e}", i + 1)))?;
         results.push(r);
     }
     Ok(json!({"steps": results.len(), "results": results}))

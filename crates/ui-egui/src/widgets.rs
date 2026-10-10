@@ -104,6 +104,7 @@ pub fn hot_number_at(
         return (er, out, out.is_some());
     }
     let resp = ui.interact(rect, id, Sense::click_and_drag());
+    crate::pointer_wrap::track(&resp);
     let col = if resp.hovered() || resp.dragged() { t.accent_hover } else { t.hot_text };
     ui.painter().galley_with_override_text_color(rect.min + vec2(2.0, 2.0), galley, col);
     if resp.hovered() || resp.dragged() {
@@ -152,6 +153,15 @@ pub fn hot_int_at(ui: &mut Ui, rect_min: egui::Pos2, id: egui::Id, value: i64, s
         ui.data_mut(|d| d.remove::<f64>(acc_id));
     }
     (rect, (step != 0.0).then(|| value.saturating_add(step as i64)), done)
+}
+
+/// Standard numeric editors use the same continuous native scrubbing as hot text.
+pub fn drag_value(value: egui::DragValue<'_>) -> impl egui::Widget {
+    move |ui: &mut Ui| {
+        let response = ui.add(value);
+        crate::pointer_wrap::track(&response);
+        response
+    }
 }
 
 /// Keep the keyboard on an inline editor that is open until it loses the focus. The frame it

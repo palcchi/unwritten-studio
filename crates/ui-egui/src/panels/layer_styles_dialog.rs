@@ -103,10 +103,10 @@ fn control(ui: &mut egui::Ui, p: &Property, v: &KV) -> Option<Value> {
                 ParamUi::Slider { slider_min, slider_max, decimals, .. } => {
                     ui.add(egui::Slider::new(&mut y, *slider_min..=*slider_max).clamping(egui::SliderClamping::Never).max_decimals(*decimals as usize))
                 }
-                ParamUi::Percent => ui.add(egui::DragValue::new(&mut y).speed(0.5).suffix("%")),
-                ParamUi::Angle => ui.add(egui::DragValue::new(&mut y).speed(0.5).suffix("°")),
-                ParamUi::Pixels => ui.add(egui::DragValue::new(&mut y).speed(0.25).suffix(" px")),
-                _ => ui.add(egui::DragValue::new(&mut y).speed(0.1)),
+                ParamUi::Percent => ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut y).speed(0.5).suffix("%"))),
+                ParamUi::Angle => ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut y).speed(0.5).suffix("°"))),
+                ParamUi::Pixels => ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut y).speed(0.25).suffix(" px"))),
+                _ => ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut y).speed(0.1))),
             };
             (r.changed() && y != *x).then(|| json!(y))
         }

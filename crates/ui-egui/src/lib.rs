@@ -23,6 +23,7 @@ pub mod menu_keys;
 pub mod menus;
 pub mod native_menu;
 pub mod panels;
+mod pointer_wrap;
 pub mod prefs_live;
 pub mod state;
 pub mod theme;
@@ -1559,7 +1560,7 @@ impl eframe::App for EffectcraftApp {
         self.session.end_recovery();
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         if !self.synthetic.is_empty() {
             // Pointer events go one per frame so egui sees press → moves → release as a real drag.
             let pointer = |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
@@ -1572,6 +1573,9 @@ impl eframe::App for EffectcraftApp {
                     .map_or(self.synthetic.len(), |i| if pointer(&self.synthetic[i]) { i.max(1) } else { i + 1 })
             };
             raw_input.events.extend(self.synthetic.drain(..n));
+        }
+        if pointer_wrap::prepare_input(ctx, raw_input) {
+            self.session.history.merge_key = None;
         }
     }
 
@@ -1618,6 +1622,8 @@ impl eframe::App for EffectcraftApp {
         }
         self.frame(ui);
         let ctx = ui.ctx().clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        pointer_wrap::finish_native(&ctx, frame);
         // wasm32: no frame threads; render queued frames now, between UI frames.
         if cfg!(target_arch = "wasm32") && self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 })) {
             ctx.request_repaint();

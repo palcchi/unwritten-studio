@@ -126,7 +126,7 @@ fn buttons(ui: &mut egui::Ui, app: &mut EffectcraftApp, t: &Tokens, prefix: &str
 }
 
 fn drag(ui: &mut egui::Ui, app: &mut EffectcraftApp, id: &str, v: &mut f64, speed: f64, range: std::ops::RangeInclusive<f64>, suffix: &str, enabled: bool) {
-    let r = ui.add_enabled(enabled, egui::DragValue::new(v).speed(speed).range(range).max_decimals(2).suffix(suffix));
+    let r = ui.add_enabled(enabled, crate::widgets::drag_value(egui::DragValue::new(v).speed(speed).range(range).max_decimals(2).suffix(suffix)));
     app.auto.add(id, r.rect, id);
 }
 

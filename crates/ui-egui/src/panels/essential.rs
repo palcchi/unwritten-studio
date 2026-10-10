@@ -377,8 +377,8 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
         }
         ControlType::Point => {
             let mut a = v.as_vec2();
-            let r1 = ui.add(egui::DragValue::new(&mut a[0]).speed(1.0).max_decimals(1));
-            let r2 = ui.add(egui::DragValue::new(&mut a[1]).speed(1.0).max_decimals(1));
+            let r1 = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut a[0]).speed(1.0).max_decimals(1)));
+            let r2 = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut a[1]).speed(1.0).max_decimals(1)));
             if r1.changed() || r2.changed() {
                 out = Some(json!(a));
             }
@@ -386,7 +386,7 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
         }
         ControlType::Angle => {
             let mut a = v.as_f64();
-            let r = ui.add(egui::DragValue::new(&mut a).speed(1.0).suffix("°").max_decimals(1));
+            let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut a).speed(1.0).suffix("°").max_decimals(1)));
             if r.changed() {
                 out = Some(json!(a));
             }
@@ -415,7 +415,7 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
                     }
                 }
             });
-            let r3 = ui.add(egui::DragValue::new(&mut d.size).speed(0.5).range(1.0..=2000.0).suffix(" px").max_decimals(1));
+            let r3 = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut d.size).speed(0.5).range(1.0..=2000.0).suffix(" px").max_decimals(1)));
             app.auto.add(&format!("{auto}.font"), r1.response.rect, "Font");
             app.auto.add(&format!("{auto}.style"), r2.response.rect, "Style");
             app.auto.add(&format!("{auto}.size"), r3.rect, "Size");
@@ -428,7 +428,7 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
             // One percentage for every axis.
             let comps = v.components();
             let mut x = comps.first().copied().unwrap_or(100.0);
-            let r = ui.add(egui::DragValue::new(&mut x).speed(0.5).suffix("%").max_decimals(1));
+            let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).speed(0.5).suffix("%").max_decimals(1)));
             if r.changed() {
                 out = Some(json!(vec![x; comps.len().max(1)]));
             }
@@ -438,7 +438,7 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
             let mut x = v.as_f64();
             let r = match p.ui {
                 ParamUi::Slider { slider_min, slider_max, .. } => ui.add(egui::Slider::new(&mut x, slider_min..=slider_max).max_decimals(2)),
-                _ => ui.add(egui::DragValue::new(&mut x).speed(0.5).max_decimals(2)),
+                _ => ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).speed(0.5).max_decimals(2))),
             };
             if r.changed() {
                 out = Some(json!(x));

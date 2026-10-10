@@ -108,7 +108,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                             let r = match kind {
                                 Kind::Int(lo, hi, unit) => {
                                     let mut x = v.as_i64().unwrap_or(0);
-                                    let r = ui.add(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.25));
+                                    let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.25)));
                                     if !unit.is_empty() {
                                         ui.label(RichText::new(unit).color(t.text_dim));
                                     }
@@ -119,7 +119,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                 }
                                 Kind::Float(lo, hi, unit) => {
                                     let mut x = v.as_f64().unwrap_or(0.0);
-                                    let r = ui.add(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.1).max_decimals(3));
+                                    let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.1).max_decimals(3)));
                                     if !unit.is_empty() {
                                         ui.label(RichText::new(unit).color(t.text_dim));
                                     }

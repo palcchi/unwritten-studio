@@ -168,6 +168,32 @@ pub fn interact(
         let sign = if kind == "bg" || kind == "refineErase" { "−" } else { "+" };
         painter.text(hp, Align2::CENTER_CENTER, sign, Tokens::semibold(12.0), col);
     }
+    // ⌘/Ctrl-drag resizes the brush (After Effects): the circle stays at the press point and its
+    // edge follows the pointer. No stroke is painted.
+    let rid = egui::Id::new("layer-panel-roto-resize");
+    if resp.drag_started()
+        && mods.command
+        && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
+    {
+        ctx.data_mut(|d| d.insert_temp(rid, pos));
+    }
+    if let Some(origin) = ctx.data(|d| d.get_temp::<Pos2>(rid)) {
+        if let Some(pos) = resp.interact_pointer_pos()
+            && zoom > 0.0
+        {
+            let dia = (2.0 * f64::from(origin.distance(pos)) / zoom).clamp(1.0, 5000.0).round();
+            let key = if refine { "refineDiameter" } else { "diameter" };
+            if let Err(e) = app.session.execute("roto.options", json!({key: dia})) {
+                app.ui.status = e.to_string();
+            }
+            painter.circle_stroke(origin, (dia * 0.5 * zoom) as f32, Stroke::new(1.5, col));
+            painter.text(origin + vec2(0.0, -14.0), Align2::CENTER_BOTTOM, format!("{dia:.0} px"), Tokens::ui(11.0), col);
+        }
+        if resp.drag_stopped() || !resp.dragged() {
+            ctx.data_mut(|d| d.remove::<Pos2>(rid));
+        }
+        return true;
+    }
     let did = egui::Id::new("layer-panel-roto-drag");
     if resp.drag_started()
         && let Some(pos) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())

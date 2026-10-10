@@ -164,6 +164,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if app.ui.tool.puppet_kind().is_some() {
         x = puppet_options(app, ui, &p, x, cy);
     }
+    if app.ui.tool.roto_kind(false).is_some() {
+        x = roto_options(app, ui, &p, x, cy);
+    }
     let snap = Rect::from_min_size(pos2(x, cy - 10.0), vec2(20.0, 20.0));
     // The engine owns snapping (View ▸ Snapping); the checkbox mirrors it.
     app.ui.snapping = app.session.state.snapping;
@@ -479,6 +482,26 @@ fn paint_swatch(p: &egui::Painter, r: Rect, paint: &ToolPaint, hovered: bool, t:
         }
     }
     p.rect_stroke(r, 2.0, Stroke::new(1.0, if hovered { t.text } else { t.field_border }), StrokeKind::Inside);
+}
+
+/// Roto Brush / Refine Edge tool options: the brush Diameter (⌘/Ctrl-drag in the Layer panel
+/// sets it too, as in After Effects). Returns the next x.
+fn roto_options(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter, mut x: f32, cy: f32) -> f32 {
+    let t = app.tokens;
+    let refine = app.ui.tool.roto_kind(false).is_some_and(|k| k.starts_with("refine"));
+    let o = &app.session.state.roto;
+    let (key, v) = if refine { ("refineDiameter", o.refine_diameter) } else { ("diameter", o.diameter) };
+    let label = tr("Diameter:");
+    let lr = p.text(pos2(x, cy), Align2::LEFT_CENTER, label, Tokens::ui(12.0), t.text_dim);
+    x = lr.max.x + 6.0;
+    let (r, nv, _) = widgets::hot_number_at(ui, pos2(x, cy - 9.0), egui::Id::new(("roto-opt", key)), v, 0.5, (1.0, 5000.0), 0, " px", &t);
+    app.auto.add("header.roto.diameter", r, label);
+    if let Some(nv) = nv
+        && let Err(e) = app.session.execute("roto.options", json!({key: nv}))
+    {
+        app.ui.status = e.to_string();
+    }
+    r.max.x + 12.0
 }
 
 /// Puppet tool options: Mesh: Show, Expansion, Density (for new meshes and the selected

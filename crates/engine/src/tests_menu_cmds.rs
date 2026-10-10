@@ -196,6 +196,7 @@ fn separated_position_follows_canvas_resize_and_crop() {
     placed(&separated, b, 1.0, 50.0, 30.0);
     assert_eq!(opaque_bounds(&separated, Tick::ZERO), (70, 70, 25, 25, 34, 34, 100));
     assert_eq!(opaque_bounds(&separated, Tick::from_seconds_f64(1.0)), (70, 70, 45, 25, 54, 34, 100));
+}
 
 /// Pixel-centre of the opaque samples, so a 10×10 solid centred on (11, 22) reports (11, 22).
 fn opaque_centroid(s: &Session) -> (f64, f64, u32) {
@@ -397,6 +398,19 @@ fn lift_and_extract_work_area() {
     let mut spans: Vec<(f64, f64)> = c.layers.iter().map(|l| (l.in_point.seconds(), l.out_point.seconds())).collect();
     spans.sort_by(|x, y| x.0.total_cmp(&y.0));
     assert!((spans[1].0 - 2.0).abs() < 1e-6 && (spans[1].1 - 8.0).abs() < 1e-6, "{spans:?}");
+}
+
+/// A project saved with an inverted work area (by an older build) is edited without a panic:
+/// `clamp` with crossed bounds would abort.
+#[test]
+fn an_inverted_saved_work_area_takes_an_end_edit() {
+    let mut s = comp();
+    let cid = s.active_comp_id().unwrap();
+    std::sync::Arc::make_mut(&mut s.project).comp_mut(cid).unwrap().work_area = (Tick::from_seconds_f64(9.0), Tick::from_seconds_f64(2.0));
+    s.execute("comp.workArea", json!({"end": 1.0})).unwrap();
+    s.execute("comp.workArea", json!({"start": 50.0})).unwrap();
+    let c = s.active_comp().unwrap();
+    assert!(c.work_area.0 >= Tick::ZERO && c.work_area.0 + c.frame_duration() <= c.work_area.1 && c.work_area.1 <= c.duration);
 }
 
 #[test]

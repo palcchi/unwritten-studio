@@ -182,10 +182,11 @@ fn work_area(s: &mut Session, p: &Value) -> Result<Value> {
             _ => {}
         }
         if let Some(b) = begin {
-            c.work_area.0 = b.clamp(Tick::ZERO, c.duration - fd);
+            // min/max, not clamp: the bounds cross on a comp shorter than a frame or an inverted area.
+            c.work_area.0 = b.min(c.duration - fd).max(Tick::ZERO);
         }
         if let Some(e) = end {
-            c.work_area.1 = e.clamp(c.work_area.0 + fd, c.duration);
+            c.work_area.1 = e.max(c.work_area.0 + fd).min(c.duration);
         }
         // A start on its own can land after the current end. Pull it back so the interval
         // still covers one frame, the same rule as `set: "begin"`.

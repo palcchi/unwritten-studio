@@ -81,6 +81,45 @@ fn mask_cuts_layer() {
 }
 
 #[test]
+fn first_intersect_and_darken_keep_their_rectangle() {
+    let render = |modes: &[MaskMode], centers: &[[f64; 2]]| {
+        let (mut p, cid, comp) = setup();
+        let mut l = solid(&mut p, &comp, [1.0, 1.0, 1.0], 200, 100);
+        for (i, (mode, center)) in modes.iter().zip(centers).enumerate() {
+            let mut next = p.next_id;
+            let m = build::mask(&mut Ids(&mut next), &format!("Mask {}", i + 1), ShapePath::rect(*center, 40.0, 40.0), *mode, [255, 255, 0]);
+            p.next_id = next;
+            l.props.sub_mut("masks").unwrap().children.push(m.into());
+        }
+        p.comp_mut(cid).unwrap().layers.push(l);
+        render_frame(&p, cid, Tick::ZERO, 1.0)
+    };
+    // A first Intersect or Darken has nothing to combine with, so it covers like Add.
+    // Lighten and Difference already do; Subtract still starts from the whole layer.
+    for mode in [MaskMode::Intersect, MaskMode::Darken, MaskMode::Add, MaskMode::Lighten, MaskMode::Difference] {
+        let img = render(&[mode], &[[50.0, 50.0]]);
+        assert!(img.get(50, 50)[3] > 0.99, "{mode:?} keeps the rectangle");
+        assert!(img.get(150, 50)[3] < 0.01, "{mode:?} stays outside it");
+    }
+    let hole = render(&[MaskMode::Subtract], &[[50.0, 50.0]]);
+    assert!(hole.get(50, 50)[3] < 0.01, "subtract still cuts its rectangle");
+    assert!(hole.get(150, 50)[3] > 0.99, "subtract leaves the rest of the layer");
+
+    // Add, then Intersect with a shifted rectangle: only the overlap remains.
+    let overlap = render(&[MaskMode::Add, MaskMode::Intersect], &[[50.0, 50.0], [70.0, 50.0]]);
+    assert!(overlap.get(50, 50)[3] > 0.99, "overlap stays");
+    assert!(overlap.get(35, 50)[3] < 0.01, "the first rectangle's exclusive side is cut");
+    assert!(overlap.get(85, 50)[3] < 0.01, "the second rectangle's exclusive side is cut");
+    let darkened = render(&[MaskMode::Add, MaskMode::Darken], &[[50.0, 50.0], [70.0, 50.0]]);
+    assert!(darkened.get(50, 50)[3] > 0.99 && darkened.get(35, 50)[3] < 0.01 && darkened.get(85, 50)[3] < 0.01);
+
+    // A later disjoint Add still contributes after a first Intersect.
+    let both = render(&[MaskMode::Intersect, MaskMode::Add], &[[50.0, 50.0], [150.0, 50.0]]);
+    assert!(both.get(50, 50)[3] > 0.99 && both.get(150, 50)[3] > 0.99);
+    assert!(both.get(100, 50)[3] < 0.01);
+}
+
+#[test]
 fn track_matte_alpha() {
     let (mut p, cid, comp) = setup();
     let mut matte = solid(&mut p, &comp, [1.0, 1.0, 1.0], 50, 50);

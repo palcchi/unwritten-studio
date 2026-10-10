@@ -456,17 +456,17 @@ fn shape_drag_ghost_shows_the_tools_own_shape_while_dragging() {
 }
 
 /// The ghost and the shape the release commits share one normalisation, so nothing it shows is a
-/// lie: Shift squares the box and Alt (Option) draws it from the press point, both live.
+/// lie: Shift squares the box and Ctrl/Cmd draws it from the press point (as in After Effects), both live.
 #[test]
 fn shape_drag_ghost_normalises_the_same_way_as_the_release() {
     let from = [140.0f64, 100.0];
     let to = [400.0f64, 260.0];
-    // (mods, centre, size): Shift squares the box from its top-left, Alt centres it on the press.
+    // (mods, centre, size): Shift squares the box from its top-left, Ctrl/Cmd centres it on the press.
     for (mods, centre, size) in [
         (egui::Modifiers::default(), [270.0, 180.0], [260.0, 160.0]),
         (egui::Modifiers::SHIFT, [270.0, 230.0], [260.0, 260.0]),
-        (egui::Modifiers::ALT, [140.0, 100.0], [520.0, 320.0]),
-        (egui::Modifiers { alt: true, shift: true, ..Default::default() }, [140.0, 100.0], [520.0, 520.0]),
+        (egui::Modifiers::COMMAND, [140.0, 100.0], [520.0, 320.0]),
+        (egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND }, [140.0, 100.0], [520.0, 520.0]),
     ] {
         let mut h = harness();
         h.state_mut().ui.tool = Tool::Ellipse;

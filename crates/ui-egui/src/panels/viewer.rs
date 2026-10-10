@@ -1968,8 +1968,8 @@ fn shape_drag(app: &EffectcraftApp, tool: Tool, start: [f64; 2], end: [f64; 2], 
     let (target, layer) = target;
     let mask_index = if target == ShapeTarget::Mask { layer.and_then(|l| l.masks()).map_or(0, |m| m.groups().count()) } else { 0 };
     let (mut w, mut h) = ((end[0] - start[0]).abs(), (end[1] - start[1]).abs());
-    // Alt doubles the box about the press point, which is then its centre.
-    if mods.alt {
+    // Ctrl/Cmd draws from the press point as the centre, as in After Effects.
+    if mods.command {
         w *= 2.0;
         h *= 2.0;
     }
@@ -1983,7 +1983,7 @@ fn shape_drag(app: &EffectcraftApp, tool: Tool, start: [f64; 2], end: [f64; 2], 
     }
     Some(ShapeDrag {
         kind: shape_kind(tool),
-        centre: if mods.alt { start } else { [start[0].min(end[0]) + w / 2.0, start[1].min(end[1]) + h / 2.0] },
+        centre: if mods.command { start } else { [start[0].min(end[0]) + w / 2.0, start[1].min(end[1]) + h / 2.0] },
         size: [w, h],
         target,
         layer_name: layer.map_or_else(String::new, |l| l.name.clone()),

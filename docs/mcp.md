@@ -22,7 +22,10 @@ open-world hints. Tools with an optional output path are conservatively annotate
 
 Unknown top-level tool argument keys return JSON-RPC `-32602` naming the key and accepted
 arguments. EffectCraft already rejects unknown engine command parameters; that behaviour is
-preserved. Tool failures (including escaped panics) return `isError: true`. Malformed JSON
+preserved. Tool failures (including escaped panics) return `isError: true`, and so does any JSON
+result with a `failed` count above zero (a `command_batch` / `batch` with a failed step, a
+render whose queue items did not all finish), even though the other steps or items succeeded:
+read `results` / `items` for the details. Malformed JSON
 returns `-32700` with a null id and the session keeps serving. The MCP backend owns its session
 without a mutex; the engine's render-job mutexes already recover poisoned locks.
 
@@ -41,8 +44,19 @@ Headless `command_run` / `execute_command` calls to `renderQueue.render` (unless
 run the existing background job while the MCP server keeps reading stdin. A
 `params._meta.progressToken` string or number opts into `notifications/progress`, at most ten
 per second, strictly increasing with a queue-item total. No token means no notifications.
-`ping`, inspection and other requests are served while rendering. The existing engine refuses
-a second render while one is active. Closing stdin lets the pending render finish and reply.
+`ping`, inspection and other requests are served while rendering. Closing stdin lets the
+pending render finish and reply.
+
+### Requests during a render
+
+A render job owns a snapshot of the project taken when it started. While it runs:
+
+- Every way of starting a second render is refused with `isError: true`: a blocking
+  `renderQueue.render`, one with `wait: false`, or one inside a batch.
+- Other commands, including edits, run normally and change the project. They do not affect the
+  running job, which keeps rendering its snapshot; to render an edit, render again after the
+  job ends. Queue items are matched by id when the job reports their status, so an item removed
+  mid-render is left out of the reply and counted in `failed`.
 
 Send `notifications/cancelled` with `params.requestId` to stop the matching request at the next
 frame batch. No response is sent for that cancelled request. Unknown and completed ids are
@@ -52,5 +66,7 @@ queue items and skipped existing frames remain. Custom exporters implement the s
 contract. A failed queue item gives `isError: true`.
 
 Bridge calls, `wait: false`, batch tools and single-frame tools retain synchronous/polling
-behaviour and do not report MCP progress or cancellation. Use a direct blocking command call
+behaviour and do not report MCP progress or cancellation. `renderQueue.render {"wait": false}`
+returns the ids being rendered at once; poll `renderQueue.list` for status and stop it with
+`renderQueue.stop`. Use a direct blocking command call
 for an MCP-cancellable render.

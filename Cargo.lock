@@ -1419,6 +1419,7 @@ dependencies = [
  "filmcraft-frame",
  "filmcraft-media",
  "filmcraft-time",
+ "gif",
  "image",
  "log",
  "rayon",

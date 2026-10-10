@@ -13,6 +13,8 @@
 // Built everywhere so its tests run on every platform; only Linux AppImages use it.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod appimage;
+#[cfg(target_os = "macos")]
+mod apple_events;
 mod audio_out;
 mod control_server;
 mod launch_guard;
@@ -101,6 +103,12 @@ fn main() -> eframe::Result {
     // Start-up milestones: with `RUST_LOG=info` they go to stderr, so a window that never
     // appears shows how far start-up got (#234).
     log::info!("effectcraft {}: opening the window", env!("CARGO_PKG_VERSION"));
+    // Registered before the event loop starts, so it catches the Finder event that launched us as
+    // well as later ones. Lives until the event loop returns; the app creator only borrows it.
+    #[cfg(target_os = "macos")]
+    let apple_events = apple_events::AppleEvents::install();
+    #[cfg(target_os = "macos")]
+    let apple_events = &apple_events;
     let result = eframe::run_native(
         "EffectCraft",
         options,
@@ -207,6 +215,8 @@ fn main() -> eframe::Result {
             Ok(Box::new(Desktop {
                 #[cfg(target_os = "macos")]
                 menu: native_menu::NativeBar::new(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                apple_events: apple_events.connect(&cc.egui_ctx),
                 app,
                 launch,
                 drawn: false,
@@ -274,6 +284,9 @@ struct Desktop {
     app: EffectcraftApp,
     #[cfg(target_os = "macos")]
     menu: native_menu::NativeBar,
+    /// Documents opened from Finder, the Dock or `open` (macOS).
+    #[cfg(target_os = "macos")]
+    apple_events: apple_events::Opened,
     launch: launch_guard::Launch,
     /// The first frame was drawn (logged once).
     drawn: bool,
@@ -300,6 +313,8 @@ impl eframe::App for Desktop {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        #[cfg(target_os = "macos")]
+        self.apple_events.feed(self.app.is_ready(), ctx, raw_input);
         self.app.raw_input_hook(ctx, raw_input);
     }
 }

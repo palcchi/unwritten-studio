@@ -510,6 +510,12 @@ impl EffectcraftApp {
             && self.ui.viewer.extended.is_none()
     }
 
+    /// The UI draws its panels and handles input such as dropped files. Until the fonts are
+    /// installed (the first frames) it draws nothing, and that input goes unhandled.
+    pub fn is_ready(&self) -> bool {
+        self.fonts_ready
+    }
+
     /// Provide the executable/embedding host's device notifications. The host installs the
     /// handlers once; this frontend never replaces handlers on a borrowed device.
     pub fn set_gpu_failure_bridge(&mut self, bridge: gpu_failure::GpuFailureBridge) {

@@ -758,6 +758,8 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
         "view.newViewer" => json!({"viewer": crate::panels::viewers::new_viewer(app)}),
         // Run by id (control channel, MCP): the Project panel's selection, whatever has focus.
         "project.deleteWithoutConfirmation" => crate::panels::delete_items::delete_confirmed(app, ctx, json!({}))?,
+        // A gradient property's "Edit Gradient…" (the Timeline's value): the Gradient Editor.
+        "prop.editGradient" => crate::panels::gradient_editor::open(app, &p)?,
         "window.scriptPanel" => {
             let id = p.get("window").and_then(Value::as_u64).ok_or("no ScriptUI panel window")? as u32;
             app.show_panel(PanelKind::ScriptPanel(id));

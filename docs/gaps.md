@@ -129,6 +129,19 @@ The most important missing piece: it turns every other estimate here into a meas
   the prompt, with their layers, in one undo step, for single items, multiple selections and
   folder contents. Nothing happens with an empty selection, in other panels, while typing or with
   a dialog open, and the next Delete still asks.
+- Regression evidence for [#612](https://github.com/storytold/effectcraft/issues/612): the
+  `ui_gradient_value` and `ui_gradient_editor` input tests, checked headlessly on Windows, open
+  the Gradient Editor from the Timeline's "Edit Gradient…" on a shape layer's Gradient Fill. They
+  check that OK sets the edited stops (added, dragged, recoloured in the picker, down to a single
+  colour stop) in one undo step, at the composition time the editor opened (also on offset and
+  stretched layers), and that OK without a change, Cancel and Escape change nothing; Escape with
+  the picker open closes only the picker. On an animated gradient only the keyframe at that time
+  changes, with a warning when its stop counts no longer match a neighbour's. Delete never
+  removes the last stop, a layer or a stop while typing; a stop moved past another by its
+  Location keeps its selection and fields; a layer deleted while editing is reported; and
+  `prop.editGradient` is an error for a target that isn't a gradient. Unit tests in `keyframe`
+  and `gradient_editor` cover per-track sampling (no double opacity), the typed one-stop round
+  trip, and stops staying in order, and selected, while they move.
 - Regression evidence for the reports of 6 October, checked headlessly on Windows: real pointer
   drags in `ui_drag_drop` (Project items into the Timeline between layers and at a time, and onto
   the viewer; an effect onto a layer in the viewer: #85, #88, #89), `ui_render_queue` (a template

@@ -212,6 +212,29 @@ fn edge_scroll_speed(rows: Rect, y: f32, zone: f32) -> f32 {
     (depth / zone).clamp(-3.0, 3.0) * 400.0
 }
 
+/// Autoscroll speed (points per second, left negative) of a ruler scrub held at `x`, past the
+/// left (`x0`) or right (`x1`) end of the visible time span: faster the further past.
+fn edge_scroll_speed_x(x0: f32, x1: f32, x: f32) -> f32 {
+    let depth = if x < x0 {
+        x - x0
+    } else if x > x1 {
+        x - x1
+    } else {
+        return 0.0;
+    };
+    (depth / 40.0).clamp(-3.0, 3.0) * 400.0 + depth.signum() * 100.0
+}
+
+/// The timeline's first visible time (`start`, showing `span` seconds of a `duration` comp)
+/// paged so the CTI at `cti` is in view: unchanged while it is, else the page that starts at
+/// the CTI (as After Effects pages the Timeline during a preview).
+fn page_to_cti(start: f64, span: f64, duration: f64, cti: f64) -> f64 {
+    if !(start.is_finite() && span.is_finite() && cti.is_finite()) || (cti >= start && cti <= start + span) {
+        return start;
+    }
+    cti.min(duration - span).max(0.0)
+}
+
 /// The text of an expression being edited when its pick whip was pressed, and the selection in
 /// it (characters): the pick whip's reference goes in there.
 type WhipInto = (String, [usize; 2]);
@@ -1217,6 +1240,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let pps = app.ui.timeline.pps.unwrap_or(fit_pps);
     if app.ui.timeline.pps.is_none() {
         app.ui.timeline.start = 0.0;
+    } else if app.playback.playing {
+        // During playback the view pages to keep the CTI in sight (After Effects).
+        let span = ((graph_x1 - graph_x0 - 6.0) as f64 / pps).max(0.0);
+        app.ui.timeline.start = page_to_cti(app.ui.timeline.start, span, comp.duration.seconds(), app.session.time().seconds());
     }
     let tm = TMap { x0: graph_x0 + 6.0, start: app.ui.timeline.start, pps };
     ctx.data_mut(|d| d.insert_temp(tl_map_id(), (tm.x0, tm.start, tm.pps)));
@@ -1482,7 +1509,24 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if ((rresp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down())) || rresp.clicked())
         && let Some(pt) = rresp.interact_pointer_pos()
     {
-        let mut secs = tm.t(pt.x).max(0.0);
+        let mut x = pt.x;
+        // Zoomed in, a scrub held past either end of the ruler scrolls the timeline that way
+        // (faster the further), with the CTI at the edge (After Effects).
+        let mut tm = tm;
+        if rresp.dragged() && app.ui.timeline.pps.is_some() {
+            let speed = edge_scroll_speed_x(tm.x0, graph_x1, x);
+            if speed != 0.0 {
+                let dt = f64::from(ui.input(|i| i.stable_dt).clamp(0.0, 0.1));
+                let span = f64::from(graph_x1 - tm.x0) / pps;
+                let cur = app.ui.timeline.start;
+                let hi = (comp.duration.seconds() - span).max(0.0).max(cur);
+                app.ui.timeline.start = (cur + f64::from(speed) * dt / pps).clamp(0.0, hi);
+                tm.start = app.ui.timeline.start;
+                ui.ctx().request_repaint();
+            }
+            x = x.clamp(tm.x0, graph_x1);
+        }
+        let mut secs = tm.t(x).max(0.0);
         // Shift-drag: snap to keyframes, in/out points, markers and the work area (8 px).
         if ui.input(|i| i.modifiers.shift) {
             let cands = snap_candidates(&comp, &build_rows(app, &comp));
@@ -3618,6 +3662,20 @@ fn value_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #468: playback pages the view to the CTI; a scrub past either end scrolls that way.
+    #[test]
+    fn the_view_pages_to_the_cti() {
+        assert_eq!(page_to_cti(10.0, 5.0, 60.0, 12.0), 10.0, "in view: unchanged");
+        assert_eq!(page_to_cti(10.0, 5.0, 60.0, 16.0), 16.0, "past the right end: the page from the CTI");
+        assert_eq!(page_to_cti(10.0, 5.0, 60.0, 3.0), 3.0, "before the start");
+        assert_eq!(page_to_cti(10.0, 5.0, 60.0, 58.0), 55.0, "not past the comp's end");
+        assert_eq!(page_to_cti(10.0, 80.0, 60.0, 95.0), 0.0);
+        assert_eq!(page_to_cti(10.0, f64::NAN, 60.0, 95.0), 10.0);
+        assert_eq!(edge_scroll_speed_x(100.0, 500.0, 300.0), 0.0);
+        assert!(edge_scroll_speed_x(100.0, 500.0, 501.0) > 0.0 && edge_scroll_speed_x(100.0, 500.0, 99.0) < 0.0);
+        assert!(edge_scroll_speed_x(100.0, 500.0, 600.0) > edge_scroll_speed_x(100.0, 500.0, 520.0));
+    }
 
     /// A comp with two solids; "Box" has an animated Position and a Gaussian Blur.
     fn app() -> EffectcraftApp {

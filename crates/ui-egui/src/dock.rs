@@ -467,8 +467,9 @@ impl DockNode {
                 *self = (**a).clone();
             }
         } else if let DockNode::Tabs { panels, active } = self {
+            let shown = panels.get(*active).copied();
             panels.retain(|x| *x != p);
-            *active = (*active).min(panels.len().saturating_sub(1));
+            *active = shown.and_then(|shown| panels.iter().position(|x| *x == shown)).unwrap_or((*active).min(panels.len().saturating_sub(1)));
         } else if let DockNode::Stack { entries } = self {
             entries.retain(|e| e.panel != p);
         }
@@ -692,8 +693,9 @@ impl Layout {
         let mut found = false;
         for f in &mut self.floating {
             if let Some(i) = f.panels.iter().position(|x| *x == p) {
+                let shown = f.panels.get(f.active).copied();
                 f.panels.remove(i);
-                f.active = f.active.min(f.panels.len().saturating_sub(1));
+                f.active = shown.and_then(|shown| f.panels.iter().position(|x| *x == shown)).unwrap_or(f.active.min(f.panels.len().saturating_sub(1)));
                 found = true;
             }
         }
@@ -1415,5 +1417,74 @@ mod tests {
         let back: DockNode = serde_json::from_str(&s).unwrap();
         assert_eq!(back, d);
         assert_eq!(PanelKind::from_name("effects & presets"), Some(PanelKind::EffectsPresets));
+    }
+
+    #[test]
+    fn closing_earlier_inactive_tab_keeps_the_shown_panel() {
+        use PanelKind::*;
+        let mut d = tabs(&[Properties, Align, EffectsPresets], 1);
+        d.close(Properties);
+        assert!(d.is_visible(Align), "closing an inactive tab keeps the shown panel");
+        assert!(!d.is_visible(EffectsPresets));
+        assert_eq!(d.panel_count(), 2);
+    }
+
+    #[test]
+    fn closing_active_tab_keeps_existing_neighbor_choice() {
+        use PanelKind::*;
+        for (active, closed, shown) in [(0, Properties, Align), (1, Align, EffectsPresets), (2, EffectsPresets, Align)] {
+            let mut d = tabs(&[Properties, Align, EffectsPresets], active);
+            d.close(closed);
+            assert!(d.is_visible(shown), "active {active}: {closed:?} -> {shown:?}");
+        }
+    }
+
+    #[test]
+    fn close_normalizes_invalid_active_and_collapses_empty_splits() {
+        use PanelKind::*;
+        let mut d = tabs(&[Properties, Align, EffectsPresets], usize::MAX);
+        d.close(History);
+        assert!(d.is_visible(EffectsPresets));
+        d.close(Properties);
+        assert!(d.is_visible(EffectsPresets));
+        d.close(EffectsPresets);
+        assert!(d.is_visible(Align));
+        d.close(Align);
+        assert_eq!(d, tabs(&[], 0));
+        let mut d = DockNode::Split { vertical: true, size: SplitSize::Ratio(0.5), a: Box::new(tabs(&[Properties], 0)), b: Box::new(tabs(&[Align], 0)) };
+        d.close(Properties);
+        assert_eq!(d, tabs(&[Align], 0));
+        d.close(Align);
+        assert_eq!(d, tabs(&[], 0));
+    }
+
+    #[test]
+    fn removing_earlier_inactive_floating_tab_keeps_the_shown_panel() {
+        use PanelKind::*;
+        let mut layout =
+            Layout { root: tabs(&[Composition], 0), floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active: 1, rect: [0.0; 4] }] };
+        assert!(layout.unfloat(Properties));
+        let f = &layout.floating[0];
+        assert_eq!(f.panels.get(f.active), Some(&Align));
+        assert!(layout.root.is_visible(Composition));
+    }
+
+    #[test]
+    fn floating_removal_keeps_active_neighbor_and_handles_invalid_index() {
+        use PanelKind::*;
+        for (active, closed, shown) in
+            [(0, Properties, Align), (1, Align, EffectsPresets), (2, EffectsPresets, Align), (usize::MAX, Properties, EffectsPresets)]
+        {
+            let mut layout =
+                Layout { root: tabs(&[Composition], 0), floating: vec![Floating { panels: vec![Properties, Align, EffectsPresets], active, rect: [0.0; 4] }] };
+            assert!(layout.unfloat(closed));
+            let f = &layout.floating[0];
+            assert_eq!(f.panels.get(f.active), Some(&shown));
+            for p in [Properties, Align, EffectsPresets] {
+                layout.unfloat(p);
+            }
+            assert!(layout.floating.is_empty());
+            assert!(!layout.unfloat(History));
+        }
     }
 }

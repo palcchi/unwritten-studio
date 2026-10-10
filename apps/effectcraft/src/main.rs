@@ -48,6 +48,13 @@ fn is_project_file(path: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("ecproj") || ext.eq_ignore_ascii_case("ecprojx"))
 }
 
+/// winit 0.30 cannot deliver native Wayland file drops. XWayland can.
+#[cfg(target_os = "linux")]
+fn wayland_drop_notice(wayland_display: Option<&std::ffi::OsStr>, backend: Option<&std::ffi::OsStr>) -> Option<&'static str> {
+    (wayland_display.is_some_and(|v| !v.is_empty()) && backend != Some(std::ffi::OsStr::new("x11")))
+        .then_some("Native Wayland file drops are unavailable. Use File > Import > File... or run via XWayland (see docs/footage.md).")
+}
+
 /// The command line.
 #[derive(Debug, Default, PartialEq)]
 struct Args {
@@ -187,6 +194,14 @@ fn main() -> eframe::Result {
             }
             if let Some(r) = recovery {
                 app.offer_recovery(r);
+            }
+            #[cfg(target_os = "linux")]
+            if let Some(note) = wayland_drop_notice(
+                std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+                std::env::var_os("WINIT_UNIX_BACKEND").as_deref(),
+            ) && app.ui.status.is_empty()
+            {
+                app.ui.status = note.into();
             }
             app.hooks.pick_files = Some(Box::new(|exts: &[&str]| {
                 rfd::FileDialog::new().add_filter("Media", exts).pick_files().unwrap_or_default().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
@@ -364,6 +379,17 @@ mod tests {
 
     fn parse(args: &[&str]) -> Option<Args> {
         parse_args(args.iter().map(|a| a.to_string()), None)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wayland_drop_notice_recommends_import_or_xwayland() {
+        use std::ffi::OsStr;
+        let warning = super::wayland_drop_notice(Some(OsStr::new("wayland-0")), None).unwrap();
+        assert!(warning.contains("File > Import") && warning.contains("XWayland"));
+        assert!(super::wayland_drop_notice(None, None).is_none());
+        assert!(super::wayland_drop_notice(Some(OsStr::new("")), None).is_none());
+        assert!(super::wayland_drop_notice(Some(OsStr::new("wayland-0")), Some(OsStr::new("x11"))).is_none());
     }
 
     /// The window's device never asks for more than the adapter offers (#198).

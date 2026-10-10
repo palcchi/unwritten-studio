@@ -487,7 +487,12 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("effect.copy", "Copy Effects", [], None, "{layer?, effect? | effects?: [uid|name|index]} (default: the selected effects)", has_layers, copy),
         cmd!("effect.paste", "Paste Effects", [], None, "{layers?} — adds the copied effects to the layers", has_layers, paste),
         cmd!("effect.reset", "Reset Effect", [], None, "{layer?, effect}", has_layers, reset),
-        crate::query!("effect.list", "List Effects", "{filter?} → [{params: [{id, name, type, default, options?, min?, max?, sliderMin?, sliderMax?, decimals?}]}]; popup indices are zero-based (JSX uses one-based values)", list),
+        crate::query!(
+            "effect.list",
+            "List Effects",
+            "{filter?} → [{params: [{id, name, type, default, options?, min?, max?, sliderMin?, sliderMax?, decimals?}]}]; popup indices are zero-based (JSX uses one-based values)",
+            list
+        ),
         crate::query!(
             "effect.warning",
             "Effect Warning",
@@ -524,11 +529,14 @@ mod list_metadata_tests {
         let menu = &menus[0]["params"][0];
         assert_eq!(menu["type"], "enum");
         assert_eq!(menu["default"], 0);
-        assert_eq!(menu["options"], json!([
-            {"value": 0, "label": "Item 1"},
-            {"value": 1, "label": "Item 2"},
-            {"value": 2, "label": "Item 3"}
-        ]));
+        assert_eq!(
+            menu["options"],
+            json!([
+                {"value": 0, "label": "Item 1"},
+                {"value": 1, "label": "Item 2"},
+                {"value": 2, "label": "Item 3"}
+            ])
+        );
         let sliders = s.execute("effect.list", json!({"filter": "ec.control.slider"})).unwrap();
         assert_eq!(sliders.as_array().map(Vec::len), Some(1));
         let slider = &sliders[0]["params"][0];

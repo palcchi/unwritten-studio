@@ -98,7 +98,9 @@ pub(crate) fn path_of(ectx: &EvalCtx, layer: LayerId, uid: u64) -> Option<PathIn
     Some(PathInfo { layer, uid, m, sp, is_mask, feather: Vec::new() })
 }
 
-fn flatten(sp: &ShapePath, m: &Mat3, map: &ViewerMap) -> Vec<Pos2> {
+/// The path on screen: `sp` through `m` and the viewer map, flattened, with the closing point
+/// repeated for a closed path.
+pub(crate) fn flatten(sp: &ShapePath, m: &Mat3, map: &ViewerMap) -> Vec<Pos2> {
     let k = effectcraft_engine::render::kurbo_path(sp);
     let mut pts: Vec<Pos2> = vec![];
     kurbo::flatten(k.iter(), 0.5, |el| match el {

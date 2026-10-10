@@ -202,6 +202,23 @@ fn cache_budgets_leave_reserved_ram_and_shrink_when_low() {
     assert!(!p.cache_budgets(Some(low)).reduced);
 }
 
+/// Eight stacked 1080p clips ran the browser build out of its 4 GiB of memory: the footage and
+/// layer caches kept their desktop sizes there, beside the decoders' own frames.
+#[test]
+fn web_cache_budgets_leave_room_for_the_decoders() {
+    use crate::prefs::{WEB_LAYER_CACHE, WEB_MEDIA_CACHE};
+    let mut p = crate::prefs::Prefs::default();
+    p.memory.layer_cache_mb = 4096;
+    p.memory.media_cache_mb = 4096;
+    let web = p.cache_budgets_in(None, true);
+    assert_eq!((web.layer as u64, web.media as u64), (WEB_LAYER_CACHE, WEB_MEDIA_CACHE));
+    assert_eq!(web.preview, p.cache_budgets_in(None, false).preview, "the RAM preview keeps its budget");
+    // Smaller settings stay as they are; the desktop is unchanged.
+    p.memory.media_cache_mb = 128;
+    assert_eq!(p.cache_budgets_in(None, true).media, 128 << 20);
+    assert_eq!(p.cache_budgets_in(None, false).layer, 4096 << 20);
+}
+
 #[test]
 fn motion_path_span_follows_the_composition_setting() {
     let mut p = crate::prefs::Prefs::default();

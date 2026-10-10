@@ -197,6 +197,9 @@ impl effectcraft_engine::Importer for Gated {
         while self.allow.load(Ordering::SeqCst) <= k && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
+        if path.ends_with(".unsupported") {
+            return Err("unsupported media format".into());
+        }
         Ok(effectcraft_engine::project::Footage { path: path.into(), width: 64, height: 32, has_video: true, ..Default::default() })
     }
 }
@@ -221,6 +224,9 @@ fn dropped_files_show_import_progress_then_the_items_they_made() {
     let allow = Arc::new(AtomicUsize::new(1));
     h.state_mut().session.importer = Some(Arc::new(Gated { started: AtomicUsize::new(0), allow: allow.clone() }));
     let file = |n: &str| std::env::temp_dir().join(n);
+    // External files import even when dropped over the Timeline rather than the Project panel.
+    h.event(Event::PointerMoved(rect(&h, "panel.Timeline").center()));
+    h.step();
     for n in ["a.png", "b.png", "c.png"] {
         h.input_mut().dropped_files.push(Arc::new(Dropped(file(n))));
     }
@@ -242,7 +248,9 @@ fn dropped_files_show_import_progress_then_the_items_they_made() {
     assert!(h.state().auto.find(&format!("project.item.{last}")).is_some(), "and in view in the Project panel");
     assert_eq!(h.state().auto.find("toast").map(|e| e.label.as_str()), Some("Imported 3 items"));
 
-    // The same file again: imported again, and that one is selected.
+    // The same file again over the Project panel: imported again and selected.
+    h.event(Event::PointerMoved(rect(&h, "panel.Project").center()));
+    h.step();
     h.input_mut().dropped_files.push(Arc::new(Dropped(file("a.png"))));
     h.run_steps(2);
     step_until(&mut h, |h| items(h) == 4);
@@ -251,6 +259,57 @@ fn dropped_files_show_import_progress_then_the_items_they_made() {
     assert_eq!(sel.len(), 1);
     assert_eq!(h.state().session.project.item(sel[0]).unwrap().name, "a.png");
     assert_eq!(h.state().auto.find("toast").map(|e| e.label.as_str()), Some("Imported 1 item"));
+}
+
+#[test]
+fn native_file_hover_shows_drop_target_hint() {
+    let (mut h, _) = harness();
+    for name in ["one.mp4", "two.mov"] {
+        h.input_mut().hovered_files.push(egui::HoveredFile { path: Some(std::env::temp_dir().join(name)), mime: String::new() });
+    }
+    h.step();
+    assert_eq!(h.state().auto.find("file.dropTarget").map(|e| e.label.as_str()), Some("Drop 2 files to import"));
+}
+
+#[test]
+fn dropped_file_without_local_path_explains_the_fallback() {
+    let (mut h, _) = harness();
+    h.input_mut().dropped_files.push(Arc::new(Dropped("relative.mp4".into())));
+    h.run_steps(2);
+    assert!(h.state().ui.status.contains("without a local path"), "{}", h.state().ui.status);
+    assert!(h.state().ui.status.contains("File ▸ Import"));
+}
+
+#[test]
+fn dropped_file_on_viewer_imports_and_adds_layer_at_pointer() {
+    let (mut h, _) = harness();
+    h.state_mut().session.importer = Some(Arc::new(Gated { started: AtomicUsize::new(0), allow: Arc::new(AtomicUsize::new(usize::MAX)) }));
+    let to = comp_to_screen(&h.ctx, [80.0, 45.0]).unwrap();
+    h.event(Event::PointerMoved(to));
+    h.step();
+    h.input_mut().dropped_files.push(Arc::new(Dropped(std::env::temp_dir().join("viewer-drop.mp4"))));
+    h.run_steps(2);
+    step_until(&mut h, |h| h.state().session.active_comp().is_some_and(|c| c.layers.iter().any(|l| l.name == "viewer-drop.mp4")));
+    let comp = h.state().session.active_comp().unwrap();
+    let layer = comp.layers.iter().find(|l| l.name == "viewer-drop.mp4").unwrap();
+    let Some(KV::Vec3(p)) = layer.props.prop("transform/position").map(|p| p.value.clone()) else { panic!("no position") };
+    let tol = 1.0 / last_fit(&h.ctx) as f64 + 1e-6;
+    assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
+}
+
+#[test]
+fn an_unsupported_drop_reports_the_error_and_keeps_valid_files() {
+    let (mut h, _) = harness();
+    h.state_mut().session.importer = Some(Arc::new(Gated { started: AtomicUsize::new(0), allow: Arc::new(AtomicUsize::new(usize::MAX)) }));
+    for name in ["valid.mp4", "bad.unsupported"] {
+        h.input_mut().dropped_files.push(Arc::new(Dropped(std::env::temp_dir().join(name))));
+    }
+    h.run_steps(2);
+    step_until(&mut h, |h| h.state().session.job_log.iter().any(|j| j.kind == "import" && j.message.contains("unsupported media format")));
+    let job = h.state().session.job_log.iter().find(|j| j.kind == "import").unwrap();
+    assert!(job.message.contains("bad.unsupported: unsupported media format"), "{}", job.message);
+    assert_eq!(job.result["errors"].as_array().map(Vec::len), Some(1));
+    assert!(h.state().session.project.items.values().any(|i| i.name == "valid.mp4"));
 }
 
 /// The automation id of the Importing card on screen.

@@ -101,7 +101,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: u32, rect: Rect) {
             let frame = c.frame_rate.frame_at(app.session.time_of(cid));
             app.request_frame(cid, frame, scale);
             let key = app.frame_key(cid, frame, scale);
-            if let Some(img) = app.frames.get(&key) {
+            if let Some((key, img)) = app.frames.get_for_viewer(&key, app.passive_tex.get(&id).map(|(k, _)| k)) {
                 set_texture(app, &ctx, id, key, img);
             }
             match app.passive_tex.get(&id).filter(|(k, _)| k.comp == cid.0) {
@@ -127,7 +127,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, id: u32, rect: Rect) {
 
 /// Keep the frame viewer `id` shows in its texture.
 fn set_texture(app: &mut EffectcraftApp, ctx: &egui::Context, id: u32, key: FrameKey, img: FrameImage) {
-    if app.passive_tex.get(&id).is_some_and(|(k, _)| *k == key) {
+    if let Some((k, _)) = app.passive_tex.get_mut(&id)
+        && *k == key
+    {
+        // An undo or an edit elsewhere can reuse this content at a newer revision. Keep that
+        // revision as the lower bound for subsequent intermediate edit frames.
+        k.revision = key.revision;
         return;
     }
     let opts = super::viewer::zoom_texture_options(app.session.prefs.viewer_zoom_smooth());

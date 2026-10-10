@@ -16,6 +16,7 @@ pub mod commands;
 pub mod config;
 pub mod demo;
 pub mod footage_check;
+pub mod footage_reload;
 pub mod guard;
 pub mod history;
 pub mod jobs;
@@ -100,6 +101,13 @@ pub trait Services: Send + Sync {
     /// Whether a file exists (the background footage check after open).
     fn exists(&self, path: &str) -> bool {
         std::path::Path::new(path).exists()
+    }
+    /// A file's size and modification time (nanoseconds since 1970), to notice that it changed
+    /// on disk (Settings ▸ Import ▸ Reload Footage Changed on Disk); `None` when it can't be read.
+    fn stamp(&self, path: &str) -> Option<(u64, u128)> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
+        Some((meta.len(), modified.as_nanos()))
     }
     /// Keep a file the app made for itself (footage extracted from a template): like
     /// [`Services::write_file`], creating its folder, but never offered as a download (web: it
@@ -459,6 +467,11 @@ pub struct Session {
     /// event loop (the desktop app) turn this on; headless sessions run `footage.check` when
     /// they want it.
     pub check_footage_on_open: bool,
+    /// Each footage file's size and modification time when last seen (Settings ▸ Import ▸
+    /// Reload Footage Changed on Disk, [`footage_reload`]).
+    pub footage_stamps: std::collections::HashMap<String, footage_reload::Stamp>,
+    /// The stamps being taken on a worker thread ([`footage_reload::start_scan`]).
+    pub footage_scan: Option<footage_reload::Scan>,
 }
 
 /// A thumbnail render ([`Session::thumbnail_job`]): (width, height, RGBA8).
@@ -544,6 +557,8 @@ impl Default for Session {
             next_task_id: 1,
             learn: None,
             check_footage_on_open: false,
+            footage_stamps: Default::default(),
+            footage_scan: None,
         }
     }
 }
@@ -1020,6 +1035,8 @@ mod tests_fidelity;
 #[cfg(test)]
 mod tests_frame_export;
 #[cfg(test)]
+mod tests_key_metadata_order;
+#[cfg(test)]
 mod tests_keylight;
 #[cfg(test)]
 mod tests_lottie;
@@ -1165,3 +1182,6 @@ mod tests_paint;
 mod tests_panels;
 #[cfg(test)]
 mod tests_roto;
+
+#[cfg(test)]
+mod tests_key_time;

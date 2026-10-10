@@ -165,12 +165,16 @@ editing one layer re-renders only that layer. Each Render Queue job keeps its ow
 for its frames. Effects that read the clock directly are declared in
 `effects::TIME_DEPENDENT`, and a test checks every registered effect against that list.
 
-The viewer's **RAM preview** (`ui-egui/src/frames.rs`) keeps finished frames keyed by project
-revision, comp, frame, scale, 3D view / region of interest and a hash of the other render
-options (Draft / Fast Previews, shadows, nested switches), so frames rendered under other
-options are never shown. When the budget (Settings ▸ Memory & CPU) is full the least recently
-shown frames go first, and frames of an older revision are dropped as soon as the project
-changes. The timeline's green bar counts the frames of exactly what the viewer shows.
+The viewer's **RAM preview** (`ui-egui/src/frames.rs`) keeps finished frames keyed by comp
+content, frame, scale, 3D view / region of interest and a hash of the other render options
+(Draft / Fast Previews, shadows, nested switches). Edits preserve unaffected comps' frames,
+and undo can reuse earlier content. During rapid edits at the same time and view, the viewer
+shows the newest completed revision while the exact requested revision renders; out-of-order
+completions cannot move it backwards. This avoids freezing until a slider or layer drag stops.
+Frames at other times or with other render options are never substituted. Obsolete queued jobs
+are dropped; running jobs finish into the cache. When the budget (Settings ▸ Memory & CPU) is
+full the least recently shown frames go first. The timeline's green bar counts cached frames
+of the current content and viewer settings.
 Resolution Auto renders the pixels the magnification needs, as in After Effects (Full above
 50 %, Half down to 33.3 %, Third down to 25 %, then Quarter). Below 100 % the viewer averages
 instead of skipping pixels (Viewer Zoom Quality More Accurate): GPU frames carry a mip chain
@@ -230,7 +234,11 @@ Nulls / Nulls Follow Points take pins as well as paths, and `puppet.follow` give
 Position expression that trails the leader by a delay. The renderer flattens nested effect
 groups into `Params` keys (`effects::flatten_params`). Commands: `paint.*`, `puppet.*`.
 
-Half, Third and Quarter resolution render proportionally fewer pixels end to end.
+Half, Third and Quarter resolution render proportionally fewer pixels end to end. Footage
+starts at the render's size where the source can make it more cheaply than the full frame
+(`FootageSource::frame_at_size`): movies in opaque 4:2:0 Y'CbCr are box-filtered to half size
+before conversion (a quarter of the conversions; the result differs from converting first only
+in blocks where colours clip) and resampled from there, as other frames are from full size.
 
 **GPU compositor** (`crates/gpu`; Project Settings ▸ Video Rendering and Effects ▸ Mercury GPU
 Acceleration, the default, or Mercury Software Only; `render.backend`). The CPU renderer is the

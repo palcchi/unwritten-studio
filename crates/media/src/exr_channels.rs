@@ -18,6 +18,17 @@ fn is_depth(name: &str) -> bool {
     last.eq_ignore_ascii_case("z") || name.to_ascii_lowercase().contains("depth")
 }
 
+/// Full plane name of a channel in a part: `part.channel`, except that Blender 5 writes one part
+/// per pass whose channels already carry the full name (part `ViewLayer.Depth` holds
+/// `ViewLayer.Depth.Z`), which is kept as is instead of doubling the prefix.
+fn channel_name(part: Option<&str>, channel: &str) -> String {
+    match part {
+        Some(p) if channel.strip_prefix(p).is_some_and(|rest| rest.starts_with('.')) => channel.to_string(),
+        Some(p) => format!("{p}.{channel}"),
+        None => channel.to_string(),
+    }
+}
+
 /// Parse a Cryptomatte manifest (`{"name": "hexhash", …}`).
 pub fn parse_manifest(json: &str) -> Vec<(String, u32)> {
     let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(json) else { return vec![] };
@@ -59,10 +70,7 @@ pub fn read_exr_channels(bytes: &[u8]) -> Option<AuxChannels> {
         let pos = layer.attributes.layer_position;
         let (ox, oy) = (pos.0 as i64 - dw.position.0 as i64, pos.1 as i64 - dw.position.1 as i64);
         for ch in layer.channel_data.list.iter() {
-            let name = match &prefix {
-                Some(p) => format!("{p}.{}", ch.name),
-                None => ch.name.to_string(),
-            };
+            let name = channel_name(prefix.as_deref(), &ch.name.to_string());
             let fill = if is_depth(&name) { BACKGROUND_DEPTH } else { 0.0 };
             let mut plane = vec![fill; w * h];
             let vals: Vec<f32> = ch.sample_data.values_as_f32().collect();
@@ -166,10 +174,21 @@ pub fn layered_image(bytes: &[u8]) -> Option<image::DynamicImage> {
 
 type Cache = Mutex<Vec<(String, Option<Arc<AuxChannels>>)>>;
 
+fn cache() -> &'static Cache {
+    static CACHE: OnceLock<Cache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Drop the cached channels of `path` (the file changed on disk).
+pub(crate) fn forget(path: &str) {
+    if let Ok(mut c) = cache().lock() {
+        c.retain(|(p, _)| p != path);
+    }
+}
+
 /// Read (and cache, a few files) the channels of the EXR at `path` via `read`.
 pub(crate) fn cached(path: &str, read: impl FnOnce() -> Option<Arc<[u8]>>) -> Option<Arc<AuxChannels>> {
-    static CACHE: OnceLock<Cache> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    let cache = cache();
     if let Some(v) = cache.lock().ok().and_then(|c| c.iter().find(|(p, _)| p == path).map(|(_, v)| v.clone())) {
         return v;
     }
@@ -242,6 +261,37 @@ mod tests {
         let aux = read_exr_channels(&b).unwrap();
         assert_eq!(aux.layers(), ["depth", "diffuse"]);
         assert_eq!(aux.layer_rgba("diffuse"), ["diffuse.R", "diffuse.G", "diffuse.B", ""].map(String::from));
+    }
+
+    /// #481: Blender 5 writes one part per pass, its channels keeping the full pass name
+    /// (`ViewLayer.Depth.Z` in part `ViewLayer.Depth`); the name was doubled and the depth and
+    /// Cryptomatte ranks were not found.
+    #[test]
+    fn part_name_is_not_doubled_when_channels_carry_it() {
+        assert_eq!(channel_name(Some("ViewLayer.Depth"), "ViewLayer.Depth.Z"), "ViewLayer.Depth.Z");
+        assert_eq!(channel_name(Some("depth"), "Z"), "depth.Z");
+        assert_eq!(channel_name(Some("depth"), "depthZ"), "depth.depthZ");
+        assert_eq!(channel_name(None, "R"), "R");
+        assert_eq!(channel_name(None, "ViewLayer.Depth.Z"), "ViewLayer.Depth.Z");
+    }
+
+    #[test]
+    fn blender5_multipart_file_keeps_pass_names() {
+        use exr::prelude::*;
+        let (w, h) = (2usize, 2usize);
+        let part = |name: &str, chans: &[&str], v: f32| {
+            let list: Vec<AnyChannel<FlatSamples>> = chans.iter().map(|c| AnyChannel::new(*c, FlatSamples::F32(vec![v; w * h]))).collect();
+            Layer::new((w, h), LayerAttributes::named(name), Encoding::FAST_LOSSLESS, AnyChannels::sort(list.into()))
+        };
+        let layers =
+            vec![part("ViewLayer.Depth", &["ViewLayer.Depth.Z"], 4.0), part("ViewLayer.Combined", &["ViewLayer.Combined.R", "ViewLayer.Combined.G"], 0.5)];
+        let image = Image::from_layers(ImageAttributes::with_size((w, h)), layers);
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let aux = read_exr_channels(bytes.get_ref()).unwrap();
+        assert_eq!(aux.get("ViewLayer.Depth.Z").unwrap(), [4.0; 4].as_slice());
+        assert!(aux.get("ViewLayer.Depth.ViewLayer.Depth.Z").is_none());
+        assert!(aux.get("ViewLayer.Combined.R").is_some());
     }
 
     /// Straight RGBA of [`layered_image`] at pixel 0 for a file of single-value channels.

@@ -11,8 +11,11 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 // Built everywhere so its tests run on every platform; only Linux AppImages use it.
+mod appearance;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod appimage;
+#[cfg(target_os = "macos")]
+mod apple_events;
 mod audio_out;
 mod control_server;
 mod launch_guard;
@@ -34,6 +37,22 @@ fn app_icon() -> egui::IconData {
     #[cfg(not(target_os = "macos"))]
     let png: &[u8] = ICON_PNG;
     eframe::icon_data::from_png_bytes(png).unwrap_or_default()
+}
+
+/// Both native JSON projects and Save a Copy As XML projects are openable on launch.
+/// Keep this classification shared by project opening and the subsequent media-import pass.
+fn is_project_file(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("ecproj") || ext.eq_ignore_ascii_case("ecprojx"))
+}
+
+/// winit 0.30 cannot deliver native Wayland file drops. XWayland can.
+#[cfg(target_os = "linux")]
+fn wayland_drop_notice(wayland_display: Option<&std::ffi::OsStr>, backend: Option<&std::ffi::OsStr>) -> Option<&'static str> {
+    (wayland_display.is_some_and(|v| !v.is_empty()) && backend != Some(std::ffi::OsStr::new("x11")))
+        .then_some("Native Wayland file drops are unavailable. Use File ▸ Import ▸ File… or run via XWayland (see README, Linux).")
 }
 
 /// The command line.
@@ -101,6 +120,12 @@ fn main() -> eframe::Result {
     // Start-up milestones: with `RUST_LOG=info` they go to stderr, so a window that never
     // appears shows how far start-up got (#234).
     log::info!("effectcraft {}: opening the window", env!("CARGO_PKG_VERSION"));
+    // Registered before the event loop starts, so it catches the Finder event that launched us as
+    // well as later ones. Lives until the event loop returns; the app creator only borrows it.
+    #[cfg(target_os = "macos")]
+    let apple_events = apple_events::AppleEvents::install();
+    #[cfg(target_os = "macos")]
+    let apple_events = &apple_events;
     let result = eframe::run_native(
         "EffectCraft",
         options,
@@ -143,7 +168,7 @@ fn main() -> eframe::Result {
             }
             session.load_settings();
             let recovery = if control_port.is_none() { session.begin_recovery() } else { None };
-            let project = files.iter().find(|f| f.ends_with(".ecproj")).cloned();
+            let project = files.iter().find(|f| is_project_file(f)).cloned();
             if let Some(p) = project {
                 if let Err(e) = session.execute("file.open", json!({"path": p})) {
                     eprintln!("effectcraft: {e}");
@@ -151,7 +176,7 @@ fn main() -> eframe::Result {
             } else if demo {
                 let _ = session.execute("file.openDemoProject", json!({}));
             }
-            let media: Vec<String> = files.iter().filter(|f| !f.ends_with(".ecproj")).cloned().collect();
+            let media: Vec<String> = files.iter().filter(|f| !is_project_file(f)).cloned().collect();
             if !media.is_empty()
                 && let Err(e) = session.execute("file.import", json!({"paths": media}))
             {
@@ -170,6 +195,12 @@ fn main() -> eframe::Result {
             if let Some(r) = recovery {
                 app.offer_recovery(r);
             }
+            #[cfg(target_os = "linux")]
+            if let Some(note) = wayland_drop_notice(std::env::var_os("WAYLAND_DISPLAY").as_deref(), std::env::var_os("WINIT_UNIX_BACKEND").as_deref())
+                && app.ui.status.is_empty()
+            {
+                app.ui.status = note.into();
+            }
             app.hooks.pick_files = Some(Box::new(|exts: &[&str]| {
                 rfd::FileDialog::new().add_filter("Media", exts).pick_files().unwrap_or_default().into_iter().map(|p| p.to_string_lossy().to_string()).collect()
             }));
@@ -179,6 +210,7 @@ fn main() -> eframe::Result {
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new().add_filter("EffectCraft Project", &["ecproj", "ecprojx"]).pick_file().map(|p| p.to_string_lossy().to_string())
             }));
+            app.hooks.system_theme = appearance::service();
             app.hooks.audio_device = Some(Box::new(audio_out::open));
             app.hooks.audio_devices = Some(Box::new(audio_out::devices));
             app.hooks.pick_folder = Some(Box::new(|| rfd::FileDialog::new().pick_folder().map(|p| p.to_string_lossy().to_string())));
@@ -207,6 +239,8 @@ fn main() -> eframe::Result {
             Ok(Box::new(Desktop {
                 #[cfg(target_os = "macos")]
                 menu: native_menu::NativeBar::new(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                apple_events: apple_events.connect(&cc.egui_ctx),
                 app,
                 launch,
                 drawn: false,
@@ -274,6 +308,9 @@ struct Desktop {
     app: EffectcraftApp,
     #[cfg(target_os = "macos")]
     menu: native_menu::NativeBar,
+    /// Documents opened from Finder, the Dock or `open` (macOS).
+    #[cfg(target_os = "macos")]
+    apple_events: apple_events::Opened,
     launch: launch_guard::Launch,
     /// The first frame was drawn (logged once).
     drawn: bool,
@@ -300,6 +337,8 @@ impl eframe::App for Desktop {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        #[cfg(target_os = "macos")]
+        self.apple_events.feed(self.app.is_ready(), ctx, raw_input);
         self.app.raw_input_hook(ctx, raw_input);
     }
 }
@@ -340,6 +379,17 @@ mod tests {
         parse_args(args.iter().map(|a| a.to_string()), None)
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wayland_drop_notice_recommends_import_or_xwayland() {
+        use std::ffi::OsStr;
+        let warning = super::wayland_drop_notice(Some(OsStr::new("wayland-0")), None).unwrap();
+        assert!(warning.contains("File ▸ Import") && warning.contains("XWayland"));
+        assert!(super::wayland_drop_notice(None, None).is_none());
+        assert!(super::wayland_drop_notice(Some(OsStr::new("")), None).is_none());
+        assert!(super::wayland_drop_notice(Some(OsStr::new("wayland-0")), Some(OsStr::new("x11"))).is_none());
+    }
+
     /// The window's device never asks for more than the adapter offers (#198).
     #[test]
     fn device_limits_fit_the_adapter() {
@@ -351,6 +401,20 @@ mod tests {
         }
         let big = Limits { max_texture_dimension_2d: 32768, ..Limits::default() };
         assert_eq!(super::device_limits(big).max_texture_dimension_2d, 16384);
+    }
+
+    /// A positional .ecprojx is a project file, not an unsupported media import (#528).
+    #[test]
+    fn launch_classifies_xml_and_json_projects_as_projects() {
+        for path in ["Copy.ecprojx", "/tmp/Scene.ecproj", "C:\\\\work\\\\Shot.ECPROJX"] {
+            assert!(super::is_project_file(path), "{path}");
+        }
+        for path in ["scene.ecprojx.png", "scene.mp4", "scene", "copy.ecprojx.bak"] {
+            assert!(!super::is_project_file(path), "{path}");
+        }
+        let files = ["scene.ecprojx".to_string(), "clip.mov".to_string()];
+        assert_eq!(files.iter().find(|f| super::is_project_file(f)).map(String::as_str), Some("scene.ecprojx"));
+        assert_eq!(files.iter().filter(|f| !super::is_project_file(f)).map(String::as_str).collect::<Vec<_>>(), vec!["clip.mov"],);
     }
 
     /// Launching without a project opens an empty project, not the demo (#204).

@@ -264,7 +264,9 @@ send us right now.
 | arm64 (Snapdragon and other ARM PCs) | `effectcraft-<ver>-windows-arm64.msi` | `effectcraft-<ver>-windows-arm64-portable.zip` |
 | x86 (32-bit) | `effectcraft-<ver>-windows-x86.msi` | `effectcraft-<ver>-windows-x86-portable.zip` |
 
-Installers and executables are code-signed.
+Installers and executables are code-signed. The installer asks where to install EffectCraft
+(Program Files by default), and later versions install into the same folder. To install silently
+into a folder of your choice: `msiexec /i effectcraft-<ver>-windows-x64.msi /qn INSTALLFOLDER="D:\Apps\EffectCraft"`.
 
 ### macOS
 
@@ -282,6 +284,20 @@ Installers and executables are code-signed.
 | Debian/Ubuntu | `effectcraft-<ver>-linux-x86_64.deb` | `effectcraft-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `effectcraft-<ver>-linux-x86_64.rpm` | `effectcraft-<ver>-linux-aarch64.rpm` | |
 | Tarball | `effectcraft-<ver>-linux-x86_64.tar.gz` | `effectcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+
+**File drag-and-drop on Linux:** The current eframe/winit 0.30 native Wayland backend does not
+deliver file-hover or file-drop events. On Hyprland and other native Wayland sessions, use
+**File ▸ Import ▸ File…** (which accepts multiple files), or start EffectCraft via XWayland if
+XWayland is installed and `DISPLAY` is set:
+
+```sh
+env -u WAYLAND_DISPLAY effectcraft
+```
+
+When the backend delivers events (X11/XWayland, Windows and macOS), dropping media anywhere
+in the window imports it, and a drop-target hint appears while hovering. On native Wayland the
+app cannot detect an attempt that generates no event; it shows a startup notice with the
+File ▸ Import fallback instead.
 
 ### FreeBSD
 

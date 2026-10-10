@@ -111,9 +111,9 @@ fn control(ui: &mut egui::Ui, p: &Property, v: &KV) -> Option<Value> {
             (r.changed() && y != *x).then(|| json!(y))
         }
         (KV::Color(c), _) => {
-            let mut rgba = egui::Rgba::from_rgba_unmultiplied(c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32);
-            let changed = egui::color_picker::color_edit_button_rgba(ui, &mut rgba, egui::color_picker::Alpha::Opaque).changed();
-            changed.then(|| json!([rgba.r(), rgba.g(), rgba.b()]))
+            let mut rgb = [c[0] as f32, c[1] as f32, c[2] as f32];
+            let changed = crate::widgets::srgb_color_button(ui, &mut rgb).changed();
+            changed.then(|| json!(rgb))
         }
         (KV::Gradient(_), _) => {
             ui.label(egui::RichText::new(tr("Edit in the Timeline")).weak());

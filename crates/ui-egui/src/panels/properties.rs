@@ -395,7 +395,7 @@ fn text_section(
         }
         app.auto.add(&format!("properties.text.{key}"), sw, label);
         let mut rgb = [c[0], c[1], c[2]];
-        if crate::header::color_popup(ui, pop, sw.left_bottom(), &mut rgb) {
+        if crate::widgets::color_popup(ui, pop, sw.left_bottom(), &mut rgb) {
             set(actions, json!({key: [rgb[0], rgb[1], rgb[2]], "merge": format!("props-text-{key}")}));
         }
         p.text(pos2(sw.max.x + 8.0, sw.center().y), Align2::LEFT_CENTER, label, Tokens::ui(12.0), t.text);

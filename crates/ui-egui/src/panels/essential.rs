@@ -344,11 +344,10 @@ fn value_widget(app: &mut EffectcraftApp, ui: &mut egui::Ui, auto: &str, ty: Opt
         }
         ControlType::Color => {
             let c = v.as_color();
-            let mut rgba = egui::Rgba::from_rgba_unmultiplied(c[0], c[1], c[2], c[3]);
-            let r = egui::widgets::color_picker::color_edit_button_rgba(ui, &mut rgba, egui::widgets::color_picker::Alpha::Opaque);
+            let mut rgb = [c[0], c[1], c[2]];
+            let r = crate::widgets::srgb_color_button(ui, &mut rgb);
             if r.changed() {
-                let u = rgba.to_rgba_unmultiplied();
-                out = Some(json!([u[0], u[1], u[2], u[3]]));
+                out = Some(json!([rgb[0], rgb[1], rgb[2], c[3]]));
             }
             r.rect
         }

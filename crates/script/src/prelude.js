@@ -1335,7 +1335,18 @@ Item.prototype = {
   get parentFolder() { return __item(this.__info().parent); },
   set parentFolder(f) { __call("project.move", { items: [this.__id], folder: f && f.__id ? f.__id : null }); },
   get selected() { return this.__info().selected; },
-  set selected(v) { if (v) __call("project.select", { items: [this.__id], add: true }); },
+  set selected(v) {
+    var selection = __get("project").selection;
+    var selected = selection.indexOf(this.__id) !== -1;
+    if (!!v === selected) return;
+    if (v) {
+      __call("project.select", { items: [this.__id], add: true });
+    } else {
+      var id = this.__id;
+      // Replace just this item, preserving the other Project panel selections and their order.
+      __call("project.select", { items: selection.filter(function (item) { return item !== id; }) });
+    }
+  },
   get usedIn() { return this.__info().usedIn.map(function (c) { return new CompItem(c); }); },
   remove: function () { __call("project.delete", { items: [this.__id] }); },
 };

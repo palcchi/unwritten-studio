@@ -857,3 +857,44 @@ fn readback_staging_stays_bounded_across_sizes() {
     let held = g.ctx.staging_bytes();
     assert!(held <= (256 << 20) + 2 * 1024 * 16 * 376, "staging buffers hold {held} bytes");
 }
+
+/// A static adjustment layer with a time-dependent effect (Noise) keeps its footprint key
+/// across frames (the footprint is the source through the masks, not the effects), so the GPU
+/// uploads nothing after the first frame; matches the CPU.
+#[test]
+fn adjustment_footprint_uploads_once_under_time_dependent_effects() {
+    let mut s = Scene::new(BitDepth::Bpc8);
+    let bg = s.solid([0.3, 0.5, 0.7], 96, 64);
+    s.push(bg);
+    let mut adj = s.solid([1.0, 1.0, 1.0], 80, 50);
+    adj.switches.adjustment = true;
+    s.effect(&mut adj, "ec.noise.noise", &[("amount", n(30.0))]);
+    s.push(adj);
+    // The key itself (no GPU needed): stable across time.
+    let comp = s.p.comp(s.cid).expect("the scene's comp");
+    let adj = comp.layers.last().expect("the adjustment layer");
+    let key = |k: f64| {
+        effectcraft_render::cache::footprint_key(&effectcraft_render::EvalCtx::new(&s.p, s.cid, comp, Tick::from_seconds_f64(k)), adj, 1.0, false, false)
+    };
+    assert!(key(0.0).is_some());
+    assert_eq!(key(0.0), key(0.5), "the footprint key changes with time");
+    let Some(g) = gpu() else { return };
+    let cache = effectcraft_render::cache::LayerCache::new(64 << 20);
+    let mut r = Renderer::new(&s.p, &Pattern, RenderOpts { backend: Backend::Gpu, ..opts() });
+    r.accel = Some(g);
+    r.cache = Some(&cache);
+    let t = |k: u64| Tick::from_seconds_f64(k as f64 / 30.0);
+    let mut prev = None;
+    for k in 0..4 {
+        let before = g.ctx.transfer_stats().upload_bytes;
+        let img = g.render(&r, s.cid, t(k)).expect("the GPU renders the frame");
+        let up = g.ctx.transfer_stats().upload_bytes - before;
+        if k >= 2 {
+            assert_eq!(up, 0, "frame {k} uploaded {up} bytes: the footprint was re-keyed");
+        }
+        // Noise changes every frame: the frames differ.
+        assert!(prev.as_ref() != Some(&img.data), "frame {k} repeats the previous one");
+        prev = Some(img.data);
+        check(&format!("noise adjustment frame {k}"), compare_at(&s, opts(), t(k)), 0.0);
+    }
+}

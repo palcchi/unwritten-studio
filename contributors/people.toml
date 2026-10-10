@@ -39,3 +39,8 @@ sync_github_name = false
 
 [people.Aavirash]
 display_name = "Asquareportal"
+
+[people.tylerjenningsw]
+real_name = "Tyler Jennings"
+display_name = "tylerjenningsw"
+sync_github_name = false

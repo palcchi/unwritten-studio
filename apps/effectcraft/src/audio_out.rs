@@ -152,7 +152,15 @@ impl AudioDevice for CpalOut {
                 };
                 let mut cfg: cpal::StreamConfig = sup.config();
                 cfg.sample_rate = cpal::SampleRate(rate);
-                cfg.buffer_size = cpal::BufferSize::Fixed(preferred_buffer_frames(rate));
+                // A short period only where the default one is long (ALSA/PulseAudio on Linux, #554),
+                // and only within what the device reports it takes.
+                if cfg!(target_os = "linux") {
+                    let want = preferred_buffer_frames(rate);
+                    cfg.buffer_size = match sup.buffer_size() {
+                        cpal::SupportedBufferSize::Range { min, max } if *min <= *max => cpal::BufferSize::Fixed(want.clamp(*min, *max)),
+                        _ => cpal::BufferSize::Default,
+                    };
+                }
                 let build = |cfg: &cpal::StreamConfig| match sup.sample_format() {
                     cpal::SampleFormat::F32 => run::<f32>(&dev, cfg, feed.clone(), latency.clone(), map),
                     cpal::SampleFormat::I16 => run::<i16>(&dev, cfg, feed.clone(), latency.clone(), map),

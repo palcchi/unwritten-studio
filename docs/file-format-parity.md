@@ -78,7 +78,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 |---|---|---|---|
 | glTF / GLB | R | yes (meshes, PBR, skins, animations) | good |
 | OBJ / MTL | R | yes | good |
-| FBX | R (`usdFbx`) | none | gap 13 |
+| FBX | R (`usdFbx`) | yes (7.x binary and ASCII: meshes with normals, UVs and per-polygon materials, the Model hierarchy with pivots and pre/post rotation, Lambert/Phong materials with embedded or relative textures, axes turned to Y-up; no animation, skinning, cameras or lights; 6.x rejected) | partial |
 | USD / USDZ | R (`usd_plugins`) | none | gap 13 |
 | STL | R (`usdStl`) | none | gap 13 |
 | Substance 3D materials `.sbsar` | R (26.0) | none | gap 13 |
@@ -107,7 +107,7 @@ encoders ([hardware-parity.md](hardware-parity.md)), and rendering safely over a
 ## Estimate
 
 **≈ 130–230 h**: `.aep` / `.aepx` import 80–160 h (after the owner decision), wiring TGA / DPX /
-HDR / MXF / AVI / DNx import and DPX/TGA output 10–20 h, FBX / USD / STL and Substance 25–45 h,
+HDR / MXF / AVI / DNx import and DPX/TGA output 10–20 h, FBX animation and skinning, USD / STL and Substance 20–40 h,
 relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel with the rest).
 
 ## Revision history

@@ -454,6 +454,16 @@ fn png_with_alpha() {
     assert_eq!((th.width, th.height), (64, 32));
 }
 
+/// File ▸ Import of an FBX scene: importable by extension and probed as a 3D model item.
+#[test]
+fn fbx_imports_as_a_model() {
+    assert!(effectcraft_media::is_importable(Path::new("scene.fbx")));
+    let fbx = "FBXHeaderExtension: {\n FBXVersion: 7400\n}\nObjects: {\n Geometry: 1, \"Geometry::Tri\", \"Mesh\" {\n  Vertices: *9 {\n   a: 0,0,0,1,0,0,0,1,0\n  }\n  PolygonVertexIndex: *3 {\n   a: 0,1,-3\n  }\n }\n Model: 2, \"Model::Tri\", \"Mesh\" {\n }\n}\nConnections: {\n C: \"OO\",2,0\n C: \"OO\",1,2\n}\n";
+    let f = effectcraft_media::probe_bytes("scene.fbx", Arc::from(fbx.as_bytes())).expect("probe");
+    assert_eq!(f.kind, FootageKind::Model);
+    assert_eq!(f.codec, "FBX (1 meshes, 1 triangles)");
+}
+
 #[test]
 fn wav_audio() {
     let Some(p) = tone_wav() else { return };

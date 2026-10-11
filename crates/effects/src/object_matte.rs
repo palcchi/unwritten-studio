@@ -5,8 +5,9 @@
 //! The prompt is the **Object Point** (layer pixels) and, with **Use Box**, a box around the
 //! object. On the **Reference Frame** it is segmented by the same engine as Roto Brush: the
 //! trained model chosen in Settings ▸ Roto Brush (MobileSAM, `effectcraft_segment`) when one is
-//! installed, the classical graph cut otherwise (the point is a foreground stroke, the box's
-//! edges, or without a box the layer's border, background strokes). With **Track Object** the
+//! installed, the classical graph cut otherwise. The model gets the point as a foreground point
+//! and the box as its box prompt; the graph cut gets the point as a foreground stroke and the
+//! box's edges (without a box, the layer's border) as background strokes. With **Track Object** the
 //! matte is then carried frame by frame up to **Frames Before** / **Frames After** away (optical
 //! flow, re-segmented by the model prompted with the carried matte); without it every frame is
 //! segmented on its own from the prompt (useful when the point is animated).
@@ -119,9 +120,10 @@ pub fn tracks(params: &Params) -> bool {
 }
 
 /// The prompt as Roto Brush strokes on layer frame `frame`: the Object Point as a foreground
-/// stroke; the box's edges as background strokes; without a box, the layer's border when there
-/// is no model (the graph cut needs background samples; a model does not, and a border stroke
-/// would cut objects touching the frame edge). `None` when the point is unusable.
+/// stroke; the box as a box stroke (the model's box prompt) with a model, its edges as
+/// background strokes for the graph cut without one; without a box, the layer's border when
+/// there is no model (the graph cut needs background samples; a model does not, and a border
+/// stroke would cut objects touching the frame edge). `None` when the point is unusable.
 pub fn prompt_strokes(params: &Params, layer_size: [f64; 2], frame: i64, with_model: bool) -> Option<Vec<Stroke>> {
     let [w, h] = layer_size;
     if !(w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0) {
@@ -144,7 +146,12 @@ pub fn prompt_strokes(params: &Params, layer_size: [f64; 2], frame: i64, with_mo
             if pt[0] - m <= x0 || pt[0] + m >= x1 || pt[1] - m <= y0 || pt[1] + m >= y1 {
                 return None;
             }
-            out.push(Stroke { kind: StrokeKind::Bg, frame, radius: EDGE_RADIUS, points: rect(x0, y0, x1, y1) });
+            out.push(if with_model {
+                // The model takes the box itself as its box prompt.
+                Stroke { kind: StrokeKind::Box, frame, radius: 0.0, points: vec![[x0, y0], [x1, y1]] }
+            } else {
+                Stroke { kind: StrokeKind::Bg, frame, radius: EDGE_RADIUS, points: rect(x0, y0, x1, y1) }
+            });
         }
         None if !with_model => {
             let i = EDGE_RADIUS;
@@ -438,6 +445,8 @@ mod tests {
     #[derive(Default)]
     struct Stub {
         calls: std::sync::atomic::AtomicUsize,
+        /// The box prompt of the last call.
+        bbox: std::sync::Mutex<Option<[f32; 4]>>,
     }
     impl MaskModel for Stub {
         fn info(&self) -> &'static effectcraft_segment::ModelInfo {
@@ -445,6 +454,7 @@ mod tests {
         }
         fn segment(&self, _: &[[f32; 3]], w: usize, h: usize, prompt: &effectcraft_segment::Prompt) -> effectcraft_segment::Result<Vec<f32>> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            *self.bbox.lock().unwrap() = prompt.bbox;
             let Some(([cx, cy], _)) = prompt.points.iter().find(|(_, fg)| *fg) else { return Err("no point".into()) };
             Ok((0..w * h).map(|i| (((i % w) as f32 + 0.5 - cx).hypot((i / w) as f32 + 0.5 - cy) < 15.0) as u8 as f32).collect())
         }
@@ -464,5 +474,39 @@ mod tests {
         let FrameMatte::Alpha(a) = frame_matte(&p, [100.0, 80.0], 25.0, 0, 1.0, &img, Some(stub.clone()), &mut frame, &|| false) else { panic!("no matte") };
         assert!(a[40 * 100 + 40] > 0.5 && a[5 * 100 + 5] < 0.5);
         assert_eq!(stub.calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(*stub.bbox.lock().unwrap(), None);
+    }
+
+    #[test]
+    fn the_box_reaches_the_model_as_a_box_prompt() {
+        let p = params(&[
+            ("objectPoint", Value::Vec2([90.0, 70.0])),
+            ("useBox", Value::Bool(true)),
+            ("boxTopLeft", Value::Vec2([100.0, 80.0])),
+            ("boxBottomRight", Value::Vec2([74.0, 54.0])),
+        ]);
+        // With a model: the point and a box stroke (corners ordered); without: the box's edges
+        // as a background stroke, as before.
+        let with = prompt_strokes(&p, [100.0, 80.0], 0, true).unwrap();
+        assert_eq!(with.iter().map(|s| s.kind).collect::<Vec<_>>(), [StrokeKind::Fg, StrokeKind::Box]);
+        assert_eq!(with[1].points, [[74.0, 54.0], [100.0, 80.0]]);
+        let without = prompt_strokes(&p, [100.0, 80.0], 0, false).unwrap();
+        assert_eq!(without.iter().map(|s| s.kind).collect::<Vec<_>>(), [StrokeKind::Fg, StrokeKind::Bg]);
+        // The model is called with the box itself (matte pixels at scale 1) and only one
+        // foreground point: no background points along the edges.
+        let stub = Arc::new(Stub::default());
+        let img = frame_at(0);
+        let mut frame = |g: i64| Some(Arc::new(frame_at(g)));
+        let FrameMatte::Alpha(a) = frame_matte(&p, [100.0, 80.0], 25.0, 0, 1.0, &img, Some(stub.clone()), &mut frame, &|| false) else { panic!("no matte") };
+        assert_eq!(*stub.bbox.lock().unwrap(), Some([74.0, 54.0, 100.0, 80.0]));
+        assert!(a[70 * 100 + 90] > 0.5 && a[40 * 100 + 40] < 0.5);
+        // At half resolution the box is scaled with the frame (another Input Key, so the
+        // full-resolution result above is not reused).
+        let mut p = p;
+        p.values.insert(INPUT_KEY.into(), Value::Str("half".into()));
+        let half = effectcraft_raster::resample(&img, 50, 40);
+        let mut frame = |g: i64| Some(Arc::new(effectcraft_raster::resample(&frame_at(g), 50, 40)));
+        let _ = frame_matte(&p, [100.0, 80.0], 25.0, 0, 0.5, &half, Some(stub.clone()), &mut frame, &|| false);
+        assert_eq!(*stub.bbox.lock().unwrap(), Some([37.0, 27.0, 50.0, 40.0]));
     }
 }

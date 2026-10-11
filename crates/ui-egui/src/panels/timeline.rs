@@ -2684,6 +2684,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 actions.push(("comp.settings".into(), json!({})));
                 ui.close();
             }
+            let response = ui.button(crate::i18n::tr("Open in Essential Graphics"));
+            app.auto.add(&format!("timeline.context.{area}.essentialGraphics"), response.rect, "Open in Essential Graphics");
+            if response.clicked() {
+                actions.push(("comp.openInEssentialGraphics".into(), json!({})));
+                ui.close();
+            }
         });
     }
     if outline_empty.clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {

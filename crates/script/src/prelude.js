@@ -138,7 +138,7 @@ File.prototype = {
   get path() { var p = this.__path.split(/[\/\\]/); p.pop(); return p.join("/"); },
   get parent() { return new Folder(this.path); },
   get exists() { return JSON.parse(__file("exists", this.__path)) === true; },
-  get length() { return this.__buf !== null ? this.__buf.length : (this.exists ? JSON.parse(__file("read", this.__path)).length : 0); },
+  get length() { return this.__buf !== null ? this.__buf.length : (this.exists ? JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path)).length : 0); },
   get eof() { return this.__buf === null || this.__pos >= this.__buf.length; },
   toString: function () { return this.__path; },
   open: function (mode) {
@@ -152,9 +152,9 @@ File.prototype = {
         this.__buf = "";
         return true;
       }
-      this.__buf = JSON.parse(__file("read", this.__path));
+      this.__buf = JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path));
     } else if (mode === "a") {
-      this.__buf = this.exists ? JSON.parse(__file("read", this.__path)) : "";
+      this.__buf = this.exists ? JSON.parse(__file(this.encoding.toUpperCase() === "BINARY" ? "readBinary" : "read", this.__path)) : "";
       this.__pos = this.__buf.length;
     } else {
       // Check the gate now, like After Effects refusing to open a file for writing.
@@ -191,18 +191,14 @@ File.prototype = {
   tell: function () { return this.__pos; },
   close: function () {
     if ((this.__mode === "w" || this.__mode === "a" || this.__mode === "e") && this.__buf !== null) {
-      __file("write", this.__path, this.__buf);
+      __file(this.encoding.toUpperCase() === "BINARY" ? "writeBinary" : "write", this.__path, this.__buf);
     }
     this.__buf = null;
     this.__mode = null;
     return true;
   },
   remove: function () { return JSON.parse(__file("remove", this.__path)); },
-  copy: function (to) {
-    var data = JSON.parse(__file("read", this.__path));
-    __file("write", __str(to), data);
-    return true;
-  },
+  copy: function (to) { return JSON.parse(__file("copy", this.__path, __str(to))); },
   rename: function () { throw __err("File.rename is not supported"); },
   execute: function () { return JSON.parse(__file("execute", this.__path)); },
   openDlg: function () { return null; },

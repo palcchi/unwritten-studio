@@ -730,3 +730,49 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+
+#[test]
+fn binary_file_io_preserves_all_byte_values() {
+    let dir = std::env::temp_dir().join(format!("ec-script-binary-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("sig.bin");
+    let dst = dir.join("written.bin");
+    let copied = dir.join("copied.bin");
+    let original = [0x89u8, 0x50, 0x4e, 0x47, 0x00, 0x7f, 0x80, 0xff, 0x0a];
+    std::fs::write(&src, original).unwrap();
+    let mut s = session();
+    s.path = Some(dir.join("project.ecproj").to_string_lossy().to_string());
+    s.prefs.scripting.allow_scripts_write_files = true;
+    let q = |p: &std::path::Path| serde_json::to_string(&p.to_string_lossy()).unwrap();
+
+    let read = ok(&mut s, &format!(
+        "var f = new File({}); f.encoding = 'BINARY'; f.open('r'); var data = f.read(); f.close(); [data.length, data.charCodeAt(0), data.charCodeAt(6), data.charCodeAt(7)]",
+        q(&src)
+    ));
+    assert_eq!(read.result, json!([9, 0x89, 0x80, 0xff]));
+
+    ok(&mut s, &format!(
+        "var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0, 127, 128, 255, 10)); f.close();",
+        q(&dst)
+    ));
+    assert_eq!(std::fs::read(&dst).unwrap(), original);
+
+    let copy = ok(&mut s, &format!("new File({}).copy({})", q(&src), q(&copied)));
+    assert_eq!(copy.result, json!(true));
+    assert_eq!(std::fs::read(&copied).unwrap(), original);
+
+    ok(&mut s, &format!(
+        "var f = new File({}); f.encoding = 'BINARY'; f.open('a'); f.write(String.fromCharCode(0xfe)); f.close();",
+        q(&dst)
+    ));
+    assert_eq!(std::fs::read(&dst).unwrap(), [original.as_slice(), &[0xfe]].concat());
+
+    let invalid = run_code(
+        &mut s,
+        &format!("var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write('\\u0100'); f.close();", q(&dst)),
+        "invalid-binary.jsx",
+    );
+    assert!(invalid.error.is_some(), "code points above 255 must not be truncated");
+    let _ = std::fs::remove_dir_all(&dir);
+}

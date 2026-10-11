@@ -111,3 +111,22 @@ fn gpu_information_ok_returns_to_settings_and_cancel_restores_preferences() {
 fn gpu_information_escape_returns_to_settings_and_ok_saves_preferences() {
     check_info_transaction(true);
 }
+
+/// GPU Information names the adapter the window got and says why the compositor is off, so a
+/// card that the compositor could not use does not look undetected (#596).
+#[test]
+fn gpu_information_names_the_adapter_and_why_the_gpu_is_off() {
+    let session = Session {
+        accel_note: Some("GPU compositor unavailable: no compute shaders".into()),
+        window_adapter: Some("NVIDIA GeForce RTX 4070 (Dx12, DiscreteGpu)".into()),
+        ..Default::default()
+    };
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(session));
+    h.run_steps(4);
+    let ctx = h.ctx.clone();
+    menus::invoke(h.state_mut(), &ctx, "app.gpuInfo", json!({})).unwrap();
+    h.run_steps(3);
+    assert_eq!(h.state().dialog, Some(Dialog::Info));
+    assert!(h.query_by_label_contains("Window graphics: NVIDIA GeForce RTX 4070").is_some(), "the window's adapter is shown");
+    assert!(h.query_by_label_contains("GPU compositing is off: GPU compositor unavailable").is_some(), "the reason is shown");
+}

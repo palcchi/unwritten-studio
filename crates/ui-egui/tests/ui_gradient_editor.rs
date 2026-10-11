@@ -469,3 +469,25 @@ fn picker_escape_and_cancel_restore_the_stop_and_keep_the_editor() {
         assert_eq!(h.state().gradient_draft().opacities.len(), 3, "{how}: the editor's other edits stay");
     }
 }
+
+/// The Escape that closes the picker is its own: the next Escape, even in the very next pass,
+/// cancels the editor (a closed picker doesn't keep the dialog from it).
+#[test]
+fn the_escape_after_the_picker_closes_cancels_the_editor() {
+    let (mut h, _, colors) = setup(&[]);
+    let project = h.state().session.project.clone();
+    open_editor(&mut h, colors);
+    click(&mut h, "dialog.gradient.colorStop.0");
+    click(&mut h, "dialog.gradient.color");
+    assert!(picker_open(&h), "the picker opened");
+    let escape = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.input_mut().events.push(Event::Key { key: Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+        h.input_mut().events.push(Event::Key { key: Key::Escape, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::NONE });
+        h.step();
+    };
+    escape(&mut h);
+    assert_eq!(h.state().dialog, Some(Dialog::GradientEditor), "the first Escape closed only the picker");
+    escape(&mut h);
+    assert_eq!(h.state().dialog, None, "the next pass's Escape cancels the editor");
+    assert_eq!(h.state().session.project, project, "and changes nothing");
+}

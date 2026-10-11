@@ -730,3 +730,23 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn script_av_layer_transform_shortcuts_return_live_properties() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Shortcuts", 100, 100, 1, 5, 25);
+        var l = c.layers.addSolid([1, 0, 0], "S", 10, 10, 1);
+        l.position.setValue([30, 40]);
+        l.rotation.setValueAtTime(1, 45);
+        [l.position.value[0], l.transform.position.value[1], l.rotation.numKeys,
+         l.opacity === undefined, l.scale === undefined, l.anchorPoint === undefined]
+        "#,
+    );
+    assert_eq!(o.result, json!([30, 40, 1, false, false, false]));
+    s.undo();
+    let restored = ok(&mut s, "app.project.item(1).layer(1).rotation.numKeys");
+    assert_eq!(restored.result, json!(0));
+}

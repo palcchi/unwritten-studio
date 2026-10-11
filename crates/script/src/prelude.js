@@ -1117,6 +1117,11 @@ AVLayer.prototype.constructor = AVLayer;
   var P = AVLayer.prototype;
   function def(name, get, set) { Object.defineProperty(P, name, { get: get, set: set }); }
   def("source", function () { return __item(this.__info().source); });
+  // After Effects exposes the most common Transform properties directly on AVLayer.
+  // Return the original Property object, not its current value: scripts can keyframe it.
+  ["anchorPoint", "position", "scale", "rotation", "opacity"].forEach(function (name) {
+    def(name, function () { return this.transform[name]; });
+  });
   def("width", function () { return this.__info().width; });
   def("height", function () { return this.__info().height; });
   def("threeDLayer", function () { return this.__info().threeDLayer; }, function (v) { this.__switch("threeD", v); });

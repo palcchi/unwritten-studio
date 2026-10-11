@@ -1203,7 +1203,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mods = ui.input(|i| i.modifiers);
     let space_pan = super::space_hand(&ctx);
     // Pen tool: each press places a vertex (dragging pulls Bezier tangents); pressing on the
-    // first vertex closes the path.
+    // first vertex closes the path, pressing an open path's last vertex resumes it.
     if app.ui.tool == Tool::Pen
         && !space_pan
         && resp.hovered()
@@ -1928,10 +1928,10 @@ fn draw_rigs(app: &mut EffectcraftApp, painter: &egui::Painter, map: &ViewerMap,
 }
 
 /// Pen tool press at `pos`: continue the path in progress (pressing its first vertex closes it),
-/// add a vertex on a visible path's segment, or start a new path: a mask on the selected
-/// footage/solid layer (or shape layer, with Tool Creates Mask), a shape path (Shape n group with
-/// the Tools bar's Fill and Stroke) on the selected shape layer, or a new shape layer when
-/// nothing is selected. The placed point snaps.
+/// resume an open path whose last vertex is pressed, add a vertex on a visible path's segment, or
+/// start a new path: a mask on the selected footage/solid layer (or shape layer, with Tool Creates
+/// Mask), a shape path (Shape n group with the Tools bar's Fill and Stroke) on the selected shape
+/// layer, or a new shape layer when nothing is selected. The placed point snaps.
 /// Add a Position keyframe at a motion path's frame, keeping the path where it is.
 fn add_motion_key(app: &mut EffectcraftApp, f: ov::PathFrame) {
     if let Err(e) = app.session.execute("prop.addKey", json!({"layer": f.layer.0, "prop": f.prop, "time": f.time.seconds()})) {
@@ -2015,6 +2015,11 @@ fn pen_press(
             let index = v.as_u64().unwrap_or(0) as usize;
             ui.data_mut(|d| d.insert_temp(gid, Gesture::Pen { layer: lid, mask: uid, index, vertex: lp, inv, press: pos }));
         }
+        return;
+    }
+    // Clicking the last vertex of an open path (e.g. after Esc ended it) resumes drawing it.
+    if let Some(cur) = ov::open_end_at(paths, map, pos, 8.0) {
+        ui.data_mut(|d| d.insert_temp(pen_id(), cur));
         return;
     }
     // On a visible path's segment the Pen adds a vertex there; on a motion path, a keyframe.

@@ -84,9 +84,12 @@ Supported controls: `panel`, `group`, `button`, `iconbutton`, `statictext`, `edi
 `tabbedpanel` / `tab` and `image`, with ScriptUI's automatic layout (`orientation`,
 `alignChildren`, `alignment`, `margins`, `spacing`, `preferredSize`), resource strings, event
 handlers (`onClick`, `onChange`, `onChanging`, `onClose`, `addEventListener`) and `onDraw` with
-ScriptUIGraphics. Mouse events (`mousedown`, `mousemove`…) aren't sent to scripts yet. Agents use
-a panel like a user: `scriptui.list`, `scriptui.get` (its controls), `scriptui.click`,
-`scriptui.set` and `scriptui.close`; every control has the automation id
+ScriptUIGraphics. Mouse events (`addEventListener("mousedown" | "mouseup" | "mousemove" |
+"mouseover" | "mouseout" | "click", handler, capture?)`) reach the control under the pointer and
+its containers (capture, target, bubble; `stopPropagation()`), with a MouseEvent carrying
+`clientX`/`clientY` relative to the target, `button`, `detail` (click count) and the modifier
+keys. Agents use a panel like a user: `scriptui.list`, `scriptui.get` (its controls),
+`scriptui.click`, `scriptui.set`, `scriptui.mouse` and `scriptui.close`; every control has the automation id
 `scriptui.<window>.<control id or name>`. The bundled sample `Layer Tools.jsx`
 (`crates/engine/scripts/ScriptUI Panels/`) and the Ease Presets extension below are longer
 examples.

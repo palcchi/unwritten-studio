@@ -410,6 +410,15 @@ pub fn specs() -> Vec<CommandSpec> {
             scriptui::set
         ),
         cmd!(
+            "scriptui.mouse",
+            "Mouse Event on Script Window Control",
+            [],
+            None,
+            "{window?, widget, type: mousedown | mouseup | mousemove | mouseover | mouseout | click (default), x?, y? (relative to the control; default its centre), button? (0 left, 1 middle, 2 right), detail? (click count), screenX?, screenY?, altKey?, ctrlKey?, metaKey?, shiftKey?} → the script's addEventListener listeners on the control and its containers receive a MouseEvent",
+            always,
+            scriptui::mouse
+        ),
+        cmd!(
             "scriptui.close",
             "Close Script Window",
             [],

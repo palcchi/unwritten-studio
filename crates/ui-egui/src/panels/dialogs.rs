@@ -150,6 +150,14 @@ pub fn route_layer_settings(app: &mut EffectcraftApp, id: &str, params: &Value) 
 }
 
 pub(crate) fn modal(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui)) {
+    modal_with_scroll(ctx, title, size, t, false, body);
+}
+
+pub(crate) fn modal_vertical(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui)) {
+    modal_with_scroll(ctx, title, size, t, true, body);
+}
+
+fn modal_with_scroll(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, vertical_only: bool, body: impl FnOnce(&mut egui::Ui)) {
     let available = (ctx.content_rect().size() - vec2(48.0, 48.0)).max(vec2(120.0, 80.0));
     let size = size.min(available);
     egui::Modal::new(egui::Id::new(("modal", title)))
@@ -161,7 +169,8 @@ pub(crate) fn modal(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Toke
             // The id stays keyed on the untranslated source, so switching language cannot move it.
             ui.label(egui::RichText::new(tr(title)).font(Tokens::semibold(15.0)).color(t.tab_text_active));
             ui.add_space(10.0);
-            egui::ScrollArea::both().max_height((available.y - 84.0).max(40.0)).auto_shrink([false, true]).show(ui, body);
+            let scroll = if vertical_only { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };
+            scroll.max_height((available.y - 84.0).max(40.0)).auto_shrink([false, true]).show(ui, body);
         });
 }
 

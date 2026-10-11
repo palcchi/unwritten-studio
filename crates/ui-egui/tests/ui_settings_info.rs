@@ -111,3 +111,23 @@ fn gpu_information_ok_returns_to_settings_and_cancel_restores_preferences() {
 fn gpu_information_escape_returns_to_settings_and_ok_saves_preferences() {
     check_info_transaction(true);
 }
+
+#[test]
+fn gpu_information_dialog_stays_in_place() {
+    let mut session = Session::default();
+    session.prefs.appearance.ui_scale = 125;
+    session.execute("comp.new", json!({"width":32,"height":32,"duration":2})).unwrap();
+    let mut h = Harness::builder().with_size(vec2(1280.0, 720.0)).build_eframe(|_| EffectcraftApp::new(session));
+    h.run_steps(4);
+    let ctx = h.ctx.clone();
+    menus::invoke(h.state_mut(), &ctx, "app.settings", json!({"page":"previews"})).unwrap();
+    h.run_steps(3);
+    let button = rect(&h, "settings.button.GPU Information").center();
+    click(&mut h, button);
+    let start = h.get_by_label("GPU Information").rect();
+    for _ in 0..20 {
+        h.step();
+        let current = h.get_by_label("GPU Information").rect();
+        assert!((current.min - start.min).length() < 1.0, "GPU Information dialog moved");
+    }
+}

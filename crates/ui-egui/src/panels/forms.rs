@@ -892,7 +892,8 @@ pub(crate) fn close_info(app: &mut EffectcraftApp) {
 pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let (title, body) = app.dialog_state.info.clone();
     let mut close = false;
-    super::dialogs::modal(ctx, &title, vec2(440.0, 160.0), t, |ui| {
+    // The text wraps within this small dialog; avoid a horizontal scrollbar changing its height.
+    super::dialogs::modal_vertical(ctx, &title, vec2(440.0, 160.0), t, |ui| {
         ui.label(tr(&body));
         ui.add_space(16.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

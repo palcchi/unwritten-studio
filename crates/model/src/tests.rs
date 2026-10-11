@@ -309,6 +309,35 @@ fn bevels_shrink_the_caps() {
 }
 
 #[test]
+fn extrusions_split_into_front_bevel_side_and_back() {
+    use super::extrude::{Surface, extrude_surfaces, extrude_surfaces_stacked};
+    let square = Outline { outer: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], holes: vec![] };
+    let p = ExtrudeParams { bevel: BevelStyle::Angular, bevel_depth: 10.0, hole_bevel: 1.0, depth: 50.0 };
+    let whole = extrude(std::slice::from_ref(&square), &p);
+    let parts = extrude_surfaces(std::slice::from_ref(&square), &p);
+    // The parts hold exactly the triangles of the whole mesh.
+    assert_eq!(parts.iter().map(|m| m.triangle_count()).sum::<usize>(), whole.triangle_count());
+    let [front, bevel, side, back] = &parts;
+    // Caps: flat, at the layer plane (front, facing −z) and at the extrusion depth (back, +z).
+    assert!(front.positions.iter().all(|q| q[2] == 0.0) && front.normals.iter().all(|n| n[2] < -0.99));
+    assert!(back.positions.iter().all(|q| q[2] == 50.0) && back.normals.iter().all(|n| n[2] > 0.99));
+    // Walls: the full outline, between the bevels (z 10..40), with sideways normals.
+    assert!(side.positions.iter().all(|q| (10.0..=40.0).contains(&q[2])) && side.normals.iter().all(|n| n[2].abs() < 1e-6));
+    assert!(side.positions.iter().any(|q| q[0] == 0.0));
+    // Bevels: slanted between the caps and the walls, front and back.
+    assert!(bevel.triangle_count() > 0 && bevel.normals.iter().all(|n| n[2].abs() > 0.1 && n[2].abs() < 0.99));
+    assert!(bevel.positions.iter().any(|q| q[2] == 0.0) && bevel.positions.iter().any(|q| q[2] == 50.0));
+    assert_eq!(Surface::ALL.map(Surface::index), [0, 1, 2, 3]);
+    // Without a bevel there is nothing on the Bevel surface.
+    let flat = extrude_surfaces(std::slice::from_ref(&square), &ExtrudeParams { bevel: BevelStyle::None, ..p });
+    assert_eq!(flat[Surface::Bevel.index()].triangle_count(), 0);
+    assert!(flat[Surface::Side.index()].triangle_count() > 0);
+    // Stacked like `extrude_stacked`.
+    let up = extrude_surfaces_stacked(std::slice::from_ref(&square), &p, 2);
+    assert!(up[0].positions.iter().all(|q| (q[2] + 2.0 * super::extrude::STACK_GAP as f32).abs() < 1e-6));
+}
+
+#[test]
 fn contours_group_into_outlines_by_nesting() {
     let sq = |x: f64, y: f64, s: f64| vec![[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
     // "O" (outer + hole) next to an island inside another hole.

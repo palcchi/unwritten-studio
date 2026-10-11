@@ -1376,7 +1376,7 @@ Item.prototype = {
       __call("project.select", { items: selection.filter(function (item) { return item !== id; }) });
     }
   },
-  get usedIn() { return this.__info().usedIn.map(function (c) { return new CompItem(c); }); },
+  get usedIn() { return this.__info().usedIn.map(function (c) { return __item(c); }); },
   remove: function () { __call("project.delete", { items: [this.__id] }); },
 };
 

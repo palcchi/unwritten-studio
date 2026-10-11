@@ -65,7 +65,8 @@ pub struct DialogState {
 pub fn open_new_comp(app: &mut EffectcraftApp) {
     let n = app.session.project.comps().count() + 1;
     let last = app.dialog_state.last_new_comp.clone().unwrap_or_default();
-    app.dialog_state.comp = CompDraft { name: format!("Comp {n}"), tab: super::comp_settings::Tab::Basic, start_tc: None, dur_tc: None, ..last };
+    app.dialog_state.comp =
+        CompDraft { name: format!("Comp {n}"), tab: super::comp_settings::Tab::Basic, start_tc: None, dur_tc: None, preset_name: None, ..last };
     app.dialog_state.editing_existing = false;
     app.dialog = Some(Dialog::NewComp);
 }
@@ -311,10 +312,24 @@ fn about_main(app: &mut EffectcraftApp, ui: &mut egui::Ui, t: &Tokens, cmd: &mut
 fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, existing: bool) {
     let mut d = app.dialog_state.comp.clone();
     let mut result = None;
+    let custom = app.session.prefs.comp_presets.clone();
+    let mut cmds = Vec::new();
     modal(ctx, "Composition Settings", vec2(600.0, 470.0), t, |ui| {
-        result = super::comp_settings::show(ui, &mut d, t, &mut app.auto);
+        result = super::comp_settings::show(ui, &mut d, t, &mut app.auto, &custom, &mut cmds);
     });
-    if result.is_none() && ui_enter(ctx) {
+    if d.preset_name.is_some() {
+        // Save Preset asks for the name in its own window over the dialog, as After Effects does.
+        result = None;
+        modal(ctx, "Choose Name", vec2(360.0, 150.0), t, |ui| super::comp_settings::choose_name(ui, &mut d, t, &mut app.auto, &custom, &mut cmds));
+    }
+    // Enter that saved a preset name (or while one is typed) doesn't also press OK.
+    let preset_busy = !cmds.is_empty() || d.preset_name.is_some();
+    for (id, params) in cmds {
+        if let Err(e) = app.session.execute(id, params) {
+            app.ui.status = e.to_string();
+        }
+    }
+    if result.is_none() && !preset_busy && ui_enter(ctx) {
         result = Some(super::comp_settings::params(&d));
     }
     app.dialog_state.comp = d;

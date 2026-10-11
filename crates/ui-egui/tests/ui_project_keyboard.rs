@@ -182,3 +182,43 @@ fn a_focused_row_keeps_the_arrows_and_focus_follows_the_selection() {
     assert_eq!(selection(&h), vec![rows[0]]);
     assert!(h.get_by_label(&names[0]).is_focused());
 }
+
+/// A mouse click on a row gives no keyboard focus to the row, so the app's shortcuts run as
+/// before the arrow keys came: Delete / Backspace delete, Cmd+D duplicates, Enter renames, also
+/// after an arrow key moved the selection.
+#[test]
+fn shortcuts_still_run_after_a_mouse_click_and_the_arrows() {
+    let focus = |h: &Harness<'_, EffectcraftApp>| h.ctx.memory(|m| m.focused());
+    for delete_key in [Key::Delete, Key::Backspace] {
+        let (mut h, folder, _, _) = harness();
+        let empty = ItemId(h.state_mut().session.execute("project.newFolder", json!({"name": "Empty"})).unwrap()["item"].as_u64().unwrap());
+        h.run_steps(2);
+        click(&mut h, &format!("project.item.{}.name", empty.0));
+        assert_eq!(selection(&h), vec![empty]);
+        assert_eq!(focus(&h), None, "a click gives the row no keyboard focus");
+        key(&mut h, delete_key, Modifiers::NONE);
+        assert!(h.state().session.project.item(empty).is_none(), "{delete_key:?} deletes the clicked item");
+        // Click, an arrow, then the shortcut.
+        let empty2 = ItemId(h.state_mut().session.execute("project.newFolder", json!({"name": "Empty 2"})).unwrap()["item"].as_u64().unwrap());
+        h.run_steps(2);
+        let rows = rows(&h);
+        let at = rows.iter().position(|r| *r == empty2).unwrap();
+        let from = if at > 0 { rows[at - 1] } else { rows[at + 1] };
+        click(&mut h, &format!("project.item.{}.name", from.0));
+        key(&mut h, if at > 0 { Key::ArrowDown } else { Key::ArrowUp }, Modifiers::NONE);
+        assert_eq!(selection(&h), vec![empty2]);
+        assert_eq!(focus(&h), None, "the arrows don't take keyboard focus after a click");
+        key(&mut h, delete_key, Modifiers::NONE);
+        assert!(h.state().session.project.item(empty2).is_none(), "{delete_key:?} deletes the item the arrow moved to");
+        assert!(h.state().session.project.item(folder).is_some());
+    }
+    let (mut h, folder, _, solid) = harness();
+    // Folders can't be duplicated (engine rule): duplicate the solid.
+    click(&mut h, &format!("project.item.{}.name", solid.0));
+    let n = h.state().session.project.items.len();
+    key(&mut h, Key::D, Modifiers::COMMAND);
+    assert_eq!(h.state().session.project.items.len(), n + 1, "Cmd+D duplicates the clicked item");
+    click(&mut h, &format!("project.item.{}.name", folder.0));
+    key(&mut h, Key::Enter, Modifiers::NONE);
+    assert!(h.state().auto.find(&format!("project.item.{}.nameEdit", folder.0)).is_some(), "Enter renames the clicked item");
+}

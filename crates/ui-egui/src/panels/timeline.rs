@@ -488,6 +488,21 @@ impl TMap {
     }
 }
 
+/// A Timeline ruler tick label for comp frame `fno`: seconds:frames (`00:15f`, AE) or, when
+/// the project's Time Display Style is Frames, the frame number the current-time display shows
+/// (`00015`, counted from Start Numbering Frames At) (#710).
+fn ruler_label(fno: i64, fps_i: i64, settings: &effectcraft_engine::project::ProjectSettings) -> String {
+    if settings.time_display == effectcraft_engine::project::TimeDisplayStyle::Frames {
+        return format!("{:05}", fno.saturating_add(settings.frame_start));
+    }
+    let fps_i = fps_i.max(1);
+    if fno >= 60 * fps_i * 60 {
+        format!("{}:{:02}:{:02}f", fno / (fps_i * 60), (fno / fps_i) % 60, fno % fps_i)
+    } else {
+        format!("{:02}:{:02}f", fno / fps_i, fno % fps_i)
+    }
+}
+
 fn tl_map_id() -> egui::Id {
     egui::Id::new("timeline-map")
 }
@@ -1513,11 +1528,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let x = tm.x(s);
         pr.line_segment([pos2(x, ruler.max.y - 10.0), pos2(x, ruler.max.y)], Stroke::new(1.0, t.tl_ruler_tick));
         let fno = (s / fd).round() as i64;
-        let label = if fno >= 60 * fps_i * 60 {
-            format!("{}:{:02}:{:02}f", fno / (fps_i * 60), (fno / fps_i) % 60, fno % fps_i)
-        } else {
-            format!("{:02}:{:02}f", fno / fps_i, fno % fps_i)
-        };
+        let label = ruler_label(fno, fps_i, &app.session.project.settings);
         pr.text(pos2(x + 3.0, ruler.max.y - 16.0), Align2::LEFT_CENTER, label, Tokens::ui(10.0), t.tl_ruler_text);
         for k in 1..5 {
             let xx = tm.x(s + secs_per_label * k as f64 / 5.0);
@@ -3683,6 +3694,23 @@ fn value_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #710: with Time Display set to Frames the ruler labels are frame numbers (as under the
+    /// CTI, from Start Numbering Frames At); otherwise seconds:frames.
+    #[test]
+    fn ruler_labels_follow_the_time_display_style() {
+        use effectcraft_engine::project::{ProjectSettings, TimeDisplayStyle};
+        let mut st = ProjectSettings { time_display: TimeDisplayStyle::Timecode, frame_start: 0, ..ProjectSettings::default() };
+        assert_eq!(ruler_label(15, 30, &st), "00:15f");
+        assert_eq!(ruler_label(45, 30, &st), "01:15f");
+        assert_eq!(ruler_label(30 * 3600 + 31, 30, &st), "60:01:01f");
+        st.time_display = TimeDisplayStyle::Frames;
+        assert_eq!(ruler_label(0, 30, &st), "00000");
+        assert_eq!(ruler_label(45, 30, &st), "00045");
+        st.frame_start = 1;
+        assert_eq!(ruler_label(45, 30, &st), "00046");
+        assert_eq!(ruler_label(i64::MAX, 30, &st), format!("{:05}", i64::MAX));
+    }
 
     /// #468: playback pages the view to the CTI; a scrub past either end scrolls that way.
     #[test]

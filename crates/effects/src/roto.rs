@@ -195,6 +195,12 @@ pub fn model_for(params: &Params) -> Option<Arc<dyn MaskModel>> {
     if e(params, "version") == 0 {
         return None;
     }
+    installed_model()
+}
+
+/// The trained model chosen in Settings ▸ Roto Brush, if one is installed (Roto Brush 2.0 / 3.0
+/// and Object Matte segment with it).
+pub fn installed_model() -> Option<Arc<dyn MaskModel>> {
     model_slot().read().ok().and_then(|m| m.clone())
 }
 
@@ -392,7 +398,7 @@ pub fn downscale(s: &FrameSeg, scale: f64) -> FrameSeg {
     resample(s, w, h)
 }
 
-fn resample(s: &FrameSeg, w: usize, h: usize) -> FrameSeg {
+pub(crate) fn resample(s: &FrameSeg, w: usize, h: usize) -> FrameSeg {
     if s.w == w && s.h == h {
         return s.clone();
     }

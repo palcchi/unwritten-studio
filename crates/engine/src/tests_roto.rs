@@ -351,3 +351,78 @@ fn offloaded_propagation_streams_segmentations_back() {
     s.execute("roto.propagate", json!({"layer": clip.0, "wait": true})).unwrap();
     assert!(s.offloaded.is_empty());
 }
+
+/// Object Matte: one click on the disk on frame 0 isolates it there and on the frames it is
+/// followed to; the Input Key follows the layer's frames; bad prompts are refused.
+#[test]
+fn object_matte_from_a_click() {
+    hold_roto_cache_test_lock();
+    let (mut s, clip, solid) = setup(|f| draw(center(f)));
+    let cid = s.active_comp_id().unwrap();
+    s.edit("remove solid", None, |p, _| {
+        p.comp_mut(cid).unwrap().layers.retain(|l| l.id != solid);
+        for it in p.items.values_mut() {
+            if let effectcraft_project::ItemKind::Footage(f) = &mut it.kind {
+                f.path = "object-matte.mov".into();
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+    s.execute("time.set", json!({"time": 0})).unwrap();
+    let c = center(0);
+    let r = s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "point": c, "after": 6})).unwrap();
+    assert_eq!(r["frame"], 0);
+    assert_eq!(r["span"], json!([-30, 6]));
+    let uid = r["effect"].as_u64().unwrap();
+    let key = |s: &Session| {
+        let g = s.active_comp().unwrap().layer(clip).unwrap().props.find_group(uid).unwrap().clone();
+        crate::roto::params_static(&g).get(effectcraft_effects::roto::INPUT_KEY).cloned()
+    };
+    let k0 = key(&s);
+    assert!(matches!(&k0, Some(effectcraft_keyframe::Value::Str(k)) if !k.is_empty()), "{k0:?}");
+    let wrong = |s: &Session, f: u32| {
+        let c = center(f);
+        alpha_at(s, f)
+            .iter()
+            .enumerate()
+            .filter(|(i, v)| {
+                let d = (((*i as u32 % W) as f64 + 0.5 - c[0]).hypot((*i as u32 / W) as f64 + 0.5 - c[1])) - R;
+                (d < -3.0 && **v < 0.5) || (d > 3.0 && **v > 0.5)
+            })
+            .count()
+    };
+    let w0 = wrong(&s, 0);
+    assert!(w0 < 40, "{w0} wrong pixels on the reference frame");
+    let w4 = wrong(&s, 4);
+    assert!(w4 < 60, "{w4} wrong pixels on frame 4");
+    // Past Frames After: transparent.
+    assert!(alpha_at(&s, 8).iter().all(|v| *v == 0.0));
+    // Other frames under the effect: a new Input Key (the mattes are recomputed).
+    s.edit("swap clip", None, |p, _| {
+        for it in p.items.values_mut() {
+            if let effectcraft_project::ItemKind::Footage(f) = &mut it.kind {
+                f.path = "object-matte-2.mov".into();
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+    assert_ne!(key(&s), k0);
+    // Bad prompts are refused.
+    for bad in [
+        json!({"layer": clip.0}),
+        json!({"layer": clip.0, "point": [-10, 5]}),
+        json!({"layer": clip.0, "point": [10, "x"]}),
+        json!({"layer": clip.0, "point": c, "box": [0, 0, 10, 10]}),
+        json!({"layer": clip.0, "point": c, "frame": 999}),
+    ] {
+        assert!(s.execute_checked("objectMatte.apply", bad.clone()).is_err(), "{bad}");
+    }
+    // A box and a static prompt are accepted; the second instance is numbered.
+    let r = s
+        .execute_checked("objectMatte.apply", json!({"layer": clip.0, "point": c, "box": [c[0] + 50.0, c[1] + 50.0, c[0] - 50.0, c[1] - 50.0], "track": false}))
+        .unwrap();
+    let g = s.active_comp().unwrap().layer(clip).unwrap().props.find_group(r["effect"].as_u64().unwrap()).unwrap().clone();
+    assert_eq!(g.name, "Object Matte 2");
+}

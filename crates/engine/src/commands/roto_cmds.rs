@@ -1,6 +1,9 @@
 //! Roto Brush & Refine Edge commands: strokes (the Roto Brush and Refine Edge tools in the Layer
 //! panel), propagation, the segmentation span, Freeze / Unfreeze, tool options and status.
 //!
+//! `objectMatte.apply` adds an Object Matte effect (Effect ▸ Matte) from a point / box prompt on
+//! a frame; it segments with the same engine and model as Roto Brush.
+//!
 //! `roto.stroke` records a stroke into the layer's Roto Brush & Refine Edge effect (applying the
 //! effect on the first stroke, as After Effects does); the first foreground stroke sets the base
 //! frame and a span of 20 frames each side. Strokes on a frozen effect are refused (Unfreeze
@@ -50,6 +53,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{diameter?, refineDiameter?, view?: alphaBoundary|alpha|alphaOverlay|none, overlayColor?: [r,g,b], overlayOpacity?, boundaryColor?: [r,g,b], autoPropagate?}",
             always,
             options
+        ),
+        cmd!(
+            "objectMatte.apply",
+            "Object Matte",
+            [],
+            None,
+            "{layer?, point: [x, y] (layer pixels: the object), box?: [x0, y0, x1, y1] (layer pixels, around the object), frame? (reference layer frame; default current), track?: follow the object from that frame (default true), before?, after? (frames to follow it; default 30, up to 600)}",
+            has_comp,
+            object_matte_apply
         ),
         query!(
             "roto.status",
@@ -421,4 +433,82 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
     let computed = s.roto_computed(cid, lid, uid);
     out["computed"] = json!(computed.iter().filter(|(_, c)| **c).map(|(f, _)| *f).collect::<Vec<_>>());
     Ok(out)
+}
+
+/// Two finite numbers.
+fn xy_p(p: &Value, k: &str, n: usize, cmd: &str) -> Result<Option<Vec<f64>>> {
+    let Some(v) = p.get(k).filter(|v| !v.is_null()) else { return Ok(None) };
+    let a = v.as_array().filter(|a| a.len() == n).ok_or_else(|| bad(cmd, format!("`{k}` is {n} numbers (layer pixels)")))?;
+    let out: Vec<f64> = a.iter().filter_map(Value::as_f64).filter(|x| x.is_finite()).collect();
+    if out.len() != n {
+        return Err(bad(cmd, format!("`{k}` is {n} numbers (layer pixels)")));
+    }
+    Ok(Some(out))
+}
+
+fn object_matte_apply(s: &mut Session, p: &Value) -> Result<Value> {
+    use effectcraft_effects::object_matte as om;
+    let cmd = "objectMatte.apply";
+    let (cid, lid) = layer_p(s, p, cmd)?;
+    let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
+    let layer = comp.layer(lid).ok_or_else(|| bad(cmd, "no layer"))?;
+    if !layer.has_video() || layer.switches.adjustment || layer.effects().is_none() {
+        return Err(bad(cmd, "Object Matte works on footage, solid and composition layers"));
+    }
+    let size = rt::layer_size(&s.project, comp, layer);
+    let point = xy_p(p, "point", 2, cmd)?.ok_or_else(|| bad(cmd, "missing `point` [x, y] (layer pixels)"))?;
+    let inside = |x: f64, y: f64| (0.0..=size[0]).contains(&x) && (0.0..=size[1]).contains(&y);
+    if !inside(point[0], point[1]) {
+        return Err(bad(cmd, format!("`point` is outside the layer ({}×{})", size[0], size[1])));
+    }
+    let bx = xy_p(p, "box", 4, cmd)?;
+    if let Some(b) = &bx {
+        let (x0, x1, y0, y1) = (b[0].min(b[2]), b[0].max(b[2]), b[1].min(b[3]), b[1].max(b[3]));
+        if !(point[0] > x0 && point[0] < x1 && point[1] > y0 && point[1] < y1) {
+            return Err(bad(cmd, "`point` must be inside `box`"));
+        }
+    }
+    let frame = frame_p(s, p, cid, layer);
+    let limits = rt::frame_limits(comp, layer);
+    if frame < limits[0] || frame > limits[1] {
+        return Err(bad(cmd, format!("frame {frame} is outside the layer ({}–{})", limits[0], limits[1])));
+    }
+    let track = b_p(p, "track").unwrap_or(true);
+    let reach = |k: &str| f_p(p, k).filter(|v| v.is_finite()).unwrap_or(om::DEFAULT_REACH).round().clamp(0.0, om::MAX_REACH);
+    let (before, after) = (reach("before"), reach("after"));
+    let spec = effectcraft_effects::find(om::ID).ok_or_else(|| EngineError::Other("Object Matte effect missing".into()))?;
+    let uid = s.edit("Object Matte", None, |proj, _| {
+        let mut next = proj.next_id;
+        let l = layer_mut(proj, cid, lid)?;
+        let fxg = l.props.sub_mut("effects").ok_or_else(|| bad(cmd, "this layer has no effects"))?;
+        let n = fxg.groups().filter(|g| rt::is_object_matte(g)).count();
+        let name = if n == 0 { spec.name.to_string() } else { format!("{} {}", spec.name, n + 1) };
+        let mut g = effectcraft_effects::instantiate(spec, &mut Ids(&mut next), &name, size);
+        let mut set = |path: &str, v: KV| {
+            let (grp, leaf) = path.rsplit_once('/').map_or((None, path), |(a, b)| (Some(a), b));
+            let target = match grp {
+                Some(sub) => g.sub_mut(sub),
+                None => Some(&mut g),
+            };
+            if let Some(pr) = target.and_then(|t| t.get_mut(leaf)) {
+                pr.value = v;
+            }
+        };
+        set("objectPoint", KV::Vec2([point[0], point[1]]));
+        if let Some(b) = &bx {
+            set("useBox", KV::Bool(true));
+            set("boxTopLeft", KV::Vec2([b[0].min(b[2]), b[1].min(b[3])]));
+            set("boxBottomRight", KV::Vec2([b[0].max(b[2]), b[1].max(b[3])]));
+        }
+        set("objectTracking/trackObject", KV::Bool(track));
+        set("objectTracking/referenceFrame", KV::Scalar(frame as f64));
+        set("objectTracking/framesBefore", KV::Scalar(before));
+        set("objectTracking/framesAfter", KV::Scalar(after));
+        let u = g.uid;
+        fxg.children.push(g.into());
+        proj.next_id = proj.next_id.max(next);
+        Ok(u)
+    })?;
+    s.state.selected_layers = vec![lid];
+    Ok(json!({"layer": lid.0, "effect": uid, "frame": frame, "track": track, "span": [frame - before as i64, frame + after as i64]}))
 }

@@ -122,7 +122,7 @@ compositing and effects dominate; audio is light). Hours are to full parity for 
 | Text and typography | 7% | 94% | 50% | 20–35 | CJK text in comps renders wrongly (#453); paragraph alignment inverted (#316); squeezed text at 4:3 (#483); font search (#583); soft text at Fit (#417); variable-font filter (26.3) |
 | Effects and animation presets | 14% | 85% | 40% | 70–130 | All 306 effects exist, but rendered output is unmeasured against After Effects; 8 built-in presets against After Effects' 621; open effect bugs (#580 crash, #514, #526, #463, #369, #473); effect colour labels (26.5); see [effects-parity.md](effects-parity.md) |
 | 3D (Classic and Advanced) | 6% | 82% | 35% | 35–65 | No FBX/USD/STL models, no Substance materials, mesh displacement unverified; no 3D transform gizmos (#392, #347); Z position (#489); reflections (#261); camera aperture (#260); bevel options (#315) |
-| Tracking and AI-assisted tools | 5% | 80% | 35% | 35–70 | No Object Matte (26.2); Roto Brush (MobileSAM) and face tracking (MediaPipe) unmeasured against After Effects; camera-tracker view (#505) |
+| Tracking and AI-assisted tools | 5% | 80% | 35% | 35–70 | Object Matte (26.2) is a first slice: an effect and command from a point / box prompt, no viewer tool or disk cache; Roto Brush (MobileSAM) and face tracking (MediaPipe) unmeasured against After Effects; camera-tracker view (#505) |
 | Preview and cache | 7% | 92% | 40% | 25–50 | Playback stutters on cached frames (#595, #304); slow scrubbing (#329); late audio (#554, #504, #335); no benchmark against After Effects |
 | Render queue and export | 7% | 85% | 55% | 25–45 | No hardware encoding; ProRes 4444 colour tag (#340); rendering over an existing file (#325); default macOS output location (#446); uncompressed single-file output (#372); HEVC/AV1 without B-frames |
 | Audio | 2% | 85% | 45% | 6–12 | Audio sync and crackle (#335); audio to keyframes depth |
@@ -144,7 +144,7 @@ Feature depth (≈ 50%) feeds the overall *ready* number with the other dimensio
 | Stability | 45% | 40–80 | Open crash reports #580, #591, #501, #426, #341, #306, #234, #511; no CI runs the tests on pull requests | [gaps.md](gaps.md#g3-stability-and-a-green-main) |
 | Platforms | 65% | 30–60 | Releases for macOS, Windows x64/x86/ARM64, Linux, FreeBSD and the web (more than After Effects), but Linux and Windows users hit basic bugs | [gaps.md](gaps.md#g2-real-user-reliability-on-every-platform) |
 | Ecosystem and plug-ins | 20% | 40–80 | After Effects scripts and expressions mostly carry over; no After Effects SDK plug-ins, `.ffx` presets or `.mogrt`; our WebAssembly plug-in API has no third-party plug-ins yet | [plugins.md](plugins.md) |
-| AI features | 35% | 40–80 (overlaps Tracking) | Roto Brush (MobileSAM) and face tracking (MediaPipe) as optional downloads; no Object Matte; the After Effects bundle ships Whisper, BERT and Marian tokenizers and a shot-cut model we have no equivalent of | [gaps.md](gaps.md) |
+| AI features | 35% | 40–80 (overlaps Tracking) | Roto Brush (MobileSAM) and face tracking (MediaPipe) as optional downloads; Object Matte (point / box prompt, same model) without its viewer tool or disk cache; the After Effects bundle ships Whisper, BERT and Marian tokenizers and a shot-cut model we have no equivalent of | [gaps.md](gaps.md) |
 | Agent control (beyond After Effects) | ahead | — | Every command is drivable over MCP, the control channel and the CLI | [agents.md](agents.md) |
 
 **Totals.** Summing the rows double-counts: AI overlaps Tracking, performance overlaps Preview,

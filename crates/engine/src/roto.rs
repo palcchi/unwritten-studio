@@ -147,6 +147,12 @@ pub(crate) fn is_roto(g: &PropGroup) -> bool {
     matches!(&g.kind, GroupKind::Effect { effect } if effect == fx::ID)
 }
 
+/// An Object Matte instance (its Input Key is kept current like Roto Brush's; it segments on
+/// demand while rendering).
+pub(crate) fn is_object_matte(g: &PropGroup) -> bool {
+    matches!(&g.kind, GroupKind::Effect { effect } if effect == effectcraft_effects::object_matte::ID)
+}
+
 fn str_of(g: &PropGroup, m: &str) -> String {
     match g.get(m).map(|p| &p.value) {
         Some(Value::Str(s)) => s.clone(),
@@ -188,8 +194,9 @@ pub fn input_key(p: &Project, comp: ItemId, layer: &Layer, uid: Uid) -> String {
     format!("{:016x}", fnv(&s))
 }
 
-/// After an edit: refresh Input Keys; frozen mattes made from other frames are dropped.
-/// Returns the instances whose segmentation changed (to propagate again).
+/// After an edit: refresh Input Keys (Roto Brush and Object Matte); frozen mattes made from
+/// other frames are dropped. Returns the Roto Brush instances whose segmentation changed (to
+/// propagate again).
 pub(crate) fn sync(before: &Project, after: &mut Project) -> Vec<(ItemId, LayerId, Uid)> {
     let mut todo = vec![];
     let mut set = vec![];
@@ -197,13 +204,16 @@ pub(crate) fn sync(before: &Project, after: &mut Project) -> Vec<(ItemId, LayerI
         let ItemKind::Comp(c) = &it.kind else { continue };
         for l in &c.layers {
             let Some(fxg) = l.effects() else { continue };
-            for g in fxg.groups().filter(|g| is_roto(g)) {
+            for g in fxg.groups().filter(|g| is_roto(g) || is_object_matte(g)) {
                 let key = input_key(after, *cid, l, g.uid);
+                let roto = is_roto(g);
                 let old = before.comp(*cid).and_then(|bc| bc.layer(l.id)).and_then(|ol| ol.props.find_group(g.uid));
                 if str_of(g, INPUT_KEY) != key {
                     set.push((*cid, l.id, g.uid, key));
-                    todo.push((*cid, l.id, g.uid));
-                } else if old.is_none_or(|o| str_of(o, fx::STROKES) != str_of(g, fx::STROKES)) {
+                    if roto {
+                        todo.push((*cid, l.id, g.uid));
+                    }
+                } else if roto && old.is_none_or(|o| str_of(o, fx::STROKES) != str_of(g, fx::STROKES)) {
                     todo.push((*cid, l.id, g.uid));
                 }
             }

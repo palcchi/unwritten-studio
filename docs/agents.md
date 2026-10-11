@@ -482,7 +482,9 @@ prompt. `objectMatte.propagate {layer, effect?, direction?, wait?}` tracks the m
 frames around the reference frame in the background (`roto.cancel` stops it; edits to the prompt
 or the layer's frames queue it again), `objectMatte.freeze {wait?}` / `objectMatte.unfreeze`
 store or drop the final mattes, and `objectMatte.status {layer, effect?}` reports the job's
-progress, the frozen state, the tracked frames and which are computed.
+progress, the frozen state, the tracked frames and which are computed. With the disk cache on (Settings ▸
+Media & Disk Cache), computed Object Matte and Roto Brush segmentations are also kept there, keyed
+by what they are made of, so reopening a project reuses them.
 
 ```sh
 effectcraft-cli run clip.ecproj objectMatte.apply '{"layer":"#1","point":[320,200],"box":[250,120,400,300]}' \

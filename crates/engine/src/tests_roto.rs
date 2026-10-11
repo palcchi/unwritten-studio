@@ -546,3 +546,69 @@ fn object_matte_background_job_cancel_and_freeze() {
     s.execute("edit.undo", json!({})).unwrap();
     assert_eq!(status(&mut s)["frozen"], true);
 }
+
+/// Computed Object Matte segmentations go to the persistent disk cache: a second session on the
+/// same folder and project gets them back without segmenting (its frames cannot even be read
+/// here), and another prompt (other keys) finds nothing.
+#[test]
+fn object_matte_mattes_persist_in_the_disk_cache() {
+    use effectcraft_effects::object_matte as om;
+    use effectcraft_render::disk_cache::Kind;
+    hold_roto_cache_test_lock();
+    let dir = std::env::temp_dir().join(format!("effectcraft-om-disk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let enable = |s: &mut Session| {
+        s.execute_checked("prefs.set", json!({"values": {"disk.diskCacheFolder": dir.to_string_lossy(), "disk.diskCacheEnabled": true}})).unwrap();
+    };
+    let (mut s, clip, solid) = setup(|f| draw(center(f)));
+    enable(&mut s);
+    let cid = s.active_comp_id().unwrap();
+    s.edit("remove solid", None, |p, _| {
+        p.comp_mut(cid).unwrap().layers.retain(|l| l.id != solid);
+        for it in p.items.values_mut() {
+            if let effectcraft_project::ItemKind::Footage(f) = &mut it.kind {
+                f.path = "object-matte-disk.mov".into();
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+    let c = center(0);
+    let r = s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "point": c, "before": 0, "after": 5, "frame": 0})).unwrap();
+    let uid = r["effect"].as_u64().unwrap();
+    s.execute_checked("objectMatte.propagate", json!({"layer": clip.0, "effect": uid, "wait": true})).unwrap();
+    let keys = s.roto_keys(cid, clip, uid).unwrap();
+    assert_eq!(keys.len(), 6);
+    let dc = s.disk_cache.clone().unwrap();
+    dc.flush();
+    assert!(dc.keys(Kind::Matte).len() >= 6, "{:?}", dc.stats());
+    let before = alpha_at(&s, 3);
+    let saved = s.project.clone();
+    drop(dc);
+    drop(s);
+    effectcraft_effects::roto::forget(keys.iter().map(|(_, k)| *k));
+
+    // "Reopen": a new session on the same folder and project.
+    let (mut s2, _, _) = setup(|f| draw(center(f)));
+    enable(&mut s2);
+    s2.project = saved;
+    s2.bump();
+    s2.open_comp(cid);
+    assert_eq!(s2.roto_keys(cid, clip, uid).unwrap(), keys, "the same input key, so the same keys");
+    let comp = s2.active_comp().unwrap().clone();
+    let l = comp.layer(clip).unwrap();
+    let ps = crate::roto::params_static(l.props.find_group(uid).unwrap());
+    let size = crate::roto::layer_size(&s2.project, &comp, l);
+    // No frames to segment from: whatever comes back was read from disk.
+    for (f, _) in &keys {
+        assert!(om::ensure(&ps, size, 25.0, *f, None, &mut |_| None, &|| false).is_some(), "frame {f} not reused from disk");
+    }
+    assert!(s2.disk_cache.as_ref().unwrap().stats().hits >= 6);
+    let again = alpha_at(&s2, 3);
+    assert_eq!(again, before, "the disk-cached matte renders the same");
+    // Another prompt: other keys, nothing on disk.
+    let mut moved = ps.clone();
+    moved.values.insert("objectPoint".into(), effectcraft_keyframe::Value::Vec2([c[0] + 3.0, c[1]]));
+    assert!(om::ensure(&moved, size, 25.0, 0, None, &mut |_| None, &|| false).is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}

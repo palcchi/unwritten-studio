@@ -713,7 +713,7 @@ fn ftr_cylinder(@builtin(global_invocation_id) gid: vec3<u32>) {
     let da = dot(d, axis.xy);
     let bq = -da * axis.z;
     let disc = bq * bq - a * (dot(d, d) - da * da - P.f[0].z * P.f[0].z);
-    if (a <= 1e-10 || !(disc > 0.0) || !isFinite(disc)) {
+    if (a <= 1e-10 || !(disc > 0.0)) {
         textureStore(out, p, vec4<f32>(0.0));
         return;
     }

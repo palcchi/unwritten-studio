@@ -316,6 +316,8 @@ pub fn state_key(app: &EffectcraftApp) -> u64 {
     (v.rulers, v.guides, v.snap_guides, v.lock_guides, v.grid, v.snap_grid, v.show_layer_controls, v.pasteboard).hash(&mut h);
     v.res.label().hash(&mut h);
     (app.ui.cache_when_idle, app.session.prefs.preview.active().include_audio, &app.ui.workspace, app.dialog.is_some()).hash(&mut h);
+    // Window menu check marks: the panels on screen.
+    crate::dock::PanelKind::ALL.iter().filter(|p| crate::menus::panel_shown(app, **p)).for_each(|p| p.hash(&mut h));
     h.finish()
 }
 
@@ -493,6 +495,28 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Window menu entries are checked while their panel is on screen.
+    #[test]
+    fn window_menu_checks_the_panels_on_screen() {
+        use crate::dock::PanelKind;
+        let mut app = app();
+        let checked = |app: &EffectcraftApp, panel: &str| {
+            build(app).items().into_iter().find(|i| i.command == "window.panel" && i.params["panel"] == panel).and_then(|i| i.checked)
+        };
+        assert_eq!(checked(&app, "timeline"), Some(true));
+        assert_eq!(checked(&app, "tools"), Some(true));
+        assert_eq!(checked(&app, "renderQueue"), Some(false));
+        let k0 = state_key(&app);
+        app.show_panel(PanelKind::RenderQueue);
+        assert_ne!(state_key(&app), k0);
+        // A tab behind another one, a closed panel and panels under a maximized one are not shown.
+        assert_eq!((checked(&app, "renderQueue"), checked(&app, "timeline")), (Some(true), Some(false)));
+        app.ui.dock.close(PanelKind::RenderQueue);
+        assert_eq!((checked(&app, "renderQueue"), checked(&app, "timeline")), (Some(false), Some(true)));
+        app.ui.maximized = Some(PanelKind::Timeline);
+        assert_eq!((checked(&app, "timeline"), checked(&app, "project")), (Some(true), Some(false)));
     }
 
     #[test]

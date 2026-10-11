@@ -1416,3 +1416,16 @@ fn duplicate_with_shape_items_selected_duplicates_them_in_place() {
     s.execute("edit.duplicate", json!({})).unwrap();
     assert_eq!(s.active_comp().unwrap().layers.len(), n + 1);
 }
+
+/// The Interpret Footage form sends "Loop (times)" as a float (3.0); it must still be applied (#909).
+#[test]
+fn interpret_footage_loop_from_form_float() {
+    let mut s = comp();
+    let p = s.execute("file.importPlaceholder", json!({"name": "Shot", "width": 320, "height": 240})).unwrap()["item"].as_u64().unwrap();
+    s.state.project_selection = vec![effectcraft_project::ItemId(p)];
+    s.execute("file.interpretFootage", json!({"loop": 3.0})).unwrap();
+    match &s.project.item(effectcraft_project::ItemId(p)).unwrap().kind {
+        ItemKind::Footage(f) => assert_eq!(f.loop_count, 3),
+        _ => panic!(),
+    }
+}

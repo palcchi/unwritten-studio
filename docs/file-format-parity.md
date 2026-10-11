@@ -49,7 +49,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | BMP | R | yes | — | good |
 | WebP | — | yes | — | beyond After Effects |
 | Targa `.tga` | R/W | none | none | Media Browser lists it but import refuses (gap 17) |
-| DPX / Cineon `.dpx` `.cin` | R/W | none | none | Same; common in film VFX |
+| DPX / Cineon `.dpx` `.cin` | R/W | yes (still and sequence; 8/10/12/16-bit luma, RGB, RGBA, both byte orders; log code values shown as stored) | none | partial: import (#756); no Interpret Footage ▸ Cineon Settings (log to linear), no DPX output; common in film VFX |
 | Radiance `.hdr` | R/W | none | none | Same |
 | SGI, PICT, ElectricImage, RLA/RPF images | R | none | none | Legacy; RPF camera data import exists (`keys.rpfCameraImport`) |
 | Camera Raw (DNG, CR3, NEF…) | R (Camera Raw) | none | none | LightCraft has decoders that could be shared |

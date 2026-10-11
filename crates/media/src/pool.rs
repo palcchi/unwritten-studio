@@ -728,6 +728,9 @@ impl Inner {
             None if &**path == PLACEHOLDER => Ok(colour_bars(footage.width, footage.height)),
             None => {
                 let bytes = self.read(path)?;
+                if let Some(img) = crate::dpx::decode(path, &bytes)? {
+                    return Ok(dynamic_to_image(&img, op));
+                }
                 if let Some(img) = crate::layered::decode(path, &bytes, footage, op)? {
                     return Ok(img);
                 }

@@ -674,3 +674,123 @@ fn conformed_flac_audio_reads_back_like_the_decoder() {
     assert_eq!(pool.audio_samples(&f, at, 4800, 48_000), decoded);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// `src` decoded by ffmpeg to 8-bit (`deep`: 16-bit) RGBA, premultiplied like the pool's frames.
+fn ffmpeg_rgba(src: &Path, deep: bool) -> Vec<[f32; 4]> {
+    let out = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-i"])
+        .arg(src)
+        .args(["-sws_flags", "accurate_rnd+full_chroma_int+bitexact", "-f", "rawvideo", "-pix_fmt", if deep { "rgba64le" } else { "rgba" }, "-"])
+        .output()
+        .expect("run ffmpeg");
+    assert!(out.status.success(), "ffmpeg decode of {}", src.display());
+    let px = |v: [f32; 4]| [v[0] * v[3], v[1] * v[3], v[2] * v[3], v[3]];
+    if !deep {
+        return out.stdout.as_chunks::<4>().0.iter().map(|p| px(p.map(|v| v as f32 / 255.0))).collect();
+    }
+    out.stdout.as_chunks::<8>().0.iter().map(|p| px(std::array::from_fn(|i| u16::from_le_bytes([p[2 * i], p[2 * i + 1]]) as f32 / 65535.0))).collect()
+}
+
+/// #756: DPX stills in every layout and depth ffmpeg's encoder writes (8-bit luma / RGB / RGBA /
+/// ABGR, 10- and 12-bit filled RGB, 16-bit luma / RGB / RGBA, big- and little-endian, lines
+/// padded to 32-bit words) import and decode as ffmpeg decodes them.
+#[test]
+fn dpx_stills_match_ffmpeg() {
+    let Some(png) = alpha_png() else { return };
+    let src = png.to_str().expect("utf8");
+    let formats = [
+        ("rgb24", "DPX 8-bit RGB", false),
+        ("rgba", "DPX 8-bit RGBA", true),
+        ("abgr", "DPX 8-bit ABGR", true),
+        ("gray", "DPX 8-bit luma", false),
+        ("gray16be", "DPX 16-bit luma", false),
+        ("gbrp10be", "DPX 10-bit RGB", false),
+        ("gbrp10le", "DPX 10-bit RGB", false),
+        ("gbrp12be", "DPX 12-bit RGB", false),
+        ("gbrp12le", "DPX 12-bit RGB", false),
+        ("rgb48be", "DPX 16-bit RGB", false),
+        ("rgba64le", "DPX 16-bit RGBA", true),
+    ];
+    for (pf, codec, alpha) in formats {
+        // 250 px wide: 8-bit and 10-bit lines need padding to a 32-bit word.
+        let Some(p) = ffmpeg_fixture(&format!("dpx-{pf}.dpx"), &["-i", src, "-vf", "scale=250:100", "-pix_fmt", pf]) else { return };
+        assert!(effectcraft_media::is_importable(&p));
+        let f = probe(&p).expect(pf);
+        assert_eq!(f.kind, FootageKind::Still);
+        assert_eq!((f.width, f.height, f.codec.as_str()), (250, 100, codec), "{pf}");
+        assert_eq!(f.alpha, if alpha { AlphaMode::Straight } else { AlphaMode::Ignore }, "{pf}");
+        let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect(pf);
+        let want = ffmpeg_rgba(&p, !codec.contains("8-bit"));
+        assert_eq!(want.len(), img.data.len(), "{pf}");
+        let worst = img.data.iter().zip(&want).flat_map(|(a, b)| (0..4).map(move |k| (a[k] - b[k]).abs())).fold(0.0f32, f32::max);
+        // (within one 16-bit step: ffmpeg widens 10/12-bit samples by bit replication)
+        assert!(worst < 2.0 / 65535.0, "{pf}: worst difference {worst}");
+    }
+}
+
+/// #756: a numbered run of DPX files plays as an image sequence.
+#[test]
+fn dpx_sequence_plays() {
+    let Some(first) = ffmpeg_fixture("dpxseq/plate.0001.dpx", &["-f", "lavfi", "-i", "color=c=0x202020:size=32x16", "-frames:v", "1", "-pix_fmt", "gbrp10le"])
+    else {
+        return;
+    };
+    let Some(second) = ffmpeg_fixture("dpxseq/plate.0002.dpx", &["-f", "lavfi", "-i", "color=c=0xe0e0e0:size=32x16", "-frames:v", "1", "-pix_fmt", "gbrp10le"])
+    else {
+        return;
+    };
+    let mut f = probe(&first).expect("probe");
+    f.kind = FootageKind::Sequence;
+    f.sequence = [&first, &second].iter().map(|p| p.to_string_lossy().to_string()).collect();
+    f.sync_sequence_duration();
+    let pool = MediaPool::new();
+    let level = |n| pool.frame_at(&f, t_of(f.frame_rate, n)).expect("frame").data[0][0];
+    assert!((level(0) - 32.0 / 255.0).abs() < 0.01 && (level(1) - 224.0 / 255.0).abs() < 0.01, "{} {}", level(0), level(1));
+}
+
+/// #756: a Kodak Cineon file (no ffmpeg encoder: written here from the spec, 10-bit RGB
+/// left-justified in big-endian 32-bit words; checked against ImageMagick's reader when written)
+/// shows its log code values as stored; a truncated one is refused, never a panic.
+#[test]
+fn cineon_still_shows_code_values() {
+    let (w, h) = (5u32, 3u32);
+    let code = |x: u32, y: u32| [(x * 37 + y * 101) % 1024, (x * 11 + y * 7 + 300) % 1024, (x * 3 + y * 251 + 700) % 1024];
+    let mut b = vec![0u8; 1024];
+    b[..4].copy_from_slice(&[0x80, 0x2a, 0x5f, 0xd7]);
+    b[4..8].copy_from_slice(&1024u32.to_be_bytes());
+    b[8..12].copy_from_slice(&1024u32.to_be_bytes());
+    b[24..28].copy_from_slice(b"V4.5");
+    b[193] = 3;
+    for c in 0..3 {
+        let o = 196 + 28 * c;
+        b[o + 1] = c as u8 + 1;
+        b[o + 2] = 10;
+        b[o + 4..o + 8].copy_from_slice(&w.to_be_bytes());
+        b[o + 8..o + 12].copy_from_slice(&h.to_be_bytes());
+    }
+    b[681] = 5;
+    for y in 0..h {
+        for x in 0..w {
+            let [r, g, bl] = code(x, y);
+            b.extend_from_slice(&((r << 22) | (g << 12) | (bl << 2)).to_be_bytes());
+        }
+    }
+    let bytes: Arc<[u8]> = b.clone().into();
+    let f = effectcraft_media::probe_bytes("scan.cin", bytes.clone()).expect("probe");
+    assert_eq!((f.kind, f.width, f.height, f.codec.as_str(), f.alpha), (FootageKind::Still, 5, 3, "Cineon 10-bit RGB, log", AlphaMode::Ignore));
+    assert!(effectcraft_media::is_importable(Path::new("scan.cin")));
+    let pool = MediaPool::new();
+    pool.add_bytes("scan.cin", bytes);
+    let img = pool.frame_at(&f, Tick::ZERO).expect("frame");
+    for y in 0..h {
+        for x in 0..w {
+            let want = code(x, y).map(|v| v as f32 / 1023.0);
+            let got = img.get(i64::from(x), i64::from(y));
+            assert!((0..3).all(|k| (got[k] - want[k]).abs() < 1e-4) && got[3] == 1.0, "{x},{y}: {got:?} vs {want:?}");
+        }
+    }
+    for n in [3, 100, 700, 1024, b.len() - 1] {
+        let cut: Arc<[u8]> = b.get(..n).expect("cut").into();
+        assert!(effectcraft_media::probe_bytes("cut.cin", cut).is_err(), "{n}");
+    }
+}

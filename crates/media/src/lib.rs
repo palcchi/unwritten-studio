@@ -16,6 +16,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod convert;
+mod dpx;
 pub mod exr_channels;
 mod gif_anim;
 mod layered;
@@ -67,6 +68,7 @@ pub fn is_importable(path: &std::path::Path) -> bool {
         || STILL_EXTENSIONS.contains(&ext.as_str())
         || AUDIO_EXTENSIONS.contains(&ext.as_str())
         || VIDEO_EXTENSIONS.contains(&ext.as_str())
+        || dpx::EXTENSIONS.contains(&ext.as_str())
 }
 
 pub(crate) fn ext_of(path: &std::path::Path) -> String {

@@ -1,5 +1,7 @@
 use std::time::Instant;
 
+mod fuzz;
+
 use effectcraft_color::Label;
 use effectcraft_keyframe::{Keyframe, ShapePath, TextDoc, Value};
 use effectcraft_project::build::{self, Ids};
@@ -384,8 +386,79 @@ fn circular_references_terminate() {
     let start = Instant::now();
     let r = eval_property(&f.p, f.cid, f.a, OPA, 0.0);
     assert!(start.elapsed().as_secs_f64() < 10.0);
-    // The cycle bottoms out at the depth limit and falls back to keyframed values.
+    // The cycle is caught when A needs itself again, and falls back to keyframed values.
     assert!(matches!(r, Ok(Value::Scalar(_))) || r.is_err(), "{r:?}");
+}
+
+#[test]
+fn an_expression_needing_its_own_value_fails_fast() {
+    // Found by the expression fuzzer (#786): rotation's `toWorld` reads the layer's transform,
+    // which evaluates rotation's expression again, twice per level (layer-to-comp and world
+    // matrices), so the cycle nested to `MAX_DEPTH` 2^16 times and the frame took 20 s.
+    let mut f = fx();
+    f.set_expr(f.a, ROT, "fromWorld(toWorld(anchorPoint))[0]");
+    let start = Instant::now();
+    let r = eval_property(&f.p, f.cid, f.a, ROT, 0.5);
+    assert!(start.elapsed().as_secs_f64() < 5.0, "{:?}", start.elapsed());
+    // The inner read falls back to the keyframed rotation, as in a standalone evaluation.
+    assert_eq!(r, f.ev(f.a, ROT, "fromWorld(toWorld(anchorPoint))[0]", 0.5));
+}
+
+#[test]
+fn fanning_out_reads_stop_at_a_budget() {
+    // Two layers reading each other twice at other times: no cycle (the times differ), but
+    // 2^16 evaluations at `MAX_DEPTH`; the evaluation stops after `MAX_RUNS` script runs.
+    let mut f = fx();
+    let text = |other: &str| format!("var r = thisComp.layer('{other}').transform.rotation; r.valueAtTime(time + 0.001) + r.valueAtTime(time + 0.002)");
+    f.set_expr(f.a, ROT, &text("B"));
+    f.set_expr(f.b, ROT, &text("A"));
+    let start = Instant::now();
+    let r = eval_property(&f.p, f.cid, f.a, ROT, 0.5);
+    assert!(start.elapsed().as_secs_f64() < 10.0, "{:?}", start.elapsed());
+    assert!(r.unwrap_err().contains("too many"));
+    // The budget is per outermost evaluation: the next one starts afresh.
+    assert_close!(f.num("time * 2", 1.0), 2.0);
+    assert_close!(f.ev(f.b, OPA, "thisComp.layer('A').transform.opacity", 0.0).unwrap().as_f64(), 100.0);
+}
+
+#[test]
+fn loops_stop_at_a_million_iterations() {
+    // Found by the expression fuzzer (#786): `for (…; i < 1e15; …)` ran ten million iterations
+    // per run (seconds), once more for every property the script reads after it.
+    let f = fx();
+    assert_close!(f.num("var n = 0; while (n < 900000) n++; n", 0.0), 900_000.0);
+    assert!(f.err("var n = 0; while (n < 2000000) n++; n").contains("iteration"));
+    assert!(f.err("for (;;) {}").contains("iteration"));
+}
+
+#[test]
+fn a_long_running_script_stops_at_the_time_budget() {
+    // Found by the expression fuzzer (#786): `smooth(NaN, 1e9)` made a million host reads in
+    // one run (tens of seconds), and the loop limit counts per function call, so loops calling
+    // functions that loop run for hours. The run is now abandoned after `MAX_TIME`.
+    let f = fx();
+    let start = Instant::now();
+    let e = f.err("function g() { for (var i = 0; i < 900000; i++) {} }\nfor (var k = 0; k < 900000; k++) g()");
+    assert!(e.contains("too long"), "{e}");
+    assert!(start.elapsed() < crate::MAX_TIME * 3, "{:?}", start.elapsed());
+    // The thread's runtime starts afresh.
+    assert_close!(f.num("time * 2", 1.0), 2.0);
+}
+
+#[test]
+fn a_path_with_non_numeric_points_is_an_error() {
+    // Found by the expression fuzzer (#786): an array in a vertex became NaN and tripped the
+    // rasterizer's clipping assertion when the mask was drawn.
+    let mut f = fx();
+    let text = "createPath([[0, 0], [[1, 2] * 2, 0], [100, 100]], [], [], true)";
+    assert!(f.ev(f.a, "masks/#1/path", text, 0.0).unwrap_err().contains("finite"));
+    assert!(f.ev(f.a, "masks/#1/path", "createPath([[0, 0], [1e400, 0], [100, 100]], [], [], true)", 0.0).is_err());
+    f.set_expr(f.a, "masks/#1/path", text);
+    let host = Expressions;
+    let mut r = Renderer::new(&f.p, &NoFootage, RenderOpts { motion_blur: false, ..Default::default() });
+    r.expr = Some(&host);
+    r.comp_frame(f.cid, Tick::ZERO);
+    assert!(f.ev(f.a, "masks/#1/path", "createPath([[0, 0], [10, 0], [10, 10]], [], [], true)", 0.0).is_ok());
 }
 
 #[test]

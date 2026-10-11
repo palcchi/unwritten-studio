@@ -1153,6 +1153,8 @@ pub struct FontRow {
     /// Settings ▸ Type ▸ Show Font Names in English is off.
     pub display: String,
     pub recent: bool,
+    /// A variable font (the menu's Variable Fonts filter keeps only these).
+    pub variable: bool,
 }
 
 /// Outline polylines of "Sample" set in `family` at `size` px (baseline at y = 0, y down), for
@@ -1193,14 +1195,21 @@ pub fn font_preview(family: &str, size: f64) -> Vec<Vec<[f32; 2]>> {
 }
 
 /// The Character panel's font menu: the recent fonts (Settings ▸ Type ▸ Number of Recent Fonts
-/// to Display), a separator, then every family.
+/// to Display), a separator, then every family. Each row says whether the family is variable,
+/// for the menu's Variable Fonts filter.
 pub fn font_menu(prefs: &prefs::Prefs) -> Vec<FontRow> {
     let all = text_families();
     let native = if prefs.type_.font_names_in_english { Default::default() } else { effectcraft_text::fonts::native_families() };
-    let row = |f: &String, recent: bool| FontRow { family: f.clone(), display: native.get(f).cloned().unwrap_or_else(|| f.clone()), recent };
+    let variable = effectcraft_text::fonts::variable_families();
+    let row = |f: &String, recent: bool| FontRow {
+        family: f.clone(),
+        display: native.get(f).cloned().unwrap_or_else(|| f.clone()),
+        recent,
+        variable: variable.contains(f),
+    };
     let mut out: Vec<FontRow> = prefs.recent_fonts_shown().iter().filter(|f| all.contains(f)).map(|f| row(f, true)).collect();
     if !out.is_empty() {
-        out.push(FontRow { family: String::new(), display: "-".into(), recent: false });
+        out.push(FontRow { family: String::new(), display: "-".into(), recent: false, variable: false });
     }
     out.extend(all.iter().map(|f| row(f, false)));
     out

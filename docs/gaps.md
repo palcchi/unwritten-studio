@@ -142,6 +142,11 @@ The most important missing piece: it turns every other estimate here into a meas
   `prop.editGradient` is an error for a target that isn't a gradient. Unit tests in `keyframe`
   and `gradient_editor` cover per-track sampling (no double opacity), the typed one-stop round
   trip, and stops staying in order, and selected, while they move.
+- Regression evidence for the toolbar's gradient swatches (#612, reported on Discord): the
+  `ui_toolbar_gradient` input tests, checked headlessly on Windows, click a Linear Fill swatch and
+  a Radial Stroke swatch on a selected shape layer and get the Gradient Editor on its Gradient Fill
+  / Gradient Stroke Colors (OK saves); without such a gradient the swatch still opens the options,
+  and the words, Solid swatches and Alt-click are unchanged.
 - Regression evidence for the reports of 6 October, checked headlessly on Windows: real pointer
   drags in `ui_drag_drop` (Project items into the Timeline between layers and at a time, and onto
   the viewer; an effect onto a layer in the viewer: #85, #88, #89), `ui_render_queue` (a template

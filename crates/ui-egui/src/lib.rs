@@ -97,6 +97,8 @@ pub enum Dialog {
     DeleteItems,
     /// A gradient property's Gradient Editor (`panels::gradient_editor`, `prop.editGradient`).
     GradientEditor,
+    /// Delete a user template from Home? (`panels::templates`).
+    DeleteTemplate,
 }
 
 /// The desktop's light or dark appearance where egui cannot see it (Wayland compositors that send

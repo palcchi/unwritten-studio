@@ -62,6 +62,8 @@ pub struct DialogState {
     pub delete_items: super::delete_items::Pending,
     /// The Gradient Editor's draft and the property it edits.
     pub gradient: super::gradient_editor::Draft,
+    /// The user template the Delete Template prompt asks about: its id and name.
+    pub delete_template: Option<(String, String)>,
 }
 
 pub fn open_new_comp(app: &mut EffectcraftApp) {
@@ -221,6 +223,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         Dialog::UnsavedChanges => super::unsaved::show(app, ctx, &t),
         Dialog::DeleteItems => super::delete_items::show(app, ctx, &t),
         Dialog::GradientEditor => super::gradient_editor::show(app, ctx, &t),
+        Dialog::DeleteTemplate => super::templates::show_delete(app, ctx, &t),
     }
 }
 
@@ -389,11 +392,12 @@ pub(crate) fn press_key(app: &mut EffectcraftApp, ctx: &egui::Context, key: egui
 }
 
 /// The letter that answers the open confirmation with Cmd (Ctrl elsewhere): Cmd+D is Delete in
-/// Delete Items, Cmd+R is Revert in Revert Project. The native menu bar hands these keys back
+/// Delete Items, Delete Template and Delete Preset, Cmd+R is Revert in Revert Project. The native menu bar hands these keys back
 /// while the prompt is open ([`crate::native_menu::activate`]).
 pub(crate) fn command_key(app: &EffectcraftApp) -> Option<egui::Key> {
     match app.dialog? {
-        Dialog::DeleteItems => Some(egui::Key::D),
+        Dialog::DeleteItems | Dialog::DeleteTemplate => Some(egui::Key::D),
+        Dialog::Shortcuts if super::shortcut_editor::confirming(app) => Some(egui::Key::D),
         Dialog::UnsavedChanges if super::unsaved::is_revert(app) => Some(egui::Key::R),
         _ => None,
     }

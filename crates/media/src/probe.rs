@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use effectcraft_project::{AlphaMode, Footage, FootageKind};
 use effectcraft_time::{FrameRate, Tick};
+use image::metadata::Orientation;
 
 use crate::{MediaError, Result, ext_of, rate_from_fc};
 
@@ -165,7 +166,12 @@ fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Resul
     }
     let reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), fmt);
     let (w, h, has_alpha) = match reader.into_decoder() {
-        Ok(dec) => (dec.dimensions().0, dec.dimensions().1, dec.color_type().has_alpha()),
+        Ok(mut dec) => {
+            // The size as displayed: an Exif orientation of a quarter turn swaps the sides.
+            let (w, h) = dec.dimensions();
+            let (w, h) = if swaps_sides(dec.orientation().unwrap_or(Orientation::NoTransforms)) { (h, w) } else { (w, h) };
+            (w, h, dec.color_type().has_alpha())
+        }
         Err(e) => {
             // A multi-layer OpenEXR file without an unnamed RGB layer.
             let img = (fmt == image::ImageFormat::OpenExr).then(|| crate::exr_channels::layered_image(bytes)).flatten();
@@ -174,4 +180,21 @@ fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Resul
         }
     };
     Ok(still_footage(path, w, h, fmt, has_alpha))
+}
+
+/// Whether an Exif orientation turns the picture a quarter turn (its width and height trade places).
+fn swaps_sides(o: Orientation) -> bool {
+    matches!(o, Orientation::Rotate90 | Orientation::Rotate270 | Orientation::Rotate90FlipH | Orientation::Rotate270FlipH)
+}
+
+/// Decode a still the way it is meant to be seen: its Exif orientation (a camera held sideways, a
+/// mirrored scan) is applied to the pixels, as image viewers do. A file without
+/// the tag, or with a broken one, decodes as stored.
+pub(crate) fn load_oriented(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+    use image::ImageDecoder;
+    let mut dec = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?.into_decoder()?;
+    let orientation = dec.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(dec)?;
+    img.apply_orientation(orientation);
+    Ok(img)
 }

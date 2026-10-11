@@ -575,9 +575,15 @@ impl Inner {
         let slot = lock(&self.sources).entry(path.clone()).or_default().clone();
         slot.get_or_init(|| {
             self.opened.fetch_add(1, Ordering::Relaxed);
-            let opened = self.read(path).and_then(|bytes| {
-                let name = std::path::Path::new(&**path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                filmcraft_codecs::open_bytes(&name, bytes).map_err(MediaError::from)
+            // Files on disk are read in place (the index, then samples on demand) rather than
+            // whole; in-memory files (`add_bytes`) and wasm32 builds open from bytes.
+            let in_memory = lock(&self.files).contains_key(&**path);
+            let in_place = if in_memory { None } else { crate::stream::open_source(std::path::Path::new(&**path)) };
+            let opened = in_place.unwrap_or_else(|| {
+                self.read(path).and_then(|bytes| {
+                    let name = std::path::Path::new(&**path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                    filmcraft_codecs::open_bytes(&name, bytes).map_err(MediaError::from)
+                })
             });
             match opened {
                 Ok(s) => Some(s),

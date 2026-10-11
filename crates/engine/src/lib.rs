@@ -850,6 +850,26 @@ impl Session {
         self.events.push(Event::OpenComp(id));
     }
 
+    /// The open compositions, as a project file records them ([`effectcraft_project::SavedView`]).
+    pub fn saved_view(&self) -> effectcraft_project::SavedView {
+        effectcraft_project::SavedView { active_comp: self.state.active_comp, open_comps: self.state.open_comps.clone() }
+    }
+
+    /// Reopen the compositions a project file was saved with (#748). Ids that no longer name a
+    /// comp are skipped; with none left the project stays on the comp [`Session::replace_project`]
+    /// opened (its first), as files from before the view was saved do.
+    pub fn restore_view(&mut self, view: &effectcraft_project::SavedView) {
+        let mut open: Vec<ItemId> = Vec::new();
+        for id in view.open_comps.iter().copied().filter(|id| self.project.comp(*id).is_some()) {
+            if !open.contains(&id) {
+                open.push(id);
+            }
+        }
+        let Some(active) = view.active_comp.filter(|id| self.project.comp(*id).is_some()).or_else(|| open.first().copied()) else { return };
+        self.state.open_comps = open;
+        self.open_comp(active);
+    }
+
     pub fn toast(&mut self, msg: impl Into<String>) {
         self.events.push(Event::Toast { message: msg.into(), error: false });
     }

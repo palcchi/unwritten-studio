@@ -46,6 +46,7 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let mut proj = Project::from_json(&text).map_err(|e| EngineError::Other(format!("{path} is not a project EffectCraft can open: {e}")))?;
     resolve_relative_footage(&mut proj, path, s.services.as_ref());
     s.replace_project(proj, Some(path.to_string()));
+    s.restore_view(&effectcraft_project::saved_view(&text));
     s.note_project_path(path);
     // Written by a newer EffectCraft: what this version doesn't know would be lost on saving.
     let saved_by = effectcraft_project::saved_by(&text);
@@ -89,7 +90,7 @@ fn resolve_relative_footage(p: &mut Project, project_path: &str, services: &dyn 
 /// project opened from an XML copy saves as XML again). Fails, writing nothing, when the project
 /// wouldn't read back.
 pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
-    let json = s.project.to_file_json()?;
+    let json = s.project.to_file_json_with_view(&s.saved_view())?;
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
 }
 

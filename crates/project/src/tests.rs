@@ -121,3 +121,16 @@ fn project_files_name_their_version_and_always_read_back() {
     assert!(crate::is_newer_version("0.2.0", "0.1.9") && crate::is_newer_version("1.0.0-rc.1", "0.9.9"));
     assert!(!crate::is_newer_version("0.1.1", "0.1.1") && !crate::is_newer_version("0.1.0", "0.1.1"));
 }
+
+#[test]
+fn project_files_remember_the_open_comps() {
+    let (p, cid) = project_with_layer();
+    let view = crate::SavedView { active_comp: Some(cid), open_comps: vec![cid] };
+    let text = p.to_file_json_with_view(&view).unwrap();
+    assert_eq!(crate::saved_view(&text), view);
+    assert_eq!(Project::from_json(&text).unwrap(), p, "the view is not part of the project");
+    // Files from before #748 have no view; a garbled one is ignored, not an error.
+    assert_eq!(crate::saved_view(&p.to_file_json().unwrap()), crate::SavedView::default());
+    let odd = text.replacen(&format!("\"activeComp\": {}", cid.0), "\"activeComp\": \"Main\"", 1);
+    assert_eq!(crate::saved_view(&odd), crate::SavedView { active_comp: None, open_comps: vec![cid] });
+}

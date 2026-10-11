@@ -465,3 +465,84 @@ fn object_matte_reprompt_updates_the_instance() {
     // An unknown or non-Object Matte effect is refused.
     assert!(s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "effect": 999_999, "point": c})).is_err());
 }
+
+/// Object Matte runs in the background like Roto Brush propagation: queued by the edit, a job
+/// that returns at once and reports progress, stops when cancelled (keeping what it computed),
+/// computes the tracked frames when left to run, and Freeze stores mattes that renders then use
+/// without segmenting again.
+#[test]
+fn object_matte_background_job_cancel_and_freeze() {
+    hold_roto_cache_test_lock();
+    let (mut s, clip, solid) = setup(|f| draw(center(f)));
+    let cid = s.active_comp_id().unwrap();
+    s.edit("remove solid", None, |p, _| {
+        p.comp_mut(cid).unwrap().layers.retain(|l| l.id != solid);
+        for it in p.items.values_mut() {
+            if let effectcraft_project::ItemKind::Footage(f) = &mut it.kind {
+                f.path = "object-matte-job.mov".into();
+            }
+        }
+        Ok(())
+    })
+    .unwrap();
+    let c = center(0);
+    let r = s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "point": c, "before": 0, "after": 24, "frame": 0})).unwrap();
+    let uid = r["effect"].as_u64().unwrap();
+    assert!(s.roto_pending.contains(&(cid, clip, uid)), "the new prompt is queued for tracking");
+    let wait_done = |s: &mut Session| {
+        let t = std::time::Instant::now();
+        while s.is_roto_running() {
+            assert!(t.elapsed().as_secs() < 120, "the job never finished");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            s.poll_roto(false);
+        }
+        s.poll_roto(false);
+    };
+    let toast = |s: &Session, m: &str| s.events.iter().any(|e| matches!(e, crate::Event::Toast { message, .. } if message.starts_with(m)));
+    let status = |s: &mut Session| s.execute("objectMatte.status", json!({"layer": clip.0, "effect": uid})).unwrap();
+
+    // Cancelled at once: it stops early, and says so.
+    let r = s.execute_checked("objectMatte.propagate", json!({"layer": clip.0, "effect": uid})).unwrap();
+    assert_eq!(r["frames"], 25);
+    assert!(!s.roto_pending.contains(&(cid, clip, uid)));
+    let _ = s.execute("roto.cancel", json!({}));
+    wait_done(&mut s);
+    assert!(toast(&s, "Object Matte: stopped"), "{:?}", s.events);
+    let st = status(&mut s);
+    assert_eq!(st["frames"].as_array().unwrap().len(), 25, "{st}");
+    let early = st["computed"].as_array().unwrap().len();
+    assert!(early < 25, "{st}");
+
+    // Left to run: the call returns while the job works (progress visible), then every tracked
+    // frame is computed.
+    let r = s.execute_checked("objectMatte.propagate", json!({"layer": clip.0, "effect": uid})).unwrap();
+    assert_eq!(r["running"], true, "{r}");
+    let pr = s.roto_progress().unwrap();
+    assert!(pr.object_matte && pr.banner().starts_with("Tracking Object Matte"), "{pr:?}");
+    // One job at a time.
+    assert!(s.execute_checked("objectMatte.propagate", json!({"layer": clip.0, "effect": uid})).is_err());
+    wait_done(&mut s);
+    assert!(toast(&s, "Object Matte: tracked"), "{:?}", s.events);
+    assert_eq!(status(&mut s)["computed"].as_array().unwrap().len(), 25);
+    let before = alpha_at(&s, 4);
+
+    // Freeze, then drop the segmentations: renders use the frozen mattes and compute nothing.
+    let r = s.execute_checked("objectMatte.freeze", json!({"layer": clip.0, "effect": uid, "wait": true})).unwrap();
+    assert_eq!(r["frozen"], true, "{r}");
+    let keys: Vec<u64> = s.roto_keys(cid, clip, uid).unwrap().into_iter().map(|(_, k)| k).collect();
+    assert_eq!(keys.len(), 25);
+    effectcraft_effects::roto::forget(keys.iter().copied());
+    let frozen = alpha_at(&s, 4);
+    let diff = before.iter().zip(&frozen).filter(|(a, b)| (**a - **b).abs() > 0.02).count();
+    assert!(diff < 30, "{diff} pixels differ from the computed matte");
+    assert!(status(&mut s)["computed"].as_array().unwrap().is_empty(), "a frozen frame was segmented again");
+    assert_eq!(status(&mut s)["frozen"], true);
+    // A frozen prompt is refused; Unfreeze computes again.
+    assert!(s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "effect": uid, "point": c})).is_err());
+    s.execute_checked("objectMatte.unfreeze", json!({"layer": clip.0, "effect": uid})).unwrap();
+    let _ = alpha_at(&s, 4);
+    assert!(status(&mut s)["computed"].as_array().unwrap().iter().any(|f| f == 4));
+    // Undo brings the frozen mattes back.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(status(&mut s)["frozen"], true);
+}

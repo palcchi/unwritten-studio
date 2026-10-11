@@ -63,6 +63,23 @@ pub fn specs() -> Vec<CommandSpec> {
             has_comp,
             object_matte_apply
         ),
+        cmd!(
+            "objectMatte.propagate",
+            "Track Object Matte",
+            [],
+            None,
+            "{layer?, effect?, direction?: forward|backward|both, wait?: block until done} (a background job like Roto Brush propagation; roto.cancel stops it)",
+            has_comp,
+            object_matte_propagate
+        ),
+        cmd!("objectMatte.freeze", "Freeze Object Matte", [], None, "{layer?, effect?, wait?}", has_comp, object_matte_freeze),
+        cmd!("objectMatte.unfreeze", "Unfreeze Object Matte", [], None, "{layer?, effect?}", has_comp, object_matte_unfreeze),
+        query!(
+            "objectMatte.status",
+            "Object Matte Status",
+            "{layer?, effect?}: the job's progress, whether the instance is frozen, its frames and which are computed",
+            object_matte_status
+        ),
         query!(
             "roto.status",
             "Roto Brush Status",
@@ -79,6 +96,16 @@ fn is_running(s: &Session) -> std::result::Result<(), String> {
 /// The Roto Brush instance targeted by `p`: `layer` / `effect` (uid, name or 1-based index),
 /// else a selected one, else the first on the selected (or any) layer.
 pub(crate) fn roto_p(s: &Session, p: &Value, cmd: &str) -> Result<(ItemId, LayerId, Uid)> {
+    instance_lookup(s, p, cmd, is_roto)?.ok_or_else(|| bad(cmd, "no Roto Brush & Refine Edge effect found (paint a stroke with the Roto Brush tool first)"))
+}
+
+/// The Object Matte instance targeted by `p` (as [`roto_p`]).
+fn object_matte_p(s: &Session, p: &Value, cmd: &str) -> Result<(ItemId, LayerId, Uid)> {
+    instance_lookup(s, p, cmd, rt::is_object_matte)?.ok_or_else(|| bad(cmd, "no Object Matte effect found (click an object with the Object Matte tool first)"))
+}
+
+/// The instance of a kind (`is`) targeted by `p`; `None` when there is none.
+fn instance_lookup(s: &Session, p: &Value, cmd: &str, is: fn(&PropGroup) -> bool) -> Result<Option<(ItemId, LayerId, Uid)>> {
     let cid = super::comp_id(s, p)?;
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
     let candidates: Vec<LayerId> = match p.get("layer") {
@@ -102,17 +129,17 @@ pub(crate) fn roto_p(s: &Session, p: &Value, cmd: &str) -> Result<(ItemId, Layer
                 .state
                 .selected_props
                 .iter()
-                .find_map(|(l, u)| (*l == lid).then(|| fxg.groups().find(|g| g.uid == *u && is_roto(g))).flatten())
-                .or_else(|| fxg.groups().find(|g| is_roto(g))),
+                .find_map(|(l, u)| (*l == lid).then(|| fxg.groups().find(|g| g.uid == *u && is(g))).flatten())
+                .or_else(|| fxg.groups().find(|g| is(g))),
         };
-        if let Some(g) = g.filter(|g| is_roto(g)) {
-            return Ok((cid, lid, g.uid));
+        if let Some(g) = g.filter(|g| is(g)) {
+            return Ok(Some((cid, lid, g.uid)));
         }
         if p.get("layer").is_some() {
             break;
         }
     }
-    Err(bad(cmd, "no Roto Brush & Refine Edge effect found (paint a stroke with the Roto Brush tool first)"))
+    Ok(None)
 }
 
 fn group(s: &Session, cid: ItemId, lid: LayerId, uid: Uid) -> Result<(&Layer, &PropGroup)> {
@@ -459,10 +486,13 @@ fn object_matte_apply(s: &mut Session, p: &Value) -> Result<Value> {
     let existing = match p.get("effect").filter(|v| !v.is_null()) {
         Some(v) => {
             let uid = v.as_u64().ok_or_else(|| bad(cmd, "`effect` is an Object Matte effect's uid"))?;
-            layer
+            let g = layer
                 .effects()
                 .and_then(|f| f.groups().find(|g| g.uid == uid && rt::is_object_matte(g)))
                 .ok_or_else(|| bad(cmd, format!("no Object Matte effect {uid} on this layer")))?;
+            if frozen_of(g) {
+                return Err(bad(cmd, "the Object Matte is frozen: Unfreeze it to change the prompt"));
+            }
             Some(uid)
         }
         None => None,
@@ -555,4 +585,66 @@ fn object_matte_reach(s: &Session, cid: ItemId, lid: LayerId, uid: Uid) -> (bool
     let ps = params_static(g);
     let [before, after] = om::reach(&ps);
     (om::tracks(&ps), before, after)
+}
+
+fn object_matte_propagate(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "objectMatte.propagate";
+    let (cid, lid, uid) = object_matte_p(s, p, cmd)?;
+    let dir = match str_p(p, "direction") {
+        Some(d) => Direction::from_name(d).ok_or_else(|| bad(cmd, format!("unknown direction `{d}` (forward | backward | both)")))?,
+        None => Direction::Both,
+    };
+    let wait = b_p(p, "wait").unwrap_or(false);
+    let n = s.start_roto(cid, lid, uid, RotoTask::Propagate, dir, wait).map_err(|e| bad(cmd, e))?;
+    let mut out = json!({"layer": lid.0, "effect": uid, "frames": n, "running": s.is_roto_running(), "progress": s.roto_progress()});
+    if wait {
+        out["status"] = object_matte_status(s, &json!({"layer": lid.0, "effect": uid, "comp": cid.0}))?;
+    }
+    Ok(out)
+}
+
+fn object_matte_freeze(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "objectMatte.freeze";
+    let (cid, lid, uid) = object_matte_p(s, p, cmd)?;
+    let wait = b_p(p, "wait").unwrap_or(false);
+    let n = s.start_roto(cid, lid, uid, RotoTask::Freeze, Direction::Both, wait).map_err(|e| bad(cmd, e))?;
+    let (_, g) = group(s, cid, lid, uid)?;
+    Ok(json!({"layer": lid.0, "effect": uid, "frames": n, "running": s.is_roto_running(), "frozen": frozen_of(g), "progress": s.roto_progress()}))
+}
+
+fn object_matte_unfreeze(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "objectMatte.unfreeze";
+    let (cid, lid, uid) = object_matte_p(s, p, cmd)?;
+    let (_, g) = group(s, cid, lid, uid)?;
+    if frozen_of(g) {
+        s.edit("Unfreeze", None, |proj, _| {
+            let g = layer_mut(proj, cid, lid)?.props.find_group_mut(uid).ok_or_else(|| EngineError::Other("the effect is gone".into()))?;
+            if let Some(pr) = g.get_mut(FROZEN) {
+                pr.value = KV::Str(String::new());
+            }
+            Ok(())
+        })?;
+    }
+    Ok(json!({"layer": lid.0, "effect": uid, "frozen": false}))
+}
+
+fn object_matte_status(s: &mut Session, p: &Value) -> Result<Value> {
+    s.poll_roto(false);
+    let running = s.is_roto_running();
+    let mut out = json!({"running": running, "progress": s.roto_progress(), "banner": s.roto_progress().map(|p| p.banner())});
+    let Ok((cid, lid, uid)) = object_matte_p(s, p, "objectMatte.status") else { return Ok(out) };
+    let (_, g) = group(s, cid, lid, uid)?;
+    let frozen = frozen_of(g);
+    let (track, before, after) = object_matte_reach(s, cid, lid, uid);
+    let computed = s.roto_computed(cid, lid, uid);
+    out["layer"] = json!(lid.0);
+    out["effect"] = json!(uid);
+    out["frozen"] = json!(frozen);
+    out["track"] = json!(track);
+    out["reach"] = json!([before, after]);
+    out["mine"] = json!(running && s.roto_target().is_some_and(|(c, l, u, _)| (c, l, u) == (cid, lid, uid)));
+    out["pending"] = json!(s.roto_pending.contains(&(cid, lid, uid)));
+    out["frames"] = json!(computed.keys().collect::<Vec<_>>());
+    out["computed"] = json!(computed.iter().filter(|(_, c)| **c).map(|(f, _)| *f).collect::<Vec<_>>());
+    Ok(out)
 }

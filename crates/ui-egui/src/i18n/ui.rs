@@ -508,6 +508,7 @@ const JAPANESE: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "⌘/Ctrl+ドラッグでピンの動きを記録"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {}は次のコマンドで使用中:"),
+    ("Track", "トラック"),
 ];
 
 const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
@@ -1033,6 +1034,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("After Effects project", "After Effects 项目"),
     ("Lottie animation", "Lottie 动画"),
     ("Project", "项目"),
+    ("Track", "跟踪"),
 ];
 
 const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
@@ -1553,6 +1555,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("After Effects project", "After Effects 專案"),
     ("Lottie animation", "Lottie 動畫"),
     ("Project", "專案"),
+    ("Track", "追蹤"),
 ];
 
 /// Ukrainian (uk): original translations of the same interface rows as the Chinese catalogs.
@@ -1988,6 +1991,7 @@ const UKRAINIAN: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "Перетягніть опорну точку з ⌘/Ctrl, щоб записати її рух"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {} використовується в:"),
+    ("Track", "Відстежити"),
 ];
 
 #[cfg(test)]

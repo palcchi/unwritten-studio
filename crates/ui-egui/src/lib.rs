@@ -1580,6 +1580,12 @@ impl EffectcraftApp {
             self.session.poll_roto(true);
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
+        // Roto Brush propagation and Object Matte tracking / Freeze: finish jobs (a Freeze writes
+        // its mattes) and start queued ones in the background.
+        if self.session.roto_job.is_some() || !self.session.roto_pending.is_empty() {
+            self.session.poll_roto(true);
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         // 3D Camera Tracker: likewise (tracking, then solving).
         if self.session.camera_job.is_some() || !self.session.camera_pending.is_empty() {
             self.session.poll_camera(true);

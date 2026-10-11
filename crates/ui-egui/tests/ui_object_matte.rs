@@ -8,6 +8,7 @@ use effectcraft_engine::effects::object_matte as om;
 use effectcraft_engine::keyframe::Value;
 use effectcraft_engine::project::{GroupKind, LayerId, PropGroup};
 use effectcraft_ui_egui::EffectcraftApp;
+use effectcraft_ui_egui::dock::PanelKind;
 use effectcraft_ui_egui::state::Tool;
 use egui::{Event, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
@@ -139,4 +140,46 @@ fn object_matte_tool_prompts_with_a_click_and_a_box() {
     assert_eq!(mattes(&h).len(), 1);
     h.state_mut().session.execute("edit.undo", json!({})).unwrap();
     assert_eq!(flatten_params(&mattes(&h)[0], &mut |p| p.value.clone()).get("useBox"), Some(&Value::Bool(false)));
+}
+
+/// Effect Controls: the Object Matte's Track and Freeze buttons run the background job and its
+/// status line shows where it is; the UI keeps drawing frames while it runs and finishes the
+/// job itself (a Freeze writes its mattes without any other job running).
+#[test]
+fn object_matte_effect_controls_track_and_freeze() {
+    let mut h = harness();
+    h.state_mut().show_panel(PanelKind::EffectControls);
+    h.state_mut().ui.tool = Tool::ObjectMatte;
+    h.run_steps(2);
+    let center = screen(&h, [320.0, 180.0]);
+    click(&mut h, center, Modifiers::NONE);
+    let uid = mattes(&h)[0].uid;
+    h.run_steps(2);
+    let status = |h: &Harness<'_, EffectcraftApp>| h.state().auto.find(&format!("effectControls.objectMatte.{uid}.status")).map(|e| e.label.clone());
+    assert!(status(&h).is_some(), "no Object Matte status line");
+    // Freeze: a background job (the frames keep coming), then the effect is frozen.
+    let b = rect(&h, &format!("effectControls.objectMatte.{uid}.freeze"));
+    // Let any automatic tracking finish first (one job at a time).
+    let frozen = |h: &Harness<'_, EffectcraftApp>| om::is_frozen(&flatten_params(&mattes(h)[0], &mut |p| p.value.clone()));
+    let t = std::time::Instant::now();
+    while h.state().session.is_roto_running() {
+        assert!(t.elapsed().as_secs() < 120);
+        h.step();
+    }
+    click(&mut h, b.center(), Modifiers::NONE);
+    let t = std::time::Instant::now();
+    while !frozen(&h) {
+        assert!(
+            t.elapsed().as_secs() < 20,
+            "never frozen: {:?} / {} / running {} / {:?}",
+            status(&h),
+            h.state().ui.status,
+            h.state().session.is_roto_running(),
+            h.state().session.roto_progress()
+        );
+        h.step();
+    }
+    h.run_steps(2);
+    assert!(status(&h).is_some_and(|s| s.starts_with("Frozen")), "{:?}", status(&h));
+    assert_eq!(h.state().auto.find(&format!("effectControls.objectMatte.{uid}.freeze")).map(|e| e.label.as_str()), Some("Unfreeze"));
 }

@@ -25,7 +25,7 @@ filmcraft-color = { workspace = true }
 filmcraft-time = { workspace = true }
 exr = { workspace = true }
 gif = { workspace = true }
-image = { workspace = true, features = ["gif", "webp", "tiff", "bmp", "exr"] }
+image = { workspace = true, features = ["gif", "webp", "tiff", "bmp", "exr", "tga", "hdr"] }
 rayon = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

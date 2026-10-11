@@ -569,6 +569,68 @@ fn exr_still_is_linear_float() {
     assert!(b[3] == 0.5 && b[0] > 0.85 && b[0] < 1.0, "{b:?}");
 }
 
+/// #745: a Targa file has no signature, so its format comes from the extension; it imports as
+/// a still with straight alpha, identical to ffmpeg's own decode of the source.
+#[test]
+fn targa_still_matches_ffmpeg() {
+    let Some(png) = alpha_png() else { return };
+    // ffmpeg's Targa encoder (run-length compressed)
+    let Some(tga) = ffmpeg_fixture("alpha.tga", &["-i", png.to_str().expect("utf8")]) else { return };
+    assert!(effectcraft_media::is_importable(&tga));
+    let f = probe(&tga).expect("probe");
+    assert_eq!(f.kind, FootageKind::Still);
+    assert_eq!((f.width, f.height), (256, 128));
+    assert_eq!(f.codec, "TGA");
+    assert_eq!(f.alpha, AlphaMode::Straight);
+    let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect("frame");
+    assert_eq!(*img, load_png(&png));
+    // hostile input: a truncated file is refused or decodes partially, never panics
+    let bytes = std::fs::read(&tga).expect("read");
+    for n in [0, 5, 18, 40, bytes.len() / 2] {
+        let cut: Arc<[u8]> = bytes.get(..n).expect("cut").into();
+        if let Ok(f) = effectcraft_media::probe_bytes("cut.tga", cut.clone()) {
+            let pool = MediaPool::new();
+            pool.add_bytes("cut.tga", cut);
+            let _ = pool.frame_at(&f, Tick::ZERO);
+        }
+    }
+}
+
+/// #745: a Radiance HDR file holds linear float light, sRGB-encoded like OpenEXR (values above 1
+/// kept); ffmpeg's encoder is the oracle for the file layout.
+#[test]
+fn radiance_hdr_still_is_linear_float() {
+    // written with the image crate's encoder: linear 0.214 ≈ sRGB 0.5, and super-white 4.0
+    let dir = fixtures();
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let p = dir.join(format!("float-{}.hdr", std::process::id()));
+    let px = vec![0.214f32, 0.214, 0.214, 4.0, 4.0, 4.0];
+    image::DynamicImage::ImageRgb32F(image::ImageBuffer::from_raw(2, 1, px).expect("buf")).save(&p).expect("write hdr");
+    assert!(effectcraft_media::is_importable(&p));
+    let f = probe(&p).expect("probe");
+    assert_eq!(f.kind, FootageKind::Still);
+    assert_eq!((f.width, f.height), (2, 1));
+    assert_eq!(f.codec, "HDR");
+    assert_eq!(f.alpha, AlphaMode::Ignore);
+    let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect("frame");
+    std::fs::remove_file(&p).ok();
+    let a = img.data[0];
+    assert!((a[0] - 0.5).abs() < 5e-3 && a[3] == 1.0, "{a:?}");
+    assert!(img.data[1][0] > 1.5, "super-white kept: {:?}", img.data[1]);
+
+    // ffmpeg's Radiance encoder (run-length compressed scanlines): a mid grey of 0.5 linear
+    let Some(ff) = ffmpeg_fixture("grey.hdr", &["-f", "lavfi", "-i", "color=c=0x808080:size=64x16", "-frames:v", "1", "-pix_fmt", "gbrpf32le"]) else {
+        return;
+    };
+    let f = probe(&ff).expect("probe ffmpeg hdr");
+    assert_eq!((f.width, f.height), (64, 16));
+    let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect("frame");
+    let want = 1.055 * (128.0f32 / 255.0).powf(1.0 / 2.4) - 0.055;
+    for q in &img.data {
+        assert!((q[0] - want).abs() < 0.01 && (q[1] - want).abs() < 0.01 && (q[2] - want).abs() < 0.01 && q[3] == 1.0, "{q:?} vs {want}");
+    }
+}
+
 /// A FLAC of `secs` seconds at `rate` Hz with `channels` channels of a 440 Hz sine (first two:
 /// −24 dBFS RMS, the rest quieter), samples of `fmt` (`s16`, or `s32` with 24 significant bits).
 fn sine_flac(secs: u32, rate: u32, channels: u32, fmt: &str) -> Option<PathBuf> {

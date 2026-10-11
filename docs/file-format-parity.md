@@ -48,9 +48,9 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | GIF | R/W | yes | yes (animated) | good |
 | BMP | R | yes | — | good |
 | WebP | — | yes | — | beyond After Effects |
-| Targa `.tga` | R/W | none | none | Media Browser lists it but import refuses (gap 17) |
-| DPX / Cineon `.dpx` `.cin` | R/W | none | none | Same; common in film VFX |
-| Radiance `.hdr` | R/W | none | none | Same |
+| Targa `.tga` | R/W | yes (still and sequence; alpha interpreted on import) | none | good for import (#745); no Targa output |
+| DPX / Cineon `.dpx` `.cin` | R/W | none | none | Media Browser lists it but import refuses (gap 17); common in film VFX |
+| Radiance `.hdr` | R/W | yes (still and sequence, 32-bit linear float like OpenEXR) | none | good for import (#745); no Radiance output |
 | SGI, PICT, ElectricImage, RLA/RPF images | R | none | none | Legacy; RPF camera data import exists (`keys.rpfCameraImport`) |
 | Camera Raw (DNG, CR3, NEF…) | R (Camera Raw) | none | none | LightCraft has decoders that could be shared |
 | HEIF / AVIF | R (platform) | none | none | — |

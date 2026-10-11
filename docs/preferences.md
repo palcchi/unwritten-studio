@@ -59,8 +59,9 @@ Commands (CLI, MCP, control channel):
 - `appearance.lightTheme`: Light Theme (`light`), shown in light appearance. Settings ▸ Appearance shows the mode above a light and a dark theme card, each with a preview of the EffectCraft window in that theme.
 - `appearance.theme`: the single theme from before appearance modes, kept for older settings files and automation. A saved file with only `theme` loads as a fixed Dark or Light mode showing it; setting it (`prefs.set`, `ui.set {"theme": …}`, `view.theme.dark|darker|light`) selects that theme and fixes the mode to its family. While the mode is Dark or Light it mirrors the theme in use.
 - `appearance.brightness`: Brightness
-- `appearance.uiScale`: UI Scale, the size of the whole interface (75–200 %, on top of the
-  display's own scaling), applied as soon as it is chosen
+- `appearance.uiScale`: UI Scale, the size of the whole interface (any whole percentage from
+  75 to 200, on top of the display's own scaling), dragged or typed; it applies as soon as it is
+  dragged or entered
 - `appearance.useLabelColorForHandles`: Use Label Color for Layer Handles and Paths
 - `grids.gridColor`: Color
 - `grids.gridSpacing`: Gridline Every

@@ -47,11 +47,15 @@ fn check_info_transaction(via_escape: bool) {
     let edited_brightness = h.state().session.prefs.appearance.brightness;
     assert!((edited_brightness - original_brightness).abs() > 0.01, "real brightness slider changed");
     assert_eq!(saved(&store).prefs.appearance.brightness, original_brightness, "unconfirmed edit is not saved");
-    // Use the upstream percent-valued Scale choice; keyboard zoom is deliberately disabled.
+    // Type a UI Scale; keyboard zoom is deliberately disabled.
     let at = rect(&h, "settings.appearance.uiScale").center();
     click(&mut h, at);
-    let at = h.get_by_label("125%").rect().center();
-    click(&mut h, at);
+    h.event(Event::Text("125".into()));
+    for pressed in [true, false] {
+        h.event(Event::Key { key: Key::Enter, physical_key: Some(Key::Enter), pressed, repeat: false, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(2);
     assert_eq!(h.state().session.prefs.appearance.ui_scale, 125);
     assert_eq!(saved(&store).prefs.appearance.ui_scale, 100, "unconfirmed scale edit is not saved");
     // Let UI Scale settle the centered dialog before reading its next hit target.

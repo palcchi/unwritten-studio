@@ -88,7 +88,7 @@ fn prefs_set_validates_keys_types_and_ranges() {
 }
 
 /// Settings ▸ Appearance ▸ UI Scale (#284): a percentage, 100 by default, kept within 75–200;
-/// the dialog's choices set it as a number.
+/// the dialog types or drags any whole percentage in that range (#682).
 #[test]
 fn ui_scale_is_a_percentage_from_75_to_200() {
     let mut p = Prefs::default();
@@ -101,10 +101,8 @@ fn ui_scale_is_a_percentage_from_75_to_200() {
     p.set("appearance.uiScale", json!(10)).unwrap();
     assert_eq!(p.appearance.ui_scale, 75);
     let page = crate::prefs::pages().into_iter().find(|pg| pg.id == "appearance").unwrap();
-    let listed = page.items.iter().any(|i| {
-        matches!(i, crate::prefs::Item::Setting { key: "appearance.uiScale", kind: crate::prefs::Kind::Choice(c), live: true, .. } if c.contains(&("200%", "200")))
-    });
-    assert!(listed, "Settings ▸ Appearance offers it");
+    let field = crate::prefs::Item::Setting { key: "appearance.uiScale", label: "UI Scale", kind: crate::prefs::Kind::Int(75, 200, "%"), live: true };
+    assert!(page.items.contains(&field), "Settings ▸ Appearance offers it");
     // Older settings files without it get the default.
     assert_eq!(Prefs::from_json(r#"{"version": 2, "appearance": {"theme": "light"}}"#).appearance.ui_scale, 100);
 }

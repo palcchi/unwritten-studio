@@ -237,46 +237,67 @@ fn leaving_the_learn_workspace_closes_its_tutorials() {
     }
 }
 
-/// #284: Settings ▸ Appearance ▸ UI Scale sizes the whole interface as soon as it is chosen,
-/// Cancel puts it back, OK keeps it; Ctrl+0 (Window ▸ Project) doesn't reset it.
+/// #284, #682: Settings ▸ Appearance ▸ UI Scale takes any typed percentage from 75 to 200 and
+/// sizes the whole interface once it is entered, Cancel puts it back, OK keeps it and later
+/// sessions start with it; Ctrl+0 (Window ▸ Project) doesn't reset it.
 #[test]
 fn ui_scale_setting_sizes_the_interface() {
     let mut h = harness();
+    // Room for the whole Settings dialog at 200 %.
+    h.set_size(egui::vec2(2400.0, 1600.0));
     let ctx = h.ctx.clone();
-    let choose = |h: &mut Harness<'_, EffectcraftApp>, label: &str| {
+    let open_settings = |h: &mut Harness<'_, EffectcraftApp>| {
         let ctx = h.ctx.clone();
         effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "app.settings", json!({"page": "appearance"})).unwrap();
         h.run_steps(3);
+    };
+    let key = |h: &mut Harness<'_, EffectcraftApp>, key: egui::Key, modifiers: egui::Modifiers| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::Key { key, physical_key: None, pressed, repeat: false, modifiers });
+            h.step();
+        }
+    };
+    // Types `text` into the field a key at a time: nothing applies (and the field keeps the
+    // keyboard) until Enter.
+    let type_scale = |h: &mut Harness<'_, EffectcraftApp>, text: &str| {
+        let before = (h.state().session.prefs.appearance.ui_scale, h.ctx.zoom_factor());
         click(h, "settings.appearance.uiScale");
-        let option = h.query_by_label(label).unwrap_or_else(|| panic!("the {label} choice")).rect().center();
-        click_at(h, option);
+        for c in text.chars() {
+            h.input_mut().events.push(Event::Text(c.to_string()));
+            h.run_steps(2);
+            assert_eq!((h.state().session.prefs.appearance.ui_scale, h.ctx.zoom_factor()), before, "{text}: not while typing");
+            assert!(h.ctx.memory(|m| m.focused().is_some()), "{text}: the field keeps the keyboard");
+        }
+        key(h, egui::Key::Enter, egui::Modifiers::NONE);
         h.run_steps(2);
     };
+    let scale = |h: &Harness<'_, EffectcraftApp>| (h.state().session.prefs.appearance.ui_scale, h.ctx.zoom_factor());
     assert_eq!(ctx.zoom_factor(), 1.0);
-    choose(&mut h, "150%");
-    assert_eq!(h.state().session.prefs.appearance.ui_scale, 150);
-    assert_eq!(ctx.zoom_factor(), 1.5, "live");
+    open_settings(&mut h);
+    type_scale(&mut h, "85");
+    assert_eq!(scale(&h), (85, 0.85), "live");
     click(&mut h, "settings.cancel");
     h.run_steps(2);
-    assert_eq!((h.state().session.prefs.appearance.ui_scale, ctx.zoom_factor()), (100, 1.0), "Cancel put it back");
-    choose(&mut h, "125%");
+    assert_eq!(scale(&h), (100, 1.0), "Cancel put it back");
+    open_settings(&mut h);
+    type_scale(&mut h, "50");
+    assert_eq!(scale(&h), (75, 0.75), "at least 75");
+    type_scale(&mut h, "300");
+    assert_eq!(scale(&h), (200, 2.0), "at most 200");
+    type_scale(&mut h, "90");
     click(&mut h, "settings.ok");
     h.run_steps(2);
     assert_eq!(h.state().dialog, None);
-    assert_eq!((h.state().session.prefs.appearance.ui_scale, ctx.zoom_factor()), (125, 1.25), "OK kept it");
+    assert_eq!(scale(&h), (90, 0.9), "OK kept it");
     // Ctrl+0 opens the Project panel; egui's own Ctrl+0 zoom reset stays out of it.
-    for pressed in [true, false] {
-        h.input_mut().events.push(Event::Key { key: egui::Key::Num0, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::COMMAND });
-        h.step();
-    }
+    key(&mut h, egui::Key::Num0, egui::Modifiers::COMMAND);
     h.run_steps(2);
-    assert_eq!(ctx.zoom_factor(), 1.25);
+    assert_eq!(ctx.zoom_factor(), 0.9);
     // A saved scale applies from the first frame.
-    let mut s = Session::default();
-    s.prefs.set("appearance.uiScale", json!(175)).unwrap();
+    let s = Session { prefs: effectcraft_engine::prefs::Prefs::from_json(&h.state().session.prefs.to_json()), ..Default::default() };
     let mut h2 = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     h2.run_steps(3);
-    assert_eq!(h2.ctx.zoom_factor(), 1.75);
+    assert_eq!(h2.ctx.zoom_factor(), 0.9);
 }
 
 /// Headless look at the panels (wgpu offscreen; needs a GPU adapter). Run with

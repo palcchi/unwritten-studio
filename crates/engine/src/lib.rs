@@ -1072,6 +1072,8 @@ mod tests_key_metadata_order;
 #[cfg(test)]
 mod tests_keylight;
 #[cfg(test)]
+mod tests_limits;
+#[cfg(test)]
 mod tests_lottie;
 #[cfg(test)]
 mod tests_m137;

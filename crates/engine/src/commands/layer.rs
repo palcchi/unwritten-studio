@@ -4,7 +4,7 @@ use effectcraft_color::{BlendMode, Label};
 use effectcraft_keyframe::{Justify, TextDoc, Value as KV};
 use effectcraft_project::build::{self, Ids};
 use effectcraft_project::{
-    Comp, FrameBlend, GroupKind, ItemId, ItemKind, Layer, LayerId, LayerSource, MaskMode, MatteKind, Project, PropGroup, Quality, Solid, TrackMatte,
+    Comp, FrameBlend, GroupKind, ItemId, ItemKind, Layer, LayerId, LayerSource, MaskMode, MatteKind, Project, PropGroup, Quality, Solid, TrackMatte, limits,
 };
 use effectcraft_time::Tick;
 use serde_json::{Value, json};
@@ -92,8 +92,9 @@ fn new_solid_like(s: &mut Session, p: &Value, adjustment: bool) -> Result<Value>
     let cid = comp_id(s, p)?;
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?.clone();
     let color = color_p(p, "color").unwrap_or(if adjustment { [1.0, 1.0, 1.0] } else { [0.85, 0.2, 0.2] });
-    let w = p.get("width").and_then(Value::as_u64).map(|v| v as u32).unwrap_or(comp.width);
-    let h = p.get("height").and_then(Value::as_u64).map(|v| v as u32).unwrap_or(comp.height);
+    // 1 to 30,000 px a side (#788): the layer is sized from the same numbers as its solid.
+    let w = p.get("width").and_then(Value::as_u64).map(limits::size).unwrap_or(comp.width);
+    let h = p.get("height").and_then(Value::as_u64).map(limits::size).unwrap_or(comp.height);
     let pixel_aspect = pixel_aspect_p(p)?.unwrap_or(comp.pixel_aspect);
     let default_name = if adjustment { "Adjustment Layer 1".to_string() } else { "Solid 1".to_string() };
     let name = str_p(p, "name").map(str::to_string).unwrap_or(default_name);
@@ -114,7 +115,7 @@ fn new_solid_like(s: &mut Session, p: &Value, adjustment: bool) -> Result<Value>
 fn pixel_aspect_p(p: &Value) -> Result<Option<f64>> {
     match p.get("pixelAspect").and_then(Value::as_f64) {
         Some(v) if !(v.is_finite() && v > 0.0) => Err(bad("layer.settings", "`pixelAspect` must be a positive number")),
-        v => Ok(v),
+        v => Ok(v.map(limits::pixel_aspect)),
     }
 }
 
@@ -1404,8 +1405,8 @@ fn layer_settings(s: &mut Session, p: &Value) -> Result<Value> {
         _ => {}
     }
     let color = color_p(p, "color");
-    let w = p.get("width").and_then(Value::as_u64).map(|v| v.max(1) as u32);
-    let h = p.get("height").and_then(Value::as_u64).map(|v| v.max(1) as u32);
+    let w = p.get("width").and_then(Value::as_u64).map(limits::size);
+    let h = p.get("height").and_then(Value::as_u64).map(limits::size);
     let pixel_aspect = pixel_aspect_p(p)?;
     let name = str_p(p, "name").map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
     let affect_all = p.get("affectAll").and_then(Value::as_bool).unwrap_or(true);

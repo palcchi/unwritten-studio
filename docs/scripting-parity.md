@@ -20,6 +20,7 @@ our own scripts; no real-world script library has been run against both apps.
 | Expression performance | Cached, multi-frame | Per-thread boa contexts | unknown | No benchmark |
 | Scripting object model | `app`, `Project`, items, layers, properties, keys, eases, render queue, `TextDocument`, `Shape`, markers, `File`/`Folder`, `Socket`, `app.settings` | Same classes, edits run through undoable engine commands; match names table | good | `crates/script` tests (≈ 10 test files) |
 | ScriptUI | Dialogs, palettes, dockable panels, resource strings, `onDraw` / ScriptUIGraphics | Same, dockable panels reopen at launch | good | `ui_scriptui`, `tests_ui*` |
+| `app.scheduleTask` / `cancelTask` | One-shot and repeating tasks (polling, panel refresh) until `cancelTask` | Same: repeating tasks run every `delay` ms (at least 50 ms, at most 64 pending per script) until `cancelTask`, until they throw (reported once, then cancelled), or until their owner goes: a script's last window closing, or the project closing for scripts without windows; frontends tick them every frame, agents with `script.runTasks` | good | `tests_tasks.rs` (#773); one-shot tasks of a script file still run right after it, not after their delay |
 | Scripts menu, ScriptUI Panels folder | yes | yes | same | [plugins.md](plugins.md) |
 | Startup / Shutdown folders | yes | not run | missing | plugins.md |
 | `#include`, `#target` directives | yes | a script starting with one doesn't parse | missing | plugins.md; common in real scripts |

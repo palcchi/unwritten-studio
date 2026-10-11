@@ -1585,6 +1585,7 @@ impl EffectcraftApp {
             self.session.poll_camera(true);
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
+        self.run_script_tasks(&ctx);
         self.apply_prefs(&ctx);
         self.handle_events(&ctx);
         panels::unsaved::on_close_requested(self, &ctx);
@@ -1696,6 +1697,24 @@ impl EffectcraftApp {
 }
 
 impl EffectcraftApp {
+    /// Scripts' `app.scheduleTask` tasks that are due (repeating ones keep a ScriptUI panel
+    /// fresh): errors as a toast, the last line printed in the status bar, and a repaint when
+    /// the next one is due.
+    fn run_script_tasks(&mut self, ctx: &egui::Context) {
+        if self.session.script_ui.task_hosts.is_empty() {
+            return;
+        }
+        let Some(r) = effectcraft_engine::scriptui::ScriptUi::run_tasks(&mut self.session) else { return };
+        if let Some(msg) = r["errors"].as_array().and_then(|e| e.first()).and_then(|e| e["message"].as_str()) {
+            self.toast = Some((format!("Scheduled script task: {msg}"), ctx.input(|i| i.time)));
+        } else if let Some(line) = r["output"].as_array().and_then(|o| o.last()).and_then(|l| l.as_str()) {
+            self.ui.status = line.to_string();
+        }
+        if let Some(next) = r["next"].as_u64() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(next));
+        }
+    }
+
     /// Auto-save a dirty project when the interval has passed (Settings ▸ Project ▸ Auto-Save).
     fn tick_autosave(&mut self, ctx: &egui::Context) {
         let now = web_time::SystemTime::now().duration_since(web_time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);

@@ -384,6 +384,15 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             settings_save
         ),
+        cmd!(
+            "script.runTasks",
+            "Run Scheduled Script Tasks",
+            [],
+            None,
+            "{} → runs the app.scheduleTask tasks that are due (frontends do it every frame) → {ran, output, errors, next (ms until the next task, or null)}",
+            always,
+            scriptui::run_tasks
+        ),
         crate::query!("scriptui.list", "List Script Windows", "{} → [{window, title, kind: dialog|palette|window|panel, script, modal, size}]", scriptui::list),
         crate::query!(
             "scriptui.get",

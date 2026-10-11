@@ -14,7 +14,8 @@
 //! ```
 //!
 //! * **Object model** (`prelude.js`): `app` (project, open/newProject, undo groups,
-//!   `executeCommand`/`findMenuCommandId`, `scheduleTask`, `settings` kept in the settings
+//!   `executeCommand`/`findMenuCommandId`, `scheduleTask` (one-shot and repeating, see
+//!   [`run_tasks`]), `settings` kept in the settings
 //!   folder), `Project`, `ItemCollection`,
 //!   `CompItem`/`FootageItem`/`FolderItem`, `LayerCollection`, `AVLayer`/`TextLayer`/
 //!   `ShapeLayer`/`CameraLayer`/`LightLayer`, `PropertyGroup`/`Property` (values, keyframes,
@@ -57,11 +58,13 @@ pub mod matchnames;
 mod model;
 mod runtime;
 mod socket;
+mod tasks;
 mod ui;
 
 use effectcraft_engine::{ScriptRequest, Session};
 
 pub use runtime::{Outcome, ScriptError, run};
+pub use tasks::{MAX_TASKS, MIN_REPEAT_MS, run_tasks};
 pub use ui::dispatch_ui;
 
 /// The [`effectcraft_engine::ScriptRunner`] this crate provides.
@@ -73,6 +76,7 @@ pub fn runner(s: &mut Session, req: &ScriptRequest) -> serde_json::Value {
 pub fn install(s: &mut Session) {
     s.script = Some(runner);
     s.script_ui.dispatch = Some(dispatch_ui);
+    s.script_ui.tasks = Some(run_tasks);
 }
 
 /// Run `code` as a one-off script named `name`.
@@ -86,6 +90,8 @@ mod tests;
 mod tests_ease_presets;
 #[cfg(test)]
 mod tests_panels;
+#[cfg(test)]
+mod tests_tasks;
 #[cfg(test)]
 mod tests_ui;
 #[cfg(test)]

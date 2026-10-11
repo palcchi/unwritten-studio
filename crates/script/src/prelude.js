@@ -1804,7 +1804,7 @@ var app = {
     if (!cmd) throw __err("Unknown command id " + id);
     return __call(cmd, {});
   },
-  scheduleTask: function (code, delay, repeat) { return __task("schedule", String(code), !!repeat); },
+  scheduleTask: function (code, delay, repeat) { return __task("schedule", String(code), Number(delay), !!repeat); },
   cancelTask: function (id) { __task("cancel", id); },
   setMemoryUsageLimits: function () {},
   setMultiFrameRenderingConfig: function () {},

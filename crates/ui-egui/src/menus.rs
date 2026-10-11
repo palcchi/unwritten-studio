@@ -525,9 +525,20 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             app.stop();
             return Ok(Value::Null);
         }
+        // The focused Layer panel has its own magnification; otherwise the Composition viewer.
+        "view.fit" if app.ui.focused == PanelKind::Layer => {
+            app.ui.layer_zoom = None;
+            app.ui.layer_pan = [0.0, 0.0];
+            return Ok(Value::Null);
+        }
         "view.fit" => {
             app.ui.viewer.zoom = None;
             app.ui.viewer.pan = [0.0, 0.0];
+            return Ok(Value::Null);
+        }
+        "view.actualSize" if app.ui.focused == PanelKind::Layer => {
+            app.ui.layer_zoom = Some(1.0 / ctx.pixels_per_point());
+            app.ui.layer_pan = [0.0, 0.0];
             return Ok(Value::Null);
         }
         "view.actualSize" => {
@@ -737,6 +748,16 @@ fn toggle(slot: &mut bool, p: &Value) -> Value {
     json!(*slot)
 }
 
+/// The next View ▸ Zoom In / Zoom Out magnification (points per pixel) after `cur`.
+fn zoom_step(cur: f32, zoom_in: bool) -> f32 {
+    const STEPS: [f32; 16] = [0.015, 0.03, 0.0625, 0.125, 0.25, 0.333, 0.5, 0.66, 1.0, 1.5, 2.0, 3.0, 4.0, 8.0, 16.0, 32.0];
+    if zoom_in {
+        STEPS.iter().copied().find(|s| *s > cur + 1e-3).unwrap_or(32.0)
+    } else {
+        STEPS.iter().rev().copied().find(|s| *s < cur - 1e-3).unwrap_or(0.015)
+    }
+}
+
 /// Perform a frontend command (from `Event::Frontend`).
 pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Value) -> Result<Value, String> {
     let now = ctx.input(|i| i.time);
@@ -859,14 +880,17 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             }
             r
         }
+        // Zoom In / Zoom Out act on the focused viewer: the Layer panel when it has focus, else
+        // the Composition viewer.
+        "view.zoomIn" | "view.zoomOut" if app.ui.focused == PanelKind::Layer => {
+            let cur = app.ui.layer_zoom.unwrap_or_else(|| crate::panels::layer_panel::last_fit(ctx));
+            let next = zoom_step(cur, id == "view.zoomIn");
+            app.ui.layer_zoom = Some(next);
+            json!({"zoom": next, "panel": "layer"})
+        }
         "view.zoomIn" | "view.zoomOut" => {
             let cur = v.zoom.unwrap_or_else(|| crate::panels::viewer::last_fit(ctx));
-            const STEPS: [f32; 16] = [0.015, 0.03, 0.0625, 0.125, 0.25, 0.333, 0.5, 0.66, 1.0, 1.5, 2.0, 3.0, 4.0, 8.0, 16.0, 32.0];
-            let next = if id == "view.zoomIn" {
-                STEPS.iter().copied().find(|s| *s > cur + 1e-3).unwrap_or(32.0)
-            } else {
-                STEPS.iter().rev().copied().find(|s| *s < cur - 1e-3).unwrap_or(0.015)
-            };
+            let next = zoom_step(cur, id == "view.zoomIn");
             v.zoom = Some(next);
             json!({"zoom": next})
         }
@@ -1085,6 +1109,11 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
         }
         "layer.openLayer" => {
             let id = p.get("layer").and_then(Value::as_u64).or_else(|| app.session.state.selected_layers.first().map(|l| l.0));
+            // Another layer opens at Fit.
+            if id != app.ui.layer_panel {
+                app.ui.layer_zoom = None;
+                app.ui.layer_pan = [0.0, 0.0];
+            }
             app.ui.layer_panel = id;
             app.ui.layer_view = None;
             app.show_panel(PanelKind::Layer);

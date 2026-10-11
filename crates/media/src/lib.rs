@@ -22,6 +22,7 @@ mod layered;
 pub use layered::vector_doc;
 mod pool;
 mod probe;
+mod webp_anim;
 
 pub use pool::{DEFAULT_BUDGET, MediaPool, PoolStats};
 pub use probe::{DEFAULT_SEQUENCE_RATE, probe, probe_bytes, probe_model};

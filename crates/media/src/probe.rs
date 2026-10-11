@@ -71,6 +71,12 @@ pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
         {
             return Ok(f);
         }
+        // So is an animated WebP; a still WebP stays a still.
+        if fmt == image::ImageFormat::WebP
+            && let Some(f) = crate::webp_anim::probe(path, &bytes)
+        {
+            return Ok(f);
+        }
         return probe_still_bytes(path, &bytes, fmt);
     }
     let name = Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());

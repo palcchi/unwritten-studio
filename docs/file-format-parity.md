@@ -47,7 +47,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | SVG | R | yes | — | good; pasting SVG/AI as shape layers (26.3) missing |
 | GIF | R/W | yes | yes (animated) | good |
 | BMP | R | yes | — | good |
-| WebP | — | yes | — | beyond After Effects |
+| WebP | — | yes (still; animated WebP as footage with its frames, timing and alpha, #762) | — | beyond After Effects |
 | Targa `.tga` | R/W | none | none | Media Browser lists it but import refuses (gap 17) |
 | DPX / Cineon `.dpx` `.cin` | R/W | none | none | Same; common in film VFX |
 | Radiance `.hdr` | R/W | none | none | Same |

@@ -53,9 +53,11 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![recursion_limit = "256"]
 
+mod include;
 pub mod matchnames;
 mod model;
 mod runtime;
+mod scriptfile;
 mod socket;
 mod ui;
 
@@ -84,6 +86,8 @@ pub fn run_code(s: &mut Session, code: &str, name: &str) -> Outcome {
 mod tests;
 #[cfg(test)]
 mod tests_ease_presets;
+#[cfg(test)]
+mod tests_include;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]

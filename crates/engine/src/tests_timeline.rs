@@ -883,3 +883,20 @@ fn property_edits_apply_to_every_selected_layer() {
     s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
     assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
 }
+
+#[test]
+fn add_item_keeps_footage_longer_than_the_comp_at_full_length() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "T", "width": 400, "height": 300, "frameRate": 30, "duration": 4})).unwrap();
+    let f = effectcraft_project::Footage {
+        width: 100,
+        height: 100,
+        has_video: true,
+        duration: effectcraft_time::Tick::from_seconds_f64(10.0),
+        ..Default::default()
+    };
+    let item = std::sync::Arc::make_mut(&mut s.project).add_item("long.mp4", effectcraft_color::Label::None, None, effectcraft_project::ItemKind::Footage(f));
+    let l = s.execute("layer.addItem", json!({"item": item.0})).unwrap()["layer"].as_u64().unwrap();
+    let layer = s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap();
+    assert_eq!(layer.out_point.seconds(), 10.0);
+}

@@ -295,7 +295,10 @@ fn add_item(s: &mut Session, p: &Value) -> Result<Value> {
         let mut l = build::layer(proj, &comp, &it.name, src, size, dur);
         l.start_time = start;
         l.in_point = start;
-        l.out_point = fr.snap_nearest((start + dur.unwrap_or(comp.duration)).min(comp.duration)).max(start + fr.frame_duration());
+        // Footage and precomps keep their full length past the comp's end (After Effects); items
+        // without a duration (solids, comp-length stills) end with the comp.
+        let end = dur.map_or((start + comp.duration).min(comp.duration), |d| start + d);
+        l.out_point = fr.snap_nearest(end).max(start + fr.frame_duration());
         place(&mut l, position);
         insert_layer_at(proj, st, cid, l, index)
     })?;

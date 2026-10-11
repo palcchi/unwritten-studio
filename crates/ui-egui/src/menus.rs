@@ -1537,8 +1537,8 @@ pub type Binding = (egui::Modifiers, egui::Key, String, Value);
 pub fn bindings(session: &effectcraft_engine::Session) -> Vec<Binding> {
     let mut v: Vec<Binding> = Vec::new();
     for (sc, b) in session.shortcuts().bindings() {
-        // Off macOS `Cmd` is Ctrl, so a Ctrl+Cmd shortcut (Enter Full Screen's Ctrl+Cmd+F) would
-        // steal the plain Cmd one (Find's Cmd+F): such macOS-only shortcuts aren't bound there.
+        // Off macOS `Cmd` is Ctrl, so a custom Ctrl+Cmd shortcut would
+        // steal the plain Cmd one: such macOS-only shortcuts aren't bound there.
         if !cfg!(target_os = "macos") && sc.split('+').any(|p| p == "Ctrl") && sc.split('+').any(|p| p == "Cmd") {
             continue;
         }
@@ -1968,6 +1968,18 @@ mod tests {
             if let Some(sc) = &e.shortcut {
                 assert!(parse_shortcut(sc).is_some() || sc == "Num*", "{} ({sc})", e.label);
             }
+        }
+    }
+
+    #[test]
+    fn full_screen_default_is_platform_specific() {
+        let app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let full_screen = app.session.shortcuts().shortcut_of("view.fullScreen", &Value::Null);
+        if cfg!(target_os = "macos") {
+            assert_eq!(full_screen, Some("Ctrl+Cmd+F"));
+        } else {
+            assert_eq!(full_screen, None);
+            assert_eq!(app.session.shortcuts().shortcut_of("window.maximizeApp", &Value::Null), Some("Cmd+\\"));
         }
     }
 

@@ -18,7 +18,7 @@ our own scripts; no real-world script library has been run against both apps.
 | Expression object model | `thisComp`, `thisLayer`, `wiggle`, `loopOut`, `valueAtTime`, `sampleImage`, `footage()`, text style API… | Same members, from the reference | good | `crates/expr/src/tests.rs`; behaviour of edge cases unmeasured (G1) |
 | Expression editing | Inline field, error bar, pick whip, Expression Language menu, external editors | Inline field that grows, error bar, pick whips (property and value), language menu | partial | External editor support (#364) |
 | Expression performance | Cached, multi-frame | Per-thread boa contexts | unknown | No benchmark |
-| Scripting object model | `app`, `Project`, items, layers, properties, keys, eases, render queue, `TextDocument`, `Shape`, markers, `File`/`Folder`, `Socket`, `app.settings` | Same classes, edits run through undoable engine commands; match names table | good | `crates/script` tests (≈ 10 test files) |
+| Scripting object model | `app`, `Project`, items, layers, properties, keys, eases, render queue, `TextDocument`, `Shape`, markers, `File`/`Folder`, `Socket`, `app.settings` | Same classes, edits run through undoable engine commands; match names table; layers, groups and properties are callable (`layer("Effects")(1)` is `.property(...)`) | good | `crates/script` tests (≈ 10 test files) |
 | ScriptUI | Dialogs, palettes, dockable panels, resource strings, `onDraw` / ScriptUIGraphics | Same, dockable panels reopen at launch | good | `ui_scriptui`, `tests_ui*` |
 | Scripts menu, ScriptUI Panels folder | yes | yes | same | [plugins.md](plugins.md) |
 | Startup / Shutdown folders | yes | not run | missing | plugins.md |

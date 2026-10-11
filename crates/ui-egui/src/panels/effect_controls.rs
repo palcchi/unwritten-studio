@@ -121,7 +121,7 @@ pub fn choose_files_after_apply(app: &mut EffectcraftApp, applied: &serde_json::
 
 /// An undo-merge key for one gesture on `id`: a new key each time a drag starts, so separate
 /// drags are separate undo steps while one drag is one step.
-pub(super) fn gesture_key(ui: &egui::Ui, id: egui::Id, started: bool) -> String {
+pub(crate) fn gesture_key(ui: &egui::Ui, id: egui::Id, started: bool) -> String {
     let kid = id.with("gesture");
     let n: u64 = if started {
         let n = ui.data(|d| d.get_temp::<u64>(kid)).unwrap_or(0) + 1;

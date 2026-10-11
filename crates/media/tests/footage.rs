@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Instant;
 
-use effectcraft_media::{MediaPool, probe};
+use effectcraft_media::{MediaPool, probe, probe_bytes};
 use effectcraft_project::{AlphaMode, Footage, FootageKind, ItemId};
 use effectcraft_raster::Image;
 use effectcraft_render::FootageSource;
@@ -333,6 +333,59 @@ fn resampled_audio_read_in_frame_pieces_matches_ffmpeg() {
         let worst = got.iter().zip(&want).map(|(g, w)| (g - w).abs()).fold(0.0f32, f32::max);
         eprintln!("{} at {rate} Hz: max error {worst:.4}", p.display());
         assert!(want.len() >= got.len() && worst < 0.01, "{} at {rate} Hz: max error {worst}", p.display());
+    }
+}
+
+/// The H.264 fixture with the rotation part of its video track header's matrix (`[a b; c d]`,
+/// 16.16 fixed point) replaced: what a phone writes for a movie shot with the camera turned.
+fn turned_mp4(p: &Path, abcd: [i32; 4]) -> Arc<[u8]> {
+    let mut bytes = std::fs::read(p).expect("read");
+    // (The video track comes first; a version 0 `tkhd` has its matrix 44 bytes after the type.)
+    let at = bytes.windows(4).position(|w| w == b"tkhd").expect("tkhd");
+    assert_eq!(bytes[at + 4], 0, "a version 0 tkhd");
+    for (slot, v) in [0, 1, 3, 4].into_iter().zip(abcd) {
+        let o = at + 44 + slot * 4;
+        bytes[o..o + 4].copy_from_slice(&v.to_be_bytes());
+    }
+    bytes.into()
+}
+
+/// A movie whose track header says it is shown rotated (a phone held upright) imports the way it
+/// is shown: the footage has the turned size and its frames are turned, at full and reduced size.
+#[test]
+fn rotated_mp4_imports_upright() {
+    let Some(p) = h264_mp4() else { return };
+    let plain_footage = probe(&p).expect("probe");
+    let pool = MediaPool::new();
+    let t = t_of(plain_footage.frame_rate, 3);
+    let plain = pool.frame(ItemId(1), &plain_footage, t).expect("frame");
+    let (w, h) = (plain.width as usize, plain.height as usize);
+    let one = 0x1_0000;
+    // The matrix, the turned size and the plain frame's pixel shown at (x, y).
+    type From = fn(usize, usize, usize, usize) -> (usize, usize);
+    let cases: [(&str, [i32; 4], (usize, usize), From); 3] = [
+        ("90", [0, one, -one, 0], (h, w), |x, y, _, h| (y, h - 1 - x)),
+        ("180", [-one, 0, 0, -one], (w, h), |x, y, w, h| (w - 1 - x, h - 1 - y)),
+        ("270", [0, -one, one, 0], (h, w), |x, y, w, _| (w - 1 - y, x)),
+    ];
+    for (name, matrix, (tw, th), from) in cases {
+        let path = format!("turned-{name}.mp4");
+        let bytes = turned_mp4(&p, matrix);
+        let f = probe_bytes(&path, bytes.clone()).expect("probe");
+        assert_eq!((f.width as usize, f.height as usize), (tw, th), "{name}°: size");
+        pool.add_bytes(&path, bytes);
+        let img = pool.frame(ItemId(2), &f, t).expect("frame");
+        assert_eq!((img.width as usize, img.height as usize), (tw, th), "{name}°: frame size");
+        for (x, y) in [(0, 0), (tw - 1, 0), (0, th - 1), (tw - 1, th - 1), (tw / 3, th / 5), (tw / 2, th - 7)] {
+            let (sx, sy) = from(x, y, w, h);
+            assert_eq!(img.data[y * tw + x], plain.data[sy * w + sx], "{name}°: pixel ({x}, {y})");
+        }
+        // (A reduced-resolution render asks for the turned size.)
+        let (hw, hh) = (f.width / 2, f.height / 2);
+        let sized = pool.frame_at_size(ItemId(2), &f, t, hw, hh).expect("frame");
+        assert_eq!((sized.width, sized.height), (hw, hh), "{name}°: reduced size");
+        let db = psnr(&sized, &effectcraft_raster::resample(&img, hw, hh));
+        assert!(db > 45.0, "{name}° at half size: {db:.2} dB");
     }
 }
 

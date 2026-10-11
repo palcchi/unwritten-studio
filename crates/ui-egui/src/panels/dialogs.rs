@@ -334,6 +334,35 @@ fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, exis
     }
 }
 
+/// One frame of the open dialog with `key` pressed.
+#[cfg(test)]
+pub(crate) fn press_key(app: &mut EffectcraftApp, ctx: &egui::Context, key: egui::Key, modifiers: egui::Modifiers) {
+    let mut raw = egui::RawInput::default();
+    raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+    let mut out = ctx.run_ui(raw, |ui| {
+        app.auto.begin_frame();
+        show(app, ui.ctx());
+    });
+    out.textures_delta.clear();
+}
+
+/// The letter that answers the open confirmation with Cmd (Ctrl elsewhere): Cmd+D is Delete in
+/// Delete Items, Cmd+R is Revert in Revert Project. The native menu bar hands these keys back
+/// while the prompt is open ([`crate::native_menu::activate`]).
+pub(crate) fn command_key(app: &EffectcraftApp) -> Option<egui::Key> {
+    match app.dialog? {
+        Dialog::DeleteItems => Some(egui::Key::D),
+        Dialog::UnsavedChanges if super::unsaved::is_revert(app) => Some(egui::Key::R),
+        _ => None,
+    }
+}
+
+/// Cmd+`key` (Ctrl elsewhere) pressed, also while a text field has focus: ask before the dialog
+/// is drawn, so the field does not edit with the key first.
+pub(crate) fn ui_command_key(ctx: &egui::Context, key: egui::Key) -> bool {
+    ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, key))
+}
+
 pub(crate) fn ui_enter(ctx: &egui::Context) -> bool {
     !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))
 }

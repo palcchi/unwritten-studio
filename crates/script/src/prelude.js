@@ -1798,8 +1798,13 @@ var app = {
   beginSuppressDialogs: function () {},
   endSuppressDialogs: function () {},
   purge: function () { __call("edit.purge", { what: "all" }); },
-  findMenuCommandId: function (name) { return __get("menuCommandId", { name: String(name) }); },
+  findMenuCommandId: function (name) {
+    // Well-known After Effects ids must not shift when EffectCraft registers a command.
+    if (String(name) === "Undo") return 16;
+    return __get("menuCommandId", { name: String(name) });
+  },
   executeCommand: function (id) {
+    if (id === 16) return __call("edit.undo", {});
     var cmd = typeof id === "number" ? __get("commandAt", { index: id }) : String(id);
     if (!cmd) throw __err("Unknown command id " + id);
     return __call(cmd, {});

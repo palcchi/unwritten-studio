@@ -350,6 +350,15 @@ pub enum Event {
     },
     /// Drop cached frames / renders (Edit ▸ Purge).
     PurgeCaches,
+    /// Put an image on the system clipboard (Composition ▸ Copy Frame to Clipboard): `rgba` is
+    /// `width` × `height` straight-alpha RGBA8 rows. Headless sessions ignore it; the pixels are
+    /// not serialized.
+    CopyImage {
+        width: u32,
+        height: u32,
+        #[serde(skip)]
+        rgba: Vec<u8>,
+    },
 }
 
 pub struct Session {

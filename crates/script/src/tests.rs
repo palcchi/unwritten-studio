@@ -730,3 +730,27 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn script_layer_comment_and_unnamed_marker_params_round_trip() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Notes", 100, 100, 1, 5, 25);
+        var l = c.layers.addSolid([1, 0, 0], "Solid", 10, 10, 1);
+        l.comment = "Saved layer note";
+        var markers = l.property("ADBE Marker");
+        var plain = new MarkerValue("Plain");
+        plain.setParameters({ lml: "shot", index: "1" });
+        markers.setValueAtTime(1, plain);
+        var named = new MarkerValue("Named");
+        named.cuePointName = "cue";
+        named.setParameters({ lml: "shot", index: "2" });
+        markers.setValueAtTime(2, named);
+        [l.comment, markers.keyValue(1).getParameters().index,
+         markers.keyValue(1).cuePointName, markers.keyValue(2).getParameters().index]
+        "#,
+    );
+    assert_eq!(o.result, json!(["Saved layer note", "1", "", "2"]));
+}

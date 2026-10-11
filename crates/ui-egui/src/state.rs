@@ -566,6 +566,10 @@ pub struct UiState {
     /// Floating panels of the saved workspaces.
     #[serde(default)]
     pub saved_floating: std::collections::BTreeMap<String, Vec<crate::dock::Floating>>,
+    /// Floating groups shown in their own native window instead of over the dock (Move Panel
+    /// to New Window), so they can be placed on another monitor.
+    #[serde(default)]
+    pub panel_windows: Vec<crate::dock::PanelWindow>,
     /// The panel maximized to fill the dock area (`~`), if any.
     #[serde(default)]
     pub maximized: Option<PanelKind>,
@@ -680,6 +684,7 @@ impl Default for UiState {
             saved_workspaces: Default::default(),
             floating: vec![],
             saved_floating: Default::default(),
+            panel_windows: vec![],
             maximized: None,
             locked_tabs: BTreeSet::new(),
             viewers: Default::default(),

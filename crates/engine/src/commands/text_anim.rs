@@ -246,7 +246,7 @@ fn enable_per_char(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// JSON → property value shaped like `like`.
-fn json_value(v: &Value, like: &KV) -> Option<KV> {
+pub(super) fn json_value(v: &Value, like: &KV) -> Option<KV> {
     Some(match v {
         Value::Bool(b) => match like {
             KV::Bool(_) => KV::Bool(*b),

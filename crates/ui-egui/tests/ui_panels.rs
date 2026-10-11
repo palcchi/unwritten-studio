@@ -362,3 +362,31 @@ fn essential_graphics_scale_keeps_constrain_proportions() {
     let unlinked = scale(&h);
     assert!(unlinked[0] > linked[0] && unlinked[1] == linked[1], "unlinked, X moves alone: {unlinked:?}");
 }
+
+/// #757: Effects & Presets lists the built-in Transitions presets under * Animation Presets;
+/// double-clicking one applies it to the selected layer (effect plus keyframes).
+#[test]
+fn transition_presets_apply_from_effects_and_presets() {
+    let mut h = harness();
+    let layer = h.state().session.active_comp().unwrap().layers[0].id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [layer]})).unwrap();
+    open(&mut h, "effectsPresets");
+    h.state_mut().ui.effects_search = "clock reveal".into();
+    h.run_steps(3);
+    assert!(h.state().auto.find("effects.category.presets/Transitions").is_some(), "the Transitions folder is listed");
+    let e = h.state().auto.find("effects.preset.builtin.clockReveal").expect("Clock Reveal is listed").clone();
+    let p: Pos2 = pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0);
+    h.input_mut().events.push(Event::PointerMoved(p));
+    h.step();
+    // Both clicks in one frame: the harness' frame time is longer than a double-click's.
+    for _ in 0..2 {
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+    }
+    h.run_steps(3);
+    let comp = h.state().session.active_comp().unwrap();
+    let fx = comp.layers[0].effects().unwrap().groups().next().expect("an effect was added").clone();
+    assert_eq!(fx.name, "Radial Wipe");
+    assert_eq!(fx.prop("completion").unwrap().keys.len(), 2);
+}

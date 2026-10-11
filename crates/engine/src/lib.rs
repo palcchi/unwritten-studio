@@ -1046,6 +1046,8 @@ mod tests;
 #[cfg(test)]
 mod tests_3d;
 #[cfg(test)]
+mod tests_anim_presets;
+#[cfg(test)]
 mod tests_anim_tools;
 #[cfg(test)]
 mod tests_camera_track;
@@ -1122,6 +1124,11 @@ mod tests_viewer;
 /// Text animation presets: (id, name), for menus.
 pub fn text_presets() -> Vec<(String, String)> {
     commands::text_preset_list()
+}
+
+/// Built-in animation presets (Effects & Presets ▸ * Animation Presets): (id, name, category).
+pub fn animation_presets() -> Vec<(String, String, String)> {
+    commands::builtin_preset_list()
 }
 
 pub fn text_families() -> Vec<String> {

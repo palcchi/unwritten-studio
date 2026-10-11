@@ -85,6 +85,13 @@ pub trait FootageSource: Send + Sync {
     fn vector_frame(&self, _item: ItemId, _footage: &Footage, _scale: f64) -> Option<Arc<Image>> {
         None
     }
+    /// Why `footage` shows no picture although its file is there: a read of it failed because
+    /// no decoder handles its codec, profile, chroma format or bit depth, or the stream is damaged
+    /// (e.g. "H.264 (High 4:2:2) isn't supported by the built-in decoder: ..."). `None` while it
+    /// decodes, and for sources that don't track failures. Stays set until the file is forgotten.
+    fn problem(&self, _footage: &Footage) -> Option<String> {
+        None
+    }
 }
 
 /// Footage that can be rasterised at any scale (SVG).

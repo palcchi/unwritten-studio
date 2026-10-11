@@ -61,8 +61,9 @@ pub fn parse_display_time(s: &Session, comp: &Comp, text: &str, current: i64) ->
 
 fn set(s: &mut Session, p: &Value) -> Result<Value> {
     let comp = s.active_comp().ok_or(EngineError::NoComp)?;
-    let t = if let Some(f) = p.get("frame").and_then(Value::as_i64) {
-        comp.frame_rate.tick_of(f)
+    // Dialog number fields send floats (`5.0`), so a frame is any JSON number, rounded.
+    let t = if let Some(f) = f_p(p, "frame") {
+        comp.frame_rate.tick_of(f.round() as i64)
     } else if let Some(tc) = str_p(p, "timecode") {
         let cur = comp.frame_rate.frame_at(s.time());
         let f = parse_display_time(s, comp, tc, cur).map_err(|e| super::bad("time.set", e))?;

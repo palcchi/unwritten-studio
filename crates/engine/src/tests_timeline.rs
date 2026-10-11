@@ -883,3 +883,14 @@ fn property_edits_apply_to_every_selected_layer() {
     s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
     assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
 }
+
+/// View > Go to Time's dialog sends its Frame field as a float; `time.set` used to reject it
+/// with "need `time`, `frame` or `timecode`".
+#[test]
+fn go_to_time_accepts_a_float_frame_from_the_dialog() {
+    let (mut s, _) = setup();
+    let r = s.execute("time.set", json!({"frame": 12.0})).unwrap();
+    assert_eq!(r["frame"], json!(12));
+    let r = s.execute("time.set", json!({"frame": 7})).unwrap();
+    assert_eq!(r["frame"], json!(7));
+}

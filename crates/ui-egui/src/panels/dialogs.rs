@@ -353,6 +353,7 @@ fn solid(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         ui.horizontal(|ui| {
             ui.label(tr("Name:"));
             let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(320.0));
+            crate::widgets::focus_on_open(ui.ctx(), &r, &name);
             auto.add("dialog.solid.name", r.rect, "Name");
         });
         ui.add_space(8.0);
@@ -626,6 +627,32 @@ mod tests {
         let comps = app.session.project.comps().count();
         app.session.execute_checked("file.newCompFromSelection", app.dialog_state.form.params()).unwrap();
         assert_eq!(app.session.project.comps().count(), comps + 1, "Single Composition is the default");
+    }
+
+    #[test]
+    fn a_dialog_opens_with_its_name_field_focused_and_selected() {
+        let (mut app, ctx) = app();
+        let selected = |ctx: &egui::Context| {
+            let id = ctx.memory(|m| m.focused())?;
+            egui::TextEdit::load_state(ctx, id)?.cursor.char_range().map(|r| r.as_sorted_char_range()).map(|r| r.start.0..r.end.0)
+        };
+        open_new_comp(&mut app);
+        let name = app.dialog_state.comp.name.clone();
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        assert_eq!(selected(&ctx), Some(0..name.chars().count()), "typing replaces “{name}”");
+        // Afterwards the focus is the user's: it is not taken back.
+        ctx.memory_mut(|m| m.stop_text_input());
+        frame(&mut app, &ctx);
+        assert!(ctx.memory(|m| m.focused()).is_none());
+        // Closed and opened again: focused again.
+        app.dialog = None;
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        open_new_solid(&mut app).unwrap();
+        frame(&mut app, &ctx);
+        frame(&mut app, &ctx);
+        assert_eq!(selected(&ctx), Some(0..app.dialog_state.solid_name.chars().count()));
     }
 
     #[test]

@@ -177,6 +177,7 @@ pub fn show(ui: &mut egui::Ui, d: &mut CompDraft, t: &Tokens, auto: &mut Registr
     ui.horizontal(|ui| {
         ui.label(tr("Composition Name:"));
         let r = ui.add(egui::TextEdit::singleline(&mut d.name).desired_width(300.0));
+        crate::widgets::focus_on_open(ui.ctx(), &r, &d.name);
         auto.add("dialog.comp.name", r.rect, "Composition Name");
     });
     ui.add_space(8.0);

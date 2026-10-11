@@ -766,6 +766,7 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let h = 120.0 + rows;
     let mut regs: Vec<(String, egui::Rect, String)> = vec![];
     let mut browse: Option<usize> = None;
+    let mut focused = false;
     // Wide enough for a label column and a 240 px popup without a horizontal scroll bar.
     super::dialogs::modal(ctx, &f.title.clone(), vec2(480.0, h), t, |ui| {
         egui::Grid::new("form-grid").num_columns(2).spacing([14.0, 10.0]).show(ui, |ui| {
@@ -776,7 +777,14 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                         let dec = if *speed < 0.01 { 5 } else { 3 };
                         ui.add(crate::widgets::drag_value(egui::DragValue::new(value).speed(*speed).max_decimals(dec))).rect
                     }
-                    FieldKind::Text(s) => ui.add(egui::TextEdit::singleline(s).desired_width(220.0)).rect,
+                    FieldKind::Text(s) => {
+                        let r = ui.add(egui::TextEdit::singleline(s).desired_width(220.0));
+                        // The first text field takes the keyboard when the form opens.
+                        if !std::mem::replace(&mut focused, true) {
+                            crate::widgets::focus_on_open(ui.ctx(), &r, s);
+                        }
+                        r.rect
+                    }
                     FieldKind::Path { value, .. } => {
                         ui.horizontal(|ui| {
                             let r = ui.add(egui::TextEdit::singleline(value).desired_width(150.0)).rect;

@@ -10,7 +10,7 @@
 use crate::i18n::{tr, tr_args};
 use effectcraft_engine::prefs::{APPEARANCE_MODES, DARK_THEMES, Item, Kind, LIGHT_THEMES, Page, pages};
 use effectcraft_engine::segment::Task;
-use egui::{Color32, RichText, vec2};
+use egui::{Color32, Rect, RichText, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::{ThemeKind, Tokens};
@@ -604,10 +604,40 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let cur = serde_json::to_value(&app.session.prefs).unwrap_or_default();
     let mut acts: Vec<Act> = vec![];
     let (mut ok, mut cancel) = (false, false);
-    super::dialogs::modal(ctx, "Settings", vec2(820.0, 600.0), t, |ui| {
-        let body_h = (ctx.content_rect().height() - 170.0).clamp(120.0, 470.0);
-        ui.allocate_ui_with_layout(vec2(ui.available_width(), body_h), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-            ui.set_height(body_h);
+    super::dialogs::modal_fit(ctx, "Settings", vec2(820.0, 600.0), t, |ui, height| {
+        // The buttons go first, from the bottom up, and the pages get the height they leave: at
+        // a high UI Scale the pages scroll and the buttons stay in view.
+        let area = ui.allocate_space(vec2(ui.available_width(), height)).1;
+        let mut foot = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(egui::Layout::bottom_up(egui::Align::Min)));
+        foot.horizontal(|ui| {
+            let r = ui.add_enabled(idx > 0, egui::Button::new(tr("Previous")));
+            app.auto.add("settings.previous", r.rect, "Previous");
+            if r.clicked() {
+                page = all[idx - 1].id.to_string();
+            }
+            let r = ui.add_enabled(idx + 1 < all.len(), egui::Button::new(tr("Next")));
+            app.auto.add("settings.next", r.rect, "Next");
+            if r.clicked() {
+                page = all[idx + 1].id.to_string();
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let r = ui.add(egui::Button::new(RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent));
+                app.auto.add("settings.ok", r.rect, "OK");
+                ok |= r.clicked();
+                let r = ui.button(tr("Cancel"));
+                app.auto.add("settings.cancel", r.rect, "Cancel");
+                cancel |= r.clicked();
+            });
+        });
+        foot.separator();
+        foot.add_space(8.0);
+        let body_h = (foot.min_rect().top() - area.top()).max(0.0);
+        // (A child, clipped to its share, so a wide page can't widen the dialog under the buttons.)
+        let pages = Rect::from_min_size(area.min, vec2(area.width(), body_h));
+        let mut body = ui.new_child(egui::UiBuilder::new().max_rect(pages).layout(egui::Layout::left_to_right(egui::Align::Min)));
+        body.set_clip_rect(pages.intersect(body.clip_rect()));
+        {
+            let ui = &mut body;
             // Page list (left, like After Effects).
             ui.vertical(|ui| {
                 ui.set_width(180.0);
@@ -642,33 +672,11 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 let p = &all[idx];
                 ui.label(RichText::new(tr(p.title)).font(Tokens::semibold(14.0)).color(t.tab_text_active));
                 ui.add_space(6.0);
-                egui::ScrollArea::vertical().max_height(body_h - 30.0).auto_shrink([false, false]).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height((body_h - 30.0).max(0.0)).auto_shrink([false, false]).show(ui, |ui| {
                     page_ui(app, ui, p, &cur, t, &mut acts);
                 });
             });
-        });
-        ui.add_space(8.0);
-        ui.separator();
-        ui.horizontal(|ui| {
-            let r = ui.add_enabled(idx > 0, egui::Button::new(tr("Previous")));
-            app.auto.add("settings.previous", r.rect, "Previous");
-            if r.clicked() {
-                page = all[idx - 1].id.to_string();
-            }
-            let r = ui.add_enabled(idx + 1 < all.len(), egui::Button::new(tr("Next")));
-            app.auto.add("settings.next", r.rect, "Next");
-            if r.clicked() {
-                page = all[idx + 1].id.to_string();
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = ui.add(egui::Button::new(RichText::new(tr("   OK   ")).color(Color32::WHITE)).fill(t.accent));
-                app.auto.add("settings.ok", r.rect, "OK");
-                ok |= r.clicked();
-                let r = ui.button(tr("Cancel"));
-                app.auto.add("settings.cancel", r.rect, "Cancel");
-                cancel |= r.clicked();
-            });
-        });
+        }
     });
     app.dialog_state.settings_page = page;
     for a in acts {

@@ -10,6 +10,7 @@
 pub mod audio;
 pub mod automation;
 pub mod bench;
+pub mod color_picker;
 pub mod control;
 pub mod credits;
 pub mod dock;
@@ -24,6 +25,7 @@ pub mod menu_keys;
 pub mod menus;
 pub mod native_menu;
 pub mod panels;
+mod pointer_wrap;
 pub mod prefs_live;
 pub mod state;
 pub mod theme;
@@ -98,6 +100,39 @@ pub enum Dialog {
 /// winit no theme). `None` = the host does not know.
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
+/// A file dialog a host shows without blocking the frame ([`Hooks::file_dialog_async`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileDialog {
+    /// Files to open or import with these extensions; several when `many`.
+    Open { exts: Vec<String>, many: bool },
+    /// An EffectCraft project to open.
+    OpenProject,
+    /// A folder.
+    Folder,
+    /// Where to save `default` (a file name or path) with extension `ext` (empty: no filter);
+    /// `project`: the project save dialog, given the file name.
+    Save { default: String, ext: String, project: bool },
+}
+
+impl FileDialog {
+    /// The save dialog for `default`, as [`Hooks::save_dialog`] picks it.
+    pub fn save(default: &str) -> Self {
+        let ext = std::path::Path::new(default).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        Self::Save { default: default.to_string(), project: ext.eq_ignore_ascii_case("ecproj"), ext }
+    }
+}
+
+/// Called with the paths a [`FileDialog`] picked (empty: cancelled), from any thread.
+pub type DialogDone = Box<dyn FnOnce(Vec<String>) + Send>;
+
+/// A non-blocking file dialog's answer for the command that asked (`menus::dialog_answered`).
+pub(crate) struct DialogAnswer {
+    pub command: String,
+    pub key: &'static str,
+    pub params: serde_json::Value,
+    pub paths: Vec<String>,
+}
+
 /// Host hooks provided by the native app (file pickers etc.).
 #[derive(Default)]
 pub struct Hooks {
@@ -121,6 +156,14 @@ pub struct Hooks {
     /// Application actions the OS performs (`app.hide`, `app.hideOthers`, `app.showAll` on
     /// macOS). Returns false when the host doesn't handle the id.
     pub app_action: Option<Box<dyn Fn(&str) -> bool>>,
+    /// Shows a command's file dialog without blocking the frame and calls `done` with the
+    /// answer (the host then asks for a repaint). Used in place of the blocking pickers above for
+    /// the commands' dialogs (File ▸ Import, Open, Save As…) where a modal dialog's nested event
+    /// loop inside a frame is unsafe: on macOS a drag over the window then aborted the app (#511).
+    pub file_dialog_async: Option<Box<dyn Fn(FileDialog, DialogDone)>>,
+    /// Tells the user the graphics device was lost and the window is closing, once. `saved` is
+    /// the auto-save of unsaved changes (`None`: nothing was unsaved), its path or why it failed.
+    pub device_lost: Option<Box<dyn Fn(Option<Result<String, String>>)>>,
 }
 
 impl Hooks {
@@ -262,6 +305,11 @@ pub struct EffectcraftApp {
     gpu_checked: bool,
     gpu_failures: Option<gpu_failure::GpuFailureBridge>,
     gpu_failure_applied: Option<bool>,
+    /// The graphics device was lost and the window is closing (see `close_after_device_loss`);
+    /// `true` keeps crash recovery for the next launch.
+    device_lost_close: Option<bool>,
+    /// Answers of file dialogs shown without blocking ([`Hooks::file_dialog_async`]).
+    pub(crate) dialog_answers: (Sender<DialogAnswer>, Receiver<DialogAnswer>),
     /// Commands from the native menu bar.
     pub command_inbox: Option<Receiver<String>>,
     /// Pointer position in comp pixels (Info panel).
@@ -296,6 +344,17 @@ pub struct EffectcraftApp {
     pub(crate) template_thumbs: std::collections::HashMap<String, Option<egui::TextureHandle>>,
     /// Home ▸ Templates: the gallery, and the user template files it was listed from.
     pub(crate) template_list: Option<(Vec<String>, Vec<effectcraft_engine::templates::TemplateInfo>)>,
+}
+
+/// The saved workspaces in the settings store ([`effectcraft_engine::config::ConfigStore`]).
+pub const WORKSPACES_FILE: &str = "workspaces.json";
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedWorkspaces {
+    #[serde(default)]
+    workspaces: std::collections::BTreeMap<String, dock::DockNode>,
+    #[serde(default)]
+    floating: std::collections::BTreeMap<String, Vec<dock::Floating>>,
 }
 
 impl EffectcraftApp {
@@ -340,6 +399,8 @@ impl EffectcraftApp {
             gpu_checked: false,
             gpu_failures: None,
             gpu_failure_applied: None,
+            device_lost_close: None,
+            dialog_answers: std::sync::mpsc::channel(),
             command_inbox: None,
             pointer_comp: None,
             dialog_state: Default::default(),
@@ -359,6 +420,12 @@ impl EffectcraftApp {
             template_list: None,
         }
         .with_ui_commands()
+    }
+
+    /// Keep the saved workspaces for the next session (see [`EffectcraftApp::new`]): After
+    /// Effects' saved workspaces last until they are deleted (#320).
+    pub(crate) fn store_saved_workspaces(&mut self) {
+        self.save_workspace_state();
     }
 
     /// Offer the frontend's commands (tools, timeline navigation…) for keyboard shortcuts.
@@ -392,6 +459,7 @@ impl EffectcraftApp {
         self.ui.theme = theme::ThemeKind::from_name(p.appearance.resolved_theme(system)).unwrap_or_default();
         self.tokens = Tokens::from_prefs(p, self.ui.theme);
         theme::apply_visuals(ctx, &self.tokens);
+        ctx.set_theme(theme::theme_preference(&p.appearance.appearance_mode, self.ui.theme.is_light()));
         let tips = p.general.show_tool_tips;
         ctx.all_styles_mut(|s| s.interaction.tooltip_delay = if tips { 0.5 } else { f32::INFINITY });
         // Settings ▸ Appearance ▸ UI Scale (#284). egui's own Ctrl+= / Ctrl+- / Ctrl+0 zoom stays
@@ -607,6 +675,40 @@ impl EffectcraftApp {
         ctx.request_repaint();
     }
 
+    /// After the graphics device is lost, eframe's renderer cannot draw again: any mesh makes
+    /// egui-wgpu panic on the main thread when it cannot stage its index buffer (#591). Draw
+    /// nothing from then on, auto-save a project with unsaved changes (keeping the crash
+    /// recovery marker, so the next launch offers it) and close the window.
+    fn close_after_device_loss(&mut self, ctx: &egui::Context) {
+        if self.device_lost_close.is_some() {
+            return;
+        }
+        let keep_recovery = self.session.is_dirty();
+        let saved = keep_recovery.then(|| match self.session.autosave_now().and_then(|path| self.session.autosave_wait().map(|()| path)) {
+            Ok(path) => {
+                log::warn!("graphics device lost: auto-saved {path}; the next launch offers to recover it");
+                Ok(path)
+            }
+            Err(e) => {
+                log::error!("graphics device lost: {e}");
+                Err(e.to_string())
+            }
+        });
+        self.device_lost_close = Some(keep_recovery);
+        log::warn!("graphics device lost: closing the window");
+        if let Some(tell) = &self.hooks.device_lost {
+            tell(saved);
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Run the commands whose non-blocking file dialogs have been answered.
+    pub(crate) fn run_dialog_answers(&mut self) {
+        while let Ok(answer) = self.dialog_answers.1.try_recv() {
+            menus::dialog_answered(self, answer);
+        }
+    }
+
     /// Set up the GPU compositor on egui-wgpu's device (once). Without an adapter that runs
     /// compute shaders (WebGL2, software GL) everything stays on the CPU.
     pub(crate) fn init_gpu(&mut self, frame: &eframe::Frame) {
@@ -618,6 +720,15 @@ impl EffectcraftApp {
             return;
         }
         let Some(rs) = frame.wgpu_render_state() else { return };
+        // Help ▸ System Compatibility Report names the adapter and backend the window got.
+        let info = rs.adapter.get_info();
+        self.session.window_adapter = Some(format!(
+            "{} ({:?}, {:?}{})",
+            info.name,
+            info.backend,
+            info.device_type,
+            if info.driver.is_empty() { String::new() } else { format!(", {} {}", info.driver, info.driver_info) }
+        ));
         // Backend validation can panic on shader compilation even when device creation
         // succeeded. Keep the document and the egui renderer, and use CPU compositing.
         let gpu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| effectcraft_gpu::Gpu::new(&rs.adapter, rs.device.clone(), rs.queue.clone())));
@@ -1438,6 +1549,7 @@ impl EffectcraftApp {
     fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.apply_gpu_failure(&ctx);
+        self.run_dialog_answers();
         self.auto.begin_frame();
         self.frames.set_context(&ctx);
         if self.session.render_job.is_some() {
@@ -1650,12 +1762,16 @@ impl EffectcraftApp {
 impl eframe::App for EffectcraftApp {
     fn on_exit(&mut self) {
         self.save_workspace_state();
-        // Clean exit: no crash recovery next launch.
-        self.session.end_recovery();
+        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
+        // unsaved changes, which are in the auto-save it offers).
+        if self.device_lost_close != Some(true) {
+            self.session.end_recovery();
+        }
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        if !self.synthetic.is_empty() {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let injected = !self.synthetic.is_empty();
+        if injected {
             // Pointer events go one per frame so egui sees press → moves → release as a real drag.
             let pointer = |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
             let n = if pointer(&self.synthetic[0]) {
@@ -1667,6 +1783,9 @@ impl eframe::App for EffectcraftApp {
                     .map_or(self.synthetic.len(), |i| if pointer(&self.synthetic[i]) { i.max(1) } else { i + 1 })
             };
             raw_input.events.extend(self.synthetic.drain(..n));
+        }
+        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
+            self.session.history.merge_key = None;
         }
     }
 
@@ -1706,6 +1825,10 @@ impl eframe::App for EffectcraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.gpu_failure_applied == Some(true) {
+            self.close_after_device_loss(ui.ctx());
+            return;
+        }
         self.init_gpu(frame);
         if !self.fonts_ready {
             ui.ctx().request_repaint();
@@ -1713,6 +1836,8 @@ impl eframe::App for EffectcraftApp {
         }
         self.frame(ui);
         let ctx = ui.ctx().clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        pointer_wrap::finish_native(&ctx, frame);
         // wasm32: no frame threads; render queued frames now, between UI frames.
         if cfg!(target_arch = "wasm32") && self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 })) {
             ctx.request_repaint();
@@ -1862,6 +1987,35 @@ mod appearance_tests {
         app.set_pref("appearance.appearanceMode", json!("dark")).unwrap();
         app.apply_prefs(&ctx);
         assert_eq!(app.ui.theme, ThemeKind::Dark);
+    }
+
+    /// Sync with System leaves egui's theme preference at System, so egui never gives the native
+    /// window an appearance of its own (on macOS that stops system appearance changes reaching
+    /// the app, #642); egui's light and dark styles both carry the resolved theme. Fixed modes
+    /// pin the window to their family.
+    #[test]
+    fn auto_mode_leaves_the_native_window_following_the_system() {
+        let ctx = egui::Context::default();
+        let mut app = app();
+        app.hooks.system_theme = Some(Box::new(|_| Some(egui::Theme::Light)));
+        app.set_pref("appearance.appearanceMode", json!("auto")).unwrap();
+        app.apply_prefs(&ctx);
+        assert_eq!(app.ui.theme, ThemeKind::Light);
+        assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::System);
+        for theme in [egui::Theme::Light, egui::Theme::Dark] {
+            assert_eq!(ctx.style_of(theme).visuals.panel_fill, app.tokens.panel_bg, "{theme:?}");
+        }
+        // egui asks the window to follow the system, never to take Light or Dark.
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
+        out.textures_delta.clear();
+        let cmds = out.viewport_output.values().flat_map(|v| v.commands.iter()).collect::<Vec<_>>();
+        assert!(!cmds.iter().any(|c| matches!(c, egui::ViewportCommand::SetTheme(t) if t != &egui::SystemTheme::SystemDefault)), "{cmds:?}");
+        for (mode, pref) in [("light", egui::ThemePreference::Light), ("dark", egui::ThemePreference::Dark)] {
+            app.set_pref("appearance.appearanceMode", json!(mode)).unwrap();
+            app.apply_prefs(&ctx);
+            assert_eq!(ctx.options(|o| o.theme_preference), pref, "{mode}");
+            assert_eq!(ctx.global_style().visuals.panel_fill, app.tokens.panel_bg, "{mode}");
+        }
     }
 
     /// Picking a theme (`view.theme.*`, `ui.set {theme}`) fixes the mode to its family.

@@ -123,6 +123,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("app.home", "Home", [], None),
     uic!("markers.dialog", "Marker Settings...", [], None),
     uic!("window.maximizePanel", "Maximize Panel Under Pointer", [], Some("`")),
+    uic!("window.maximizeApp", "Maximize or Restore Application Window", [], Some("Cmd+\\")),
     uic!("window.dockPanel", "Dock Panel", [], None),
     uic!("window.floatPanel", "Undock Panel", [], None),
     uic!("window.closePanel", "Close Panel", [], None),
@@ -441,6 +442,10 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         }
         return Ok(Value::Null);
     }
+    // A UI-only command (not in the engine's menus), so `frontend` gets it from here.
+    if id == "window.maximizeApp" {
+        return frontend(app, ctx, id, params);
+    }
     // Docking: {panel, anchor, zone: center|left|right|top|bottom}, {panel, rect?}, {panel?}.
     if let Some(op) = id.strip_prefix("window.").filter(|o| matches!(*o, "maximizePanel" | "dockPanel" | "floatPanel" | "closePanel")) {
         let panel_of = |k: &str| params.get(k).and_then(Value::as_str).map(|s| PanelKind::from_name(s).ok_or(format!("unknown panel `{s}`")));
@@ -659,8 +664,9 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             // up Effect Controls on that layer, as in After Effects.
             if matches!(id, "effect.apply" | "effect.applyLast") {
                 let r = run_engine(app, ctx, id, params.clone());
-                if r.is_ok() {
+                if let Ok(applied) = &r {
                     crate::panels::effect_controls::reveal_applied(app, &params);
+                    crate::panels::effect_controls::choose_files_after_apply(app, applied);
                 }
                 return r;
             }
@@ -933,6 +939,12 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             };
             Value::Null
         }
+        // Ctrl+\ / Cmd+\, as in After Effects (#336): `{maximized}`, the window's new state.
+        "window.maximizeApp" => {
+            let maximized = !ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(maximized));
+            json!({"maximized": maximized})
+        }
         "view.fullScreen" => {
             let full = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
@@ -967,6 +979,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             let name = app.ui.workspace.clone();
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
+            app.store_saved_workspaces();
             json!({"workspace": name})
         }
         "window.saveWorkspaceAs" => {
@@ -983,6 +996,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
             app.ui.workspace = name.clone();
+            app.store_saved_workspaces();
             json!({"workspace": name})
         }
         "window.editWorkspaces" => {
@@ -1007,6 +1021,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.saved_workspaces.remove(&name).is_none() && !builtin {
                     return Err(format!("no workspace `{name}`"));
                 }
+                app.store_saved_workspaces();
                 if app.ui.workspace == name {
                     app.set_workspace("Default");
                 }
@@ -1024,6 +1039,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.workspace == name {
                     app.ui.workspace = new.to_string();
                 }
+                app.store_saved_workspaces();
                 return Ok(json!({"renamed": new}));
             }
             json!({"workspaces": app.workspace_names()})
@@ -1208,7 +1224,31 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     {
         return None;
     }
-    let mut p = params.as_object().cloned().unwrap_or_default();
+    const MEDIA: &[&str] = &[
+        "mp4", "mov", "m4v", "mkv", "webm", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "wav", "aif", "aiff", "mp3", "flac", "ogg",
+        "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "gltf", "glb", "obj", "json", "csv", "tsv",
+    ];
+    // A host whose modal dialogs would run a nested event loop inside this frame (macOS: a
+    // drag over the window then re-entered winit's event handler and aborted, #511) shows the
+    // dialog without blocking; the command continues when the answer arrives.
+    if let Some(spawn) = app.hooks.file_dialog_async.as_ref() {
+        let request = match ask {
+            Ask::Folder => crate::FileDialog::Folder,
+            Ask::Import => crate::FileDialog::Open { exts: MEDIA.iter().map(|e| e.to_string()).collect(), many: key == "paths" },
+            Ask::OpenProject => crate::FileDialog::OpenProject,
+            Ask::Open(exts) => crate::FileDialog::Open { exts: exts.iter().map(|e| e.to_string()).collect(), many: false },
+            Ask::Save(default) => crate::FileDialog::save(default),
+        };
+        let tx = app.dialog_answers.0.clone();
+        let answer = crate::DialogAnswer { command: id.to_string(), key, params: params.clone(), paths: Vec::new() };
+        spawn(
+            request,
+            Box::new(move |paths| {
+                let _ = tx.send(crate::DialogAnswer { paths, ..answer });
+            }),
+        );
+        return Some(Ok(json!({"dialog": id})));
+    }
     let picked: Option<Value> = match ask {
         Ask::Folder => {
             let Some(f) = app.hooks.pick_folder.as_ref() else { return Some(Err("no folder dialog available (pass `folder`)".into())) };
@@ -1216,15 +1256,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
         }
         Ask::Import => {
             let Some(f) = app.hooks.pick_files.as_ref() else { return Some(Err("no file dialog available (pass `paths`)".into())) };
-            let paths = f(&[
-                "mp4", "mov", "m4v", "mkv", "webm", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "wav", "aif", "aiff", "mp3", "flac",
-                "ogg", "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "gltf", "glb", "obj", "json", "csv", "tsv",
-            ]);
-            match (paths.is_empty(), key) {
-                (true, _) => None,
-                (false, "paths") => Some(json!(paths)),
-                (false, _) => paths.first().map(|s| json!(s)),
-            }
+            picked_value(key, f(MEDIA))
         }
         Ask::OpenProject => {
             let Some(f) = app.hooks.pick_open_project.as_ref() else { return Some(Err("no file dialog available (pass `path`)".into())) };
@@ -1240,6 +1272,30 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
         }
     };
     let Some(v) = picked else { return Some(Ok(Value::Null)) };
+    Some(run_with_picked(app, id, key, params, v))
+}
+
+/// The dialog's answer as the command's `key` parameter (`None`: cancelled).
+fn picked_value(key: &str, paths: Vec<String>) -> Option<Value> {
+    match (paths.is_empty(), key) {
+        (true, _) => None,
+        (false, "paths") => Some(json!(paths)),
+        (false, _) => paths.into_iter().next().map(Value::from),
+    }
+}
+
+/// A file dialog shown without blocking ([`crate::Hooks::file_dialog_async`]) answered: run its
+/// command with the picked path (nothing when it was cancelled).
+pub(crate) fn dialog_answered(app: &mut EffectcraftApp, answer: crate::DialogAnswer) {
+    let Some(v) = picked_value(answer.key, answer.paths) else { return };
+    if let Err(e) = run_with_picked(app, &answer.command, answer.key, &answer.params, v) {
+        app.ui.status = e;
+    }
+}
+
+/// Run command `id` with the path picked for it in parameter `key`.
+fn run_with_picked(app: &mut EffectcraftApp, id: &str, key: &str, params: &Value, v: Value) -> Result<Value, String> {
+    let mut p = params.as_object().cloned().unwrap_or_default();
     p.insert(key.to_string(), v);
     // Picked files import in the background, with the Importing card showing progress (#270).
     if matches!(id, "file.import" | "file.importMultiple") {
@@ -1251,7 +1307,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     if id == "file.import" && crate::panels::dialogs::open_form(app, id, &picked)
         || matches!(id, "file.import" | "file.importMultiple") && crate::panels::forms::open_import_sequence(app, &picked)
     {
-        return Some(Ok(json!({"dialog": id})));
+        return Ok(json!({"dialog": id}));
     }
     // Save (untitled) becomes Save As.
     let id = if id == "file.save" { "file.saveAs" } else { id };
@@ -1259,7 +1315,7 @@ fn file_dialog(app: &mut EffectcraftApp, id: &str, params: &Value) -> Option<Res
     if let Err(e) = &r {
         app.ui.status = e.clone();
     }
-    Some(r)
+    r
 }
 
 /// A menu entry for display / `ui.menu.list`.
@@ -1415,7 +1471,16 @@ pub fn shortcut_text(s: &str) -> String {
 pub fn parse_shortcut(s: &str) -> Option<(egui::Modifiers, egui::Key)> {
     let mut m = egui::Modifiers::NONE;
     let mut key = None;
-    let parts: Vec<&str> = if s == "+" { vec!["+"] } else { s.split('+').collect() };
+    // The plus key itself is written `+` or `Cmd++`.
+    let (head, plus) = match s.strip_suffix("++") {
+        Some(h) => (h, true),
+        None if s == "+" => ("", true),
+        None => (s, false),
+    };
+    let mut parts: Vec<&str> = if head.is_empty() { vec![] } else { head.split('+').collect() };
+    if plus {
+        parts.push("+");
+    }
     for p in parts {
         match p {
             "Cmd" => {
@@ -1921,6 +1986,34 @@ mod tests {
         }
     }
 
+    /// #336: Ctrl+\ (Cmd+\ on macOS) maximizes the application window, and again restores
+    /// it, as in After Effects.
+    #[test]
+    fn ctrl_backslash_maximizes_or_restores_the_window() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let (m, k) = parse_shortcut("Cmd+\\").unwrap();
+        assert!(m.command && k == egui::Key::Backslash, "{m:?} {k:?}");
+        assert!(bindings(&app.session).iter().any(|b| (b.0, b.1) == (m, k) && b.2 == "window.maximizeApp"));
+        let ctx = egui::Context::default();
+        let run = |app: &mut EffectcraftApp, maximized: bool| {
+            let input = egui::RawInput {
+                viewports: std::iter::once((egui::ViewportId::ROOT, egui::ViewportInfo { maximized: Some(maximized), ..Default::default() })).collect(),
+                ..Default::default()
+            };
+            let mut r = Value::Null;
+            let mut out = ctx.run_ui(input, |ui| r = invoke(app, ui.ctx(), "window.maximizeApp", json!({})).unwrap());
+            out.textures_delta.clear();
+            let cmds = out.viewport_output.get(&egui::ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default();
+            (r, cmds)
+        };
+        let (r, cmds) = run(&mut app, false);
+        assert_eq!(r, json!({"maximized": true}));
+        assert!(cmds.contains(&egui::ViewportCommand::Maximized(true)), "{cmds:?}");
+        let (r, cmds) = run(&mut app, true);
+        assert_eq!(r, json!({"maximized": false}));
+        assert!(cmds.contains(&egui::ViewportCommand::Maximized(false)), "{cmds:?}");
+    }
+
     #[test]
     fn dispatch_uses_the_active_custom_preset() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
@@ -1990,6 +2083,41 @@ mod tests {
         asked.borrow_mut().clear();
         invoke(&mut app, &ctx, "comp.saveFrameAs", json!({})).unwrap();
         assert_eq!(*asked.borrow(), ["project Frame.png"]);
+    }
+
+    /// #511: with a host's non-blocking dialogs, a command's file dialog opens without running
+    /// a nested event loop inside the frame (a drag over the window then aborted the app on
+    /// macOS); the command runs on a later frame with the answer, and a cancelled one not at all.
+    #[test]
+    fn file_dialogs_can_answer_on_a_later_frame() {
+        use std::sync::{Arc, Mutex};
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.session.execute("comp.new", json!({"name": "A", "width": 64, "height": 36, "frameRate": 30, "duration": 1})).unwrap();
+        let ctx = egui::Context::default();
+        app.hooks.pick_save = Some(Box::new(|_: &str| panic!("the blocking dialog is not used")));
+        let pending: Arc<Mutex<Vec<(crate::FileDialog, crate::DialogDone)>>> = Arc::default();
+        let queue = pending.clone();
+        app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| queue.lock().unwrap().push((dialog, done))));
+        assert_eq!(invoke(&mut app, &ctx, "file.saveAs", json!({})).unwrap(), json!({"dialog": "file.saveAs"}));
+        let (dialog, done) = pending.lock().unwrap().pop().expect("a dialog was shown");
+        assert_eq!(dialog, crate::FileDialog::Save { default: "Untitled Project.ecproj".into(), ext: "ecproj".into(), project: true });
+        assert!(app.session.path.is_none(), "nothing saved until the dialog answers");
+        let dir = std::env::temp_dir().join(format!("ec-dialog-answer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Answered.ecproj");
+        // Answered from another thread, as the host's dialog does.
+        std::thread::spawn(move || done(vec![path.to_string_lossy().to_string()])).join().unwrap();
+        app.run_dialog_answers();
+        assert_eq!(app.session.path.as_deref(), Some(dir.join("Answered.ecproj").to_string_lossy().as_ref()));
+        assert!(dir.join("Answered.ecproj").is_file());
+        // Cancelled: nothing runs.
+        invoke(&mut app, &ctx, "comp.saveFrameAs", json!({})).unwrap();
+        let (dialog, done) = pending.lock().unwrap().pop().expect("a dialog was shown");
+        assert_eq!(dialog, crate::FileDialog::Save { default: "Frame.png".into(), ext: "png".into(), project: false });
+        done(Vec::new());
+        app.run_dialog_answers();
+        assert!(!dir.join("Frame.png").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

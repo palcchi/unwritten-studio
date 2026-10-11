@@ -623,6 +623,30 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// A precomp layer's nested comp for an accelerator to render resident (no CPU render and
+    /// upload of the nested frame): the renderer one level down, the comp, its time and the
+    /// buffer scale, exactly as [`Self::layer_source`]'s comp branch would render it. `None`
+    /// when that branch does more (composition proxy, Essential Properties overrides, frame
+    /// blending, recursion) or draws nothing (outside the nested comp's span): use the CPU path.
+    pub fn precomp_source(&self, ctx: &EvalCtx, layer: &Layer) -> Option<(Renderer<'a>, ItemId, Tick, f64)> {
+        let LayerSource::Comp { item } = layer.source else { return None };
+        if layer.switches.adjustment || self.project.comp_contains(item, ctx.comp_id) {
+            return None;
+        }
+        let nc = self.project.comp(item)?;
+        let lt = ctx.nested_time(layer);
+        if self.content_times(ctx, layer).is_some() {
+            return None;
+        }
+        if !nc.covers(lt) || self.proxy_for(item).is_some() || !essential_overrides(ctx, layer).is_empty() || frame_blend_mode(ctx, layer) != FrameBlend::Off {
+            return None;
+        }
+        let s = self.opts.scale;
+        let bs = if s < 1.0 && nc.preserve_resolution { 1.0 } else { s };
+        let base = self.nested_through(layer);
+        Some((Renderer { opts: RenderOpts { scale: bs, ..base.opts }, ..base }, item, lt, bs))
+    }
+
     /// The nested comp of a precomp layer whose transformations collapse into this comp: the
     /// Collapse Transformations switch is on and the layer has no masks, effects or layer
     /// styles (those force a flattened render of the precomp, as in After Effects).
@@ -1200,12 +1224,12 @@ impl<'a> Renderer<'a> {
             let dominant_upper = f.fields == effectcraft_project::FieldOrder::UpperFirst;
             // Upper field = even lines (0, 2, …).
             let parity = if (i % 2 == 0) == dominant_upper { 0 } else { 1 };
-            return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f)));
+            return Some(Arc::new(interpret_pixels(&field_frame(&img, parity), f, self.pipe.linear_footage_space(f))));
         }
         // Interpretation is per pixel but not linear: it runs on the frame before resampling.
         let size = size.filter(|_| !(f.invert_alpha || f.linear_light_applies()));
         let img = self.footage_frame_raw(ctx, layer, item, f, t, size)?;
-        if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f))) } else { Some(img) }
+        if f.invert_alpha || f.linear_light_applies() { Some(Arc::new(interpret_pixels(&img, f, self.pipe.linear_footage_space(f)))) } else { Some(img) }
     }
 
     fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
@@ -1988,6 +2012,15 @@ impl<'a> Renderer<'a> {
         self.run_effect_stack(ctx, layer, adjustment, usize::MAX, None, [0.0; 2], target);
     }
 
+    /// [`Renderer::run_effects_on`] for a (non-adjustment) layer's own pixels: `target` holds
+    /// them in effect space (as [`Renderer::layer_input`] hands them out) and the result stays
+    /// there. Returns the effect-space origin in layer coordinates (rebase by its negation).
+    pub fn run_layer_effects_on(&self, ctx: &EvalCtx, layer: &Layer, target: &mut dyn FxTarget) -> [f64; 2] {
+        let origin = ctx.effect_bounds(layer).1;
+        self.run_effect_stack(ctx, layer, false, usize::MAX, None, origin, target);
+        origin
+    }
+
     /// An adjustment layer's footprint (its source with masks applied, layer space): where
     /// its effects show. `None` = the layer changes nothing.
     pub fn adjustment_footprint(&self, ctx: &EvalCtx, layer: &Layer) -> Option<Arc<Buf>> {
@@ -2074,13 +2107,12 @@ pub fn field_frame(img: &Image, parity: usize) -> Image {
 }
 
 /// Interpret Footage ▸ Invert Alpha and Interpret As Linear Light on decoded (premultiplied)
-/// pixels.
-pub fn interpret_pixels(img: &Image, f: &Footage) -> Image {
+/// pixels; linear light is encoded in `space` ([`color::Pipe::linear_footage_space`]).
+pub fn interpret_pixels(img: &Image, f: &Footage, space: effectcraft_color::ColorSpace) -> Image {
     let linear = f.linear_light_applies();
     if !f.invert_alpha && !linear {
         return img.clone();
     }
-    let space = f.color_profile.unwrap_or(effectcraft_color::ColorSpace::Srgb);
     let mut out = img.clone();
     for p in out.data.iter_mut() {
         let a = p[3];

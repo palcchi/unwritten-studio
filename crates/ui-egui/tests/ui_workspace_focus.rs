@@ -74,7 +74,9 @@ fn native_config_read_is_byte_bounded_and_reports_errors() {
 
 #[test]
 fn unreadable_native_workspace_is_preserved_after_later_layout_changes() {
-    for bytes in [vec![0xff, 0xfe], vec![b' '; 1024 * 1024 + 1], b"{".to_vec()] {
+    for bytes in
+        [vec![0xff, 0xfe], vec![b' '; 1024 * 1024 + 1], b"{".to_vec(), serde_json::to_vec(&json!({"version":2,"workspaces":{},"floating":{}})).unwrap()]
+    {
         let dir = scratch_dir("preserve");
         let path = dir.join("workspaces.json");
         std::fs::write(&path, &bytes).unwrap();
@@ -83,11 +85,30 @@ fn unreadable_native_workspace_is_preserved_after_later_layout_changes() {
         assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_string());
         app.set_workspace("Minimal");
         app.ui.focused = PanelKind::Project;
+        effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name":"Must not overwrite"})).unwrap();
         eframe::App::on_exit(&mut app);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_string());
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+#[test]
+fn legacy_named_workspaces_migrate_once_and_survive_actual_app_restart() {
+    let store = Arc::new(MemoryConfig::default());
+    let saved = effectcraft_ui_egui::dock::workspace("Minimal");
+    store.write("workspaces.json", &json!({"workspaces":{"Legacy":saved},"floating":{}}).to_string()).unwrap();
+    let mut app = EffectcraftApp::new(Session { config: Some(store.clone()), ..Default::default() });
+    assert_eq!(app.ui.saved_workspaces.get("Legacy"), Some(&saved));
+    app.set_workspace("Legacy");
+    let ctx = egui::Context::default();
+    effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name":"Migrated"})).unwrap();
+    let text = store.read("workspaces.json").unwrap();
+    assert_eq!(serde_json::from_str::<serde_json::Value>(&text).unwrap()["version"], 1);
+    let restarted = EffectcraftApp::new(Session { config: Some(store), ..Default::default() });
+    assert_eq!(restarted.ui.saved_workspaces.get("Legacy"), Some(&saved));
+    assert_eq!(restarted.ui.saved_workspaces.get("Migrated"), Some(&saved));
+    assert_eq!(restarted.ui.workspace, "Migrated");
 }
 
 #[test]

@@ -81,6 +81,45 @@ fn mask_cuts_layer() {
 }
 
 #[test]
+fn first_intersect_and_darken_keep_their_rectangle() {
+    let render = |modes: &[MaskMode], centers: &[[f64; 2]]| {
+        let (mut p, cid, comp) = setup();
+        let mut l = solid(&mut p, &comp, [1.0, 1.0, 1.0], 200, 100);
+        for (i, (mode, center)) in modes.iter().zip(centers).enumerate() {
+            let mut next = p.next_id;
+            let m = build::mask(&mut Ids(&mut next), &format!("Mask {}", i + 1), ShapePath::rect(*center, 40.0, 40.0), *mode, [255, 255, 0]);
+            p.next_id = next;
+            l.props.sub_mut("masks").unwrap().children.push(m.into());
+        }
+        p.comp_mut(cid).unwrap().layers.push(l);
+        render_frame(&p, cid, Tick::ZERO, 1.0)
+    };
+    // A first Intersect or Darken has nothing to combine with, so it covers like Add.
+    // Lighten and Difference already do; Subtract still starts from the whole layer.
+    for mode in [MaskMode::Intersect, MaskMode::Darken, MaskMode::Add, MaskMode::Lighten, MaskMode::Difference] {
+        let img = render(&[mode], &[[50.0, 50.0]]);
+        assert!(img.get(50, 50)[3] > 0.99, "{mode:?} keeps the rectangle");
+        assert!(img.get(150, 50)[3] < 0.01, "{mode:?} stays outside it");
+    }
+    let hole = render(&[MaskMode::Subtract], &[[50.0, 50.0]]);
+    assert!(hole.get(50, 50)[3] < 0.01, "subtract still cuts its rectangle");
+    assert!(hole.get(150, 50)[3] > 0.99, "subtract leaves the rest of the layer");
+
+    // Add, then Intersect with a shifted rectangle: only the overlap remains.
+    let overlap = render(&[MaskMode::Add, MaskMode::Intersect], &[[50.0, 50.0], [70.0, 50.0]]);
+    assert!(overlap.get(50, 50)[3] > 0.99, "overlap stays");
+    assert!(overlap.get(35, 50)[3] < 0.01, "the first rectangle's exclusive side is cut");
+    assert!(overlap.get(85, 50)[3] < 0.01, "the second rectangle's exclusive side is cut");
+    let darkened = render(&[MaskMode::Add, MaskMode::Darken], &[[50.0, 50.0], [70.0, 50.0]]);
+    assert!(darkened.get(50, 50)[3] > 0.99 && darkened.get(35, 50)[3] < 0.01 && darkened.get(85, 50)[3] < 0.01);
+
+    // A later disjoint Add still contributes after a first Intersect.
+    let both = render(&[MaskMode::Intersect, MaskMode::Add], &[[50.0, 50.0], [150.0, 50.0]]);
+    assert!(both.get(50, 50)[3] > 0.99 && both.get(150, 50)[3] > 0.99);
+    assert!(both.get(100, 50)[3] < 0.01);
+}
+
+#[test]
 fn track_matte_alpha() {
     let (mut p, cid, comp) = setup();
     let mut matte = solid(&mut p, &comp, [1.0, 1.0, 1.0], 50, 50);
@@ -768,4 +807,27 @@ fn precomp_dependencies_hash_nested_sources_and_evaluated_animation() {
     let fresh = render_cached(&p, cid, Tick::ZERO, None);
     assert_same(&render_cached(&p, cid, Tick::ZERO, Some(&cache)), &fresh, "precomp source edit");
     assert_ne!(before.get(50, 50), fresh.get(50, 50));
+}
+
+/// #352: a shape layer's bounds (snapping, Align) are its visual edges: a 100×100 rectangle is
+/// exactly ±50, and a 10 px stroke adds half its width, with no anti-aliasing padding.
+#[test]
+fn shape_content_bounds_are_the_visual_edges() {
+    for (stroke, half) in [(None, 50.0), (Some(10.0), 55.0)] {
+        let (mut p, cid, comp) = setup();
+        let mut l = build::layer(&mut p, &comp, "Shape Layer 1", LayerSource::Shape, (200, 100), None);
+        let mut next = p.next_id;
+        let mut ids = Ids(&mut next);
+        let mut items = vec![build::shape_rect(&mut ids, [100.0, 100.0], [0.0, 0.0], 0.0), build::shape_fill(&mut ids, [1.0, 0.0, 0.0, 1.0])];
+        if let Some(w) = stroke {
+            items.push(build::shape_stroke(&mut ids, [1.0, 1.0, 1.0, 1.0], w));
+        }
+        let g = build::shape_group(&mut ids, "Rectangle 1", items);
+        p.next_id = next;
+        l.props.sub_mut("contents").unwrap().children.push(g.into());
+        p.comp_mut(cid).unwrap().layers.push(l.clone());
+        let ctx = crate::EvalCtx::new(&p, cid, p.comp(cid).unwrap(), Tick::ZERO);
+        let b = crate::content_bounds(&ctx, &l).unwrap();
+        assert!(b.iter().zip([-half, -half, half, half]).all(|(a, e)| (a - e).abs() < 1e-6), "{stroke:?}: {b:?}");
+    }
 }

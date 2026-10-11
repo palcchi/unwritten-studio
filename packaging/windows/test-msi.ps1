@@ -3,15 +3,17 @@
   Install-test the EffectCraft MSI's folder handling with stub binaries (no Rust build).
 
 .DESCRIPTION
-  Builds the MSI around two stand-in executables as 0.0.1 the way 0.6.0 and earlier were (no App
-  Paths "Path" value), then as 0.0.2 and 0.0.3, validates them (ICE), and, silently and per-machine:
+  Builds the MSI around two stand-in executables as 0.0.1 the way releases before this installer
+  change are (no App Paths "Path" value), then as 0.0.2 and 0.0.3, validates them (ICE), and, silently and per-machine:
     1. installs 0.0.1 into a folder with spaces and a non-ASCII name (INSTALLFOLDER=...),
     2. upgrades to 0.0.2 without naming a folder: it must stay in that folder (found from the
        installed effectcraft.exe, as there is no Path value yet),
     3. upgrades to 0.0.3 the same way (found from the Path value 0.0.2 wrote),
     4. repairs a damaged (unversioned) CLI there with the wizard's Repair mode,
-    5. uninstalls: files and the App Paths registration go,
-    6. installs 0.0.3 with no folder: it must land in Program Files, then uninstalls.
+    5. uninstalls: files, the App Paths registration and the desktop shortcut go,
+    6. installs 0.0.3 with no folder and DESKTOPSHORTCUT=0: it must land in Program Files with no
+       desktop shortcut, then uninstalls.
+  The installs before step 6 take the default desktop shortcut, which upgrades keep.
   The wizard itself needs a person (or the snapshot steps in the PR); this covers what msiexec /qn
   and upgrades do with the folder. Needs an elevated shell and WiX v5 (`wix`) on PATH.
   Run by .github/workflows/packaging-lint.yml.
@@ -24,6 +26,8 @@ $ErrorActionPreference = 'Stop'
 trap { Write-Output "FAILED: $_"; exit 1 }
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $AppPaths = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\effectcraft.exe'
+# A per-machine install's desktop is the Public one.
+$DesktopLink = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'EffectCraft.lnk'
 
 function Invoke-Native([string] $What, [scriptblock] $Block) {
   Write-Output "==> $What"
@@ -50,6 +54,10 @@ function Assert-InstalledIn([string] $Dir, [switch] $NoPathValue) {
   }
   Write-Output "ok installed in $Dir"
 }
+function Assert-DesktopShortcut([bool] $Present) {
+  if ((Test-Path -LiteralPath $DesktopLink) -ne $Present) { throw "desktop shortcut present: $(-not $Present), expected $Present" }
+  Write-Output "ok desktop shortcut present: $Present"
+}
 
 Remove-Item -Recurse -Force $Work -ErrorAction SilentlyContinue
 $Bin = Join-Path $Work 'bin'
@@ -60,7 +68,8 @@ New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 Copy-Item (Join-Path $env:SystemRoot 'System32\notepad.exe') (Join-Path $Bin 'effectcraft.exe')
 [IO.File]::WriteAllText((Join-Path $Bin 'effectcraft-cli.exe'), 'effectcraft-cli stand-in')
 
-# 0.0.1 stands in for 0.6.0 and earlier: the same package without the App Paths "Path" value.
+# 0.0.1 stands in for releases before this installer change: the same package without the App
+# Paths "Path" value.
 $Wxs = Join-Path $PSScriptRoot 'effectcraft.wxs'
 $LegacyWxs = Join-Path $Work 'effectcraft-legacy.wxs'
 $pathValue = '(?m)^.*<RegistryValue [^>]*Name="Path"[^>]*/>\r?\n'
@@ -86,6 +95,7 @@ if (Test-Path -LiteralPath $AppPaths) { throw 'EffectCraft is already installed 
 
 Invoke-Msiexec 'install the legacy package to a custom folder' @('/i', "`"$($Msi['0.0.1'])`"", "INSTALLFOLDER=`"$Custom`"")
 Assert-InstalledIn $Custom -NoPathValue
+Assert-DesktopShortcut $true
 if (Test-Path -LiteralPath $Default) { throw "a custom install also wrote $Default" }
 
 Invoke-Msiexec 'upgrade the legacy install without a folder' @('/i', "`"$($Msi['0.0.2'])`"")
@@ -94,6 +104,7 @@ if (Test-Path -LiteralPath $Default) { throw "the upgrade moved the install to $
 
 Invoke-Msiexec 'upgrade again without a folder' @('/i', "`"$($Msi['0.0.3'])`"")
 Assert-InstalledIn $Custom
+Assert-DesktopShortcut $true
 # Read single values: Get-ItemProperty throws on some machines' malformed Uninstall entries.
 $arp = @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' |
   ForEach-Object { if ($_.GetValue('DisplayName') -eq 'EffectCraft') { $_.GetValue('DisplayVersion') } })
@@ -116,9 +127,11 @@ Write-Output "ok repair ($mode) restored effectcraft-cli.exe"
 Invoke-Msiexec 'uninstall the custom install' @('/x', "`"$($Msi['0.0.3'])`"")
 if (Test-Path -LiteralPath (Join-Path $Custom 'effectcraft.exe')) { throw 'uninstall left effectcraft.exe behind' }
 if (Test-Path -LiteralPath $AppPaths) { throw 'uninstall left the App Paths registration behind' }
+Assert-DesktopShortcut $false
 
-Invoke-Msiexec 'install to the default folder' @('/i', "`"$($Msi['0.0.3'])`"")
+Invoke-Msiexec 'install to the default folder without a desktop shortcut' @('/i', "`"$($Msi['0.0.3'])`"", 'DESKTOPSHORTCUT=0')
 Assert-InstalledIn $Default
+Assert-DesktopShortcut $false
 Invoke-Msiexec 'uninstall the default install' @('/x', "`"$($Msi['0.0.3'])`"")
 if (Test-Path -LiteralPath (Join-Path $Default 'effectcraft.exe')) { throw 'uninstall left effectcraft.exe behind' }
 Write-Output 'MSI folder handling ok'

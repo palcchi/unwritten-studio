@@ -455,6 +455,15 @@ fn compatibility_report_and_logging() {
     }
     let text = crate::commands::report_text_for_tests(&r);
     assert!(text.contains("Operating system") && text.contains("Import:"));
+    // #596: without a GPU compositor the report says why, and names the window's adapter.
+    s.accel_note = Some("GPU compositor unavailable: no storage textures".into());
+    s.window_adapter = Some("NVIDIA GeForce RTX 4070 (Gl, DiscreteGpu)".into());
+    let r = s.execute("help.systemReport", json!({"quiet": true})).unwrap();
+    assert_eq!(r["gpuNote"], "GPU compositor unavailable: no storage textures");
+    let text = crate::commands::report_text_for_tests(&r);
+    assert!(text.contains("GPU: none (CPU compositing): GPU compositor unavailable: no storage textures"), "{text}");
+    assert!(text.contains("Window graphics: NVIDIA GeForce RTX 4070 (Gl, DiscreteGpu)"), "{text}");
+    assert!(r["issues"][0].as_str().is_some_and(|i| i.contains("no storage textures")), "{r}");
     s.drain_events();
     s.execute("help.systemReport", json!({})).unwrap();
     assert!(s.drain_events().iter().any(|e| matches!(e, crate::Event::Frontend { command, .. } if command == "app.showReport")));
@@ -681,4 +690,14 @@ fn dynamic_menus_and_window_viewer_labels() {
     ] {
         assert!(labels.iter().any(|x| x == l), "{l}");
     }
+}
+
+#[test]
+fn unsaved_project_renders_to_movies_or_home_not_the_working_directory() {
+    // A Finder-launched app has `/` as its working directory, where renders fail (#446).
+    let home = tmp("home446");
+    assert_eq!(crate::render_queue::default_output_base(Some(home.clone())), Some(home.clone()));
+    std::fs::create_dir_all(home.join("Movies")).unwrap();
+    assert_eq!(crate::render_queue::default_output_base(Some(home.clone())), Some(home.join("Movies")));
+    assert_eq!(crate::render_queue::default_output_base(None), None);
 }

@@ -121,8 +121,8 @@ page!(Startup {
     /// After a crash, offer to open the most recent auto-save.
     offer_crash_recovery: bool = true,
     /// What the desktop window draws with, from the next launch: `auto` (the platform's best
-    /// graphics API) or `gl` (OpenGL, for drivers that crash with the others). A launch whose
-    /// window never drew switches it to `gl` (#243).
+    /// graphics API) or `gl` (OpenGL, for drivers that crash with the others). A launch that
+    /// stops as its window opens switches it to `gl` (#243).
     window_graphics: String = "auto".into(),
 });
 
@@ -308,6 +308,25 @@ page!(Scripting {
     word_wrap: bool = false,
     error_banner: bool = true,
 });
+
+impl Scripting {
+    /// Whether `other` grants scripts the same as this: Application Scripting (file and network
+    /// access, the warning before executing files, the debugger). Scripts can't change these
+    /// ([`crate::Session::execute_for_script`]): a script could otherwise give itself the
+    /// access the user withheld.
+    pub fn same_permissions(&self, other: &Scripting) -> bool {
+        self.allow_scripts_write_files == other.allow_scripts_write_files
+            && self.warn_executing_files == other.warn_executing_files
+            && self.enable_js_debugger == other.enable_js_debugger
+    }
+
+    /// Take `from`'s Application Scripting settings (see [`Scripting::same_permissions`]).
+    pub fn keep_permissions(&mut self, from: &Scripting) {
+        self.allow_scripts_write_files = from.allow_scripts_write_files;
+        self.warn_executing_files = from.warn_executing_files;
+        self.enable_js_debugger = from.enable_js_debugger;
+    }
+}
 
 /// One editable label: name and `#rrggbb` colour.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1081,7 +1100,7 @@ pub fn pages() -> Vec<Page> {
                 s("startup.offerCrashRecovery", "Offer to Open the Latest Auto-Save After a Crash", B, true),
                 s("startup.windowGraphics", "Window Graphics", Kind::Choice(WINDOW_GRAPHICS), true),
                 Note(
-                    "Window Graphics applies from the next launch. When the graphics driver stops EffectCraft before its window draws, the next launch switches to OpenGL.",
+                    "Window Graphics applies from the next launch. When the graphics driver stops EffectCraft as its window opens, the next launch switches to OpenGL.",
                 ),
                 Section("Repair"),
                 Button { label: "Reset Settings", command: "prefs.reset", params: "{}" },

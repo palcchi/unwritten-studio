@@ -120,7 +120,13 @@ impl Snapshot {
                     }
                     DockNode::Stack { entries } => {
                         if entries.len() > MAX_PANELS
-                            || entries.iter().any(|e| !panel_ok(e.panel) || e.height.is_some_and(|v| !v.is_finite() || !(0.0..=MAX_COORD).contains(&v)))
+                            || entries.iter().any(|e| {
+                                e.panels.is_empty()
+                                    || e.panels.len() > MAX_PANELS
+                                    || e.active >= e.panels.len()
+                                    || e.panels.iter().any(|p| !panel_ok(*p))
+                                    || e.height.is_some_and(|v| !v.is_finite() || !(0.0..=MAX_COORD).contains(&v))
+                            })
                         {
                             return Err("invalid workspace panel stack".into());
                         }
@@ -168,7 +174,20 @@ impl WorkspaceStore {
     pub(crate) fn load(config: Option<&dyn ConfigStore>, ui: &mut UiState) -> Self {
         let loaded = config.map_or(Ok(None), |c| c.read_bounded(FILE, MAX_BYTES)).map_err(|e| e.to_string()).and_then(|text| {
             text.map(|text| {
-                let snapshot = serde_json::from_str::<Snapshot>(&text).map_err(|e| e.to_string())?;
+                let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+                // Only an explicitly legacy-shaped record can migrate. A versioned future
+                // snapshot must never deserialize as an empty defaulted legacy record.
+                let snapshot = if value.get("version").is_none()
+                    && value.as_object().is_some_and(|fields| fields.contains_key("workspaces") || fields.contains_key("floating"))
+                {
+                    let legacy: crate::SavedWorkspaces = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                    let mut snapshot = Snapshot::capture(ui);
+                    snapshot.saved_workspaces = legacy.workspaces;
+                    snapshot.saved_floating = legacy.floating;
+                    snapshot
+                } else {
+                    serde_json::from_value::<Snapshot>(value).map_err(|e| e.to_string())?
+                };
                 snapshot.validate()?;
                 Ok(snapshot)
             })
@@ -336,7 +355,7 @@ mod tests {
                 let mut snapshot = Snapshot::capture(&UiState::default());
                 let panel = PanelKind::Viewer(id);
                 let dock = DockNode::Tabs { panels: vec![panel], active: 0 };
-                let stack = DockNode::Stack { entries: vec![crate::dock::StackEntry { panel, open: true, height: None }] };
+                let stack = DockNode::Stack { entries: vec![crate::dock::StackEntry::new(panel, true, None)] };
                 let floating = vec![Floating { panels: vec![panel], active: 0, rect: [0.0, 0.0, 200.0, 100.0] }];
                 match location {
                     0 => snapshot.focused = panel,

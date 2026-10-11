@@ -19,9 +19,9 @@ fn shared_move_preserves_accordion_metadata_and_unrelated_active_tabs() {
             a: Box::new(DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::Composition, PanelKind::Layer], active: 1 }),
             b: Box::new(DockNode::Stack {
                 entries: vec![
-                    StackEntry { panel: PanelKind::Preview, open: false, height: Some(73.0) },
-                    StackEntry { panel: PanelKind::Properties, open: true, height: Some(211.0) },
-                    StackEntry { panel: PanelKind::Align, open: false, height: None },
+                    StackEntry::new(PanelKind::Preview, false, Some(73.0)),
+                    StackEntry::new(PanelKind::Properties, true, Some(211.0)),
+                    StackEntry::new(PanelKind::Align, false, None),
                 ],
             }),
         },
@@ -33,11 +33,14 @@ fn shared_move_preserves_accordion_metadata_and_unrelated_active_tabs() {
     let DockNode::Split { b, size, .. } = &layout.root else { panic!("split was lost") };
     assert_eq!(*size, SplitSize::FixedB(300.0));
     let DockNode::Stack { entries } = b.as_ref() else { panic!("stack was lost") };
-    assert_eq!(entries.iter().find(|entry| entry.panel == PanelKind::Preview).unwrap().height, Some(73.0));
-    assert_eq!(
-        entries.iter().find(|entry| entry.panel == PanelKind::Properties).unwrap(),
-        &StackEntry { panel: PanelKind::Properties, open: true, height: Some(211.0) }
-    );
+    // Upstream now makes a tab drop join the anchor's accordion frame. Its height belongs
+    // to the destination frame; the unrelated Properties frame keeps its exact metadata.
+    let joined = entries.iter().find(|entry| entry.contains(PanelKind::Preview)).unwrap();
+    assert_eq!(joined.panels, vec![PanelKind::Align, PanelKind::Preview]);
+    assert_eq!(joined.shown(), Some(PanelKind::Preview));
+    assert!(joined.open);
+    assert_eq!(joined.height, None);
+    assert_eq!(entries.iter().find(|entry| entry.contains(PanelKind::Properties)).unwrap(), &StackEntry::new(PanelKind::Properties, true, Some(211.0)));
     let before = layout.clone();
     assert!(layout.apply(Action::Move { panel: PanelKind::Preview, anchor: PanelKind::Audio, placement: Placement::Split(Zone::Left) }).is_err());
     assert_eq!(layout, before);
@@ -62,7 +65,7 @@ fn every_builtin_workspace_and_dynamic_identity_roundtrips() {
                 },
             },
             DockNode::Tabs { panels, .. } => Action::Move { panel: panels[0], anchor: panels[1], placement: Placement::Tab { before: Some(panels[0]) } },
-            DockNode::Stack { entries } => Action::SetStackOpen { panel: entries[0].panel, open: entries[0].open },
+            DockNode::Stack { entries } => Action::SetStackOpen { panel: entries[0].shown().unwrap(), open: entries[0].open },
         };
         layout.apply(action).unwrap();
         assert_eq!(before, serde_json::to_value(&layout).unwrap());
@@ -332,9 +335,9 @@ fn accordion_resize_routes_pointer_and_keyboard_without_changing_closed_entries(
     h.run_steps(4);
     h.state_mut().ui.dock = DockNode::Stack {
         entries: vec![
-            StackEntry { panel: PanelKind::Preview, open: true, height: Some(100.0) },
-            StackEntry { panel: PanelKind::Properties, open: true, height: None },
-            StackEntry { panel: PanelKind::Align, open: false, height: Some(77.0) },
+            StackEntry::new(PanelKind::Preview, true, Some(100.0)),
+            StackEntry::new(PanelKind::Properties, true, None),
+            StackEntry::new(PanelKind::Align, false, Some(77.0)),
         ],
     };
     h.run_steps(3);
@@ -353,7 +356,7 @@ fn accordion_resize_routes_pointer_and_keyboard_without_changing_closed_entries(
     let DockNode::Stack { entries } = &h.state().ui.dock else { panic!("stack lost") };
     assert_eq!(entries[0].height, Some(124.0));
     assert_eq!(entries[1].height, None);
-    assert_eq!(entries[2], StackEntry { panel: PanelKind::Align, open: false, height: Some(77.0) });
+    assert_eq!(entries[2], StackEntry::new(PanelKind::Align, false, Some(77.0)));
     assert!(std::sync::Arc::ptr_eq(&project, &h.state().session.project));
 }
 

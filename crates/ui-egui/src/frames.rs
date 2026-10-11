@@ -280,8 +280,11 @@ fn comp_content_with(project: &Project, comp: ItemId, addr: impl Fn(ItemId, &Arc
     h.finish()
 }
 
-/// Hash of render options (part of [`FrameKey`] and of the disk key).
+/// Hash of render options (part of [`FrameKey`] and of the disk key). The scale counts as the
+/// key's thousandths ([`FrameKey::scale`]): a series rebuilt from the key (the cache bars) has
+/// the same options as the frames rendered at 1/3 = 0.333… (#595).
 pub fn opts_hash(o: &RenderOpts) -> u64 {
+    let o = RenderOpts { scale: (o.scale * 1000.0).round() / 1000.0, ..*o };
     let mut h = disk_cache::Hash128::default();
     h.write(format!("{o:?}").as_bytes());
     h.finish() as u64
@@ -765,10 +768,8 @@ impl Frames {
         #[cfg(not(target_arch = "wasm32"))]
         if self.remote.is_none() {
             let w = self.worker();
-            // One spawn per job; each spawn renders whichever queued job matters most right now.
-            let job = move || {
-                w.run_next();
-            };
+            // One spawn per job; each spawn renders whichever queued jobs matter most right now.
+            let job = move || w.drain();
             match &self.pool {
                 Some(pool) => pool.spawn(job),
                 None => rayon::spawn(job),
@@ -921,7 +922,42 @@ struct Worker {
     gpu_retired: Arc<AtomicBool>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+thread_local! {
+    /// This pool thread is inside [`Worker::drain`] (rendering a frame).
+    static DRAINING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Clears [`DRAINING`] when the drain ends, even by a panic.
+#[cfg(not(target_arch = "wasm32"))]
+struct Draining;
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Drop for Draining {
+    fn drop(&mut self) {
+        DRAINING.set(false);
+    }
+}
+
 impl Worker {
+    /// Render queued jobs, most important first, until the queue is empty.
+    ///
+    /// A pool thread waiting inside a render (on a parallel loop's join) runs other pool work
+    /// meanwhile, including the spawns of newer requests: each would start a whole frame render
+    /// on top of the one waiting, with all of its buffers. Dragging a layer asks for a new frame
+    /// every UI frame, so renders piled up on every thread until memory ran out (#647). A spawn
+    /// that lands inside a render returns at once instead; the render below it takes the queued
+    /// jobs when it is done, so each thread renders one frame at a time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn drain(&self) {
+        if DRAINING.get() {
+            return;
+        }
+        DRAINING.set(true);
+        let _reset = Draining;
+        while self.run_next() {}
+    }
+
     /// Render the queued job that matters most right now. `false` when the queue was empty.
     fn run_next(&self) -> bool {
         let Worker { queue, content_keys, .. } = self;
@@ -1229,6 +1265,80 @@ mod tests {
         assert!(footage.0.load(Ordering::SeqCst) > 0, "the render reached the footage");
         assert_eq!(f.inflight(), 0, "released");
         assert!(!f.is_cached(&key));
+    }
+
+    /// #647: a pool thread waiting inside a render (on a parallel loop) never starts another
+    /// frame render on top of it. Dragging a layer queues a frame every UI frame; renders used to
+    /// nest on every thread, each holding its buffers, until memory ran out.
+    #[test]
+    fn a_waiting_render_never_starts_another_on_its_thread() {
+        use effectcraft_engine::Session;
+        use effectcraft_engine::project::{Footage, FootageKind};
+        use effectcraft_engine::render::Image;
+        use effectcraft_engine::time::FrameRate;
+        use serde_json::json;
+        use std::cell::Cell;
+        use std::sync::atomic::AtomicUsize;
+        thread_local! {
+            static DEPTH: Cell<usize> = const { Cell::new(0) };
+        }
+        /// A decoder that works in parallel, as the renderer does: its thread joins the loop and
+        /// may wait for the parts other threads took.
+        #[derive(Default)]
+        struct Parallel {
+            calls: AtomicUsize,
+            deepest: AtomicUsize,
+        }
+        impl FootageSource for Parallel {
+            fn frame(&self, _: ItemId, _: &Footage, _: Tick) -> Option<Arc<Image>> {
+                let d = DEPTH.get() + 1;
+                DEPTH.set(d);
+                self.deepest.fetch_max(d, Ordering::SeqCst);
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                (0..64).into_par_iter().for_each(|_| std::thread::sleep(std::time::Duration::from_millis(1)));
+                DEPTH.set(d - 1);
+                Some(Arc::new(Image::new(4, 4)))
+            }
+        }
+        let mut s = Session::default();
+        let cid = ItemId(s.execute("comp.new", json!({"name": "A", "width": 8, "height": 8, "duration": 10})).unwrap()["comp"].as_u64().unwrap());
+        let clip = Footage {
+            kind: FootageKind::Video,
+            width: 4,
+            height: 4,
+            has_video: true,
+            frame_rate: FrameRate::FPS_30,
+            duration: Tick::from_seconds_f64(10.0),
+            ..Default::default()
+        };
+        let item = Arc::make_mut(&mut s.project).add_item("clip.mov", Default::default(), None, ItemKind::Footage(clip));
+        s.execute("layer.addItem", json!({"item": item.0})).unwrap();
+        let footage = Arc::new(Parallel::default());
+        let src = RenderSource {
+            project: s.project.clone(),
+            footage: footage.clone(),
+            expr: None,
+            layer_cache: Arc::default(),
+            gpu: None,
+            gpu_display: false,
+            disk: None,
+        };
+        let f = Frames::default();
+        let content = f.content_of(&s.project, s.revision, cid);
+        let frames = 60;
+        for frame in 0..frames {
+            let key = FrameKey { revision: s.revision, content, comp: cid.0, frame, scale: 1000, view: 0, opts: 0 };
+            f.request(&src, key, cid, FrameRate::FPS_30.tick_of(frame), RenderOpts::default());
+        }
+        for _ in 0..4000 {
+            if f.inflight() == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(f.inflight(), 0, "every queued frame rendered");
+        assert!(footage.calls.load(Ordering::SeqCst) >= frames as usize);
+        assert_eq!(footage.deepest.load(Ordering::SeqCst), 1, "renders nested on a waiting thread");
     }
 
     /// #284: scrubbing asks for a viewer frame at every step; a newer one drops the comp's viewer

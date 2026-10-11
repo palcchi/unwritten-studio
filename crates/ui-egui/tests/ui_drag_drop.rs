@@ -123,6 +123,46 @@ fn project_items_dropped_on_the_viewer_land_under_the_pointer() {
     assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
 }
 
+/// #351: dragging one of several selected Project items inserts all the items,
+/// in selection order, instead of only the item the drag started on.
+#[test]
+fn dragging_selected_project_items_adds_every_item_to_the_timeline() {
+    let (mut h, clip) = harness();
+    let main = h.state().session.active_comp_id().unwrap().0;
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{clip}.name")).center();
+    let top = rect(&h, &format!("timeline.layer.{}.row", layer_id(&h, "Top")));
+    drag(&mut h, from, pos2(top.center().x, top.max.y - 2.0), Modifiers::NONE);
+    assert_eq!(stack(&h), ["Top", "Clip", "Other", "Middle", "Bottom"]);
+    assert_eq!(in_point(&h, 1), in_point(&h, 2), "both layers use the drop time");
+}
+
+#[test]
+fn dragging_selected_project_items_adds_every_item_to_the_viewer() {
+    let (mut h, clip) = harness();
+    let main = h.state().session.active_comp_id().unwrap().0;
+    let other = h.state_mut().session.execute("comp.new", json!({"name": "Other", "width": 80, "height": 60, "frameRate": 30, "duration": 1})).unwrap()["comp"]
+        .as_u64()
+        .unwrap();
+    h.state_mut().session.execute("comp.open", json!({"comp": main})).unwrap();
+    h.state_mut().session.state.project_selection = vec![effectcraft_engine::project::ItemId(clip), effectcraft_engine::project::ItemId(other)];
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{clip}.name")).center();
+    let to = comp_to_screen(&h.ctx, [80.0, 45.0]).unwrap();
+    drag(&mut h, from, to, Modifiers::NONE);
+    assert_eq!(stack(&h), ["Clip", "Other", "Top", "Middle", "Bottom"]);
+    for layer in &h.state().session.active_comp().unwrap().layers[..2] {
+        let Some(KV::Vec3(p)) = layer.props.prop("transform/position").map(|p| p.value.clone()) else { panic!("no position") };
+        let tol = 1.0 / last_fit(&h.ctx) as f64 + 1e-6;
+        assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
+    }
+}
+
 /// #88: an effect dragged from Effects & Presets onto the viewer goes on the layer under the
 /// pointer, not the selected one.
 #[test]
@@ -168,6 +208,48 @@ fn project_items_dropped_on_new_comp_make_a_composition() {
     assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form));
     assert!(h.state().auto.find("form.field.single").is_some(), "the New Composition from Selection dialog");
     assert_eq!(comps(&h), before + 1, "nothing made yet");
+}
+
+/// #649: a Project footage item dropped into an empty Timeline makes a composition
+/// with that item's dimensions, frame rate, duration, and a source layer.
+#[test]
+fn project_footage_dropped_on_empty_timeline_creates_first_comp() {
+    let mut s = Session::default();
+    let footage =
+        s.execute("file.importPlaceholder", json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5})).unwrap()["item"]
+            .as_u64()
+            .unwrap();
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    assert!(h.state().session.active_comp().is_none());
+    let from = rect(&h, &format!("project.item.{footage}.name")).center();
+    let to = rect(&h, "panel.Timeline").center();
+    drag(&mut h, from, to, Modifiers::NONE);
+    let comp = h.state().session.active_comp().expect("created a composition");
+    assert_eq!((comp.width, comp.height), (640, 360));
+    assert_eq!(comp.frame_rate, effectcraft_engine::time::FrameRate::from_f64(24.0));
+    assert_eq!(comp.duration.seconds(), 5.0);
+    assert_eq!(comp.layers.len(), 1);
+    assert_eq!(comp.layers[0].name, "Landscape.png");
+    assert!(h.state().dialog.is_none());
+}
+
+/// Multiple source items use the existing New Comp from Selection dialog, rather than
+/// quietly creating only the dragged item or changing the composition settings.
+#[test]
+fn multiple_selected_footage_dropped_on_empty_timeline_asks_how_to_create_comps() {
+    let mut s = Session::default();
+    let first = s.execute("file.importPlaceholder", json!({"name": "First.png", "width": 160, "height": 90})).unwrap()["item"].as_u64().unwrap();
+    let second = s.execute("file.importPlaceholder", json!({"name": "Second.png", "width": 300, "height": 200})).unwrap()["item"].as_u64().unwrap();
+    s.state.project_selection = vec![effectcraft_engine::project::ItemId(first), effectcraft_engine::project::ItemId(second)];
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{first}.name")).center();
+    let to = rect(&h, "panel.Timeline").center();
+    drag(&mut h, from, to, Modifiers::NONE);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form));
+    assert!(h.state().auto.find("form.field.single").is_some());
+    assert!(h.state().session.active_comp().is_none(), "no composition until the user chooses");
 }
 
 /// A file dropped on the window (egui hands it over as a dropped file).
@@ -368,7 +450,7 @@ fn footage_items(h: &Harness<'_, EffectcraftApp>) -> Vec<(String, usize)> {
 
 /// #297: File ▸ Import ▸ File… on one numbered still asks, as After Effects' "PNG Sequence"
 /// checkbox does, whether to import its whole run as one image sequence (and at what frame
-/// rate); unticked, the file imports as a still.
+/// rate); unticked (the default, as in After Effects), the file imports as a still.
 #[test]
 fn import_dialog_offers_the_image_sequence_option() {
     let (mut h, _) = harness();
@@ -384,35 +466,41 @@ fn import_dialog_offers_the_image_sequence_option() {
     assert_eq!(label(&h, "form.field.sequence").as_deref(), Some("PNG Sequence"));
     assert!(label(&h, "form.field.alphabetical").is_some() && label(&h, "form.field.frameRate").is_some());
     assert!(footage_items(&h).is_empty(), "nothing imported before OK");
+    // Unticked (the default, #431): the picked file alone, as a still.
     click_id(&mut h, "form.ok");
     step_until(&mut h, |h| !footage_items(h).is_empty());
-    assert_eq!(footage_items(&h), [("frame_[0001-0003].png".to_string(), 3)]);
+    assert_eq!(footage_items(&h), [("frame_0002.png".to_string(), 0)]);
 
-    // Unticked: the picked file alone, as a still.
+    // Ticked: the whole run as one sequence.
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "file.import", json!({})).unwrap();
     h.run_steps(2);
     click_id(&mut h, "form.field.sequence");
     click_id(&mut h, "form.ok");
     step_until(&mut h, |h| footage_items(h).len() == 2);
-    assert_eq!(footage_items(&h)[1], ("frame_0002.png".to_string(), 0));
+    assert_eq!(footage_items(&h)[1], ("frame_[0001-0003].png".to_string(), 3));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// #297: every frame of a sequence dropped on the window arrives as one image sequence (it used
-/// to make one item per frame), and Interpret Footage shows its frames and Start Timecode (missing frames
-/// always show colour bars, as in After Effects: there is no Missing Frames choice).
+/// #297: a folder of frames dropped on the window arrives as one image sequence, and Interpret
+/// Footage shows its frames and Start Timecode (missing frames always show colour bars, as in
+/// After Effects: there is no Missing Frames choice). #431: dropped files import as stills, one
+/// item each, as in After Effects.
 #[test]
-fn dropped_frames_import_as_one_sequence_with_sequence_interpretation() {
+fn a_dropped_folder_imports_as_one_sequence_with_sequence_interpretation() {
     let (mut h, _) = harness();
     let dir = frames("drop", 4);
     h.state_mut().session.importer = Some(Arc::new(Stills));
-    for k in 1..=4 {
+    for k in 1..=2 {
         h.input_mut().dropped_files.push(Arc::new(Dropped(dir.join(format!("frame_{k:04}.png")))));
     }
     h.run_steps(2);
-    step_until(&mut h, |h| !footage_items(h).is_empty());
+    step_until(&mut h, |h| footage_items(h).len() == 2);
+    assert_eq!(footage_items(&h), [("frame_0001.png".to_string(), 0), ("frame_0002.png".to_string(), 0)]);
+    h.input_mut().dropped_files.push(Arc::new(Dropped(dir.clone())));
     h.run_steps(2);
-    assert_eq!(footage_items(&h), [("frame_[0001-0004].png".to_string(), 4)]);
+    step_until(&mut h, |h| footage_items(h).len() == 3);
+    h.run_steps(2);
+    assert_eq!(footage_items(&h)[2], ("frame_[0001-0004].png".to_string(), 4));
     assert!(h.state().dialog.is_none(), "drops don't ask");
     // Interpret Footage on it (the import selected it).
     let ctx = h.ctx.clone();

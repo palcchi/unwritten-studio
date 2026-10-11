@@ -118,7 +118,7 @@ impl EffectcraftApp {
         if shared.validate().is_err() {
             return false;
         }
-        let mut l = crate::dock_shared::decode(shared);
+        let mut l = Layout { root: self.ui.dock.clone(), floating: self.ui.floating.clone() };
         if !f(&mut l) {
             return false;
         }

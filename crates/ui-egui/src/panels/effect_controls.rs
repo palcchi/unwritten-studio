@@ -194,6 +194,7 @@ pub(crate) fn toggle_pick(app: &mut EffectcraftApp, kind: &str, layer: &Layer, p
         app.ui.fx_pick = None;
     } else {
         app.ui.fx_pick = Some(pick);
+        app.ui.text_color_pick = None;
         app.ui.status = if kind == "point" {
             format!("Click in the Composition panel to set {}", prop.name)
         } else {
@@ -1386,7 +1387,50 @@ pub fn viewer_hook(
             app.ui.status.clear();
         }
     }
-    let picking = app.ui.fx_pick.is_some();
+    if let Some(pick) = app.ui.text_color_pick.clone() {
+        if ectx.comp.layer(effectcraft_engine::project::LayerId(pick.layer)).is_none() {
+            app.ui.text_color_pick = None;
+            app.ui.status.clear();
+        } else {
+            app.viewer_pixels();
+            let resp = ui.interact(map.area, egui::Id::new("viewer-text-color-pick"), Sense::click());
+            app.auto.add("viewer.textColorPick", map.area, &pick.field);
+            let chip = Rect::from_min_size(map.area.min + vec2(10.0, 10.0), vec2(220.0, 22.0));
+            painter.rect_filled(chip, 11.0, Color32::from_black_alpha(180));
+            painter.text(chip.center(), Align2::CENTER_CENTER, format!("Click to sample text {}", pick.field), Tokens::ui(11.5), t.text);
+            if let Some(pos) = resp.hover_pos() {
+                ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                let c = map.to_comp(pos);
+                app.pointer_comp = Some([c[0] as f32, c[1] as f32]);
+                if let Some(img) = &app.viewer_image
+                    && let Some(s) = fw::sample_frame(img, super::viewer_tools::shown_region(&ctx, map.comp), c)
+                {
+                    let sw = Rect::from_min_size(pos + vec2(14.0, 14.0), vec2(26.0, 18.0));
+                    painter.rect_filled(sw, 2.0, Color32::from_rgb((s[0] * 255.0) as u8, (s[1] * 255.0) as u8, (s[2] * 255.0) as u8));
+                    painter.rect_stroke(sw, 2.0, Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
+                }
+            }
+            if resp.clicked()
+                && let Some(pos) = resp.interact_pointer_pos()
+                && let Some(img) = &app.viewer_image
+                && let Some(s) = fw::sample_frame(img, super::viewer_tools::shown_region(&ctx, map.comp), map.to_comp(pos))
+            {
+                let mut params = json!({"layer": pick.layer});
+                params[&pick.field] = json!([s[0], s[1], s[2]]);
+                if let Some(range) = pick.range {
+                    params["range"] = json!(range);
+                }
+                actions.push(("layer.setText".into(), params));
+                app.ui.text_color_pick = None;
+                app.ui.status.clear();
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                app.ui.text_color_pick = None;
+                app.ui.status.clear();
+            }
+        }
+    }
+    let picking = app.ui.fx_pick.is_some() || app.ui.text_color_pick.is_some();
     let point_pick = app.ui.fx_pick.clone().filter(|p| p.kind == "point");
     if app.ui.viewer.show_layer_controls || point_pick.is_some() {
         // ⊕ controls for the point parameters of the selected effects.

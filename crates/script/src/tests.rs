@@ -730,3 +730,36 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn script_item_and_layer_identity_survives_repeated_access() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Identity", 120, 80, 1, 3, 25);
+        var parent = c.layers.addNull(), child = c.layers.addNull();
+        child.parent = parent;
+        [
+          parent.containingComp === c,
+          c.layer(1) === c.layer(1),
+          child.parent === parent,
+          app.project.item(1) === app.project.item(1),
+          app.project.item(1) === c,
+          app.project.itemByID(c.id) === c
+        ]
+        "#,
+    );
+    assert_eq!(o.result, json!([true, true, true, true, true, true]));
+    // Reusing item and layer IDs in a new project must not alias old wrappers.
+    let o = ok(
+        &mut s,
+        r#"
+        var old = app.project.item(1);
+        app.newProject();
+        var next = app.project.items.addComp("New", 120, 80, 1, 3, 25);
+        [old !== next, app.project.item(1) === next]
+        "#,
+    );
+    assert_eq!(o.result, json!([true, true]));
+}

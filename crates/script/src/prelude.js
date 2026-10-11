@@ -6,8 +6,16 @@
 
 var __ecGlobal = this;
 
+// The scripting host keeps wrappers stable for each project item and comp/layer id.
+// Clear them when loading a different document, whose IDs may be reused.
+var __itemCache = Object.create(null), __layerCache = Object.create(null);
+function __clearIdentityCache() {
+  __itemCache = Object.create(null);
+  __layerCache = Object.create(null);
+}
 function __call(id, p) {
   var r = __exec(id, JSON.stringify(p || {}));
+  if (id === "file.newProject" || id === "file.open" || id === "file.revert") __clearIdentityCache();
   return r === undefined || r === "" ? null : JSON.parse(r);
 }
 function __get(kind, a) {
@@ -965,14 +973,18 @@ MarkerProperty.prototype = {
 
 function __layer(compId, id) {
   if (id === null || id === undefined) return null;
-  var i = __get("layer", { comp: compId, layer: id });
+  var key = compId + ":" + id;
+  if (Object.prototype.hasOwnProperty.call(__layerCache, key)) return __layerCache[key];
+  var i = __get("layer", { comp: compId, layer: id }), layer;
   switch (i.kind) {
-    case "text": return new TextLayer(compId, id);
-    case "shape": return new ShapeLayer(compId, id);
-    case "camera": return new CameraLayer(compId, id);
-    case "light": return new LightLayer(compId, id);
-    default: return new AVLayer(compId, id);
+    case "text": layer = new TextLayer(compId, id); break;
+    case "shape": layer = new ShapeLayer(compId, id); break;
+    case "camera": layer = new CameraLayer(compId, id); break;
+    case "light": layer = new LightLayer(compId, id); break;
+    default: layer = new AVLayer(compId, id);
   }
+  __layerCache[key] = layer;
+  return layer;
 }
 
 function Layer() {}
@@ -1008,7 +1020,7 @@ Layer.prototype = {
   set name(v) { __call("layer.rename", this.__p1({ name: String(v) })); },
   get index() { return this.__info().index; },
   get matchName() { return this.__info().matchName; },
-  get containingComp() { return new CompItem(this.__comp); },
+  get containingComp() { return __item(this.__comp); },
   get propertyDepth() { return 0; },
   get propertyType() { return PropertyType.INDEXED_GROUP; },
   get parentProperty() { return null; },
@@ -1273,7 +1285,7 @@ LayerCollection.prototype = {
     var ids = this.__ids(), sel = [];
     for (var i = 0; i < indices.length; i++) sel.push(ids[indices[i] - 1]);
     var r = __call("layer.precompose", { comp: this.__comp, layers: sel, name: String(name), mode: moveAllAttributes === false ? "leave" : "move" });
-    return new CompItem(r.comp);
+    return __item(r.comp);
   },
   byName: function (name) {
     var ids = this.__ids();
@@ -1321,13 +1333,20 @@ ItemCollection.prototype = {
 
 function __item(id) {
   if (id === null || id === undefined) return null;
-  if (id === 0) return new FolderItem(0);
-  var i = __get("item", { id: id });
-  switch (i.kind) {
-    case "comp": return new CompItem(id);
-    case "folder": return new FolderItem(id);
-    default: return new FootageItem(id);
+  if (Object.prototype.hasOwnProperty.call(__itemCache, id)) return __itemCache[id];
+  var item;
+  if (id === 0) {
+    item = new FolderItem(0);
+  } else {
+    var i = __get("item", { id: id });
+    switch (i.kind) {
+      case "comp": item = new CompItem(id); break;
+      case "folder": item = new FolderItem(id); break;
+      default: item = new FootageItem(id);
+    }
   }
+  __itemCache[id] = item;
+  return item;
 }
 
 function Item() {}
@@ -1584,7 +1603,7 @@ RenderQueueItem.prototype = {
     for (var i = 0; i < l.length; i++) if (l[i].id === this.__id) return l[i];
     throw __err("the render queue item no longer exists");
   },
-  get comp() { return new CompItem(this.__info().comp); },
+  get comp() { return __item(this.__info().comp); },
   get status() {
     var s = this.__info().statusLabel;
     for (var k in __rqStatus) if (s.indexOf(k) === 0) return __rqStatus[k];
@@ -1682,7 +1701,7 @@ Project.prototype = {
   __info: function () { return __get("project"); },
   get items() { return new ItemCollection(0); },
   get numItems() { return this.__info().items.length; },
-  get rootFolder() { return new FolderItem(0); },
+  get rootFolder() { return __item(0); },
   get activeItem() { return __item(this.__info().active); },
   get selection() { return this.__info().selection.map(__item); },
   get file() { var p = this.__info().path; return p ? new File(p) : null; },

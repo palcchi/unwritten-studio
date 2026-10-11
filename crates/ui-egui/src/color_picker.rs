@@ -41,6 +41,9 @@ pub fn color_popup(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, c: &mut [f32; 3])
     let area = egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(pos + vec2(0.0, 4.0)).show(ui.ctx(), |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| out = color_picker(ui, id, c, original));
     });
+    // Open this pass: dialogs leave Escape to the picker (see `open_recently`).
+    let pass = ui.ctx().cumulative_pass_nr();
+    ui.data_mut(|d| d.insert_temp(open_pass_id(), pass));
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         out.close = Some(false);
     }
@@ -58,6 +61,17 @@ pub fn color_popup(ui: &mut Ui, id: egui::Id, pos: egui::Pos2, c: &mut [f32; 3])
         });
     }
     out.changed
+}
+
+fn open_pass_id() -> egui::Id {
+    egui::Id::new("color-picker-open-pass")
+}
+
+/// A colour picker was open in this pass or the last one. Escape then belongs to the picker (it
+/// goes back to the original colour and closes), not to the dialog it was opened from.
+pub fn open_recently(ctx: &egui::Context) -> bool {
+    let pass: Option<u64> = ctx.data(|d| d.get_temp(open_pass_id()));
+    pass.is_some_and(|p| p.saturating_add(1) >= ctx.cumulative_pass_nr())
 }
 
 /// What the picker did this frame.

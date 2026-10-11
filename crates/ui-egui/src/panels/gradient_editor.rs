@@ -378,14 +378,12 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 Track::Color => {
                     ui.label(tr("Color:"));
                     let c = app.dialog_state.gradient.colors.get(i).map_or([1.0; 4], |s| s.value);
-                    // egui's colour button: its picker is a popup that works inside this modal, and
-                    // Escape closes the picker first (dialogs ignore Escape while a popup is open).
-                    // sRGB like the swatches; the stop keeps its alpha.
-                    let mut col = to_color32([c[0], c[1], c[2], 1.0]);
-                    let swatch = egui::color_picker::color_edit_button_srgba(ui, &mut col, egui::color_picker::Alpha::Opaque);
+                    // The shared colour picker (sRGB, hex field, OK / Cancel); the stop keeps its alpha.
+                    let mut rgb = [c[0], c[1], c[2]];
+                    let swatch = crate::widgets::srgb_color_button(ui, &mut rgb);
                     app.auto.add("dialog.gradient.color", swatch.rect, "Color");
                     if swatch.changed() {
-                        app.dialog_state.gradient.set_rgb(id, [col.r() as f32 / 255.0, col.g() as f32 / 255.0, col.b() as f32 / 255.0]);
+                        app.dialog_state.gradient.set_rgb(id, rgb);
                     }
                 }
             }

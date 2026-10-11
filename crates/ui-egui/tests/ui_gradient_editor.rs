@@ -10,6 +10,7 @@ use effectcraft_engine::project::{LayerId, PropGroup};
 use effectcraft_engine::time::Tick;
 use effectcraft_ui_egui::panels::gradient_editor::Track;
 use effectcraft_ui_egui::{Dialog, EffectcraftApp};
+use egui::accesskit::Role;
 use egui::{Event, Key, Modifiers, PointerButton, Pos2, pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -130,6 +131,27 @@ fn add_key(h: &mut Harness<'_, EffectcraftApp>, l: u64, colors: u64, comp_t: f64
         .unwrap();
 }
 
+fn near(a: [f32; 4], b: [f32; 4]) -> bool {
+    a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-4)
+}
+
+/// The shared colour picker is showing (its colour field is in the accessibility tree).
+fn picker_open(h: &Harness<'_, EffectcraftApp>) -> bool {
+    h.query_by_label("Color field").is_some()
+}
+
+/// Type `hex` into the open picker's Hex field, over the code it shows.
+fn type_hex(h: &mut Harness<'_, EffectcraftApp>, hex: &str) {
+    let at = h.get_by_role_and_label(Role::TextInput, "#").rect().center();
+    click_at(h, at);
+    for pressed in [true, false] {
+        h.input_mut().events.push(Event::Key { key: Key::A, physical_key: None, pressed, repeat: false, modifiers: Modifiers::COMMAND });
+    }
+    h.step();
+    h.input_mut().events.push(Event::Text(hex.into()));
+    h.run_steps(3);
+}
+
 fn stop_color(h: &Harness<'_, EffectcraftApp>, id: u64) -> [f32; 4] {
     h.state().gradient_draft().colors.iter().find(|s| s.id == id).expect("the stop").value
 }
@@ -156,23 +178,22 @@ fn stop_edits_ok_sets_the_gradient_in_one_undo_step() {
     let (track, id) = h.state().gradient_draft().selected.expect("the new stop is selected");
     assert_eq!(track, Track::Color);
     let sampled = stop_color(&h, id);
-    // The swatch opens the colour picker (a new layer over the modal); a click in its
-    // saturation/value square, below the current-colour strip, picks a new colour.
-    let layers = h.ctx.memory(|m| m.areas().visible_layer_ids());
+    // The swatch opens the shared colour picker over the modal editor. A click in its colour field
+    // reaches it (a modal blocks the layers below it), and so does typing a hex code.
     click(&mut h, "dialog.gradient.color");
-    assert!(egui::Popup::is_any_open(&h.ctx), "the colour picker opened");
-    let popup = h.ctx.memory(|m| m.areas().visible_layer_ids().into_iter().filter(|l| !layers.contains(l)).filter_map(|l| m.area_rect(l.id)).next());
-    let popup = popup.expect("the picker's layer");
-    let sp = h.ctx.global_style().spacing.clone();
-    let p = pos2(popup.min.x + 8.0 + sp.slider_width * 0.8, popup.min.y + 8.0 + sp.interact_size.y + sp.item_spacing.y + sp.slider_width * 0.3);
-    click_at(&mut h, p);
-    // Escape closes the picker, not the editor (its edits stay).
-    key(&mut h, Key::Escape);
-    assert!(!egui::Popup::is_any_open(&h.ctx), "the picker closed");
-    assert_eq!(h.state().dialog, Some(Dialog::GradientEditor), "Escape closed only the picker");
+    assert!(picker_open(&h), "the colour picker opened");
+    let field = h.get_by_label("Color field").rect().center();
+    click_at(&mut h, field + egui::vec2(20.0, -20.0));
+    assert_ne!(stop_color(&h, id), sampled, "a click in the picker's colour field changed the stop");
+    type_hex(&mut h, "336699");
     let picked = stop_color(&h, id);
-    assert_ne!(picked, sampled, "the picker changed the stop's colour");
-    assert_eq!(picked[3], sampled[3], "and kept its alpha");
+    assert!(near(picked, [0.2, 0.4, 0.6, sampled[3]]), "the hex code's colour, and the stop kept its alpha: {picked:?}");
+    // Clicking outside the picker keeps the colour and closes it; the editor stays.
+    let title = h.get_by_label("Gradient Editor").rect().center();
+    click_at(&mut h, title);
+    assert!(!picker_open(&h), "the picker closed");
+    assert_eq!(h.state().dialog, Some(Dialog::GradientEditor));
+    assert_eq!(stop_color(&h, id), picked);
     let from = center(&h, "dialog.gradient.opacityStop.1");
     let to = along(&h, "dialog.gradient.opacityStop.1", 0.5);
     drag(&mut h, from, to);
@@ -415,4 +436,36 @@ fn edit_gradient_by_id_rejects_bad_targets() {
     assert!(r.is_ok(), "{r:?}");
     h.run_steps(2);
     assert_eq!(h.state().dialog, Some(Dialog::GradientEditor));
+}
+
+/// In the editor, the colour picker's Escape and Cancel go back to the stop's colour and close only
+/// the picker: the editor and its other edits stay (dialogs leave Escape to an open picker).
+#[test]
+fn picker_escape_and_cancel_restore_the_stop_and_keep_the_editor() {
+    let (mut h, _, colors) = setup(&[]);
+    open_editor(&mut h, colors);
+    let added = along(&h, "dialog.gradient.addOpacity", 0.3);
+    click_at(&mut h, added);
+    click(&mut h, "dialog.gradient.colorStop.0");
+    let id = h.state().gradient_draft().selected.expect("a selected stop").1;
+    let original = stop_color(&h, id);
+    for how in ["escape", "cancel"] {
+        click(&mut h, "dialog.gradient.color");
+        assert!(picker_open(&h), "{how}: the picker opened");
+        type_hex(&mut h, "ff8000");
+        assert!(near(stop_color(&h, id), [1.0, 128.0 / 255.0, 0.0, original[3]]), "{how}: the picker previews as it goes");
+        if how == "escape" {
+            key(&mut h, Key::Escape);
+        } else {
+            // The picker's Cancel, not the editor's.
+            let editor_cancel = rect(&h, "dialog.gradient.cancel");
+            let cancel =
+                h.query_all_by_label("Cancel").map(|n| n.rect()).find(|r| (r.min.x - editor_cancel[0]).abs() > 1.0 || (r.min.y - editor_cancel[1]).abs() > 1.0);
+            click_at(&mut h, cancel.expect("the picker's Cancel").center());
+        }
+        assert!(!picker_open(&h), "{how}: the picker closed");
+        assert_eq!(h.state().dialog, Some(Dialog::GradientEditor), "{how}: the editor stays open");
+        assert_eq!(stop_color(&h, id), original, "{how}: the stop's colour is back");
+        assert_eq!(h.state().gradient_draft().opacities.len(), 3, "{how}: the editor's other edits stay");
+    }
 }

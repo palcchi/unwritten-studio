@@ -123,7 +123,8 @@ See [MCP conventions](mcp.md) for core tools, resources, strict arguments, and r
 | `render_preview` | Render a PNG without writing a file (`comp`, `time`, `max_side`, `transparent`). |
 
 Layers are referenced by id (from `get_comp`), `"#n"` (1-based index from the top) or name. Comps are
-referenced by id or name, and default to the active comp. Property paths come from `get_layer`, for
+referenced by id or name, and default to the active comp. An id may also be sent as a string (`"98"`):
+an all-digit string that matches no name is taken as the id. Property paths come from `get_layer`, for
 example `transform/position`, `transform/opacity`, `effects/#1/blurriness` or `@57` (by uid). Times
 are in seconds. Keyframe times are layer time, which equals comp time unless the layer is offset or
 stretched.

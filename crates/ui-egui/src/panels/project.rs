@@ -578,7 +578,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.session.state.project_selection = vec![*id];
         }
         let footage = matches!(it.kind, ItemKind::Footage(_));
-        resp.context_menu(|ui| {
+        crate::widgets::context_menu(&resp, |ui| {
             if ui.button(crate::i18n::tr("Delete")).clicked() {
                 actions.push(("project.delete".into(), json!({"items": targets(app, *id, selected)})));
                 ui.close();
@@ -743,7 +743,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if empty.double_clicked() {
         actions.push(("file.import".into(), json!({})));
     }
-    empty.context_menu(|ui| {
+    crate::widgets::context_menu(&empty, |ui| {
         for (key, label, command) in
             [("newComp", "New Composition…", "comp.new"), ("newFolder", "New Folder", "project.newFolder"), ("import", "Import File…", "file.import")]
         {
@@ -809,7 +809,7 @@ fn label_index(l: Label) -> usize {
 
 /// The column header's context menu: show or hide the optional columns.
 fn column_menu(app: &mut EffectcraftApp, resp: &egui::Response) {
-    resp.context_menu(|ui| {
+    crate::widgets::context_menu(&resp, |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("Columns")).weak());
         for (key, label, _) in COLUMNS {
             let mut on = app.ui.project_columns.iter().any(|c| c == key);

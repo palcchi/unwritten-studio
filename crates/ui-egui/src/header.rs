@@ -101,7 +101,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 None
             };
             let close_behavior = if held && resp.clicked() { egui::PopupCloseBehavior::IgnoreClicks } else { egui::PopupCloseBehavior::CloseOnClickOutside };
-            egui::Popup::menu(&resp).open_memory(command).close_behavior(close_behavior).show(|ui| {
+            egui::Popup::menu(&resp).style(crate::widgets::menu_style).open_memory(command).close_behavior(close_behavior).show(|ui| {
                 for tool in slot.iter() {
                     let row = ui.selectable_label(app.ui.tool == *tool, tool.label());
                     app.auto.add(&format!("tools.select.{tool:?}"), row.rect, tool.label());
@@ -227,7 +227,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mresp = ui.interact(more, egui::Id::new("ws-more"), Sense::click());
     p.text(more.center(), Align2::CENTER_CENTER, "»", Tokens::ui(15.0), if mresp.hovered() { t.text } else { t.text_dim });
     app.auto.add("header.workspaces", more, "Workspaces");
-    mresp.context_menu(|ui| ws_menu(app, ui));
+    crate::widgets::context_menu(&mresp, |ui| ws_menu(app, ui));
     if mresp.clicked() {
         widgets::open_popup(ui, egui::Id::new("ws-pop"));
     }

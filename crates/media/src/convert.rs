@@ -8,6 +8,7 @@
 
 use effectcraft_project::{AlphaMode, Footage};
 use effectcraft_raster::{Image, Px};
+use effectcraft_render::FloatCurve;
 use filmcraft_color::{Matrix, Range};
 use filmcraft_frame::{Chroma, PixelData, VideoFrame};
 use rayon::prelude::*;
@@ -17,24 +18,33 @@ use rayon::prelude::*;
 pub(crate) struct AlphaOp {
     mode: AlphaMode,
     matte: [f32; 3],
-    /// Interpret Footage ▸ Preserve RGB: float values stay as the file stores them (not
-    /// sRGB-encoded).
-    preserve_rgb: bool,
+    /// How float values (linear light) are encoded: sRGB by default, a pure 2.4 power curve
+    /// (Working Gamma 2.4), or not at all (Preserve RGB, Interpret As Linear Light).
+    float: FloatCurve,
 }
 
 impl AlphaOp {
     pub(crate) fn new(mode: AlphaMode, matte: [f32; 3]) -> Self {
-        Self { mode, matte, preserve_rgb: false }
+        Self { mode, matte, float: FloatCurve::Srgb }
     }
-    /// The interpretation of footage `f`.
-    pub(crate) fn of(f: &Footage) -> Self {
-        Self { preserve_rgb: f.preserve_rgb, ..Self::new(f.alpha, f.premul_color) }
+    /// The interpretation of footage `f`, float values handed over as `float` says (as stored
+    /// under Preserve RGB, whatever it says).
+    pub(crate) fn of(f: &Footage, float: FloatCurve) -> Self {
+        let float = if f.preserve_rgb { FloatCurve::Linear } else { float };
+        Self { float, ..Self::new(f.alpha, f.premul_color) }
     }
-    /// A linear float value as the compositor takes it: sRGB-encoded, or the file's own value
-    /// under Preserve RGB.
+    /// How float values are encoded.
+    pub(crate) fn float_curve(self) -> FloatCurve {
+        self.float
+    }
+    /// A linear float value as the compositor takes it.
     #[inline(always)]
     fn float(self, v: f32) -> f32 {
-        if self.preserve_rgb { v } else { encode(v) }
+        match self.float {
+            FloatCurve::Srgb => encode(v),
+            FloatCurve::Gamma24 => v.abs().powf(1.0 / 2.4).copysign(v),
+            FloatCurve::Linear => v,
+        }
     }
     /// `c` is the file's colour (straight or premultiplied as the mode says), `a` its alpha.
     #[inline(always)]

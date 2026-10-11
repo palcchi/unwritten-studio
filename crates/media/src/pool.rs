@@ -6,7 +6,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use effectcraft_project::{AlphaMode, Footage, FootageKind, ItemId};
 use effectcraft_raster::{Image, Px};
-use effectcraft_render::FootageSource;
+use effectcraft_render::{FloatCurve, FootageSource};
 use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use filmcraft_media::{FrameRequest, SharedSource};
 
@@ -38,8 +38,8 @@ fn colour_bars(w: u32, h: u32) -> Image {
 struct Key {
     path: Arc<str>,
     frame: i64,
-    /// The alpha interpretation (bits 0–1) and Preserve RGB (bit 2): they change the decoded
-    /// pixels.
+    /// The alpha interpretation (bits 0–1) and how float values are encoded (bits 2–3: sRGB,
+    /// as stored, a 2.4 power curve): they change the decoded pixels.
     interp: u8,
     matte: [u32; 3],
     /// A movie frame made at this size for a reduced-resolution render ((0, 0): as decoded).
@@ -233,6 +233,8 @@ struct Loc {
     key: Key,
     /// Media time for movies (`None`: an image file, `key.path`).
     media_t: Option<Tick>,
+    /// How float values are encoded (also in `key.interp`).
+    float: FloatCurve,
 }
 
 /// Removes an in-flight key and wakes waiters, also when decoding panics.
@@ -345,15 +347,15 @@ impl MediaPool {
 
     /// Decode (or fetch from cache) the frame of `footage` at source time `t`.
     pub fn frame_at(&self, footage: &Footage, t: Tick) -> Result<Arc<Image>> {
-        Inner::frame_at(&self.inner, footage, t, true, None)
+        Inner::frame_at(&self.inner, footage, t, true, None, FloatCurve::Srgb)
     }
 
     /// [`FootageSource::frame`] / [`FootageSource::frame_at_size`]: `None` (logged) on errors.
-    fn frame_sized(&self, _item: ItemId, footage: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
+    fn frame_sized(&self, _item: ItemId, footage: &Footage, t: Tick, size: Option<(u32, u32)>, float: FloatCurve) -> Option<Arc<Image>> {
         if footage.missing {
             return None;
         }
-        match Inner::frame_at(&self.inner, footage, t, true, size) {
+        match Inner::frame_at(&self.inner, footage, t, true, size, float) {
             Ok(img) => Some(img),
             Err(e) => {
                 log::warn!("media: frame of {} at {:?}: {e}", footage.path, t);
@@ -520,7 +522,7 @@ impl MediaPool {
 
     /// A thumbnail of `footage` (its first frame) fitting in `max_side` × `max_side`, aspect kept.
     pub fn thumbnail(&self, footage: &Footage, max_side: u32) -> Result<Image> {
-        let img = Inner::frame_at(&self.inner, footage, Tick::ZERO, false, None)?;
+        let img = Inner::frame_at(&self.inner, footage, Tick::ZERO, false, None, FloatCurve::Srgb)?;
         let (w, h) = (img.width.max(1), img.height.max(1));
         let s = (max_side.max(1) as f64 / w.max(h) as f64).min(1.0);
         if s >= 1.0 {
@@ -618,22 +620,28 @@ impl Inner {
         ((d.0 as i128 * rate.num as i128 + den / 2) / den) as i64
     }
 
-    fn locate(footage: &Footage, t: Tick) -> Loc {
+    fn locate(footage: &Footage, t: Tick, float: FloatCurve) -> Loc {
         let alpha = match footage.alpha {
             AlphaMode::Straight => 0,
             AlphaMode::Premultiplied => 1,
             AlphaMode::Ignore => 2,
         };
-        let interp = alpha | (u8::from(footage.preserve_rgb) << 2);
+        let float = AlphaOp::of(footage, float).float_curve();
+        let interp = alpha
+            | (match float {
+                FloatCurve::Srgb => 0,
+                FloatCurve::Linear => 1,
+                FloatCurve::Gamma24 => 2,
+            } << 2);
         let matte = if footage.alpha == AlphaMode::Premultiplied { footage.premul_color.map(f32::to_bits) } else { [0; 3] };
         let key = |path: &str, frame| Key { path: path.into(), frame, interp, matte, size: (0, 0) };
         match footage.kind {
             FootageKind::Sequence if !footage.sequence.is_empty() => {
                 let i = Self::frame_index(footage.frame_rate, t, footage.sequence_frames(), footage.loop_count);
                 match footage.sequence_file(i) {
-                    Some(path) => Loc { key: key(path, 0), media_t: None },
+                    Some(path) => Loc { key: key(path, 0), media_t: None, float },
                     // A gap in the numbering: colour bars, as in After Effects.
-                    None => Loc { key: key(PLACEHOLDER, ((footage.width as i64) << 32) | footage.height as i64), media_t: None },
+                    None => Loc { key: key(PLACEHOLDER, ((footage.width as i64) << 32) | footage.height as i64), media_t: None, float },
                 }
             }
             // A layer of a layered still is keyed by its layer index and size mode (smart objects
@@ -641,9 +649,9 @@ impl Inner {
             FootageKind::Still if footage.layer.is_some() || footage.page != 0 => {
                 let l = footage.layer.as_ref().map_or(0, |l| 1 + l.index as i64 * 2 + l.layer_size as i64 + if l.embedded.is_some() { 1 << 40 } else { 0 })
                     + ((footage.page as i64) << 42);
-                Loc { key: key(&footage.path, l), media_t: None }
+                Loc { key: key(&footage.path, l), media_t: None, float }
             }
-            FootageKind::Still | FootageKind::Sequence | FootageKind::Model | FootageKind::Data => Loc { key: key(&footage.path, 0), media_t: None },
+            FootageKind::Still | FootageKind::Sequence | FootageKind::Model | FootageKind::Data => Loc { key: key(&footage.path, 0), media_t: None, float },
             FootageKind::Video | FootageKind::Audio => {
                 let rate = footage.frame_rate;
                 let n = Self::frame_count(rate, footage.duration);
@@ -651,18 +659,18 @@ impl Inner {
                 // Middle of the frame in the file's own timing (robust to timestamp rounding).
                 let native = footage.native_rate.unwrap_or(rate);
                 let mt = native.tick_of(i) + Tick(native.frame_duration().0 / 2);
-                Loc { key: key(&footage.path, i), media_t: Some(mt) }
+                Loc { key: key(&footage.path, i), media_t: Some(mt), float }
             }
         }
     }
 
     /// The frame of `footage` at `t`; a movie's resampled to `size` when it can be made at that
     /// size directly (see [`FootageSource::frame_at_size`]).
-    fn frame_at(self: &Arc<Self>, footage: &Footage, t: Tick, playback: bool, size: Option<(u32, u32)>) -> Result<Arc<Image>> {
+    fn frame_at(self: &Arc<Self>, footage: &Footage, t: Tick, playback: bool, size: Option<(u32, u32)>, float: FloatCurve) -> Result<Arc<Image>> {
         if !footage.has_video {
             return Err(MediaError::Unsupported(format!("{}: no video", footage.path)));
         }
-        let mut loc = Self::locate(footage, t);
+        let mut loc = Self::locate(footage, t, float);
         let movie = loc.media_t.is_some();
         if movie && let Some(size) = size {
             loc.key.size = size;
@@ -673,10 +681,10 @@ impl Inner {
             let prev = c.last.insert(loc.key.path.clone(), loc.key.frame);
             if prev == Some(loc.key.frame - 1) && self.read_ahead.load(Ordering::Relaxed) {
                 let next_t = t + footage.frame_rate.frame_duration();
-                let mut next = Self::locate(footage, next_t);
+                let mut next = Self::locate(footage, next_t, float);
                 next.key.size = loc.key.size;
                 if next.key != loc.key && !c.lru.map.contains_key(&next.key) && !c.inflight.contains(&next.key) {
-                    self.prefetch(footage, next_t, size);
+                    self.prefetch(footage, next_t, size, float);
                 }
             }
         }
@@ -709,20 +717,20 @@ impl Inner {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn prefetch(self: &Arc<Self>, footage: &Footage, t: Tick, size: Option<(u32, u32)>) {
+    fn prefetch(self: &Arc<Self>, footage: &Footage, t: Tick, size: Option<(u32, u32)>, float: FloatCurve) {
         let (me, f) = (self.clone(), footage.clone());
         self.prefetched.fetch_add(1, Ordering::Relaxed);
         // A plain thread, not a rayon job: the decode below parallelises with rayon itself.
         std::thread::spawn(move || {
-            let _ = me.frame_at(&f, t, false, size);
+            let _ = me.frame_at(&f, t, false, size, float);
         });
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick, _size: Option<(u32, u32)>) {}
+    fn prefetch(self: &Arc<Self>, _footage: &Footage, _t: Tick, _size: Option<(u32, u32)>, _float: FloatCurve) {}
 
     fn decode(&self, loc: &Loc, footage: &Footage) -> Result<Image> {
-        let op = AlphaOp::of(footage);
+        let op = AlphaOp::of(footage, loc.float);
         let path = &loc.key.path;
         match loc.media_t {
             None if &**path == PLACEHOLDER => Ok(colour_bars(footage.width, footage.height)),
@@ -792,10 +800,13 @@ impl FootageSource for MediaPool {
         Some(self.budget())
     }
     fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>> {
-        self.frame_sized(item, footage, t, None)
+        self.frame_sized(item, footage, t, None, FloatCurve::Srgb)
     }
     fn frame_at_size(&self, item: ItemId, footage: &Footage, t: Tick, width: u32, height: u32) -> Option<Arc<Image>> {
-        self.frame_sized(item, footage, t, Some((width, height)))
+        self.frame_sized(item, footage, t, Some((width, height)), FloatCurve::Srgb)
+    }
+    fn frame_with(&self, item: ItemId, footage: &Footage, t: Tick, size: Option<(u32, u32)>, float: FloatCurve) -> Option<Arc<Image>> {
+        self.frame_sized(item, footage, t, size, float)
     }
 
     fn vector_frame(&self, _item: ItemId, footage: &Footage, scale: f64) -> Option<Arc<Image>> {
@@ -810,7 +821,7 @@ impl FootageSource for MediaPool {
         if footage.missing || !footage.has_video {
             return None;
         }
-        let loc = Inner::locate(footage, t);
+        let loc = Inner::locate(footage, t, FloatCurve::Srgb);
         if loc.media_t.is_some() || !loc.key.path.to_ascii_lowercase().ends_with(".exr") {
             return None;
         }
@@ -1017,5 +1028,36 @@ mod tests {
         let raw = pool.frame_at(&Footage { preserve_rgb: true, ..f.clone() }, Tick::ZERO).unwrap().get(0, 0);
         assert_eq!(raw, [0.18, 0.5, 2.0, 1.0]);
         assert_eq!(pool.frame_at(&f, Tick::ZERO).unwrap().get(0, 0), encoded, "the default interpretation is cached apart");
+    }
+
+    /// #750: float footage is handed over as the renderer asks: sRGB-encoded, with Working
+    /// Gamma 2.4's pure power curve, or as stored (Interpret As Linear Light encodes it then);
+    /// Preserve RGB reads it as stored whatever is asked. Each decodes and caches apart.
+    #[test]
+    fn float_exr_is_encoded_with_the_requested_curve() {
+        use exr::prelude::*;
+        let (w, h) = (2usize, 2usize);
+        let ch = |n: &str, v: f32| AnyChannel::new(n, FlatSamples::F32(vec![v; w * h]));
+        let channels = AnyChannels::sort(vec![ch("R", 0.051), ch("G", 0.18), ch("B", 2.0), ch("A", 1.0)].into());
+        let image = exr::image::Image::from_layer(Layer::new((w, h), LayerAttributes::default(), Encoding::FAST_LOSSLESS, channels));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image.write().to_buffered(&mut bytes).unwrap();
+        let b: Arc<[u8]> = bytes.into_inner().into();
+        let pool = MediaPool::new();
+        pool.add_bytes("/linear.exr", b.clone());
+        let f = crate::probe_bytes("/linear.exr", b).unwrap();
+        let px = |f: &Footage, float| pool.frame_with(ItemId(1), f, Tick::ZERO, None, float).unwrap().get(0, 0);
+        let near = |o: [f32; 4], want: [f32; 3]| (0..3).all(|i| (o[i] - want[i]).abs() < 1e-3);
+        let srgb = px(&f, FloatCurve::Srgb);
+        assert!(near(srgb, [0.2503, 0.4614, 1.3532]), "sRGB: {srgb:?}");
+        assert_eq!(pool.frame(ItemId(1), &f, Tick::ZERO).unwrap().get(0, 0), srgb, "frame() is sRGB");
+        let g24 = px(&f, FloatCurve::Gamma24);
+        assert!(near(g24, [0.2898, 0.4898, 2.0f32.powf(1.0 / 2.4)]), "2.4: {g24:?}");
+        assert_eq!(px(&f, FloatCurve::Linear), [0.051, 0.18, 2.0, 1.0]);
+        let preserve = Footage { preserve_rgb: true, ..f.clone() };
+        assert_eq!(px(&preserve, FloatCurve::Gamma24), [0.051, 0.18, 2.0, 1.0]);
+        // Each curve is cached apart: asking again returns the same pixels.
+        assert_eq!(px(&f, FloatCurve::Srgb), srgb);
+        assert_eq!(px(&f, FloatCurve::Gamma24), g24);
     }
 }

@@ -1948,3 +1948,45 @@ fn vertex_tools_edit_motion_path_keyframes() {
     click(&mut h, quarter);
     assert_eq!(keys(&h).len(), 3);
 }
+
+/// Magnification ▸ Fit up to 100% keeps fitting as the panel changes size (Maximize Panel), like
+/// Fit, and never magnifies past 100%.
+#[test]
+fn fit_up_to_100_follows_the_maximized_panel() {
+    use effectcraft_ui_egui::dock::PanelKind;
+    let pick = |h: &mut Harness<'_, EffectcraftApp>| {
+        let at = rect(h, "viewer.magnification").center();
+        click(h, at);
+        let at = rect(h, "viewer.magnification.1").center();
+        click(h, at);
+        assert_eq!(h.state().ui.viewer.zoom, None, "a fit mode, not a fixed magnification");
+        assert!(h.state().ui.viewer.fit_up_to_100);
+        h.run_steps(2);
+    };
+    // A comp larger than the panel: it fills the docked panel, then the maximized one.
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Big", "width": 3840, "height": 2160, "duration": 4})).unwrap();
+        EffectcraftApp::new(s)
+    });
+    h.run_steps(3);
+    pick(&mut h);
+    let docked = rect(&h, "viewer.comp").width();
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    let area = rect(&h, "viewer.area");
+    let maximized = rect(&h, "viewer.comp");
+    assert!(maximized.width() > docked + 100.0, "{docked} -> {}", maximized.width());
+    assert!(area.contains_rect(maximized), "{maximized:?} in {area:?}");
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    assert_eq!(rect(&h, "viewer.comp").width(), docked, "and back when the panel is restored");
+    // A comp smaller than the panel stops at 100%.
+    let mut h = harness();
+    pick(&mut h);
+    let ppp = h.ctx.pixels_per_point();
+    assert!(rect(&h, "viewer.comp").width() <= 640.0 / ppp + 0.01);
+    h.state_mut().toggle_maximize(PanelKind::Composition);
+    h.run_steps(3);
+    assert!((rect(&h, "viewer.comp").width() - 640.0 / ppp).abs() < 0.01);
+}

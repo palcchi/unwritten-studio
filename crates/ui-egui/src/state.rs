@@ -273,6 +273,8 @@ impl Resolution {
 pub struct ViewerState {
     /// Magnification (1 = 100%); None = fit.
     pub zoom: Option<f32>,
+    /// Fit up to 100%: while fitting (`zoom` is None), the comp is never magnified past 100%.
+    pub fit_up_to_100: bool,
     /// Pan offset in points from the centred position.
     pub pan: [f32; 2],
     pub res: Resolution,
@@ -313,6 +315,7 @@ impl Default for ViewerState {
     fn default() -> Self {
         ViewerState {
             zoom: None,
+            fit_up_to_100: false,
             pan: [0.0, 0.0],
             res: Resolution::Auto,
             transparency_grid: false,

@@ -98,6 +98,8 @@ pub struct CommandSpec {
     pub menu: &'static [&'static str],
     /// Default shortcut (egui-style names, `Cmd` = ⌘ on macOS / Ctrl elsewhere).
     pub shortcut: Option<&'static str>,
+    /// Further default shortcuts (the menus and tooltips show `shortcut`).
+    pub alt_shortcuts: &'static [&'static str],
     /// Parameter description for agents and the MCP schema.
     pub params: &'static str,
     pub enabled: Enabled,
@@ -108,8 +110,22 @@ pub struct CommandSpec {
 
 #[macro_export]
 macro_rules! cmd {
+    // Several default shortcuts: `["PageDown", "Cmd+ArrowRight"]`.
+    ($id:literal, $label:literal, [$($m:literal),*], [$sc:literal, $($alt:literal),+], $params:literal, $en:expr, $run:expr) => {
+        $crate::commands::CommandSpec { alt_shortcuts: &[$($alt),+], ..$crate::cmd!($id, $label, [$($m),*], Some($sc), $params, $en, $run) }
+    };
     ($id:literal, $label:literal, [$($m:literal),*], $sc:expr, $params:literal, $en:expr, $run:expr) => {
-        $crate::commands::CommandSpec { id: $id, label: $label, menu: &[$($m),*], shortcut: $sc, params: $params, enabled: $en, run: $run, journal: true }
+        $crate::commands::CommandSpec {
+            id: $id,
+            label: $label,
+            menu: &[$($m),*],
+            shortcut: $sc,
+            alt_shortcuts: &[],
+            params: $params,
+            enabled: $en,
+            run: $run,
+            journal: true,
+        }
     };
 }
 #[macro_export]
@@ -120,6 +136,7 @@ macro_rules! query {
             label: $label,
             menu: &[],
             shortcut: None,
+            alt_shortcuts: &[],
             params: $params,
             enabled: $crate::commands::always,
             run: $run,

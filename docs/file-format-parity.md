@@ -80,7 +80,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | OBJ / MTL | R | yes | good |
 | FBX | R (`usdFbx`) | none | gap 13 |
 | USD / USDZ | R (`usd_plugins`) | none | gap 13 |
-| STL | R (`usdStl`) | none | gap 13 |
+| STL | R (`usdStl`) | yes (binary and ASCII, VisCAM and Magics facet colours; Z-up turned to Y-up) | good |
 | Substance 3D materials `.sbsar` | R (26.0) | none | gap 13 |
 
 ## Interchange and data
@@ -107,7 +107,7 @@ encoders ([hardware-parity.md](hardware-parity.md)), and rendering safely over a
 ## Estimate
 
 **≈ 130–230 h**: `.aep` / `.aepx` import 80–160 h (after the owner decision), wiring TGA / DPX /
-HDR / MXF / AVI / DNx import and DPX/TGA output 10–20 h, FBX / USD / STL and Substance 25–45 h,
+HDR / MXF / AVI / DNx import and DPX/TGA output 10–20 h, FBX / USD and Substance 25–45 h,
 relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel with the rest).
 
 ## Revision history

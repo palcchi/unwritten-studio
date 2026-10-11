@@ -26,6 +26,7 @@ use serde_json::{Value, json};
 
 use super::viewer::ViewerMap;
 use crate::EffectcraftApp;
+use crate::dock::PanelKind;
 use crate::state::Tool;
 
 /// Pointer interaction owned by text editing (kept across frames while the button is down).
@@ -132,6 +133,21 @@ fn exec(app: &mut EffectcraftApp, id: &str, p: Value) -> Option<Value> {
             app.ui.status = e.to_string();
             None
         }
+    }
+}
+
+/// The panels a text edit stays open across: the viewers, and Character, Paragraph and
+/// Properties, which format the selected characters.
+fn keeps_text_edit(p: PanelKind) -> bool {
+    super::viewers::id_of(p).is_some() || matches!(p, PanelKind::Character | PanelKind::Paragraph | PanelKind::Properties)
+}
+
+/// A click in panel `p`. Any other panel (the Timeline, the Project panel, …) ends the edit, as a
+/// click outside the text does, and gives the keyboard back to the app (#831).
+pub fn panel_clicked(app: &mut EffectcraftApp, ctx: &egui::Context, p: PanelKind) {
+    if app.session.state.text_edit.is_some() && !keeps_text_edit(p) {
+        exec(app, "text.endEdit", json!({}));
+        ctx.memory_mut(|m| m.surrender_focus(focus_id()));
     }
 }
 
@@ -332,11 +348,13 @@ pub fn hook(
         ui.memory_mut(|m| {
             m.set_focus_lock_filter(focus_id(), egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true });
         });
-        // A session started elsewhere (menu, agent, Properties) takes the keyboard once.
+        // A session started elsewhere (menu, agent, Properties) takes the keyboard once…
         let seen = egui::Id::new("viewer-text-seen");
         let key = app.session.state.text_edit.as_ref().map(|e| e.layer.0);
-        // …and gets it back whenever nothing else holds it (after a panel click, say).
-        if ui.data(|d| d.get_temp::<Option<u64>>(seen)).flatten() != key || ui.memory(|m| m.focused().is_none()) {
+        // …and gets it back when a click in the viewer or a formatting panel left nothing holding
+        // it; not merely because nothing has the focus (#831).
+        let regain = ui.memory(|m| m.focused().is_none()) && keeps_text_edit(app.ui.focused);
+        if ui.data(|d| d.get_temp::<Option<u64>>(seen)).flatten() != key || regain {
             ui.data_mut(|d| d.insert_temp(seen, key));
             ui.memory_mut(|m| m.request_focus(focus_id()));
         }

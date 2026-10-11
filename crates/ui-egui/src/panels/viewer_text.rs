@@ -359,7 +359,7 @@ pub fn hook(
             ui.memory_mut(|m| m.request_focus(focus_id()));
         }
         if ui.memory(|m| m.has_focus(focus_id())) {
-            keyboard(app, ui);
+            keyboard(app, ui, resp.rect);
         }
     } else {
         ui.data_mut(|d| d.insert_temp::<Option<u64>>(egui::Id::new("viewer-text-seen"), None));
@@ -377,12 +377,16 @@ pub fn hook(
     owns
 }
 
-fn keyboard(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
+/// This frame's keys, in order, into the edited text, up to a press outside the `viewer`: the
+/// panel it lands in decides (after this frame's panels) whether the edit ends, so the keys after
+/// it in this frame are neither typed nor run as shortcuts (#831).
+fn keyboard(app: &mut EffectcraftApp, ui: &mut egui::Ui, viewer: Rect) {
     let events = ui.input(|i| i.events.clone());
     let ctx = ui.ctx().clone();
     for ev in events {
         let Some(sel) = app.session.state.text_edit.clone() else { return };
         match ev {
+            egui::Event::PointerButton { pos, pressed: true, .. } if !viewer.contains(pos) => return,
             egui::Event::Text(t) if !t.chars().any(char::is_control) => {
                 let k = typing_key(ui, false);
                 exec(app, "text.insert", json!({"text": t, "merge": k}));

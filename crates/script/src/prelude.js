@@ -111,8 +111,49 @@ var $ = {
   get os() { return "EffectCraft"; },
   get version() { return "EffectCraft scripting"; },
   get locale() { return "en_US"; },
-  evalFile: function () { throw __err("$.evalFile is not supported: scripts can't run scripts"); },
+  // Evaluates the file in the global scope and returns its last value (`timeout` is ignored).
+  evalFile: function (file, timeout) { return __evalFile(__str(file)); },
 };
+
+// ------------------------------------------------------------------ BridgeTalk
+
+// Which application a script runs in, for scripts and frameworks that ask during initialisation.
+// EffectCraft names itself rather than posing as another application; messages to other
+// applications aren't supported.
+function BridgeTalk() {
+  if (!(this instanceof BridgeTalk)) return new BridgeTalk();
+  this.target = "";
+  this.sender = BridgeTalk.appSpecifier;
+  this.body = "";
+  this.type = "ExtendScript";
+  this.headers = {};
+  this.timeout = 0;
+  this.onResult = null;
+  this.onError = null;
+  this.onReceived = null;
+  this.onTimeout = null;
+}
+BridgeTalk.prototype.send = function () {
+  throw __err("BridgeTalk: sending messages to other applications is not supported in EffectCraft");
+};
+BridgeTalk.prototype.sendResult = BridgeTalk.prototype.send;
+BridgeTalk.prototype.toString = function () { return "[object BridgeTalk]"; };
+BridgeTalk.appName = "effectcraft";
+Object.defineProperty(BridgeTalk, "appVersion", { get: function () { return __get("app").buildName; } });
+Object.defineProperty(BridgeTalk, "appSpecifier", { get: function () { return "effectcraft-" + BridgeTalk.appVersion; } });
+BridgeTalk.appLocale = "en_US";
+BridgeTalk.appInstance = "";
+BridgeTalk.appStatus = "idle";
+BridgeTalk.onReceive = null;
+BridgeTalk.__isSelf = function (spec) { return String(spec === undefined || spec === null ? "" : spec).split("-")[0].toLowerCase() === "effectcraft"; };
+BridgeTalk.isRunning = function (spec) { return BridgeTalk.__isSelf(spec); };
+BridgeTalk.launch = function (spec) { return BridgeTalk.__isSelf(spec); };
+BridgeTalk.getSpecifier = function (name) { return BridgeTalk.__isSelf(name) ? BridgeTalk.appSpecifier : null; };
+BridgeTalk.getDisplayName = function (spec) { return BridgeTalk.__isSelf(spec) ? "EffectCraft" : null; };
+BridgeTalk.getTargets = function () { return [BridgeTalk.appName]; };
+BridgeTalk.getStatus = function (spec) { return spec === undefined || BridgeTalk.__isSelf(spec) ? "IDLE" : "ISNOTINSTALLED"; };
+BridgeTalk.bringToFront = function () {};
+BridgeTalk.pump = function () { return false; };
 
 // ------------------------------------------------------------------ File / Folder
 

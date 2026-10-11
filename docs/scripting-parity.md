@@ -19,6 +19,7 @@ our own scripts; no real-world script library has been run against both apps.
 | Expression editing | Inline field, error bar, pick whip, Expression Language menu, external editors | Inline field that grows, error bar, pick whips (property and value), language menu | partial | External editor support (#364) |
 | Expression performance | Cached, multi-frame | Per-thread boa contexts | unknown | No benchmark |
 | Scripting object model | `app`, `Project`, items, layers, properties, keys, eases, render queue, `TextDocument`, `Shape`, markers, `File`/`Folder`, `Socket`, `app.settings` | Same classes, edits run through undoable engine commands; match names table | good | `crates/script` tests (≈ 10 test files) |
+| `$.evalFile`, `BridgeTalk` | Evaluate another script file; identify the host application and message other Adobe applications | `$.evalFile` evaluates a file relative to the calling file (nested at most 32 deep, under the scripts' file gate) and returns its last value; `BridgeTalk` names the host honestly (`appName` `effectcraft`, its version); messaging other applications throws "not supported" | partial | `tests_evalfile.rs` (#760); no inter-application messaging |
 | ScriptUI | Dialogs, palettes, dockable panels, resource strings, `onDraw` / ScriptUIGraphics | Same, dockable panels reopen at launch | good | `ui_scriptui`, `tests_ui*` |
 | Scripts menu, ScriptUI Panels folder | yes | yes | same | [plugins.md](plugins.md) |
 | Startup / Shutdown folders | yes | not run | missing | plugins.md |

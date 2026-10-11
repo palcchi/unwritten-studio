@@ -72,11 +72,13 @@ pub(crate) struct Active {
     /// Running on a script-host thread: modal dialogs hand the session back to the caller
     /// through this link while they wait.
     pub(crate) link: Option<crate::ui::Link>,
+    /// The files `$.evalFile` is evaluating, outermost first.
+    pub(crate) loading: Vec<std::path::PathBuf>,
 }
 
 impl Active {
     pub(crate) fn new(session: Session, name: &str) -> Active {
-        Active { session, output: vec![], groups: vec![], tasks: vec![], next_task: 0, name: name.to_string(), link: None }
+        Active { session, output: vec![], groups: vec![], tasks: vec![], next_task: 0, name: name.to_string(), link: None, loading: vec![] }
     }
 }
 
@@ -291,13 +293,13 @@ fn native_task(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
     Ok(JsValue::from(id))
 }
 
-fn project_dir(s: &Session) -> Option<String> {
+pub(crate) fn project_dir(s: &Session) -> Option<String> {
     let p = s.path.as_deref()?;
     std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string())
 }
 
 /// Lexically normalized absolute path (`a/./b/../c` → `a/c`).
-fn normalize(p: &str) -> std::path::PathBuf {
+pub(crate) fn normalize(p: &str) -> std::path::PathBuf {
     use std::path::{Component, Path, PathBuf};
     let path = Path::new(p);
     let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
@@ -405,18 +407,58 @@ fn native_file(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
     }
 }
 
+/// `__evalFile(path)`: ExtendScript's `$.evalFile`. Evaluates a script file in the global scope
+/// and returns its last value. Relative paths resolve against the folder of the file being
+/// evaluated (the running script's for the outermost call, else the project's); reads follow the
+/// file gate `#include` uses ([`crate::scriptfile`]) and calls nest at most
+/// [`MAX_DEPTH`](crate::scriptfile::MAX_DEPTH) deep.
+fn native_eval_file(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    use crate::scriptfile::{self, MAX_DEPTH};
+    let name = arg_string(args, 0, ctx)?;
+    if name.is_empty() || name == "undefined" {
+        return Err(throw("$.evalFile needs a file"));
+    }
+    let (path, text) = with_active(|a| {
+        if a.loading.len() >= MAX_DEPTH {
+            return Err(format!("$.evalFile(\"{name}\"): files are nested too deeply (at most {MAX_DEPTH})"));
+        }
+        let s = &a.session;
+        let root = scriptfile::script_dir(s, &a.name);
+        let dir = a
+            .loading
+            .last()
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .or_else(|| root.clone())
+            .or_else(|| project_dir(s).map(|d| normalize(&d)));
+        let path = scriptfile::resolve(s, &name, dir.as_deref(), &[]).map_err(|e| format!("$.evalFile {e}"))?;
+        scriptfile::check_read(s, &path, root.as_deref())?;
+        let text = scriptfile::read(s, &path)?;
+        check_nesting(&text)?;
+        a.loading.push(path.clone());
+        Ok((path, text))
+    })
+    .map_err(throw)?;
+    let r = ctx.eval(Source::from_bytes(text.as_bytes()).with_path(&path));
+    let _ = with_active(|a| {
+        a.loading.pop();
+        Ok(())
+    });
+    r
+}
+
 pub(crate) fn new_context() -> Result<Context, String> {
     let mut ctx = Context::default();
     let limits = ctx.runtime_limits_mut();
     limits.set_loop_iteration_limit(200_000_000);
     limits.set_recursion_limit(2000);
-    let natives: [(JsString, usize, fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>); 10] = [
+    let natives: [(JsString, usize, fn(&JsValue, &[JsValue], &mut Context) -> JsResult<JsValue>); 11] = [
         (js_string!("__exec"), 2, native_exec),
         (js_string!("__query"), 2, native_query),
         (js_string!("__print"), 1, native_print),
         (js_string!("__undo"), 2, native_undo),
         (js_string!("__task"), 3, native_task),
         (js_string!("__file"), 3, native_file),
+        (js_string!("__evalFile"), 2, native_eval_file),
         (js_string!("__sock"), 3, crate::socket::native_sock),
         (js_string!("__uiNewId"), 0, crate::ui::native_new_id),
         (js_string!("__uiModal"), 1, crate::ui::native_modal),

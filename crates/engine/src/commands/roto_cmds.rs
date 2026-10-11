@@ -59,7 +59,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Object Matte",
             [],
             None,
-            "{layer?, point: [x, y] (layer pixels: the object), box?: [x0, y0, x1, y1] (layer pixels, around the object), frame? (reference layer frame; default current), track?: follow the object from that frame (default true), before?, after? (frames to follow it; default 30, up to 600)}",
+            "{layer?, effect? (uid: re-prompt this Object Matte instead of adding one), point: [x, y] (layer pixels: the object), box?: [x0, y0, x1, y1] (layer pixels, around the object), frame? (reference layer frame; default current), track?: follow the object from that frame (default true), before?, after? (frames to follow it; default 30, up to 600)}",
             has_comp,
             object_matte_apply
         ),
@@ -455,6 +455,18 @@ fn object_matte_apply(s: &mut Session, p: &Value) -> Result<Value> {
     if !layer.has_video() || layer.switches.adjustment || layer.effects().is_none() {
         return Err(bad(cmd, "Object Matte works on footage, solid and composition layers"));
     }
+    // Re-prompt an existing instance (the Object Matte tool on a layer that has one).
+    let existing = match p.get("effect").filter(|v| !v.is_null()) {
+        Some(v) => {
+            let uid = v.as_u64().ok_or_else(|| bad(cmd, "`effect` is an Object Matte effect's uid"))?;
+            layer
+                .effects()
+                .and_then(|f| f.groups().find(|g| g.uid == uid && rt::is_object_matte(g)))
+                .ok_or_else(|| bad(cmd, format!("no Object Matte effect {uid} on this layer")))?;
+            Some(uid)
+        }
+        None => None,
+    };
     let size = rt::layer_size(&s.project, comp, layer);
     let point = xy_p(p, "point", 2, cmd)?.ok_or_else(|| bad(cmd, "missing `point` [x, y] (layer pixels)"))?;
     let inside = |x: f64, y: f64| (0.0..=size[0]).contains(&x) && (0.0..=size[1]).contains(&y);
@@ -473,42 +485,74 @@ fn object_matte_apply(s: &mut Session, p: &Value) -> Result<Value> {
     if frame < limits[0] || frame > limits[1] {
         return Err(bad(cmd, format!("frame {frame} is outside the layer ({}–{})", limits[0], limits[1])));
     }
-    let track = b_p(p, "track").unwrap_or(true);
-    let reach = |k: &str| f_p(p, k).filter(|v| v.is_finite()).unwrap_or(om::DEFAULT_REACH).round().clamp(0.0, om::MAX_REACH);
+    // A new instance gets the defaults; a re-prompted one keeps what is not given.
+    let track = b_p(p, "track").or(existing.is_none().then_some(true));
+    let reach = |k: &str| {
+        let v = f_p(p, k).filter(|v| v.is_finite());
+        let v = if existing.is_none() { Some(v.unwrap_or(om::DEFAULT_REACH)) } else { v };
+        v.map(|v| v.round().clamp(0.0, om::MAX_REACH))
+    };
     let (before, after) = (reach("before"), reach("after"));
     let spec = effectcraft_effects::find(om::ID).ok_or_else(|| EngineError::Other("Object Matte effect missing".into()))?;
-    let uid = s.edit("Object Matte", None, |proj, _| {
+    let label = if existing.is_some() { "Object Matte Prompt" } else { "Object Matte" };
+    let uid = s.edit(label, None, |proj, _| {
         let mut next = proj.next_id;
         let l = layer_mut(proj, cid, lid)?;
         let fxg = l.props.sub_mut("effects").ok_or_else(|| bad(cmd, "this layer has no effects"))?;
-        let n = fxg.groups().filter(|g| rt::is_object_matte(g)).count();
-        let name = if n == 0 { spec.name.to_string() } else { format!("{} {}", spec.name, n + 1) };
-        let mut g = effectcraft_effects::instantiate(spec, &mut Ids(&mut next), &name, size);
+        let mut fresh = None;
+        let g = match existing {
+            Some(u) => fxg.find_group_mut(u).ok_or_else(|| bad(cmd, "the Object Matte effect is gone"))?,
+            None => {
+                let n = fxg.groups().filter(|g| rt::is_object_matte(g)).count();
+                let name = if n == 0 { spec.name.to_string() } else { format!("{} {}", spec.name, n + 1) };
+                fresh.insert(effectcraft_effects::instantiate(spec, &mut Ids(&mut next), &name, size))
+            }
+        };
         let mut set = |path: &str, v: KV| {
             let (grp, leaf) = path.rsplit_once('/').map_or((None, path), |(a, b)| (Some(a), b));
             let target = match grp {
                 Some(sub) => g.sub_mut(sub),
-                None => Some(&mut g),
+                None => Some(&mut *g),
             };
+            // The prompt is static: a re-prompt replaces any keyframes.
             if let Some(pr) = target.and_then(|t| t.get_mut(leaf)) {
                 pr.value = v;
+                pr.keys.clear();
             }
         };
         set("objectPoint", KV::Vec2([point[0], point[1]]));
+        set("useBox", KV::Bool(bx.is_some()));
         if let Some(b) = &bx {
-            set("useBox", KV::Bool(true));
             set("boxTopLeft", KV::Vec2([b[0].min(b[2]), b[1].min(b[3])]));
             set("boxBottomRight", KV::Vec2([b[0].max(b[2]), b[1].max(b[3])]));
         }
-        set("objectTracking/trackObject", KV::Bool(track));
+        if let Some(t) = track {
+            set("objectTracking/trackObject", KV::Bool(t));
+        }
         set("objectTracking/referenceFrame", KV::Scalar(frame as f64));
-        set("objectTracking/framesBefore", KV::Scalar(before));
-        set("objectTracking/framesAfter", KV::Scalar(after));
+        if let Some(v) = before {
+            set("objectTracking/framesBefore", KV::Scalar(v));
+        }
+        if let Some(v) = after {
+            set("objectTracking/framesAfter", KV::Scalar(v));
+        }
         let u = g.uid;
-        fxg.children.push(g.into());
+        if let Some(g) = fresh {
+            fxg.children.push(g.into());
+        }
         proj.next_id = proj.next_id.max(next);
         Ok(u)
     })?;
     s.state.selected_layers = vec![lid];
-    Ok(json!({"layer": lid.0, "effect": uid, "frame": frame, "track": track, "span": [frame - before as i64, frame + after as i64]}))
+    let (track, before, after) = object_matte_reach(s, cid, lid, uid);
+    Ok(json!({"layer": lid.0, "effect": uid, "frame": frame, "track": track, "updated": existing.is_some(), "span": [frame - before, frame + after]}))
+}
+
+/// Track Object and Frames Before / After of an Object Matte instance (static values).
+fn object_matte_reach(s: &Session, cid: ItemId, lid: LayerId, uid: Uid) -> (bool, i64, i64) {
+    use effectcraft_effects::object_matte as om;
+    let Ok((_, g)) = group(s, cid, lid, uid) else { return (true, 0, 0) };
+    let ps = params_static(g);
+    let [before, after] = om::reach(&ps);
+    (om::tracks(&ps), before, after)
 }

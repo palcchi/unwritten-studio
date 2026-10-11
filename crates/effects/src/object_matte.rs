@@ -113,6 +113,11 @@ pub fn reference_frame(params: &Params) -> i64 {
     frames(params, "objectTracking/referenceFrame", -1e9, 1e9)
 }
 
+/// Frames Before / After (finite, clamped to `0..=MAX_REACH`).
+pub fn reach(params: &Params) -> [i64; 2] {
+    [frames(params, "objectTracking/framesBefore", 0.0, MAX_REACH), frames(params, "objectTracking/framesAfter", 0.0, MAX_REACH)]
+}
+
 /// Whether the matte is carried from the reference frame (else every frame is segmented on its
 /// own).
 pub fn tracks(params: &Params) -> bool {
@@ -170,8 +175,7 @@ pub fn prompt_strokes(params: &Params, layer_size: [f64; 2], frame: i64, with_mo
 pub fn roto_data(params: &Params, layer_size: [f64; 2], f: i64, with_model: bool) -> Option<RotoData> {
     if tracks(params) {
         let base = reference_frame(params);
-        let before = frames(params, "objectTracking/framesBefore", 0.0, MAX_REACH);
-        let after = frames(params, "objectTracking/framesAfter", 0.0, MAX_REACH);
+        let [before, after] = reach(params);
         let strokes = prompt_strokes(params, layer_size, base, with_model)?;
         Some(RotoData { base: Some(base), span: [base.saturating_sub(before), base.saturating_add(after)], strokes })
     } else {

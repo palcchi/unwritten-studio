@@ -426,3 +426,42 @@ fn object_matte_from_a_click() {
     let g = s.active_comp().unwrap().layer(clip).unwrap().props.find_group(r["effect"].as_u64().unwrap()).unwrap().clone();
     assert_eq!(g.name, "Object Matte 2");
 }
+
+/// `objectMatte.apply` with `effect` re-prompts that instance in one undo step: the new point and
+/// box, the box dropped when none is given, the reach kept unless given.
+#[test]
+fn object_matte_reprompt_updates_the_instance() {
+    let (mut s, clip, solid) = setup(|f| draw(center(f)));
+    let cid = s.active_comp_id().unwrap();
+    s.edit("remove solid", None, |p, _| {
+        p.comp_mut(cid).unwrap().layers.retain(|l| l.id != solid);
+        Ok(())
+    })
+    .unwrap();
+    let c = center(0);
+    let r = s
+        .execute_checked(
+            "objectMatte.apply",
+            json!({"layer": clip.0, "point": c, "box": [c[0] - 50.0, c[1] - 50.0, c[0] + 50.0, c[1] + 50.0], "after": 6, "frame": 0}),
+        )
+        .unwrap();
+    let uid = r["effect"].as_u64().unwrap();
+    let count = |s: &Session| s.active_comp().unwrap().layer(clip).unwrap().effects().unwrap().groups().count();
+    let ps = |s: &Session| crate::roto::params_static(s.active_comp().unwrap().layer(clip).unwrap().props.find_group(uid).unwrap());
+    let undo0 = s.history.undo.len();
+    let r = s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "effect": uid, "point": [c[0] + 4.0, c[1]], "frame": 2})).unwrap();
+    assert_eq!((r["effect"].as_u64(), r["updated"].as_bool()), (Some(uid), Some(true)));
+    assert_eq!(r["span"], json!([-28, 8]));
+    assert_eq!(count(&s), 1);
+    assert_eq!(s.history.undo.len(), undo0 + 1);
+    let p = ps(&s);
+    assert_eq!(p.get("objectPoint"), Some(&effectcraft_keyframe::Value::Vec2([c[0] + 4.0, c[1]])));
+    assert_eq!(p.get("useBox"), Some(&effectcraft_keyframe::Value::Bool(false)));
+    assert_eq!(effectcraft_effects::object_matte::reference_frame(&p), 2);
+    assert_eq!(effectcraft_effects::object_matte::reach(&p), [30, 6]);
+    // Undo restores the first prompt.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(ps(&s).get("useBox"), Some(&effectcraft_keyframe::Value::Bool(true)));
+    // An unknown or non-Object Matte effect is refused.
+    assert!(s.execute_checked("objectMatte.apply", json!({"layer": clip.0, "effect": 999_999, "point": c})).is_err());
+}

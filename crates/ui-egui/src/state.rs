@@ -35,6 +35,8 @@ pub enum Tool {
     Eraser,
     RotoBrush,
     RefineEdge,
+    /// Object Matte: click an object (or drag a box around it) in the Composition viewer.
+    ObjectMatte,
     Puppet,
     PuppetStarch,
     PuppetBend,
@@ -59,10 +61,10 @@ impl Tool {
         &[Tool::Brush],
         &[Tool::Clone],
         &[Tool::Eraser],
-        &[Tool::RotoBrush, Tool::RefineEdge],
+        &[Tool::RotoBrush, Tool::RefineEdge, Tool::ObjectMatte],
         &[Tool::Puppet, Tool::PuppetStarch, Tool::PuppetBend, Tool::PuppetAdvanced, Tool::PuppetOverlap],
     ];
-    pub const ALL: [Tool; 30] = [
+    pub const ALL: [Tool; 31] = [
         Tool::Selection,
         Tool::Hand,
         Tool::Zoom,
@@ -88,6 +90,7 @@ impl Tool {
         Tool::Eraser,
         Tool::RotoBrush,
         Tool::RefineEdge,
+        Tool::ObjectMatte,
         Tool::Puppet,
         Tool::PuppetStarch,
         Tool::PuppetBend,
@@ -121,6 +124,7 @@ impl Tool {
             Tool::Eraser => "Eraser Tool",
             Tool::RotoBrush => "Roto Brush Tool",
             Tool::RefineEdge => "Refine Edge Tool",
+            Tool::ObjectMatte => "Object Matte Tool",
             Tool::Puppet => "Puppet Position Pin Tool",
             Tool::PuppetStarch => "Puppet Starch Pin Tool",
             Tool::PuppetBend => "Puppet Bend Pin Tool",
@@ -142,7 +146,7 @@ impl Tool {
             Tool::Pen | Tool::PenAdd | Tool::PenDelete | Tool::PenConvert | Tool::MaskFeather => Some("G"),
             Tool::Type | Tool::TypeVertical => Some("Cmd+T"),
             Tool::Brush | Tool::Clone | Tool::Eraser => Some("Cmd+B"),
-            Tool::RotoBrush | Tool::RefineEdge => Some("Alt+W"),
+            Tool::RotoBrush | Tool::RefineEdge | Tool::ObjectMatte => Some("Alt+W"),
             Tool::Puppet | Tool::PuppetStarch | Tool::PuppetBend | Tool::PuppetAdvanced | Tool::PuppetOverlap => Some("Cmd+P"),
         }
     }
@@ -173,6 +177,7 @@ impl Tool {
             Tool::Eraser => Icon::Eraser,
             Tool::RotoBrush => Icon::RotoBrush,
             Tool::RefineEdge => Icon::RefineEdge,
+            Tool::ObjectMatte => Icon::ObjectMatte,
             Tool::Puppet => Icon::Puppet,
             Tool::PuppetStarch => Icon::PuppetStarch,
             Tool::PuppetBend => Icon::PuppetBend,

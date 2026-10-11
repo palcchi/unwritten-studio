@@ -14,6 +14,7 @@ pub mod color_picker;
 pub mod control;
 pub mod credits;
 pub mod dock;
+mod dock_shared;
 pub mod dock_ui;
 pub mod frames;
 pub mod gpu_failure;
@@ -29,6 +30,7 @@ pub mod prefs_live;
 pub mod state;
 pub mod theme;
 pub mod widgets;
+mod workspace_state;
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -253,6 +255,7 @@ impl Playback {
 pub struct EffectcraftApp {
     pub session: Session,
     pub ui: UiState,
+    workspace_store: workspace_state::WorkspaceStore,
     pub tokens: Tokens,
     pub auto: automation::Registry,
     pub frames: Frames,
@@ -356,9 +359,12 @@ struct SavedWorkspaces {
 
 impl EffectcraftApp {
     pub fn new(session: Session) -> Self {
+        let mut ui = UiState::default();
+        let workspace_store = workspace_state::WorkspaceStore::load(session.config.as_deref(), &mut ui);
         EffectcraftApp {
             session,
-            ui: UiState::default(),
+            ui,
+            workspace_store,
             tokens: Tokens::for_kind(Default::default()),
             auto: Default::default(),
             frames: Frames::default(),
@@ -414,34 +420,12 @@ impl EffectcraftApp {
             template_list: None,
         }
         .with_ui_commands()
-        .with_saved_workspaces()
-    }
-
-    /// The workspaces saved in an earlier session (Window ▸ Workspace ▸ Save as New Workspace,
-    /// Save Changes to this Workspace), from the settings store. A file that doesn't read is
-    /// ignored.
-    fn with_saved_workspaces(mut self) -> Self {
-        let text = self.session.config.as_ref().and_then(|c| c.read(WORKSPACES_FILE));
-        match text.map(|t| serde_json::from_str::<SavedWorkspaces>(&t)) {
-            Some(Ok(w)) => {
-                self.ui.saved_workspaces = w.workspaces;
-                self.ui.saved_floating = w.floating;
-            }
-            Some(Err(e)) => log::warn!("{WORKSPACES_FILE}: {e}"),
-            None => {}
-        }
-        self
     }
 
     /// Keep the saved workspaces for the next session (see [`EffectcraftApp::new`]): After
     /// Effects' saved workspaces last until they are deleted (#320).
-    pub(crate) fn store_saved_workspaces(&self) {
-        let Some(c) = &self.session.config else { return };
-        let w = SavedWorkspaces { workspaces: self.ui.saved_workspaces.clone(), floating: self.ui.saved_floating.clone() };
-        let written = serde_json::to_string(&w).map_err(std::io::Error::other).and_then(|t| c.write(WORKSPACES_FILE, &t));
-        if let Err(e) = written {
-            log::warn!("{WORKSPACES_FILE}: {e}");
-        }
+    pub(crate) fn store_saved_workspaces(&mut self) {
+        self.save_workspace_state();
     }
 
     /// Offer the frontend's commands (tools, timeline navigation…) for keyboard shortcuts.
@@ -574,8 +558,8 @@ impl EffectcraftApp {
     /// without moving the focus (a comp opening brings up its viewer, an effect applied brings up
     /// Effect Controls).
     pub fn raise_panel(&mut self, p: PanelKind) {
-        if let Some(f) = self.ui.floating.iter_mut().find(|f| f.panels.contains(&p)) {
-            f.active = f.panels.iter().position(|x| *x == p).unwrap_or(0);
+        if self.ui.floating.iter().any(|group| group.panels.contains(&p)) {
+            self.edit_layout(|layout| layout.apply(craft_ui::docking::Action::Activate { panel: p }).is_ok());
             return;
         }
         if !self.ui.dock.contains(p) {
@@ -1619,6 +1603,7 @@ impl EffectcraftApp {
             }
             self.command_inbox = Some(rx);
         }
+        let tab_had_widget_focus = ctx.egui_wants_keyboard_input();
         menus::handle_shortcuts(self, &ctx);
         if !ctx.input(|i| i.pointer.primary_down()) {
             self.ui.viewer.property_interacting = false;
@@ -1644,6 +1629,9 @@ impl EffectcraftApp {
         self.dock_area(ui, body);
         #[cfg(not(target_arch = "wasm32"))]
         prefs_live::dropped_files(self, ui, full);
+        if !tab_had_widget_focus {
+            menus::handle_tab_shortcut(self, &ctx);
+        }
         panels::precomp::mini_flowchart(self, &ctx);
         panels::home::capture_thumbnail(self);
         panels::dialogs::show(self, &ctx);
@@ -1652,6 +1640,24 @@ impl EffectcraftApp {
         panels::learn::coach(self, &ctx);
         let lift = panels::media_panels::import_card(self, ui, full);
         self.draw_toast(ui, full, lift);
+        if self.session.config.is_some() && self.workspace_store.has_changes(&self.ui) && !ctx.input(|i| i.pointer.any_down()) {
+            if self.workspace_store.due(ctx.input(|i| i.time)) {
+                self.save_workspace_state();
+            }
+            if self.workspace_store.has_changes(&self.ui) {
+                ctx.request_repaint_after(std::time::Duration::from_secs(1));
+            }
+        }
+    }
+
+    fn save_workspace_state(&mut self) {
+        if let Err(error) = self.workspace_store.save(self.session.config.as_deref(), &self.ui) {
+            if self.workspace_store.error.as_ref() != Some(&error) {
+                log::warn!("{error}");
+                self.ui.status = error.clone();
+            }
+            self.workspace_store.error = Some(error);
+        }
     }
 
     /// The status message or the latest toast, bottom left (`lift` points higher while the
@@ -1755,6 +1761,7 @@ impl EffectcraftApp {
 
 impl eframe::App for EffectcraftApp {
     fn on_exit(&mut self) {
+        self.save_workspace_state();
         // Clean exit: no crash recovery next launch (unless the graphics device was lost with
         // unsaved changes, which are in the auto-save it offers).
         if self.device_lost_close != Some(true) {

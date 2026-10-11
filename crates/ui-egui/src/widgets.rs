@@ -252,7 +252,15 @@ pub fn icon_button(ui: &mut Ui, rect: Rect, icon: Icon, active: bool, t: &Tokens
         t.icon
     };
     icons::paint(ui.painter(), rect.shrink(rect.width() * 0.22), icon, col);
+    focus_outline(ui, &resp, t);
     resp
+}
+
+/// Keep keyboard focus visible on custom-painted controls, including their active state.
+pub fn focus_outline(ui: &Ui, response: &Response, t: &Tokens) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(response.rect.shrink(1.0), 4.0, Stroke::new(2.0, t.text), StrokeKind::Inside);
+    }
 }
 
 /// One line of `text` at `pos` (placed by `align`), cut short with "…" past `max_w` points so it

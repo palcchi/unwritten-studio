@@ -770,7 +770,7 @@ fn binary_file_io_preserves_all_byte_values() {
 
     let invalid = run_code(
         &mut s,
-        &format!("var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write('\\u0100'); f.close();", q(&dst)),
+        &format!("var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write(String.fromCharCode(0x100)); f.close();", q(&dst)),
         "invalid-binary.jsx",
     );
     assert!(invalid.error.is_some(), "code points above 255 must not be truncated");

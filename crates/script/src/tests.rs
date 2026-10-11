@@ -730,3 +730,25 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     assert_eq!(kind_of(&s, "shot_[0001-0003].png"), FootageKind::Sequence);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn extendscript_substr_keeps_start_and_length_semantics() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"[
+          "abcdef".substr(0, 2),
+          "abcdef".substr(2, 3),
+          "abcdef".substr(-2),
+          "abcdef".substr(-20, 2),
+          "abcdef".substr(2, 0),
+          "abcdef".substr(2, -3),
+          "abcdef".substr(2.9, 2.9),
+          "abcdef".substr(3),
+          "abcdef".substr(30, 2),
+          "abcdef".substr(NaN, 2),
+          "abcdef".substr(2, NaN)
+        ]"#,
+    );
+    assert_eq!(o.result, json!(["ab", "cde", "ef", "ab", "", "", "cd", "def", "", "ab", ""]));
+}

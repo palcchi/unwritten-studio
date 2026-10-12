@@ -451,17 +451,34 @@ pub(crate) fn merge_p(p: &Value) -> Option<&str> {
     str_p(p, "merge")
 }
 
-/// `comp`: item id or name; default the active comp.
+/// `comp`: item id or name (an all-digit string that names no comp is taken as an id, as MCP
+/// clients often send numbers as strings); default the active comp.
 pub(crate) fn comp_id(s: &Session, p: &Value) -> Result<ItemId> {
     let missing = |v: &Value| EngineError::NoSuchComp(v.to_string());
     match p.get("comp") {
         Some(v @ Value::Number(n)) => n.as_u64().map(ItemId).filter(|id| s.project.comp(*id).is_some()).ok_or_else(|| missing(v)),
-        Some(v @ Value::String(name)) => s.project.items.values().find(|i| &i.name == name && i.as_comp().is_some()).map(|i| i.id).ok_or_else(|| missing(v)),
+        Some(v @ Value::String(name)) => s
+            .project
+            .items
+            .values()
+            .find(|i| &i.name == name && i.as_comp().is_some())
+            .map(|i| i.id)
+            .or_else(|| digits_id(name).map(ItemId).filter(|id| s.project.comp(*id).is_some()))
+            .ok_or_else(|| missing(v)),
         _ => s.active_comp_id().ok_or(EngineError::NoComp),
     }
 }
 
-/// Resolve a layer reference: id (number), `#n` / index (1-based), or name.
+/// An all-ASCII-digit string as a number (`"98"` -> 98); anything else (names, `#n`, signs) is `None`.
+fn digits_id(s: &str) -> Option<u64> {
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+/// Resolve a layer reference: id (number), `#n` / index (1-based), or name. An all-digit string
+/// that names no layer is resolved as the number it spells.
 pub(crate) fn resolve_layer(comp: &Comp, v: &Value) -> Option<LayerId> {
     match v {
         Value::Number(n) => {
@@ -472,7 +489,7 @@ pub(crate) fn resolve_layer(comp: &Comp, v: &Value) -> Option<LayerId> {
             if let Some(i) = s.strip_prefix('#').and_then(|i| i.parse::<usize>().ok()) {
                 return comp.layers.get(i.checked_sub(1)?).map(|l| l.id);
             }
-            comp.layers.iter().find(|l| &l.name == s).map(|l| l.id)
+            comp.layers.iter().find(|l| &l.name == s).map(|l| l.id).or_else(|| digits_id(s).and_then(|id| resolve_layer(comp, &Value::from(id))))
         }
         _ => None,
     }

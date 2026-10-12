@@ -141,7 +141,10 @@ The most important missing piece: it turns every other estimate here into a meas
   Location keeps its selection and fields; a layer deleted while editing is reported; and
   `prop.editGradient` is an error for a target that isn't a gradient. Unit tests in `keyframe`
   and `gradient_editor` cover per-track sampling (no double opacity), the typed one-stop round
-  trip, and stops staying in order, and selected, while they move.
+  trip, and stops staying in order, and selected, while they move. The `ui_gradient_handles`
+  tests, checked headlessly on Windows, drag a selected Gradient Fill's start and end points in
+  the Composition viewer: one undo step, the layer stays, a point inside a moved and scaled group
+  converts to the group's space, and the handles show only for a selected gradient.
 - Regression evidence for the reports of 6 October, checked headlessly on Windows: real pointer
   drags in `ui_drag_drop` (Project items into the Timeline between layers and at a time, and onto
   the viewer; an effect onto a layer in the viewer: #85, #88, #89), `ui_render_queue` (a template

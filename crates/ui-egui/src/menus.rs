@@ -129,6 +129,10 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("markers.dialog", "Marker Settings...", [], None),
     uic!("window.maximizePanel", "Maximize Panel Under Pointer", [], Some("`")),
     uic!("window.maximizeApp", "Maximize or Restore Application Window", [], Some("Cmd+\\")),
+    uic!("window.toggleCompTimeline", "Switch Between Composition and Timeline Panel", [], Some("\\")),
+    uic!("window.nextPanel", "Next Panel in Frame", [], Some("Alt+Shift+.")),
+    uic!("window.previousPanel", "Previous Panel in Frame", [], Some("Alt+Shift+,")),
+    uic!("window.closeAll", "Close Panel or All Viewers", [], Some("Cmd+Shift+W")),
     uic!("window.dockPanel", "Dock Panel", [], None),
     uic!("window.floatPanel", "Undock Panel", [], None),
     uic!("window.closePanel", "Close Panel", [], None),
@@ -593,6 +597,39 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
                 return Ok(Value::Null);
             };
             return run_engine(app, ctx, "comp.open", json!({"comp": next.0}));
+        }
+        // \\: between the Composition viewer and the Timeline.
+        "window.toggleCompTimeline" => {
+            let to = if app.ui.focused == PanelKind::Timeline { crate::panels::viewers::active_panel(app) } else { PanelKind::Timeline };
+            app.show_panel(to);
+            return Ok(json!({"focused": to.id()}));
+        }
+        // Alt+Shift+, / Alt+Shift+.: the previous / next tab of the focused panel's group.
+        "window.nextPanel" | "window.previousPanel" => {
+            let focused = app.ui.focused;
+            let group: Vec<PanelKind> = match app.ui.floating.iter().find(|f| f.panels.contains(&focused)) {
+                Some(f) => f.panels.clone(),
+                None => app.ui.dock.group_of(focused).map(<[PanelKind]>::to_vec).unwrap_or_default(),
+            };
+            let Some(i) = group.iter().position(|p| *p == focused) else { return Ok(Value::Null) };
+            let step = if id == "window.nextPanel" { 1 } else { group.len().saturating_sub(1) };
+            if let Some(next) = group.get((i + step) % group.len().max(1)).copied() {
+                app.show_panel(next);
+            }
+            return Ok(json!({"focused": app.ui.focused.id()}));
+        }
+        // Ctrl+Shift+W: with a viewer or the Timeline active, every open composition closes;
+        // any other panel closes itself.
+        "window.closeAll" => {
+            let focused = app.ui.focused;
+            if matches!(focused, PanelKind::Composition | PanelKind::Timeline | PanelKind::Viewer(_)) {
+                for c in app.session.state.open_comps.clone() {
+                    run_engine(app, ctx, "comp.close", json!({"comp": c.0}))?;
+                }
+            } else {
+                app.close_panel(focused);
+            }
+            return Ok(Value::Null);
         }
         "view.actualSize" if app.ui.focused == PanelKind::Layer => {
             app.ui.layer_zoom = Some(1.0 / ctx.pixels_per_point());
@@ -2175,6 +2212,10 @@ mod tests {
             ("view.fitUpTo100", "Alt+/"),
             ("view.nextItem", "Shift+."),
             ("view.previousItem", "Shift+,"),
+            ("window.toggleCompTimeline", "\\"),
+            ("window.nextPanel", "Alt+Shift+."),
+            ("window.previousPanel", "Alt+Shift+,"),
+            ("window.closeAll", "Cmd+Shift+W"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }
@@ -2222,6 +2263,36 @@ mod tests {
         assert!(app.ui.viewer.zoom.is_none() && app.ui.viewer.fit_up_to_100);
         run(&mut app, "view.fit");
         assert!(!app.ui.viewer.fit_up_to_100);
+    }
+
+    #[test]
+    fn panel_keys_switch_cycle_and_close() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        for name in ["A", "B"] {
+            app.session.execute("comp.new", json!({"name": name, "duration": 4})).unwrap();
+        }
+        // \\ switches between the Timeline and the Composition viewer.
+        app.ui.focused = PanelKind::Timeline;
+        run(&mut app, "window.toggleCompTimeline");
+        assert_eq!(app.ui.focused, PanelKind::Composition);
+        run(&mut app, "window.toggleCompTimeline");
+        assert_eq!(app.ui.focused, PanelKind::Timeline);
+        // Alt+Shift+. / Alt+Shift+,: the tabs of the focused panel's group, wrapping.
+        let group = app.ui.dock.group_of(PanelKind::Timeline).unwrap().to_vec();
+        assert!(group.len() > 1, "{group:?}");
+        run(&mut app, "window.nextPanel");
+        assert_eq!(app.ui.focused, group[(group.iter().position(|p| *p == PanelKind::Timeline).unwrap() + 1) % group.len()]);
+        run(&mut app, "window.previousPanel");
+        assert_eq!(app.ui.focused, PanelKind::Timeline);
+        // Ctrl+Shift+W with the Timeline active closes every composition.
+        run(&mut app, "window.closeAll");
+        assert!(app.session.state.open_comps.is_empty());
+        // With another panel active it closes that panel.
+        app.show_panel(PanelKind::Project);
+        run(&mut app, "window.closeAll");
+        assert!(!app.ui.dock.contains(PanelKind::Project));
     }
 
     #[test]

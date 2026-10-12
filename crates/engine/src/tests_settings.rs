@@ -408,6 +408,14 @@ fn fast_previews_and_show_channel_modes_have_default_keys() {
     assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("green", false));
     s.execute("view.channel.green", json!({})).unwrap();
     assert_eq!(s.state.viewer.channel.id(), "rgb");
+    // Grayscale and colorized of one channel replace each other; the same again is RGB.
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    s.execute("view.channel.red", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("red", false));
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("red", true));
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    assert_eq!(s.state.viewer.channel.id(), "rgb");
 }
 
 /// Default keys for commands and menu entries that had none.

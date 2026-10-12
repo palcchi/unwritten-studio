@@ -418,8 +418,8 @@ fn default_keys_for_commands_that_had_none() {
     for (id, params, key) in [
         ("edit.pasteReversedKeyframes", json!(null), "Cmd+Shift+V"),
         ("edit.purge", json!({"what": "snapshot"}), "Cmd+Shift+F5"),
-        ("layer.sampling", json!({"sampling": "bilinear"}), "Alt+B"),
-        ("layer.sampling", json!({"sampling": "bicubic"}), "Alt+Shift+B"),
+        ("layer.sampling", json!({"sampling": "bilinear", "toggle": true}), "Alt+B"),
+        ("layer.sampling", json!({"sampling": "bicubic", "toggle": true}), "Alt+Shift+B"),
         ("view.res.custom", json!(null), "Cmd+Alt+J"),
         ("file.setProxy", json!(null), "Cmd+Alt+P"),
         ("file.openRecent", json!(null), "Cmd+Alt+Shift+P"),

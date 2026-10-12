@@ -52,6 +52,30 @@ fn layer_quality_sampling_frame_blending_and_undo() {
     assert!(s.execute("layer.quality", json!({"quality": "fancy"})).is_err());
 }
 
+/// `layer.sampling {toggle}` (Alt+B, Alt+Shift+B): layers that all have the sampling already get
+/// the other one; without `toggle` it is only set.
+#[test]
+fn layer_sampling_toggles_when_every_layer_has_it() {
+    let mut s = comp();
+    let a = solid(&mut s, "#ff0000");
+    let b = solid(&mut s, "#00ff00");
+    let sampling = |s: &Session| [layer(s, a).switches.sampling, layer(s, b).switches.sampling];
+    let bicubic = json!({"layers": [a, b], "sampling": "bicubic", "toggle": true});
+    s.execute("layer.sampling", bicubic.clone()).unwrap();
+    assert_eq!(sampling(&s), [Sampling::Bicubic; 2]);
+    s.execute("layer.sampling", bicubic.clone()).unwrap();
+    assert_eq!(sampling(&s), [Sampling::Bilinear; 2]);
+    s.execute("layer.sampling", json!({"layers": [a, b], "sampling": "bilinear", "toggle": true})).unwrap();
+    assert_eq!(sampling(&s), [Sampling::Bicubic; 2]);
+    // Mixed layers all get the one asked for.
+    s.execute("layer.sampling", json!({"layers": [a], "sampling": "bilinear"})).unwrap();
+    s.execute("layer.sampling", bicubic).unwrap();
+    assert_eq!(sampling(&s), [Sampling::Bicubic; 2]);
+    // Without `toggle` it stays.
+    s.execute("layer.sampling", json!({"layers": [a, b], "sampling": "bicubic"})).unwrap();
+    assert_eq!(sampling(&s), [Sampling::Bicubic; 2]);
+}
+
 /// `layer.setSwitch {others: true}` (Alt-click on an A/V feature): the layer stands alone, the
 /// other layers come back the next time.
 #[test]

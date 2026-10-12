@@ -252,6 +252,46 @@ fn multiple_selected_footage_dropped_on_empty_timeline_asks_how_to_create_comps(
     assert!(h.state().session.active_comp().is_none(), "no composition until the user chooses");
 }
 
+/// #684: dropping imported footage onto the empty Composition viewer creates
+/// a composition that matches the source, with that source as its first layer.
+#[test]
+fn project_footage_dropped_on_empty_viewer_creates_first_comp() {
+    let mut s = Session::default();
+    let footage = s.execute("file.importPlaceholder", json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5}))
+        .unwrap()["item"].as_u64().unwrap();
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    assert!(h.state().session.active_comp().is_none());
+    let from = rect(&h, &format!("project.item.{footage}.name")).center();
+    let viewer = rect(&h, "panel.Composition");
+    drag(&mut h, from, pos2(viewer.min.x + 40.0, viewer.min.y + 70.0), Modifiers::NONE);
+    let comp = h.state().session.active_comp().expect("created a composition");
+    assert_eq!((comp.width, comp.height), (640, 360));
+    assert_eq!(comp.frame_rate, effectcraft_engine::time::FrameRate::from_f64(24.0));
+    assert_eq!(comp.duration.seconds(), 5.0);
+    assert_eq!(comp.layers.len(), 1);
+    assert_eq!(comp.layers[0].name, "Landscape.png");
+    assert!(h.state().dialog.is_none());
+}
+
+/// Several dragged sources must ask whether to create one or multiple comps,
+/// rather than silently discarding the other selected items.
+#[test]
+fn multiple_selected_footage_dropped_on_empty_viewer_asks_how_to_create_comps() {
+    let mut s = Session::default();
+    let first = s.execute("file.importPlaceholder", json!({"name": "First.png", "width": 160, "height": 90})).unwrap()["item"].as_u64().unwrap();
+    let second = s.execute("file.importPlaceholder", json!({"name": "Second.png", "width": 300, "height": 200})).unwrap()["item"].as_u64().unwrap();
+    s.state.project_selection = vec![effectcraft_engine::project::ItemId(first), effectcraft_engine::project::ItemId(second)];
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let from = rect(&h, &format!("project.item.{first}.name")).center();
+    let viewer = rect(&h, "panel.Composition");
+    drag(&mut h, from, pos2(viewer.min.x + 40.0, viewer.min.y + 70.0), Modifiers::NONE);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form));
+    assert!(h.state().auto.find("form.field.single").is_some());
+    assert!(h.state().session.active_comp().is_none(), "no composition until the user chooses");
+}
+
 /// A file dropped on the window (egui hands it over as a dropped file).
 #[derive(Debug)]
 struct Dropped(std::path::PathBuf);

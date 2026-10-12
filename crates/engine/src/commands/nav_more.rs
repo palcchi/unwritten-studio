@@ -6,7 +6,7 @@ use effectcraft_project::{ItemId, LayerSource, Project};
 use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, comp_id, has_comp, layers_p};
+use super::{CommandSpec, always, comp_id, has_comp, layers_p};
 use crate::{EngineError, Result, Session, cmd};
 
 /// Ctrl+Alt+B: the work area spans the selected layers (their earliest In to their latest Out
@@ -28,6 +28,14 @@ fn work_area_to_selection(s: &mut Session, p: &Value) -> Result<Value> {
     })?;
     let c = s.project.comp(cid).ok_or(EngineError::NoComp)?;
     Ok(json!({"start": c.work_area.0.seconds(), "end": c.work_area.1.seconds()}))
+}
+
+/// Shift+F2: no keyframe, property or property group is selected; the layers stay selected.
+fn deselect_keys(s: &mut Session, _: &Value) -> Result<Value> {
+    s.state.selected_keys.clear();
+    s.state.selected_props.clear();
+    s.state.selected_vertices.clear();
+    Ok(Value::Null)
 }
 
 /// The comps connected to `from` by nesting, in either direction (its network of nested
@@ -84,5 +92,6 @@ pub fn specs() -> Vec<CommandSpec> {
             work_area_to_selection
         ),
         cmd!("comp.activateRecent", "Activate Most Recent Composition in Hierarchy", [], Some("Shift+Escape"), "{comp?}", has_comp, activate_recent),
+        cmd!("keys.deselectAll", "Deselect All Keyframes and Properties", [], ["Shift+F2", "Cmd+Alt+Shift+A"], "{}", always, deselect_keys),
     ]
 }

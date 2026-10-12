@@ -95,3 +95,15 @@ fn the_most_recent_comp_of_the_hierarchy_comes_back() {
     s.execute("comp.activateRecent", json!({})).unwrap();
     assert_eq!(s.state.active_comp.map(|c| c.0), Some(main));
 }
+
+#[test]
+fn keyframes_and_properties_deselect_but_layers_stay() {
+    let (mut s, ids) = session([(0.0, 10.0); 3]);
+    s.execute("layer.select", json!({"layers": [ids[0]]})).unwrap();
+    s.execute("prop.addKey", json!({"layer": ids[0], "path": "transform/opacity", "time": 1.0, "value": 50.0})).unwrap();
+    s.execute("keys.selectAll", json!({})).unwrap();
+    assert!(!s.state.selected_keys.is_empty());
+    s.execute("keys.deselectAll", json!({})).unwrap();
+    assert!(s.state.selected_keys.is_empty() && s.state.selected_props.is_empty());
+    assert_eq!(s.state.selected_layers.len(), 1);
+}

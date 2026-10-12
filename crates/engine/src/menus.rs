@@ -1106,6 +1106,9 @@ View
   Snap to Guides | view.snapToGuides
   Lock Guides | view.lockGuides
   Add Guide... | view.addGuide
+  Add Percentage Guide... | view.addPercentGuide
+  Convert Guides to Percentage | view.convertGuides {"to":"percent"}
+  Convert Guides to Pixels | view.convertGuides {"to":"pixels"}
   Clear Guides | view.clearGuides
   Import Guides... | view.importGuides
   Export Guides... | view.exportGuides

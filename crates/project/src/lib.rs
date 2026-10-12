@@ -467,7 +467,37 @@ pub struct Comp {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Guide {
     pub vertical: bool,
+    /// Comp pixels, or percent of the comp's width (vertical) / height (horizontal) when
+    /// [`Guide::percent`] is set.
     pub position: f64,
+    /// A percentage guide (After Effects 26.5): `position` is a percent of the comp's size, so the
+    /// guide keeps its relative place when the comp is resized. Absent in older projects.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub percent: bool,
+}
+
+impl Guide {
+    /// The comp's extent along this guide's axis, never zero.
+    fn extent(&self, width: u32, height: u32) -> f64 {
+        f64::from(if self.vertical { width } else { height }).max(1.0)
+    }
+
+    /// The guide's position in comp pixels for a comp of this size.
+    pub fn px(&self, width: u32, height: u32) -> f64 {
+        if self.percent { self.position / 100.0 * self.extent(width, height) } else { self.position }
+    }
+
+    /// Place the guide at `px` comp pixels, keeping its unit.
+    pub fn set_px(&mut self, px: f64, width: u32, height: u32) {
+        self.position = if self.percent { px / self.extent(width, height) * 100.0 } else { px };
+    }
+
+    /// Switch between pixels and percent without moving the guide on the comp.
+    pub fn set_percent(&mut self, percent: bool, width: u32, height: u32) {
+        let px = self.px(width, height);
+        self.percent = percent;
+        self.set_px(px, width, height);
+    }
 }
 
 fn yes() -> bool {

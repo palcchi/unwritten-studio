@@ -1464,3 +1464,53 @@ fn interpret_footage_loop_from_form_float() {
         _ => panic!(),
     }
 }
+
+#[test]
+fn percentage_guides_follow_the_comp_size() {
+    let mut s = comp();
+    s.execute("view.addGuide", json!({"orientation": "vertical", "position": 25, "percent": true})).unwrap();
+    s.execute("view.addPercentGuide", json!({"orientation": "horizontal"})).unwrap();
+    s.execute("view.addGuide", json!({"orientation": "vertical", "position": 100})).unwrap();
+    let c = s.active_comp().unwrap().clone();
+    assert!(c.guides[0].percent && c.guides[1].percent && !c.guides[2].percent);
+    assert_eq!((c.guides[0].px(c.width, c.height), c.guides[1].px(c.width, c.height)), (160.0, 180.0));
+    // A comp resize moves percentage guides with it and leaves pixel guides alone.
+    s.execute("comp.settings", json!({"width": 1280, "height": 720})).unwrap();
+    let c = s.active_comp().unwrap().clone();
+    assert_eq!((c.guides[0].px(c.width, c.height), c.guides[1].px(c.width, c.height), c.guides[2].px(c.width, c.height)), (320.0, 360.0, 100.0));
+    // Dragging keeps the unit: the position arrives in comp pixels.
+    s.execute("view.moveGuide", json!({"index": 0, "position": 640})).unwrap();
+    assert_eq!(s.active_comp().unwrap().guides[0].position, 50.0);
+    // Snapping sees the pixel position.
+    let c = s.active_comp().unwrap().clone();
+    assert!(c.guides.iter().any(|g| g.percent && g.vertical && g.px(c.width, c.height) == 640.0));
+    // Converting keeps the guide where it is, and undoes in one step.
+    s.execute("view.convertGuides", json!({"to": "pixels"})).unwrap();
+    let g = s.active_comp().unwrap().guides.clone();
+    assert!(g.iter().all(|g| !g.percent));
+    assert_eq!((g[0].position, g[1].position), (640.0, 360.0));
+    s.execute("view.convertGuides", json!({"to": "percent", "index": 2})).unwrap();
+    assert_eq!(s.active_comp().unwrap().guides[2].position, 100.0 / 1280.0 * 100.0);
+    s.undo();
+    assert!(!s.active_comp().unwrap().guides[2].percent);
+    assert!(s.execute("view.convertGuides", json!({"to": "furlongs"})).is_err());
+    assert!(s.execute("view.convertGuides", json!({"index": 9})).is_err());
+    // A crop keeps percentage guides where they were on the image.
+    s.execute("view.convertGuides", json!({"to": "percent"})).unwrap();
+    s.execute("view.setRegionOfInterest", json!({"rect": [320, 0, 640, 720]})).unwrap();
+    s.execute("comp.cropToRegionOfInterest", json!({})).unwrap();
+    let c = s.active_comp().unwrap();
+    assert!((c.guides[0].px(c.width, c.height) - 320.0).abs() < 1e-9, "640 - 320 crop offset");
+}
+
+#[test]
+fn old_guides_load_as_pixel_guides_and_percent_round_trips() {
+    let old: effectcraft_project::Guide = serde_json::from_str(r#"{"vertical":true,"position":12.5}"#).unwrap();
+    assert!(!old.percent);
+    assert!(!serde_json::to_string(&old).unwrap().contains("percent"), "pixel guides stay in the old shape");
+    let g = effectcraft_project::Guide { vertical: false, position: 10.0, percent: true };
+    let back: effectcraft_project::Guide = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+    assert_eq!(back, g);
+    // A zero-sized comp never divides by zero.
+    assert!(g.px(0, 0).is_finite());
+}

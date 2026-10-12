@@ -1,6 +1,6 @@
 # Where EffectCraft falls short
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (re-measured against After Effects 2026 26.5; ranked gap list with estimates; numbers reconciled with target-app-parity.md) · **Target:** Adobe After Effects 2026 (26.5.0.89)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (gap 21: percentage guides and effect colour labels in; earlier change: re-measured against After Effects 2026 26.5; ranked gap list with estimates; numbers reconciled with target-app-parity.md) · **Target:** Adobe After Effects 2026 (26.5.0.89)
 
 An honest assessment of how far EffectCraft is from being a real replacement for After Effects,
 and the work that closes the gap. This document is meant for contributors and agents choosing
@@ -77,7 +77,7 @@ are grouped by area; the issue tracker has the rest.
 | 18 | **Relative paths and relinking** | Projects store absolute footage paths; no relink when a project moves | Moving or sharing a project breaks it | 6–12 h | G4 · [file-format-parity.md](file-format-parity.md) |
 | 19 | **Plug-in ecosystem** | No After Effects SDK hosting (#600, #327 OpenFX, #334, #376 plug-in manager); our WebAssembly API has no third-party plug-ins | Many pro projects depend on Trapcode, Element, Saber… | 40–80 h for API growth; SDK hosting needs an owner decision | G8 · [scripting-parity.md](scripting-parity.md) |
 | 20 | **Multi-monitor and video output** | #486: any panel can move into a native window of its own (panel menu ▸ Move Panel to New Window, `window.panelWindow`) and so onto another screen, restored with the workspace; still missing: dragging tabs between those windows, app shortcuts while one has the focus, named workspaces remembering them, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
-| 21 | **Small 26.x features** | Proportional Scrubbing (26.2), pasting Illustrator's own clipboard data as shapes (26.3; SVG markup on the clipboard pastes as a shape layer, #738), variable-font filter (26.3), percentage guides and effect colour labels (26.5), the rebuilt Effect Controls (26.5) | Users of the current version expect them | 15–25 h | — · [ui-parity.md](ui-parity.md) |
+| 21 | **Small 26.x features** | Proportional Scrubbing (26.2), pasting Illustrator's own clipboard data as shapes (26.3; SVG markup on the clipboard pastes as a shape layer, #738), variable-font filter (26.3), the rebuilt Effect Controls (26.5). Percentage guides (View ▸ Add Percentage Guide, Convert Guides to Percentage / Pixels) and effect colour labels (Effect Controls header bar and right-click Label menu, `effect.setLabel`) are in (#1095), built from the release notes' one-line descriptions and never compared with After Effects: the Timeline shows no effect label, and the labels' exact UI there is unknown | Users of the current version expect them | 10–20 h left | — · [ui-parity.md](ui-parity.md) |
 | 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; single-file intermediates are 8-bit uncompressed QuickTime only (#372: no 16-bpc, AVI or lossless-compressed codec); #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 23 | **Essential Graphics interchange** | Templates are `.ectemplate`, not `.mogrt`; #338 Scale exposes X and Y; #611 FilmCraft rejects exported `.fcgt` | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
 | 24 | **Timeline depth requests** | #601 expand precomps in place, #602 reorderable render stack, #604 guide-only effects, #355 bulk keyframes, #425 keyframe confusion, #428 more shortcuts | Power-user speed | 15–30 h | G2 · [ui-parity.md](ui-parity.md) |
@@ -317,6 +317,7 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-10 | minor | Alpha gate checked: no alpha blockers |
+| 2026-10-12 | minor | Gap 21: percentage guides and effect colour labels added (#1095) |
 | 2026-10-10 | major | Re-measured against After Effects 2026 26.5: two numbers (breadth ≈ 91%, ready ≈ 45%), dimension table with hours, a ranked list of 25 gaps with evidence, impact, estimate and parity doc; the real-user evidence moved into a report log under G2; links follow the rename of `parity.md` to `target-app-parity.md` |
 | 2026-10-08 | minor | User issues of 6–8 October and their regression evidence |
 | 2026-10-05 | major | First honest assessment: breadth ≈ 99% vs real use ≈ 30–50%; workstreams G1–G9 |

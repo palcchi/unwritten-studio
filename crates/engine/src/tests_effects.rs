@@ -369,3 +369,35 @@ fn ocio_effect_warns_about_unsupported_config_transforms() {
     set(&mut s, "configFile", json!("/no/such/config.ocio"));
     assert!(warning(&mut s).as_str().is_some_and(|w| w.starts_with("Can't read the OCIO config")));
 }
+
+#[test]
+fn effect_colour_labels_set_clear_undo_and_round_trip() {
+    let (mut s, a, _) = comp_with_two_solids();
+    let blur = apply(&mut s, a, "Gaussian Blur");
+    let label = |s: &Session| layer(s, a).effects().unwrap().groups().next().unwrap().label;
+    assert_eq!(label(&s), None);
+    s.execute("effect.setLabel", json!({"layer": a, "effect": blur, "label": "Blue"})).unwrap();
+    assert_eq!(label(&s), Some(effectcraft_color::Label::Blue));
+    // Duplicates keep the label.
+    s.execute("effect.duplicate", json!({"layer": a, "effect": blur})).unwrap();
+    assert_eq!(layer(&s, a).effects().unwrap().groups().filter(|g| g.label.is_some()).count(), 2);
+    s.undo();
+    // It saves with the project and survives a reload.
+    let json = s.project.to_file_json().unwrap();
+    let back = effectcraft_project::Project::from_json(&json).unwrap();
+    let l = back.comp(s.active_comp_id().unwrap()).unwrap().layer(LayerId(a)).unwrap().clone();
+    assert_eq!(l.effects().unwrap().groups().next().unwrap().label, Some(effectcraft_color::Label::Blue));
+    // None (or index 0) clears it; the change undoes.
+    s.execute("effect.setLabel", json!({"layer": a, "effect": blur, "label": 0})).unwrap();
+    assert_eq!(label(&s), None);
+    s.undo();
+    assert_eq!(label(&s), Some(effectcraft_color::Label::Blue));
+    assert!(s.execute("effect.setLabel", json!({"layer": a, "effect": blur, "label": "Chartreuse"})).is_err());
+    assert!(s.execute("effect.setLabel", json!({"layer": a, "effect": blur, "label": 99})).is_err());
+    // A project saved before labels existed has none.
+    let old = json.replace("\"label\":\"Blue\"", "\"x\":0").replace("\"label\": \"Blue\"", "\"x\": 0");
+    assert_ne!(old, json, "the replace removed the effect's label");
+    let old = effectcraft_project::Project::from_json(&old).unwrap();
+    let l = old.comp(s.active_comp_id().unwrap()).unwrap().layer(LayerId(a)).unwrap().clone();
+    assert_eq!(l.effects().unwrap().groups().next().unwrap().label, None);
+}

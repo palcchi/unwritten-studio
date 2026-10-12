@@ -255,6 +255,10 @@ pub struct PropGroup {
     /// fx switch for effects, eye for shape groups, etc.
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// An effect's colour label (After Effects 26.5), shown in Effect Controls and the Timeline;
+    /// `None` is unlabelled. Absent in older projects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<effectcraft_color::Label>,
     #[serde(default)]
     pub children: Vec<Node>,
 }
@@ -338,7 +342,7 @@ pub fn parse_path(s: &str) -> Vec<Seg> {
 
 impl PropGroup {
     pub fn new(uid: Uid, match_id: &str, name: &str) -> PropGroup {
-        PropGroup { uid, match_id: match_id.into(), name: name.into(), kind: GroupKind::Plain, enabled: true, children: vec![] }
+        PropGroup { uid, match_id: match_id.into(), name: name.into(), kind: GroupKind::Plain, enabled: true, label: None, children: vec![] }
     }
     pub fn with(mut self, n: impl Into<Node>) -> PropGroup {
         self.children.push(n.into());

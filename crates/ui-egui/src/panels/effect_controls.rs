@@ -1107,6 +1107,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let selected = app.session.state.selected_props.iter().any(|(l, u)| *l == layer.id && *u == g.uid);
         let active = effect_active(g, layer.id, &app.session.state.selected_props);
         bp.rect_filled(r, 0.0, if active { t.fx_header_active } else { t.fx_header });
+        // The effect's colour label (26.5): a bar on the header's left edge.
+        if let Some(lab) = g.label.filter(|l| *l != effectcraft_engine::color::Label::None) {
+            let [lr, lg, lb] = app.session.prefs.label_rgb(lab);
+            bp.rect_filled(Rect::from_min_size(r.min, vec2(4.0, r.height())), 0.0, Color32::from_rgb(lr, lg, lb));
+            app.auto.add(
+                &format!("effectControls.effect.{}.label", g.uid),
+                Rect::from_min_size(r.min, vec2(4.0, r.height())),
+                &app.session.prefs.label_name(lab),
+            );
+        }
         let fxr = Rect::from_center_size(pos2(r.min.x + 14.0, r.center().y), vec2(16.0, 16.0));
         if widgets::icon_toggle(ui, fxr, Icon::Fx, g.enabled, &t, egui::Id::new(("ec-fx", g.uid)), Sense::click()).clicked() {
             actions.push(("effect.toggle".into(), json!({"layer": layer.id.0, "effect": g.uid})));
@@ -1197,6 +1207,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         crate::widgets::context_menu(&hresp, |ui| {
             let lid = layer.id.0;
+            let mut picked_label: Option<usize> = None;
             let mut item = |ui: &mut egui::Ui, label: &str, enabled: bool, cmd: &str, params: serde_json::Value| {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                     actions.push((cmd.into(), params));
@@ -1212,11 +1223,23 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 ui.close();
             }
             ui.separator();
+            ui.menu_button(crate::i18n::tr("Label"), |ui| {
+                let cur = g.label.unwrap_or(effectcraft_engine::color::Label::None);
+                for (i, l) in effectcraft_engine::color::Label::ALL.into_iter().enumerate() {
+                    if widgets::label_entry(ui, l, &app.session.prefs.label_name(l), l == cur, &t).clicked() {
+                        picked_label = Some(i);
+                        ui.close();
+                    }
+                }
+            });
             item(ui, "Reset", true, "effect.reset", json!({"layer": lid, "effect": g.uid}));
             item(ui, "Remove", true, "effect.remove", json!({"layer": lid, "effect": g.uid}));
             ui.separator();
             item(ui, "Move Up", fi > 0, "effect.reorder", json!({"layer": lid, "effect": g.uid, "index": fi.max(1)}));
             item(ui, "Move Down", fi + 1 < fx.len(), "effect.reorder", json!({"layer": lid, "effect": g.uid, "index": fi + 2}));
+            if let Some(i) = picked_label {
+                actions.push(("effect.setLabel".into(), json!({"layer": lid, "effect": g.uid, "label": i})));
+            }
         });
         // What the effect can't render as asked (an OCIO config it can't read, transforms it
         // passes through), under its name.

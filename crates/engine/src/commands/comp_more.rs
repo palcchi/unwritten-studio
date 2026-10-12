@@ -17,7 +17,8 @@ fn has_roi(s: &Session) -> std::result::Result<(), String> {
 /// (all position keys too) so nothing moves on screen.
 fn crop(s: &mut Session, cid: effectcraft_project::ItemId, r: [f64; 4], label: &str) -> Result<Value> {
     let (x, y) = (r[0].round(), r[1].round());
-    let (w, h) = (r[2].round().max(1.0) as u32, r[3].round().max(1.0) as u32);
+    // At most 30,000 px a side, like any composition (#788).
+    let (w, h) = (effectcraft_project::limits::size_f64(r[2]), effectcraft_project::limits::size_f64(r[3]));
     s.edit(label, None, |proj, st| {
         let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         c.width = w;

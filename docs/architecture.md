@@ -194,7 +194,10 @@ are dropped; running jobs finish into the cache. When the budget (Settings ▸ M
 full the least recently shown frames go first. The timeline's green bar counts cached frames
 of the current content and viewer settings.
 Resolution Auto renders the pixels the magnification needs, as in After Effects (Full above
-50 %, Half down to 33.3 %, Third down to 25 %, then Quarter). Below 100 % the viewer averages
+50 %, Half down to 33.3 %, Third down to 25 %, then Quarter). The Resolution is the comp's
+(`Comp::resolution`, saved with the project): setting it is no undo step (undo, redo and history
+jumps carry the current values over) and, like the Shy switches, it is outside
+`Comp::same_pixels`, so cached frames stay valid. Below 100 % the viewer averages
 instead of skipping pixels (Viewer Zoom Quality More Accurate): GPU frames carry a mip chain
 sampled trilinearly, CPU frames go up averaged down by the whole factor that leaves about one
 texel per screen pixel.

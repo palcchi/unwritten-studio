@@ -60,6 +60,8 @@ pub struct DialogState {
     pub unsaved: super::unsaved::Pending,
     /// Deleting Project items in use: the deletion waiting on the prompt.
     pub delete_items: super::delete_items::Pending,
+    /// The Gradient Editor's draft and the property it edits.
+    pub gradient: super::gradient_editor::Draft,
 }
 
 pub fn open_new_comp(app: &mut EffectcraftApp) {
@@ -193,6 +195,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
         Dialog::RenderTemplates => super::rq_templates::show(app, ctx, &t),
         Dialog::UnsavedChanges => super::unsaved::show(app, ctx, &t),
         Dialog::DeleteItems => super::delete_items::show(app, ctx, &t),
+        Dialog::GradientEditor => super::gradient_editor::show(app, ctx, &t),
     }
 }
 

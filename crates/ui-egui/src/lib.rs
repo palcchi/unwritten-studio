@@ -94,6 +94,8 @@ pub enum Dialog {
     UnsavedChanges,
     /// Delete Project items that compositions use? (`panels::delete_items`).
     DeleteItems,
+    /// A gradient property's Gradient Editor (`panels::gradient_editor`, `prop.editGradient`).
+    GradientEditor,
 }
 
 /// The desktop's light or dark appearance where egui cannot see it (Wayland compositors that send
@@ -542,6 +544,17 @@ impl EffectcraftApp {
     /// not repeated), in name order.
     pub fn saved_workspace_names(&self) -> Vec<String> {
         self.ui.saved_workspaces.keys().filter(|k| !dock::WORKSPACES.contains(&k.as_str())).cloned().collect()
+    }
+
+    /// The open Gradient Editor's draft (`panels::gradient_editor`): what OK would set.
+    pub fn gradient_draft(&self) -> &panels::gradient_editor::Draft {
+        &self.dialog_state.gradient
+    }
+
+    /// The open Gradient Editor's draft, to edit (tests and automation; the editor's own fields
+    /// do the same).
+    pub fn gradient_draft_mut(&mut self) -> &mut panels::gradient_editor::Draft {
+        &mut self.dialog_state.gradient
     }
 
     /// Show panel `p` (opening it in its usual place if it is closed), bring it to the front and

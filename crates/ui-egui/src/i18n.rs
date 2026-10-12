@@ -5923,6 +5923,11 @@ const GERMAN: &[(&str, &str, &str)] = &[
 
 /// Czech (cs): original phrase translations of every fixed menu entry.
 const CZECH: &[(&str, &str, &str)] = &[
+    ("", "Front", "Přední strana"),
+    ("", "Bevel", "Zkosení"),
+    ("", "Side", "Boční strana"),
+    ("", "Back", "Zadní strana"),
+    ("layer.addTextAnimator", "Color", "Barva"),
     ("", "EffectCraft", "EffectCraft"),
     ("app.about", "About EffectCraft...", "O aplikaci EffectCraft..."),
     ("", "Settings...", "Nastavení..."),

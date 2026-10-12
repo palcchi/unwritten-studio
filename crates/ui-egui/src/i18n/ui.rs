@@ -3211,18 +3211,12 @@ mod tests {
 
     fn catalogs() -> Vec<(&'static str, &'static str)> {
         JAPANESE
-            
             .iter()
-            
             .copied()
-            
             .chain(SIMPLIFIED_CHINESE.iter().copied())
-            
             .chain(TRADITIONAL_CHINESE.iter().copied())
-            
             .chain(UKRAINIAN.iter().copied())
             .chain(PORTUGUESE.iter().copied())
-            
             .chain(CZECH.iter().copied())
             .collect()
     }

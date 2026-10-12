@@ -86,6 +86,9 @@ var MaskMode = __enum("MaskMode", ["NONE", "ADD", "SUBTRACT", "INTERSECT", "LIGH
 var RQItemStatus = __enum("RQItemStatus", ["WILL_CONTINUE", "NEEDS_OUTPUT", "UNQUEUED", "QUEUED", "RENDERING", "USER_STOPPED", "ERR_STOPPED", "DONE"], 3012);
 var CloseOptions = __enum("CloseOptions", ["DO_NOT_SAVE_CHANGES", "PROMPT_TO_SAVE_CHANGES", "SAVE_CHANGES"], 1212);
 var ImportAsType = __enum("ImportAsType", ["COMP_CROPPED_LAYERS", "FOOTAGE", "COMP", "PROJECT"], 3812);
+// Accept the longer names used by some ExtendScript hosts.
+ImportAsType.COMPOSITION_CROPPED_LAYERS = ImportAsType.COMP_CROPPED_LAYERS;
+ImportAsType.COMPOSITION = ImportAsType.COMP;
 var TimeDisplayType = __enum("TimeDisplayType", ["FRAMES", "TIMECODE"], 2012);
 var LogType = __enum("LogType", ["ERRORS_ONLY", "ERRORS_AND_SETTINGS", "ERRORS_AND_PER_FRAME_INFO"], 3212);
 var KeyframeLabel = __enum("KeyframeLabel", ["NONE"], 0);
@@ -1768,7 +1771,11 @@ function ImportOptions(file) {
   this.rangeStart = 0;
   this.rangeEnd = 0;
 }
-ImportOptions.prototype.canImportAs = function (t) { return t === ImportAsType.FOOTAGE; };
+ImportOptions.prototype.canImportAs = function (t) {
+  if (t === ImportAsType.FOOTAGE) return true;
+  return (t === ImportAsType.COMP || t === ImportAsType.COMP_CROPPED_LAYERS) &&
+    /\.(psd|psb|pdf|ai|eps)$/i.test(__str(this.file));
+};
 
 function Project() {}
 Project.prototype = {
@@ -1822,10 +1829,19 @@ Project.prototype = {
     if (!f) throw __err("importFile(): no file");
     var args = { paths: [__str(f)] };
     // After Effects imports just the picked file unless ImportOptions.sequence is set.
-    if (opts instanceof ImportOptions) args.sequence = !!opts.sequence;
+    if (opts instanceof ImportOptions) {
+      args.sequence = !!opts.sequence;
+      switch (opts.importAs) {
+        case ImportAsType.FOOTAGE: args.importAs = "footage"; break;
+        case ImportAsType.COMP: args.importAs = "composition"; break;
+        case ImportAsType.COMP_CROPPED_LAYERS: args.importAs = "compositionLayerSizes"; break;
+        default: throw __err("importFile(): unsupported ImportOptions.importAs value " + opts.importAs);
+      }
+    }
     var r = __call("file.import", args);
     if (r.errors && r.errors.length) throw __err(r.errors.join("; "));
-    return __item(r.items[0]);
+    // Composition imports create several footage items, but callers need the comp.
+    return __item(r.comps && r.comps.length ? r.comps[0] : r.items[0]);
   },
   importFileWithDialog: function () { return null; },
   importPlaceholder: function (name, w, h, rate, dur) {

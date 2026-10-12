@@ -901,3 +901,32 @@ fn extendscript_substr_keeps_start_and_length_semantics() {
     );
     assert_eq!(o.result, json!(["ab", "cde", "ef", "ab", "", "", "cd", "def", "", "ab", ""]));
 }
+
+#[test]
+fn import_options_preserve_layered_psd_compositions() {
+    use effectcraft_psd::Rect;
+    use effectcraft_psd::write::{WDoc, WLayer, write};
+
+    let dir = std::env::temp_dir().join(format!("ec-script-import-as-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("layers.psd");
+    let mut doc = WDoc::new(12, 12);
+    doc.layers.push(WLayer::solid("Background", Rect::new(0, 0, 12, 12), [1.0, 1.0, 1.0, 1.0]));
+    doc.layers.push(WLayer::solid("Accent", Rect::new(2, 2, 4, 4), [0.0, 0.4, 1.0, 1.0]));
+    std::fs::write(&source, write(&doc)).unwrap();
+    let file = serde_json::to_string(&source.to_string_lossy()).unwrap();
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        &format!(
+            "var io = new ImportOptions(new File({file})); io.importAs = ImportAsType.COMPOSITION_CROPPED_LAYERS; \
+             [io.canImportAs(io.importAs), app.project.importFile(io).typeName]"
+        ),
+    );
+    assert_eq!(o.result, json!([true, "Composition"]));
+    let imported = s.project.comps().next().unwrap().1;
+    assert_eq!(imported.layers.len(), 2);
+    let bad = ok(&mut s, &format!("new ImportOptions(new File({file})).canImportAs(ImportAsType.PROJECT)"));
+    assert_eq!(bad.result, json!(false));
+    let _ = std::fs::remove_dir_all(&dir);
+}

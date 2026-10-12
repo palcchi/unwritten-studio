@@ -650,3 +650,44 @@ fn render_backend_says_why_it_renders_on_the_cpu() {
     assert_eq!(why(&mut s), json!("headless: renders on the CPU unless started with --gpu"));
     assert_eq!(s.execute("render.backend", json!({"backend": "cpu"})).unwrap()["why"], json!("the project's renderer is Mercury Software Only"));
 }
+
+/// Settings ▸ GPU Information names what the GPU compositor runs on, or why it is off, and the
+/// adapter the window got, so a card the compositor couldn't use doesn't look undetected (#596).
+#[test]
+fn gpu_summary_names_the_adapter_or_says_why_there_is_none() {
+    use crate::sysinfo::gpu_summary;
+    use effectcraft_render::{Accelerator, FxStep, Renderer};
+
+    struct Named;
+    impl Accelerator for Named {
+        fn name(&self) -> String {
+            "NVIDIA GeForce RTX 4070 (Vulkan)".into()
+        }
+        fn comp_frame(&self, _: &Renderer, _: crate::project::ItemId, _: effectcraft_time::Tick) -> Option<effectcraft_raster::Image> {
+            None
+        }
+        fn supports_effect(&self, _: &str) -> bool {
+            false
+        }
+        fn effects(&self, _: &[FxStep], _: &effectcraft_effects::Buf, _: Option<f32>) -> Option<effectcraft_effects::Buf> {
+            None
+        }
+    }
+
+    let mut s = Session::default();
+    let off = gpu_summary(&s);
+    assert!(off.contains("Compositing: CPU"), "{off}");
+    assert!(off.contains("GPU compositing is off: no reason was recorded"), "{off}");
+    assert!(off.contains("Window graphics: not known yet"), "{off}");
+
+    s.accel_note = Some("GPU compositor unavailable: no compute shaders".into());
+    s.window_adapter = Some("NVIDIA GeForce RTX 4070 (Dx12, DiscreteGpu)".into());
+    let declined = gpu_summary(&s);
+    assert!(declined.contains("GPU compositing is off: GPU compositor unavailable: no compute shaders"), "{declined}");
+    assert!(declined.contains("Window graphics: NVIDIA GeForce RTX 4070 (Dx12, DiscreteGpu)"), "the card the window got is listed: {declined}");
+
+    s.accel = Some(std::sync::Arc::new(Named));
+    let on = gpu_summary(&s);
+    assert!(on.starts_with("Compositing: GPU, NVIDIA GeForce RTX 4070 (Vulkan)."), "{on}");
+    assert!(!on.contains("compositing is off"), "{on}");
+}

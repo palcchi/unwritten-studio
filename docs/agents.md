@@ -248,7 +248,11 @@ build real projects through these interfaces; they are worked examples of everyt
   / `selectPrevious` / `selectFollowing`, `keys.move {delta, merge}` (steps sharing a merge key are
   one drag: each applies to the keys as they were before it, so a key passed over survives) and
   `keys.transform {…, merge, fromStart: true}` (values are the whole transform since the drag
-  started). Keys of locked layers can't be selected. Copy / paste: `keys.copy`, then `keys.paste`
+  started). **Quick Offset** (Ctrl/Cmd+Alt drag in the Timeline): `layer.quickOffset {delta,
+  layers?}` and `keys.quickOffset {delta}` stagger the selected layers, or each layer's selected
+  keys together, in selection order: the first stays, the last moves by `delta` (comp seconds) and
+  the ones between by equal steps, onto subframes; `merge` + `fromStart: true` make `delta` the whole
+  drag. Keys of locked layers can't be selected. Copy / paste: `keys.copy`, then `keys.paste`
   at the current time (keys copied from several layers go to as many selected layers in order).
   `time.nextKey` / `time.previousKey` / `keys.selectAll` take `visible: [{layer, prop}]` to act
   only on those properties (the Timeline passes its revealed ones, as J / K and Ctrl+Alt+A do).

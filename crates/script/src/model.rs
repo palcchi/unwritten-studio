@@ -468,6 +468,9 @@ fn value(s: &Session, a: &J) -> R {
     } else {
         let mut ctx = EvalCtx::new(&s.project, cid, c, t);
         ctx.expr = s.expr.as_deref();
+        // Sample expressions (`sampleImage`) read footage through the session's source; without
+        // it footage layers sample as transparent (#1000).
+        ctx.footage = Some(s.footage.as_ref());
         ctx.value(l, p)
     };
     Ok(js_value(c, &v))

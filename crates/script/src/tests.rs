@@ -731,6 +731,42 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A flat green footage source, so `sampleImage` on a footage layer has known pixels.
+struct Flat;
+impl effectcraft_engine::render::FootageSource for Flat {
+    fn frame(
+        &self,
+        _item: effectcraft_engine::project::ItemId,
+        f: &effectcraft_engine::project::Footage,
+        _t: effectcraft_engine::time::Tick,
+    ) -> Option<Arc<effectcraft_engine::render::Image>> {
+        Some(Arc::new(effectcraft_engine::render::Image::filled(f.width.max(1), f.height.max(1), [0.0, 1.0, 0.0, 1.0])))
+    }
+}
+
+/// `sampleImage` on a footage layer reads the footage's pixels from a script, not transparent
+/// black: the expression evaluator needs the session's footage source (#1000).
+#[test]
+fn sample_image_reads_footage_pixels_in_scripts() {
+    let mut s = session();
+    s.footage = Arc::new(Flat);
+    s.importer = Some(Arc::new(Stills));
+    let out = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Scene", 640, 360, 1, 1, 25);
+        comp.openInViewer();
+        var img = comp.layers.add(app.project.importFile(new ImportOptions(new File("/tmp/ec-flat.png"))));
+        img.name = "Img";
+        var cc = comp.layers.addNull().property("ADBE Effect Parade").addProperty("ADBE Color Control").property(1);
+        cc.expression = 'thisComp.layer("Img").sampleImage([32, 16], [0.5, 0.5], true, time);';
+        var v = cc.valueAtTime(0, false);
+        [v[0], v[1], v[2], v[3], cc.expressionError];
+        "#,
+    );
+    assert_eq!(out.result, json!([0, 1, 0, 1, ""]), "green footage sampled, not transparent black");
+}
+
 #[test]
 fn binary_file_io_preserves_all_byte_values() {
     let dir = std::env::temp_dir().join(format!("ec-script-binary-{}", std::process::id()));

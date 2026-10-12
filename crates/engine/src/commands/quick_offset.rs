@@ -101,8 +101,8 @@ fn keys(s: &mut Session, p: &Value) -> Result<Value> {
     let comp = start.comp(cid).ok_or(EngineError::NoComp)?;
     let order = order(NAME, from.iter().map(|k| k.layer), |id| comp.layer(id).is_some_and(|l| !l.switches.locked))?;
     let by_layer: HashMap<LayerId, Tick> = order.iter().copied().zip(shares(total, order.len())).collect();
-    s.key_move = merge.map(|m| crate::KeyMove { merge: m.to_string(), from: from.clone(), total });
-    s.edit("Quick Offset Keyframes", merge, |proj, st| {
+    let next = merge.map(|m| crate::KeyMove { merge: m.to_string(), from: from.clone(), total });
+    let moved = s.edit("Quick Offset Keyframes", merge, |proj, st| {
         if let Some(b) = &base {
             *proj = (**b).clone();
         }
@@ -114,7 +114,10 @@ fn keys(s: &mut Session, p: &Value) -> Result<Value> {
             shifted(t, layer_shift(l, *d), NAME, &what)
         })?;
         Ok(json!({"keys": st.selected_keys.len(), "layers": order.iter().map(|id| json!({"layer": id.0, "offset": by_layer.get(id).copied().unwrap_or_default().seconds()})).collect::<Vec<_>>()}))
-    })
+    })?;
+    // Only a step that applied counts towards the drag (a refused one is as if never sent).
+    s.key_move = next;
+    Ok(moved)
 }
 
 pub fn specs() -> Vec<CommandSpec> {

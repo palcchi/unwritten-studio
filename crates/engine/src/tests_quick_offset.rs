@@ -268,3 +268,20 @@ fn moving_staggered_keys_keeps_their_subframe_spacing() {
         assert_eq!(key_times(&s, *id, "transform/opacity"), vec![2 * F + F * i as i64 / 3], "layer {i}");
     }
 }
+
+#[test]
+fn a_refused_step_does_not_count_towards_the_drag() {
+    let (mut s, ids) = setup(2);
+    for id in &ids {
+        add_key(&mut s, *id, "transform/opacity", 1.0, json!(0));
+    }
+    select_keys(&mut s, &ids.iter().map(|id| (*id, "transform/opacity", 1.0)).collect::<Vec<_>>());
+    let before = s.project.clone();
+    // The second step's last key would land past the end of time (one second short of it, its
+    // own delta isn't); with it counted, the third would still move the key that far.
+    let far = (Tick::MAX.seconds() - 1.0).floor();
+    s.execute_checked("keys.quickOffset", json!({"delta": 1.0, "merge": "steps"})).unwrap();
+    assert!(s.execute_checked("keys.quickOffset", json!({"delta": far, "merge": "steps"})).is_err());
+    s.execute_checked("keys.quickOffset", json!({"delta": -1.0, "merge": "steps"})).unwrap();
+    assert!(s.project.same_content(&before), "only the steps that applied count: {:?}", key_times(&s, ids[1], "transform/opacity"));
+}

@@ -941,8 +941,8 @@ pub(crate) fn layer_shift(l: &Layer, d: Tick) -> Tick {
 pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: Tick) -> Result<Value> {
     let cid = s.active_comp_id().ok_or(EngineError::NoComp)?;
     let (from, total, base) = key_gesture(s, merge, d, false);
-    s.key_move = merge.map(|m| crate::KeyMove { merge: m.to_string(), from: from.clone(), total });
-    s.edit(label, merge, |proj, st| {
+    let next = merge.map(|m| crate::KeyMove { merge: m.to_string(), from: from.clone(), total });
+    let moved = s.edit(label, merge, |proj, st| {
         if let Some(b) = base {
             *proj = (*b).clone();
         }
@@ -950,7 +950,10 @@ pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: T
         let d = comp.frame_rate.snap_nearest(total);
         st.selected_keys = move_key_refs(comp, &from, |l, t| Ok(t + layer_shift(l, d)))?;
         Ok(json!(st.selected_keys.len()))
-    })
+    })?;
+    // Only a step that applied counts towards the drag.
+    s.key_move = next;
+    Ok(moved)
 }
 
 fn move_keys(s: &mut Session, p: &Value) -> Result<Value> {

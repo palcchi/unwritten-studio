@@ -1769,7 +1769,17 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut hit_rows: Vec<(Rect, Row)> = vec![];
     // The value fields of multi-dimension properties (per dimension), for the pick whip.
     let mut dim_hits: Vec<(u64, Vec<Rect>)> = vec![];
-    for (ri, row) in rows.iter().enumerate() {
+    // Rows stripe by their index among the rows that are not expression editors, so adding or
+    // removing an expression leaves every other row's stripe alone; an editor takes the index
+    // (and so the stripe) of its property's row, the one just above.
+    let mut striped = 0usize;
+    for row in rows.iter() {
+        let ri = if matches!(row.kind, RowKind::Expr { .. }) {
+            striped.saturating_sub(1)
+        } else {
+            striped += 1;
+            striped - 1
+        };
         // Outline widgets never spill into the time graph (narrow timelines).
         ui.set_clip_rect(left_clip);
         let hh = row_height(row, rh);
@@ -2274,7 +2284,19 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 let Some(prop) = layer.props.find(*uid) else { continue };
                 let Some(ex) = prop.expr.clone() else { continue };
                 let (buf_id, edit_id) = (expr_buf_id(*uid), egui::Id::new(("expr-edit", uid)));
-                lp.rect_filled(left, 0.0, t.row_alt);
+                // The same background as its property's row, selection included.
+                let sel_prop = app.session.state.selected_props.contains(&(layer.id, *uid));
+                lp.rect_filled(
+                    left,
+                    0.0,
+                    if sel_prop {
+                        t.row_selected
+                    } else if ri % 2 == 0 {
+                        t.row
+                    } else {
+                        t.row_alt
+                    },
+                );
                 let indent = cw.name + 6.0 + 14.0 * row.depth as f32;
                 lp.text(pos2(indent + 12.0, cy), Align2::LEFT_CENTER, crate::i18n::tr("Expression:"), Tokens::ui(11.5), t.text_dim);
                 lp.text(pos2(indent + 82.0, cy), Align2::LEFT_CENTER, &prop.name, Tokens::ui(11.5), t.text);

@@ -946,3 +946,20 @@ fn proportional_share_is_linear_in_selection_order() {
     assert_eq!(proportional_share(0, 0), 1.0);
     assert_eq!(proportional_share(usize::MAX, 3), 1.0);
 }
+
+#[test]
+fn add_item_keeps_footage_longer_than_the_comp_at_full_length() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "T", "width": 400, "height": 300, "frameRate": 30, "duration": 4})).unwrap();
+    let f = effectcraft_project::Footage {
+        width: 100,
+        height: 100,
+        has_video: true,
+        duration: effectcraft_time::Tick::from_seconds_f64(10.0),
+        ..Default::default()
+    };
+    let item = std::sync::Arc::make_mut(&mut s.project).add_item("long.mp4", effectcraft_color::Label::None, None, effectcraft_project::ItemKind::Footage(f));
+    let l = s.execute("layer.addItem", json!({"item": item.0})).unwrap()["layer"].as_u64().unwrap();
+    let layer = s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap();
+    assert_eq!(layer.out_point.seconds(), 10.0);
+}

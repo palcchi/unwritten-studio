@@ -220,8 +220,8 @@ pub struct EditorState {
     /// Paste sets the same properties of the selected layers.
     #[serde(skip)]
     pub value_clipboard: Vec<(String, effectcraft_keyframe::Value)>,
-    /// Copied effect instances (Edit ▸ Copy with effects selected); Paste adds them to the
-    /// selected layers.
+    /// Copied effect instances, with comp-time key offsets from the earliest copied key.
+    /// Paste adds them to the selected layers at the destination comp's CTI.
     #[serde(skip)]
     pub effect_clipboard: Vec<effectcraft_project::PropGroup>,
     /// Copied shape items (Edit ▸ Copy with groups, paths, paints or path operations selected in

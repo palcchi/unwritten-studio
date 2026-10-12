@@ -64,3 +64,7 @@ sync_github_name = true
 
 [people.webdevtodayjason]
 display_name = "Jason Brashear"
+
+[people.moecr7]
+real_name = "Moein Saharkhiz"
+display_name = "onlymoein"

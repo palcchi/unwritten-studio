@@ -1,6 +1,6 @@
 # Where EffectCraft falls short
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (re-measured against After Effects 2026 26.5; ranked gap list with estimates; numbers reconciled with target-app-parity.md) · **Target:** Adobe After Effects 2026 (26.5.0.89)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (regression evidence for animated effect paste timing, #989; estimates unchanged) · **Target:** Adobe After Effects 2026 (26.5.0.89)
 
 An honest assessment of how far EffectCraft is from being a real replacement for After Effects,
 and the work that closes the gap. This document is meant for contributors and agents choosing
@@ -65,7 +65,7 @@ are grouped by area; the issue tracker has the rest.
 | 6 | **Linux and Windows interaction bugs** | #491 multi-layer edits, #488 rename arrows, #493, #492, #467 shortcuts, #268 drag and drop, #320 workspaces not persisting, #302 docking, #613 Direct3D 12 compositor, #596 GPU not detected | Many reports come from Linux; some Windows GPUs fail to start the compositor | 25–45 h | G2 · [ui-parity.md](ui-parity.md) |
 | 7 | **Animation presets: 31 against 621** | After Effects ships 621 `.ffx` presets (Behaviors, Backgrounds, Shapes, Synthetics, Text, Transitions…); we ship 31 original presets (8 text-animator, 23 Transitions: wipes, clock and fan reveals, blinds, dissolves, card flips, CC wipes, fades; #757) and read only our `.ecpreset`. Missing: Behaviors, Backgrounds, Shapes, Synthetics, Image and more Text | Presets are how many designers start; tutorials assume them | 15–35 h (original presets; `.ffx` reading is out of clean-room scope) | G8 · [effects-parity.md](effects-parity.md) |
 | 8 | **Mask and shape bugs** | #510, #513, #527 (first Intersect/Darken mask), #509 Roto Brush size, #303 Mesh Warp, #553 pen tools on motion paths | Masks are core compositing | 10–20 h | G2 · [target-app-parity.md](target-app-parity.md) |
-| 9 | **Effect behaviour bugs** | #580, #526 Fractal reset, #514 Apply Color LUT, #463 Curl Noise, #369 Motion Tile output size, #473 Cryptomatte selection, #474 multi-layer EXR decoded twice, #534–#536 community fixes pending | Each one breaks a look someone built | 10–20 h | G1/G2 · [effects-parity.md](effects-parity.md) |
+| 9 | **Effect behaviour bugs** | #580, #526 Fractal reset, #514 Apply Color LUT, #463 Curl Noise, #369 Motion Tile output size, #473 Cryptomatte selection, #474 multi-layer EXR decoded twice, #534–#536 community fixes pending; #989 effect paste timing has engine regression coverage (G2 below) | Each one breaks a look someone built | 10–20 h | G1/G2 · [effects-parity.md](effects-parity.md) |
 | 10 | **Colour pipeline differences** | #494 32-bpc blend modes clamp and apply opacity differently; #495 Working Gamma 2.4 (in, also for float footage: #750); #340 ProRes 4444 tagged bt709 but sRGB-encoded; ACES 2.0 / OCIO 2.5 configs (26.5) missing; #546 / #547 viewer colour | Wrong colour in delivery is a client-visible failure | 15–30 h | G1 · [file-format-parity.md](file-format-parity.md) |
 | 11 | **Text rendering and layout** | #453 CJK text in comps, #316 paragraph alignment inverted, #483 squeezed at 4:3, #417 soft at Fit, #583 font search, #550 toolbar font options | Text is in almost every motion graphic | 10–20 h | G2 · [ui-parity.md](ui-parity.md) |
 | 12 | **3D interaction and depth** | No 3D transform gizmos (#392, #347); Z position (#489); camera aperture (#260); reflections (#261); extruded surface materials beyond Front / Bevel / Side / Back Color (#315); 3D issue reopened (#307) | Advanced 3D is After Effects' growth area since 2023 | 20–35 h | G2 · [ui-parity.md](ui-parity.md) |
@@ -106,6 +106,13 @@ The most important missing piece: it turns every other estimate here into a meas
 
 ### G2. Real-user reliability on every platform
 
+- Regression coverage for [#989](https://github.com/storytold/effectcraft/issues/989):
+  `tests_effects` checks that whole-effect paste aligns the earliest copied key to the CTI,
+  keeps offsets across effects and nested parameters, preserves eased values on offset,
+  stretched and reversed layers, uses the destination comp's CTI and keeps exact NTSC frame
+  offsets. It also checks clipboard snapshots, repeated paste, undo/redo and atomic errors
+  for invalid or overflowing timing. These are engine regressions; no live After Effects
+  comparison is claimed.
 - Fix user issues as they come in, each with a regression test, and answer the reporter (#41–#47
   and #63–#68 are handled, as are the Windows report that the font menus missed installed fonts
   and the reports of 6 October, #85, #88, #89, #93, #103, #106 and #117, and of 7 October, #198,

@@ -206,6 +206,8 @@ use super::viewer_overlays::{self as ov, VertexHit};
 use super::viewer_tools as vt;
 
 const HANDLE: f32 = 7.0;
+/// Shown when a Roto Brush tool is used in the Composition panel (#753).
+const ROTO_HINT: &str = "The Roto Brush works in the Layer panel. Double-click the layer to open it.";
 
 thread_local! {
     /// The 3D view camera of the viewer being drawn (None = the comp's active camera).
@@ -1423,6 +1425,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     Some(Gesture::Marquee { start: press })
                 }
             }
+            // The Roto Brush paints in the Layer panel only: say so instead of doing nothing.
+            rt if rt.roto_kind(false).is_some() => {
+                app.ui.status = crate::i18n::tr(ROTO_HINT).to_string();
+                None
+            }
             _ => None,
         };
         if let Some(g) = g {
@@ -1780,6 +1787,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     let _ = app.session.execute("mask.selectVertices", json!({"vertices": [me], "add": mods.shift, "toggle": mods.shift}));
                 }
             }
+            // The Roto Brush paints in the Layer panel only: select as usual and say so.
+            rt if rt.roto_kind(false).is_some() => {
+                if pick(app, &ectx, cpt, mods.shift).is_none() {
+                    let _ = app.session.execute("edit.deselectAll", json!({}));
+                }
+                app.ui.status = crate::i18n::tr(ROTO_HINT).to_string();
+            }
             _ => {
                 if pick(app, &ectx, cpt, mods.shift).is_none() {
                     let _ = app.session.execute("edit.deselectAll", json!({}));
@@ -1811,10 +1825,21 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         && let Some(pos) = resp.interact_pointer_pos()
     {
         let cpt = map.to_comp(pos);
-        if let Some(l) = pick(app, &ectx, cpt, false).and_then(|l| comp.layer(l))
-            && let effectcraft_engine::project::LayerSource::Comp { item } = &l.source
-        {
-            app.session.open_comp(*item);
+        let roto = app.ui.tool.roto_kind(false).is_some();
+        if let Some(l) = pick(app, &ectx, cpt, false).and_then(|l| comp.layer(l)) {
+            match &l.source {
+                effectcraft_engine::project::LayerSource::Comp { item } => app.session.open_comp(*item),
+                // With a Roto Brush tool, double-clicking a layer opens it in the Layer panel,
+                // where the brush works (After Effects).
+                _ if roto => {
+                    let id = l.id.0;
+                    match crate::menus::invoke(app, &ctx, "layer.openLayer", json!({"layer": id})) {
+                        Ok(_) => app.ui.status.clear(),
+                        Err(e) => app.ui.status = e,
+                    }
+                }
+                _ => {}
+            }
         }
     }
     // 3D Camera Tracker points, targets and their menu (on top of the viewer's gestures while

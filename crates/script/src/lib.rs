@@ -21,7 +21,7 @@
 //!   `ShapeLayer`/`CameraLayer`/`LightLayer`, `PropertyGroup`/`Property` (values, keyframes,
 //!   eases, expressions), `MaskPropertyGroup`, `TextDocument`, `Shape`, `KeyframeEase`,
 //!   `MarkerValue`, `RenderQueue`/`RenderQueueItem`/`OutputModule`, `ImportOptions`, `File`/
-//!   `Folder`, `$`, `alert`/`writeLn`, and the enums (`BlendingMode`, `KeyframeInterpolationType`,
+//!   `Folder`, `$` (with `evalFile`), `BridgeTalk` (host identification), `alert`/`writeLn`, and the enums (`BlendingMode`, `KeyframeInterpolationType`,
 //!   `TrackMatteType`, `LightType`, `ParagraphJustification`, `PropertyValueType`…).
 //! * **Edits are engine commands**: every mutating call runs a command through
 //!   [`Session::execute`](effectcraft_engine::Session::execute), so it is undoable, journaled
@@ -102,3 +102,7 @@ mod tests_tasks;
 mod tests_ui;
 #[cfg(test)]
 mod tests_ui_more;
+
+// #760: `$.evalFile` and `BridgeTalk`.
+#[cfg(test)]
+mod tests_evalfile;

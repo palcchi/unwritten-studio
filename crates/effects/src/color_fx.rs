@@ -1196,7 +1196,10 @@ mod tests {
     #[test]
     fn brightness_contrast_modern_matches_ae_ramp_samples() {
         let u8 = |v: f32| (v * 255.0).round() as i32;
-        let go = |b: f64, c: f64, x: u8| u8(px("ec.color.brightnesscontrast", &[("brightness", num(b)), ("contrast", num(c))], [x as f32 / 255.0, x as f32 / 255.0, x as f32 / 255.0, 1.0])[0]);
+        let go = |b: f64, c: f64, x: u8| {
+            u8(px("ec.color.brightnesscontrast", &[("brightness", num(b)), ("contrast", num(c))], [x as f32 / 255.0, x as f32 / 255.0, x as f32 / 255.0, 1.0])
+                [0])
+        };
         // (brightness, contrast, input, AE 8-bit)
         let samples: &[(f64, f64, u8, u8)] = &[
             (0.0, 100.0, 64, 40),

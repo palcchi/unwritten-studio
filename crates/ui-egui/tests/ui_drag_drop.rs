@@ -258,8 +258,10 @@ fn multiple_selected_footage_dropped_on_empty_timeline_asks_how_to_create_comps(
 #[test]
 fn project_footage_dropped_on_empty_viewer_creates_first_comp() {
     let mut s = Session::default();
-    let footage = s.execute("file.importPlaceholder", json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5}))
-        .unwrap()["item"].as_u64().unwrap();
+    let footage =
+        s.execute("file.importPlaceholder", json!({"name": "Landscape.png", "width": 640, "height": 360, "frameRate": 24, "duration": 5})).unwrap()["item"]
+            .as_u64()
+            .unwrap();
     let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
     h.run_steps(3);
     assert!(h.state().session.active_comp().is_none());

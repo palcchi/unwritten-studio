@@ -265,21 +265,13 @@ fn cylinder(ctx: &EffectCtx, mut b: Buf) -> Buf {
             let root = discriminant.sqrt();
             let face = |z: f64, back: bool| {
                 // Rᵀ turns the intersection into cylinder-local coordinates.
-                let local = [
-                    m[0][0] * dx + m[1][0] * dy + m[2][0] * z,
-                    m[0][1] * dx + m[1][1] * dy + m[2][1] * z,
-                    m[0][2] * dx + m[1][2] * dy + m[2][2] * z,
-                ];
+                let local = [m[0][0] * dx + m[1][0] * dy + m[2][0] * z, m[0][1] * dx + m[1][1] * dy + m[2][1] * z, m[0][2] * dx + m[1][2] * dy + m[2][2] * z];
                 let u = (local[0].atan2(local[2]) + spin) / std::f64::consts::TAU + 0.5;
                 let v = local[1] / h + 0.5;
                 let sign = if back { -1.0 } else { 1.0 };
                 let nx = local[0] / r * sign;
                 let nz = local[2] / r * sign;
-                let normal = [
-                    m[0][0] * nx + m[0][2] * nz,
-                    m[1][0] * nx + m[1][2] * nz,
-                    m[2][0] * nx + m[2][2] * nz,
-                ];
+                let normal = [m[0][0] * nx + m[0][2] * nz, m[1][0] * nx + m[1][2] * nz, m[2][0] * nx + m[2][2] * nz];
                 sh.shade(texel(&src, rect, u, v), normal)
             };
             let front = || face((-bq + root) / a, false);

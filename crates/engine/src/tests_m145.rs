@@ -661,7 +661,13 @@ fn dynamic_menus_and_window_viewer_labels() {
     assert_eq!(crate::menus::dynamic(&s, "history", &Default::default()).0.len(), s.history.undo.len());
     let a = solid(&mut s, "#ff0000");
     s.state.selected_layers = vec![LayerId(a)];
-    let entry = |cmd: &str, panel: &str| crate::menus::MenuEntry { label: "x".into(), command: cmd.into(), params: json!({"panel": panel}), shortcut: None };
+    let entry = |cmd: &str, panel: &str| crate::menus::MenuEntry {
+        label: "x".into(),
+        command: cmd.into(),
+        params: json!({"panel": panel}),
+        shortcut: None,
+        alt_shortcuts: vec![],
+    };
     assert_eq!(crate::menus::entry_label(&s, &entry("window.panel", "composition")), "Composition: Main");
     assert_eq!(crate::menus::entry_label(&s, &entry("window.panel", "timeline")), "Timeline: Main");
     assert!(crate::menus::entry_label(&s, &entry("window.panel", "layer")).starts_with("Layer: "));

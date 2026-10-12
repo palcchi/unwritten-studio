@@ -430,6 +430,26 @@ fn default_keys_for_commands_that_had_none() {
     assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
 }
 
+/// Second default keys: on the command, or after a comma in a menu line with bound parameters.
+#[test]
+fn second_default_keys() {
+    let s = Session::default();
+    let t = s.shortcuts();
+    for (key, want) in [
+        ("edit.deselectAll", ["Cmd+Shift+A", "F2"]),
+        ("time.start", ["Home", "Cmd+Alt+ArrowLeft"]),
+        ("time.end", ["End", "Cmd+Alt+ArrowRight"]),
+        ("renderQueue.add", ["Cmd+M", "Cmd+Shift+/"]),
+        (r#"window.panel {"panel":"effectControls"}"#, ["F3", "Cmd+Shift+T"]),
+    ] {
+        assert_eq!(t.keys.get(key).map(Vec::as_slice), Some(want.map(String::from).as_slice()), "{key}");
+    }
+    // The menus keep showing the first key.
+    assert_eq!(t.shortcut_of("window.panel", &json!({"panel": "effectControls"})), Some("F3"));
+    assert_eq!(t.shortcut_of("edit.deselectAll", &json!(null)), Some("Cmd+Shift+A"));
+    assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
+}
+
 /// Cmd+Left / Cmd+Right Arrow step a frame like Page Up / Page Down (Shift: 10 frames).
 #[test]
 fn cmd_arrows_step_frames_like_page_keys() {

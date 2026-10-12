@@ -466,6 +466,31 @@ fn essential_graphics_scale_keeps_constrain_proportions() {
     assert!(unlinked[0] > linked[0] && unlinked[1] == linked[1], "unlinked, X moves alone: {unlinked:?}");
 }
 
+/// Gap 7: the Backgrounds category is listed under * Animation Presets and a preset applies on double-click.
+#[test]
+fn background_presets_are_listed_and_apply() {
+    let mut h = harness();
+    let layer = h.state().session.active_comp().unwrap().layers[0].id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [layer]})).unwrap();
+    open(&mut h, "effectsPresets");
+    h.state_mut().ui.effects_search = "slow fog".into();
+    h.run_steps(3);
+    assert!(h.state().auto.find("effects.category.presets/Backgrounds").is_some(), "the Backgrounds folder is listed");
+    let e = h.state().auto.find("effects.preset.builtin.slowFog").expect("Slow Fog is listed").clone();
+    let p: Pos2 = pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0);
+    h.input_mut().events.push(Event::PointerMoved(p));
+    h.step();
+    for _ in 0..2 {
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        }
+    }
+    h.run_steps(3);
+    let comp = h.state().session.active_comp().unwrap();
+    let names: Vec<String> = comp.layers[0].effects().unwrap().groups().map(|g| g.name.clone()).collect();
+    assert_eq!(names, ["Fractal Noise", "Tint"]);
+}
+
 /// #757: Effects & Presets lists the built-in Transitions presets under * Animation Presets;
 /// double-clicking one applies it to the selected layer (effect plus keyframes).
 #[test]

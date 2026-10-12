@@ -578,6 +578,18 @@ pub fn begin_rename(app: &mut EffectcraftApp, ctx: &egui::Context) {
     }
 }
 
+/// What double-clicking a layer's name or bar does, as in After Effects: a precomp opens, footage
+/// and solids open in the Layer panel (paint happens there), text is edited in the viewer with the
+/// whole text selected. `None`: the name renames, the bar does nothing.
+fn double_click_action(layer: &Layer) -> Option<(String, serde_json::Value)> {
+    match &layer.source {
+        LayerSource::Comp { item } => Some(("comp.open".into(), json!({"comp": item.0}))),
+        LayerSource::Footage { .. } | LayerSource::Solid { .. } => Some(("layer.openLayer".into(), json!({"layer": layer.id.0}))),
+        LayerSource::Text => Some(("text.edit".into(), json!({"layer": layer.id.0}))),
+        _ => None,
+    }
+}
+
 /// Open the rename field on layer `id`; it takes the keyboard focus on its first frame only.
 fn start_rename(ctx: &egui::Context, id: u64, name: &str) {
     ctx.data_mut(|d| {
@@ -1888,13 +1900,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                 }
                 if row_resp.double_clicked() {
-                    match &layer.source {
-                        LayerSource::Comp { item } => actions.push(("comp.open".into(), json!({"comp": item.0}))),
-                        // Footage and solids open in the Layer panel (paint happens there).
-                        LayerSource::Footage { .. } | LayerSource::Solid { .. } => {
-                            actions.push(("layer.openLayer".into(), json!({"layer": layer.id.0})));
-                        }
-                        _ => start_rename(&ctx, layer.id.0, &layer.name),
+                    match double_click_action(layer) {
+                        Some(a) => actions.push(a),
+                        None => start_rename(&ctx, layer.id.0, &layer.name),
                     }
                 }
                 layer_context_menu(&row_resp, &comp, layer, &selected, &mut actions);
@@ -2097,6 +2105,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     app.auto.add(&format!("timeline.layer.{}.bar.out", layer.id.0), out_r, "Trim Out");
                     if lin.hovered() || lout.hovered() || lin.dragged() || lout.dragged() {
                         ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                    }
+                    if body.double_clicked()
+                        && let Some(a) = double_click_action(layer)
+                    {
+                        actions.push(a);
                     }
                     let shift = ui.input(|i| i.modifiers.shift);
                     if let Some(layers) = (body.clicked() && shift).then(|| shift_range(&ctx, cid, &comp, &rows, &selected, layer.id)).flatten() {

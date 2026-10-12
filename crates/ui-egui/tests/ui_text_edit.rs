@@ -438,3 +438,29 @@ fn layer_new_text_menu_and_shortcut_start_typing_into_source_text() {
         assert_eq!(s.active_comp().unwrap().layer(LayerId(lid)).unwrap().name, "My First Project", "the name follows the text");
     }
 }
+
+/// Double-clicking a text layer in the Timeline, on its name or on its bar, edits its text in the
+/// Composition viewer with the whole text selected, as in After Effects (Enter renames).
+#[test]
+fn timeline_double_click_on_a_text_layer_edits_its_text() {
+    for target in ["row", "bar"] {
+        let mut s = Session::default();
+        s.execute("comp.new", json!({"name": "Type", "width": 640, "height": 360, "duration": 2})).unwrap();
+        let lid = s.execute("layer.newText", json!({"text": "alpha beta"})).unwrap()["layer"].as_u64().unwrap();
+        let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).with_step_dt(1.0 / 60.0).build_eframe(move |_| EffectcraftApp::new(s));
+        h.state_mut().show_panel(PanelKind::Composition);
+        h.run_steps(3);
+        let p = rect(&h, &format!("timeline.layer.{lid}.{target}")).center();
+        click(&mut h, p, Modifiers::NONE);
+        click(&mut h, p, Modifiers::NONE);
+        let (layer, text, anchor, caret) = edited(&h);
+        assert_eq!(layer, lid, "{target}");
+        assert_eq!((anchor.min(caret), anchor.max(caret)), (0, 10), "everything selected ({target})");
+        assert!(h.state().auto.find(&format!("timeline.layer.{lid}.nameEdit")).is_none(), "no rename field ({target})");
+        assert_eq!(text, "alpha beta");
+        type_text(&mut h, "gamma");
+        key(&mut h, Key::Escape, Modifiers::NONE);
+        assert!(h.state().session.state.text_edit.is_none(), "Escape commits ({target})");
+        assert_eq!(layer_doc(&h.state().session, LayerId(lid)).unwrap().text, "gamma", "typing replaced the text ({target})");
+    }
+}

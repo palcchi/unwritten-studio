@@ -199,3 +199,45 @@ fn shift_ranges_and_key_boxes_stagger_in_comp_order() {
     h.state_mut().session.execute("keys.quickOffset", json!({"delta": 2.0 / 30.0})).unwrap();
     assert_eq!([key_times(&h, ids[2])[1], key_times(&h, ids[1])[1], key_times(&h, ids[0])[1]], [one, one + F, one + 2 * F]);
 }
+
+/// Releasing a Quick Offset drag with its row scrolled out of view ends it: a later plain drag of
+/// that bar moves the selection together, as its own undo step.
+#[test]
+fn a_quick_offset_released_off_screen_ends() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Many", "width": 320, "height": 180, "frameRate": 30, "duration": 4})).unwrap();
+    let ids: Vec<u64> =
+        (0..40).map(|i| s.execute("layer.newSolid", json!({"name": format!("L{i}"), "color": "#e04020"})).unwrap()["layer"].as_u64().unwrap()).collect();
+    let (top, next) = (ids[39], ids[38]);
+    s.execute("layer.select", json!({"layers": [top, next]})).unwrap();
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let from = center(&h, &format!("timeline.layer.{top}.bar"));
+    h.input_mut().events.push(Event::PointerMoved(from));
+    h.step();
+    h.input_mut().events.push(Event::ModifiersChanged(ctrl_alt()));
+    h.input_mut().events.push(Event::PointerButton { pos: from, button: egui::PointerButton::Primary, pressed: true, modifiers: ctrl_alt() });
+    h.step();
+    for i in 1..=12 {
+        h.input_mut().events.push(Event::PointerMoved(from + vec2(10.0 * i as f32, 0.0)));
+        h.step();
+    }
+    // Let go of Ctrl+Alt, scroll the row away, then release the button.
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::default()));
+    h.state_mut().ui.timeline.scroll_y = 10_000.0;
+    h.run_steps(2);
+    assert!(h.state().auto.find(&format!("timeline.layer.{top}.bar")).is_none(), "the row is out of view");
+    let to = from + vec2(120.0, 0.0);
+    h.input_mut().events.push(Event::PointerButton { pos: to, button: egui::PointerButton::Primary, pressed: false, modifiers: Modifiers::default() });
+    h.run_steps(2);
+    let staggered = (start(&h, next), start(&h, top));
+    assert!(staggered.0 > 0 && staggered.1 == 0, "the Quick Offset applied: {staggered:?}");
+    h.state_mut().ui.timeline.scroll_y = 0.0;
+    h.run_steps(3);
+    let from = center(&h, &format!("timeline.layer.{top}.bar"));
+    drag(&mut h, from, from + vec2(160.0, 0.0), Modifiers::default());
+    let d = start(&h, top);
+    assert!(d > 0 && start(&h, next) == staggered.0 + d, "a plain drag moves both by the same amount");
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!((start(&h, next), start(&h, top)), staggered, "as its own undo step");
+}

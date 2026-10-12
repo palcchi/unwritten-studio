@@ -1141,17 +1141,18 @@ fn key_drag_id() -> egui::Id {
     egui::Id::new("tl-key-drag")
 }
 
-/// A Quick Offset drag of selected layer bars (Ctrl/Cmd+Alt, #1012): where the pointer started,
-/// how many layers it staggers and how many frames the last one has moved so far.
+/// A Quick Offset drag of selected layer bars (Ctrl/Cmd+Alt, #1012): the bar it started on, where
+/// the pointer started, how many layers it staggers and how many frames the last one has moved.
 #[derive(Clone, Copy, Debug)]
 struct QuickBar {
+    layer: LayerId,
     origin_x: f32,
     layers: usize,
     applied: i64,
 }
 
-fn quick_bar_id(layer: LayerId) -> egui::Id {
-    egui::Id::new(("tl-quick-bar", layer.0))
+fn quick_bar_id() -> egui::Id {
+    egui::Id::new("tl-quick-bar")
 }
 
 /// How many layers a Quick Offset of `layers` staggers (#1012): the unlocked ones, each once, if
@@ -2170,7 +2171,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     layer_context_menu(&body, &comp, layer, &selected, vector_footage_layer(&app.session.project, layer), &mut actions);
                     let drag_key = format!("bar-{}", layer.id.0);
                     // Ctrl/Cmd+Alt dragging a selected bar: Quick Offset (#1012), chosen as the
-                    // drag starts. The last selected layer moves by whole frames with the pointer.
+                    // drag starts and followed below the rows until the button is released.
                     let mods = ui.input(|i| i.modifiers);
                     if body.drag_started()
                         && is_sel
@@ -2179,29 +2180,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         && let Some(n) = quick_offset_layers(&comp, selected.iter().copied())
                         && let Some(p) = ctx.input(|i| i.pointer.press_origin())
                     {
-                        ctx.data_mut(|d| d.insert_temp(quick_bar_id(layer.id), QuickBar { origin_x: p.x, layers: n, applied: 0 }));
+                        ctx.data_mut(|d| d.insert_temp(quick_bar_id(), QuickBar { layer: layer.id, origin_x: p.x, layers: n, applied: 0 }));
                     }
-                    let quick = ctx.data(|d| d.get_temp::<QuickBar>(quick_bar_id(layer.id)));
-                    if let Some(mut q) = quick {
-                        if body.dragged()
-                            && let Some(ptr) = ctx.input(|i| i.pointer.latest_pos())
-                        {
-                            let frames = (((ptr.x - q.origin_x) as f64 / pps) / fd).round() as i64;
-                            if frames != q.applied {
-                                q.applied = frames;
-                                ctx.data_mut(|d| d.insert_temp(quick_bar_id(layer.id), q));
-                                let merge = format!("bar-quick-{}", layer.id.0);
-                                actions.push(("layer.quickOffset".into(), json!({"delta": frames as f64 * fd, "merge": merge, "fromStart": true})));
-                            }
-                            drag_tip(&ctx, &t, ptr, quick_offset_note(q.applied, q.layers));
-                        }
-                        if body.drag_stopped() {
-                            ctx.data_mut(|d| d.remove::<QuickBar>(quick_bar_id(layer.id)));
-                            ui_actions.push(UiAct::EndMerge);
-                        }
-                    }
+                    let quick = ctx.data(|d| d.get_temp::<QuickBar>(quick_bar_id())).is_some_and(|q| q.layer == layer.id);
                     for (resp, kind) in [(&body, "move"), (&lin, "in"), (&lout, "out")] {
-                        if kind == "move" && quick.is_some() {
+                        if kind == "move" && quick {
                             continue;
                         }
                         if resp.dragged() {
@@ -2935,6 +2918,27 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         } else if dropped {
             ctx.data_mut(|d| d.remove::<Vec<u64>>(layer_drag_id()));
+        }
+    }
+    // Quick Offset of layer bars: the last selected layer moves by whole frames with the pointer
+    // until the button is released, wherever the bar's row has scrolled to.
+    if let Some(mut q) = ctx.data(|d| d.get_temp::<QuickBar>(quick_bar_id())) {
+        let (down, ptr) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
+        match ptr.filter(|_| down) {
+            Some(ptr) => {
+                let frames = (((ptr.x - q.origin_x) as f64 / pps) / fd).round() as i64;
+                if frames != q.applied {
+                    q.applied = frames;
+                    ctx.data_mut(|d| d.insert_temp(quick_bar_id(), q));
+                    let merge = format!("bar-quick-{}", q.layer.0);
+                    actions.push(("layer.quickOffset".into(), json!({"delta": frames as f64 * fd, "merge": merge, "fromStart": true})));
+                }
+                drag_tip(&ctx, &t, ptr, quick_offset_note(q.applied, q.layers));
+            }
+            None => {
+                ctx.data_mut(|d| d.remove::<QuickBar>(quick_bar_id()));
+                ui_actions.push(UiAct::EndMerge);
+            }
         }
     }
     // Keyframe drag: the selected keys move by whole frames with the pointer until it is

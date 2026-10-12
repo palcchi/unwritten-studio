@@ -26,3 +26,4 @@ boa_engine = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
 effectcraft-expr = { workspace = true }
+effectcraft-psd = { workspace = true }

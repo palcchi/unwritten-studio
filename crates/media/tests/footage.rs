@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Instant;
 
-use effectcraft_media::{MediaPool, probe};
+use effectcraft_media::{MediaPool, probe, probe_bytes};
 use effectcraft_project::{AlphaMode, Footage, FootageKind, ItemId};
 use effectcraft_raster::Image;
 use effectcraft_render::FootageSource;
@@ -333,6 +333,59 @@ fn resampled_audio_read_in_frame_pieces_matches_ffmpeg() {
         let worst = got.iter().zip(&want).map(|(g, w)| (g - w).abs()).fold(0.0f32, f32::max);
         eprintln!("{} at {rate} Hz: max error {worst:.4}", p.display());
         assert!(want.len() >= got.len() && worst < 0.01, "{} at {rate} Hz: max error {worst}", p.display());
+    }
+}
+
+/// The H.264 fixture with the rotation part of its video track header's matrix (`[a b; c d]`,
+/// 16.16 fixed point) replaced: what a phone writes for a movie shot with the camera turned.
+fn turned_mp4(p: &Path, abcd: [i32; 4]) -> Arc<[u8]> {
+    let mut bytes = std::fs::read(p).expect("read");
+    // (The video track comes first; a version 0 `tkhd` has its matrix 44 bytes after the type.)
+    let at = bytes.windows(4).position(|w| w == b"tkhd").expect("tkhd");
+    assert_eq!(bytes[at + 4], 0, "a version 0 tkhd");
+    for (slot, v) in [0, 1, 3, 4].into_iter().zip(abcd) {
+        let o = at + 44 + slot * 4;
+        bytes[o..o + 4].copy_from_slice(&v.to_be_bytes());
+    }
+    bytes.into()
+}
+
+/// A movie whose track header says it is shown rotated (a phone held upright) imports the way it
+/// is shown: the footage has the turned size and its frames are turned, at full and reduced size.
+#[test]
+fn rotated_mp4_imports_upright() {
+    let Some(p) = h264_mp4() else { return };
+    let plain_footage = probe(&p).expect("probe");
+    let pool = MediaPool::new();
+    let t = t_of(plain_footage.frame_rate, 3);
+    let plain = pool.frame(ItemId(1), &plain_footage, t).expect("frame");
+    let (w, h) = (plain.width as usize, plain.height as usize);
+    let one = 0x1_0000;
+    // The matrix, the turned size and the plain frame's pixel shown at (x, y).
+    type From = fn(usize, usize, usize, usize) -> (usize, usize);
+    let cases: [(&str, [i32; 4], (usize, usize), From); 3] = [
+        ("90", [0, one, -one, 0], (h, w), |x, y, _, h| (y, h - 1 - x)),
+        ("180", [-one, 0, 0, -one], (w, h), |x, y, w, h| (w - 1 - x, h - 1 - y)),
+        ("270", [0, -one, one, 0], (h, w), |x, y, w, _| (w - 1 - y, x)),
+    ];
+    for (name, matrix, (tw, th), from) in cases {
+        let path = format!("turned-{name}.mp4");
+        let bytes = turned_mp4(&p, matrix);
+        let f = probe_bytes(&path, bytes.clone()).expect("probe");
+        assert_eq!((f.width as usize, f.height as usize), (tw, th), "{name}°: size");
+        pool.add_bytes(&path, bytes);
+        let img = pool.frame(ItemId(2), &f, t).expect("frame");
+        assert_eq!((img.width as usize, img.height as usize), (tw, th), "{name}°: frame size");
+        for (x, y) in [(0, 0), (tw - 1, 0), (0, th - 1), (tw - 1, th - 1), (tw / 3, th / 5), (tw / 2, th - 7)] {
+            let (sx, sy) = from(x, y, w, h);
+            assert_eq!(img.data[y * tw + x], plain.data[sy * w + sx], "{name}°: pixel ({x}, {y})");
+        }
+        // (A reduced-resolution render asks for the turned size.)
+        let (hw, hh) = (f.width / 2, f.height / 2);
+        let sized = pool.frame_at_size(ItemId(2), &f, t, hw, hh).expect("frame");
+        assert_eq!((sized.width, sized.height), (hw, hh), "{name}°: reduced size");
+        let db = psnr(&sized, &effectcraft_raster::resample(&img, hw, hh));
+        assert!(db > 45.0, "{name}° at half size: {db:.2} dB");
     }
 }
 
@@ -778,9 +831,14 @@ fn flac_audio_of_any_shape_reads_in_device_blocks() {
             }
             at += 1024;
         }
-        // ffmpeg's sine source has an amplitude of 1/8, on both channels (mono is duplicated).
+        // ffmpeg's sine source has an amplitude of 1/8 (mono is duplicated). The fixture carries
+        // channels 0 and 1 at full level and the others at half, so a multichannel file sounds as
+        // its stereo downmix (tests/downmix.rs checks that matrix channel by channel).
+        let gains = effectcraft_media::downmix::stereo_gains(channels as usize, false);
+        let side = |s: usize| gains.iter().enumerate().map(|(c, g)| f64::from(g[s]) * if c < 2 { 1.0 } else { 0.5 }).sum::<f64>();
+        let want = 0.125 * ((side(0).powi(2) + side(1).powi(2)) / 2.0).sqrt() / 2f64.sqrt();
         let rms = (sum / n.max(1) as f64).sqrt();
-        assert!((rms - 0.125 / 2f64.sqrt()).abs() < 0.003, "{}: rms {rms}", p.display());
+        assert!((rms - want).abs() < 0.003, "{}: rms {rms}, expected {want}", p.display());
         eprintln!("{}: read {secs} s in {:?}, slowest block after the first {worst:?}", p.display(), t0.elapsed());
         assert_eq!(pool.stats().opened, 1, "opened once, not per block");
     }
@@ -890,7 +948,9 @@ fn dpx_stills_match_ffmpeg() {
         assert!(effectcraft_media::is_importable(&p));
         let f = probe(&p).expect(pf);
         assert_eq!(f.kind, FootageKind::Still);
-        assert_eq!((f.width, f.height, f.codec.as_str()), (250, 100, codec), "{pf}");
+        assert_eq!((f.width, f.height), (250, 100), "{pf}");
+        // Some ffmpeg builds state the transfer (", linear"), which the codec name then carries.
+        assert!(f.codec == codec || f.codec.starts_with(&format!("{codec}, ")), "{pf}: {}", f.codec);
         assert_eq!(f.alpha, if alpha { AlphaMode::Straight } else { AlphaMode::Ignore }, "{pf}");
         let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect(pf);
         let want = ffmpeg_rgba(&p, !codec.contains("8-bit"));
@@ -966,4 +1026,55 @@ fn cineon_still_shows_code_values() {
         let cut: Arc<[u8]> = b.get(..n).expect("cut").into();
         assert!(effectcraft_media::probe_bytes("cut.cin", cut).is_err(), "{n}");
     }
+}
+
+/// #329: a frame read that is called off (a scrub has moved on) gives up before the decoder
+/// seeks and decodes forward from the keyframe, so it no longer holds the decoder the newest
+/// frame waits for; the frame decodes as usual when it is wanted again.
+#[test]
+fn a_called_off_read_does_not_decode() {
+    use std::sync::atomic::AtomicBool;
+    let Some(p) = h264_mp4() else { return };
+    let f = probe(&p).expect("probe");
+    let pool = MediaPool::new();
+    let t = t_of(f.frame_rate, 45);
+    let off = Arc::new(AtomicBool::new(true));
+    let mut got = None;
+    pool.cancellable(&off, &mut || got = Some(pool.frame(ItemId(1), &f, t)));
+    assert!(got.expect("ran").is_none(), "a called-off read decoded its frame");
+    assert_eq!(pool.stats().frames, 0, "nothing cached for it");
+    let on = Arc::new(AtomicBool::new(false));
+    let mut got = None;
+    pool.cancellable(&on, &mut || got = pool.frame(ItemId(1), &f, t));
+    let img = got.expect("decoded once wanted again");
+    assert_eq!((img.width, img.height), (1920, 1080));
+}
+
+/// H.264 High 4:2:2 10-bit: the software decoder lacks it; the pool says why, once, and the
+/// footage reports it (not a black frame without a word).
+#[test]
+fn an_unsupported_stream_reports_why_it_shows_no_picture() {
+    let Some(p) = ffmpeg_fixture(
+        "h264_high422_10bit.mp4",
+        &["-f", "lavfi", "-i", "testsrc=size=320x180:rate=24:duration=1", "-c:v", "libx264", "-profile:v", "high422", "-pix_fmt", "yuv422p10le"],
+    ) else {
+        return;
+    };
+    let f = probe(&p).expect("probe");
+    let pool = MediaPool::new();
+    assert_eq!(pool.problem(&f), None, "nothing is wrong before a frame was asked for");
+    if pool.frame(ItemId(1), &f, Tick::ZERO).is_some() {
+        // a decoder that handles 4:2:2 (FilmCraft's, or a hardware one): no notice
+        assert_eq!(pool.problem(&f), None);
+        return;
+    }
+    let why = pool.problem(&f).expect("a failed frame leaves a reason");
+    assert!(why.contains("4:2:2"), "names the stream: {why}");
+    assert!(why.contains("isn't supported"), "says it is unsupported: {why}");
+    assert!(!why.contains("decode error"), "no error wrappers: {why}");
+    // it stays for the other frames, and is dropped when the file is forgotten
+    assert!(pool.frame(ItemId(1), &f, Tick::from_seconds_f64(0.5)).is_none());
+    assert_eq!(pool.problem(&f).as_deref(), Some(why.as_str()));
+    pool.forget(&f.path);
+    assert_eq!(pool.problem(&f), None);
 }

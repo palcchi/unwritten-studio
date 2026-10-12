@@ -333,11 +333,39 @@ fn theme_card(
             theme_preview(ui, kind, ui.available_width());
             ui.add_space(4.0);
             for (label, value) in options {
-                let r = ui.radio(cur == *value, tr(label));
-                reg(app, &format!("settings.{key}.{value}"), &r, label);
-                if r.clicked() && cur != *value {
-                    acts.push(Act::Set(key.into(), json!(value)));
-                }
+                let row = egui::Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), 24.0));
+                let hovered = ui.ctx().pointer_hover_pos().is_some_and(|p| row.contains(p));
+                ui.horizontal(|ui| {
+                    let r = ui.radio(cur == *value, tr(label));
+                    reg(app, &format!("settings.{key}.{value}"), &r, label);
+                    if r.clicked() && cur != *value {
+                        acts.push(Act::Set(key.into(), json!(value)));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let mut favorites = app.session.prefs.appearance.favorite_themes.clone();
+                        let favorite = favorites.iter().any(|id| id == value);
+                        let tip = tr(if favorite { "Remove from favorites" } else { "Add to favorites" });
+                        let r = ui.add_visible(favorite || hovered, egui::Button::new("").min_size(vec2(24.0, 24.0)).frame(false)).on_hover_text(tip);
+                        r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{}: {}", tip, tr(label))));
+                        reg(app, &format!("settings.appearance.favoriteThemes.{value}"), &r, tip);
+                        if favorite || hovered {
+                            crate::icons::paint(
+                                ui.painter(),
+                                r.rect.shrink(4.0),
+                                if favorite { crate::icons::Icon::StarFilled } else { crate::icons::Icon::Star },
+                                if favorite { t.accent } else { t.text_dim },
+                            );
+                        }
+                        if r.clicked() {
+                            if favorite {
+                                favorites.retain(|id| id != value);
+                            } else {
+                                favorites.push((*value).into());
+                            }
+                            acts.push(Act::Set("appearance.favoriteThemes".into(), json!(favorites)));
+                        }
+                    });
+                });
             }
         });
 }
@@ -788,6 +816,9 @@ pub fn recovery(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             }
         });
     });
+    if choice.is_none() && super::dialogs::ui_enter(ctx) {
+        choice = Some("autosave");
+    }
     let Some(c) = choice else { return };
     app.dialog = None;
     app.recovery = None;

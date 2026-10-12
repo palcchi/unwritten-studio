@@ -559,7 +559,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.ui.focused = crate::dock::PanelKind::RenderQueue;
         }
         let item_id = it.id;
-        row_resp.context_menu(|ui| {
+        crate::widgets::context_menu(&row_resp, |ui| {
             if ui.button(tr("Duplicate")).clicked() {
                 actions.push(("renderQueue.duplicate", json!({"item": item_id})));
                 ui.close();

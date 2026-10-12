@@ -212,6 +212,50 @@ fn prefs_commands_get_set_reset_and_persist() {
     );
 }
 
+/// Composition Settings presets the user saves live in the settings: they persist, a save with
+/// an existing name replaces it, they survive Reset All, and invalid ones (from a hand-edited
+/// settings file) are dropped on load.
+#[test]
+fn composition_presets_save_replace_delete_and_persist() {
+    let store = Arc::new(MemoryConfig::default());
+    let mut s = Session { config: Some(store.clone()), ..Default::default() };
+    let p = |name: &str, w: u32, fps: f64| json!({"name": name, "width": w, "height": 1440, "pixelAspect": 1.0, "frameRate": fps});
+    assert_eq!(s.execute_checked("comp.savePreset", p("  Edit 1440p 60  ", 2560, 60.0)).unwrap(), json!({"name": "Edit 1440p 60", "replaced": false}));
+    s.execute_checked("comp.savePreset", p("Vertical", 1440, 30.0)).unwrap();
+    assert_eq!(s.execute("comp.savePreset", p("Vertical", 1080, 30.0)).unwrap()["replaced"], json!(true));
+    let list = s.execute("comp.presets", json!({})).unwrap();
+    assert_eq!(list.as_array().unwrap().len(), 2);
+    assert_eq!(list[0]["name"], "Edit 1440p 60");
+    assert_eq!((list[0]["width"].clone(), list[0]["frameRate"].clone()), (json!(2560), json!(60.0)));
+    assert_eq!(list[1]["width"], json!(1080), "replaced in place");
+    for bad in [
+        p("", 1920, 30.0),
+        p("Tiny", 2, 30.0),
+        p("Fast", 1920, 5000.0),
+        json!({"name": "x", "width": 1920.5, "height": 1080, "pixelAspect": 1.0, "frameRate": 30}),
+        json!({"name": "x"}),
+    ] {
+        assert!(s.execute("comp.savePreset", bad.clone()).is_err(), "{bad}");
+    }
+    // Persisted, and kept by Reset All.
+    let mut s2 = Session { config: Some(store.clone()), ..Default::default() };
+    s2.load_settings();
+    assert_eq!(s2.prefs.comp_presets, s.prefs.comp_presets);
+    s2.execute("prefs.reset", json!({})).unwrap();
+    assert_eq!(s2.prefs.comp_presets.len(), 2);
+    s2.execute_checked("comp.deletePreset", json!({"name": "Vertical"})).unwrap();
+    assert!(s2.execute("comp.deletePreset", json!({"name": "Vertical"})).is_err(), "already gone");
+    let mut s3 = Session { config: Some(store.clone()), ..Default::default() };
+    s3.load_settings();
+    assert_eq!(s3.prefs.comp_presets.iter().map(|q| q.name.as_str()).collect::<Vec<_>>(), ["Edit 1440p 60"]);
+    // A hand-edited settings file: the broken preset is dropped, the good one kept.
+    let mut v: serde_json::Value = serde_json::from_str(&store.read(PREFS_FILE).unwrap()).unwrap();
+    v["compPresets"].as_array_mut().unwrap().push(json!({"name": "Broken", "width": 0, "height": 1080, "pixelAspect": 1.0, "frameRate": f64::NAN}));
+    v["compPresets"].as_array_mut().unwrap().push(json!({"name": 7}));
+    let back = Prefs::from_json(&v.to_string());
+    assert_eq!(back.comp_presets.iter().map(|q| q.name.as_str()).collect::<Vec<_>>(), ["Edit 1440p 60"]);
+}
+
 #[test]
 fn undo_levels_are_honoured() {
     let mut s = session_with_comp();
@@ -329,6 +373,24 @@ fn defaults_have_no_conflicts_and_match_the_menus() {
     assert_eq!(t.shortcut_of("file.save", &json!(null)), Some("Cmd+S"));
     assert_eq!(t.shortcut_of("app.settings", &json!({"page": "general"})), Some("Cmd+Alt+;"));
     assert!(t.bindables.len() > 500);
+}
+
+/// Cmd+Left / Cmd+Right Arrow step a frame like Page Up / Page Down (Shift: 10 frames).
+#[test]
+fn cmd_arrows_step_frames_like_page_keys() {
+    let s = Session::default();
+    let t = s.shortcuts();
+    for (id, keys) in [
+        ("time.nextFrame", ["PageDown", "Cmd+ArrowRight"]),
+        ("time.previousFrame", ["PageUp", "Cmd+ArrowLeft"]),
+        ("time.forward10", ["Shift+PageDown", "Cmd+Shift+ArrowRight"]),
+        ("time.back10", ["Shift+PageUp", "Cmd+Shift+ArrowLeft"]),
+    ] {
+        assert_eq!(t.keys.get(id).map(Vec::as_slice), Some(keys.map(String::from).as_slice()), "{id}");
+        // The menus and tooltips keep showing the Page key.
+        assert_eq!(t.shortcut_of(id, &json!(null)), Some(keys[0]));
+    }
+    assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
 }
 
 #[test]
@@ -587,7 +649,7 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     assert_eq!(s.execute("prefs.get", json!({"key": "general.language"})).unwrap(), json!("pt-br"));
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let saved = store.read(PREFS_FILE).unwrap();
-    for bad in [json!("fr"), json!(""), json!(17), json!(null)] {
+    for bad in [json!("xx"), json!(""), json!(17), json!(null)] {
         assert!(s.execute("prefs.set", json!({"key": "general.language", "value": bad})).is_err());
         assert_eq!(s.prefs.general.language, "ja");
         assert_eq!(store.read(PREFS_FILE).unwrap(), saved);
@@ -613,6 +675,14 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     let mut es = Session { config: Some(store.clone()), ..Default::default() };
     es.load_settings();
     assert_eq!(es.prefs.general.language, "es");
+    // Czech uses the same validation, persistence and JSON round-trip as every catalog.
+    assert!(crate::prefs::LANGUAGES.contains(&("Čeština", "cs")));
+    s.execute("prefs.set", json!({"key": "general.language", "value": "cs"})).unwrap();
+    assert_eq!(s.execute("prefs.get", json!({"key": "general.language"})).unwrap(), json!("cs"));
+    let mut cs = Session { config: Some(store.clone()), ..Default::default() };
+    cs.load_settings();
+    assert_eq!(cs.prefs.general.language, "cs");
+    assert_eq!(Prefs::from_json(r#"{"general":{"language":"cs"}}"#).general.language, "cs");
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let mut reloaded = Session { config: Some(store), ..Default::default() };
     reloaded.load_settings();

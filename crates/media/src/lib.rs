@@ -16,6 +16,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod convert;
+pub mod downmix;
 mod dpx;
 pub mod exr_channels;
 mod gif_anim;
@@ -23,6 +24,8 @@ mod layered;
 pub use layered::vector_doc;
 mod pool;
 mod probe;
+mod stream;
+mod webp_anim;
 
 pub use pool::{DEFAULT_BUDGET, MediaPool, PoolStats};
 pub use probe::{DEFAULT_SEQUENCE_RATE, probe, probe_bytes, probe_model};
@@ -36,6 +39,9 @@ pub enum MediaError {
     Unsupported(String),
     #[error("decode error: {0}")]
     Decode(String),
+    /// The read was called off before it finished (see [`effectcraft_render::FootageSource::cancellable`]).
+    #[error("cancelled")]
+    Cancelled,
 }
 
 pub type Result<T> = std::result::Result<T, MediaError>;
@@ -46,6 +52,7 @@ impl From<filmcraft_media::MediaError> for MediaError {
         match e {
             F::Unsupported(s) => MediaError::Unsupported(s),
             F::Io(s) | F::Offline(s) => MediaError::Io(s),
+            F::Cancelled => MediaError::Cancelled,
             other => MediaError::Decode(other.to_string()),
         }
     }

@@ -76,7 +76,7 @@ are grouped by area; the issue tracker has the rest.
 | 17 | **Media Browser lists files import refuses** | `media_browser.rs` lists AVI; `media::is_importable` has none of them (Targa and Radiance HDR import since #745; DPX and Cineon since #756, log shown as stored: no Cineon Settings conversion yet; MXF OP1a / OP-Atom since #767; FilmCraft has no AVI demuxer); #431 any image imports as a sequence; #324 MP3 goes silent | Confusing failures on common VFX formats | 15–30 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 18 | **Relative paths and relinking** | Projects store absolute footage paths; no relink when a project moves | Moving or sharing a project breaks it | 6–12 h | G4 · [file-format-parity.md](file-format-parity.md) |
 | 19 | **Plug-in ecosystem** | No After Effects SDK hosting (#600, #327 OpenFX, #334, #376 plug-in manager); our WebAssembly API has no third-party plug-ins | Many pro projects depend on Trapcode, Element, Saber… | 40–80 h for API growth; SDK hosting needs an owner decision | G8 · [scripting-parity.md](scripting-parity.md) |
-| 20 | **Multi-monitor and video output** | #486 multi-screen, floating panels on other screens, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
+| 20 | **Multi-monitor and video output** | #486: any panel can move into a native window of its own (panel menu ▸ Move Panel to New Window, `window.panelWindow`) and so onto another screen, restored with the workspace; still missing: dragging tabs between those windows, app shortcuts while one has the focus, named workspaces remembering them, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
 | 21 | **Small 26.x features** | Proportional Scrubbing (26.2), pasting Illustrator's own clipboard data as shapes (26.3; SVG markup on the clipboard pastes as a shape layer, #738), variable-font filter (26.3), percentage guides and effect colour labels (26.5), the rebuilt Effect Controls (26.5) | Users of the current version expect them | 15–25 h | — · [ui-parity.md](ui-parity.md) |
 | 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; single-file intermediates are 8-bit uncompressed QuickTime only (#372: no 16-bpc, AVI or lossless-compressed codec); #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 23 | **Essential Graphics interchange** | Templates are `.ectemplate`, not `.mogrt`; #338 Scale exposes X and Y; #611 FilmCraft rejects exported `.fcgt` | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
@@ -141,7 +141,15 @@ The most important missing piece: it turns every other estimate here into a meas
   Location keeps its selection and fields; a layer deleted while editing is reported; and
   `prop.editGradient` is an error for a target that isn't a gradient. Unit tests in `keyframe`
   and `gradient_editor` cover per-track sampling (no double opacity), the typed one-stop round
-  trip, and stops staying in order, and selected, while they move.
+  trip, and stops staying in order, and selected, while they move. The `ui_gradient_handles`
+  tests, checked headlessly on Windows, drag a selected Gradient Fill's start and end points in
+  the Composition viewer: one undo step, the layer stays, a point inside a moved and scaled group
+  converts to the group's space, and the handles show only for a selected gradient.
+- Regression evidence for the toolbar's gradient swatches (#612, reported on Discord): the
+  `ui_toolbar_gradient` input tests, checked headlessly on Windows, click a Linear Fill swatch and
+  a Radial Stroke swatch on a selected shape layer and get the Gradient Editor on its Gradient Fill
+  / Gradient Stroke Colors (OK saves); without such a gradient the swatch still opens the options,
+  and the words, Solid swatches and Alt-click are unchanged.
 - Regression evidence for the reports of 6 October, checked headlessly on Windows: real pointer
   drags in `ui_drag_drop` (Project items into the Timeline between layers and at a time, and onto
   the viewer; an effect onto a layer in the viewer: #85, #88, #89), `ui_render_queue` (a template
@@ -211,7 +219,12 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
   gate is a P0.
 - Fuzz the inputs we don't control: project files, imported media and documents, expressions,
   scripts, control-channel and MCP requests. Every crash found becomes a regression test
-  (AGENTS.md "Never crash").
+  (AGENTS.md "Never crash"). Project files are fuzzed (#779): a seeded, dependency-free mutation
+  fuzzer runs in `cargo test -p effectcraft-engine` (`fuzz_file_open_never_crashes`, `.ecproj`
+  JSON and `.ecprojx` XML through File ▸ Open, the first queries and a thumbnail render; longer
+  runs via `EFFECTCRAFT_FUZZ_ITERS` / `EFFECTCRAFT_FUZZ_SECS`). It found one crash, deeply nested
+  XML overflowing the stack, now refused. Imported media and documents, expressions, scripts and
+  control-channel / MCP requests are still to do.
 - Run the gate on every pull request in CI (gap 4): today no workflow runs the tests on PRs.
 - Fix the open crash reports first (gap 3).
 - Done when: the gate is green on stable, runs on every pull request, and the fuzzers run

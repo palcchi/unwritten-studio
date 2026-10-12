@@ -597,14 +597,41 @@ fn reset_gives_a_property_its_default() {
     assert_eq!(v(&s, "transform/anchor"), KV::Vec3([50.0, 50.0, 0.0]), "the solid's centre");
     assert_eq!(v(&s, "transform/position"), KV::Vec3([200.0, 150.0, 0.0]), "the comp's centre");
     assert_eq!(v(&s, "transform/scale"), KV::Vec3([100.0; 3]));
-    assert_eq!(v(&s, "transform/rotation"), KV::Scalar(0.0));
-    assert!(!prop(&s, l, "transform/rotation").is_animated());
+    // Animated: the default becomes the key at the current time (0 s), the 1 s key stays (#1078).
+    let rot = prop(&s, l, "transform/rotation");
+    assert_eq!(rot.keys.len(), 2);
+    assert_eq!(rot.value_at(effectcraft_time::Tick::ZERO), KV::Scalar(0.0));
     assert_eq!(v(&s, "transform/opacity"), KV::Scalar(100.0));
     assert!(prop(&s, l, "transform/opacity").expr.is_none());
     assert_eq!(v(&s, "effects/#1/blurriness"), blur);
     // A given default still wins.
     s.execute("prop.reset", json!({"layer": l, "path": "transform/opacity", "default": 30})).unwrap();
     assert_eq!(v(&s, "transform/opacity"), KV::Scalar(30.0));
+}
+
+/// #1078: resetting an animated property keeps its keyframes and keys the default at the
+/// current time, as in After Effects; undo brings the old keys back.
+#[test]
+fn reset_keys_the_default_on_an_animated_property() {
+    let (mut s, l) = setup();
+    animate(&mut s, l, "transform/scale", &[(0.0, json!([50, 50, 100])), (2.0, json!([150, 150, 100]))]);
+    s.execute("time.set", json!({"time": 1})).unwrap();
+    s.execute("prop.reset", json!({"layer": l, "path": "transform/scale"})).unwrap();
+    let pr = prop(&s, l, "transform/scale");
+    let at = |sec: f64| pr.value_at(effectcraft_time::Tick::from_seconds_f64(sec));
+    assert_eq!(pr.keys.len(), 3, "the 0 s and 2 s keys stay, one is added at 1 s");
+    assert_eq!(at(0.0), KV::Vec3([50.0, 50.0, 100.0]));
+    assert_eq!(at(1.0), KV::Vec3([100.0; 3]));
+    assert_eq!(at(2.0), KV::Vec3([150.0, 150.0, 100.0]));
+    // On a key, the key takes the default.
+    s.execute("time.set", json!({"time": 2})).unwrap();
+    s.execute("prop.reset", json!({"layer": l, "path": "transform/scale"})).unwrap();
+    let pr = prop(&s, l, "transform/scale");
+    assert_eq!(pr.keys.len(), 3);
+    assert_eq!(pr.value_at(effectcraft_time::Tick::from_seconds_f64(2.0)), KV::Vec3([100.0; 3]));
+    s.execute("edit.undo", json!({})).unwrap();
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(prop(&s, l, "transform/scale").keys.len(), 2);
 }
 
 /// #363: dropped on one of the target's values the pick whip picks that dimension

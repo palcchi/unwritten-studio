@@ -145,7 +145,7 @@ carries outside-range warnings; the existing objects from `keys.set` and `prop.g
 also report both bases and warnings. `prop.get.time` is comp seconds. Separated Position
 `prop.set` retains per-axis replies; for these commands, `path` or `prop` identifies a property, not a group.
 
-Set offsets with `layer.timing {layer, start: 10.5}`; `in`, `out` and `delta` also use comp seconds.
+Set offsets with `layer.timing {layer, start: 10.5}`; `in`, `out` and `delta` also use comp seconds; `inDelta` / `outDelta` trim each layer from its own in/out point.
 For an unstretched layer starting at 10.5 s in a 30 fps comp,
 `prop.addKey {layer: "A", path: "transform/opacity", time: 15.3,
 timeBase: "comp", value: 0}` writes a key at comp 15.3 s (layer 4.8 s), matching

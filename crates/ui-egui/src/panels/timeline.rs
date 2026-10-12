@@ -2135,14 +2135,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             if frames != 0 {
                                 acc -= (frames as f64 * fd * pps) as f32;
                                 let d = frames as f64 * fd;
+                                // Moving or trimming a selected layer acts on the whole
+                                // selection; each layer trims from its own in/out point.
+                                let targets = if is_sel { json!(selected.iter().map(|l| l.0).collect::<Vec<_>>()) } else { json!([layer.id.0]) };
                                 let params = match kind {
-                                    "move" => {
-                                        json!({"layers": if is_sel { json!(selected.iter().map(|l| l.0).collect::<Vec<_>>()) } else { json!([layer.id.0]) }, "delta": d, "merge": drag_key})
-                                    }
-                                    "in" => json!({"layers": [layer.id.0], "in": (layer.in_point.seconds() + d).max(0.0), "merge": drag_key}),
-                                    _ => {
-                                        json!({"layers": [layer.id.0], "out": (layer.out_point.seconds() + d).min(comp.duration.seconds()), "merge": drag_key})
-                                    }
+                                    "move" => json!({"layers": targets, "delta": d, "merge": drag_key}),
+                                    "in" => json!({"layers": targets, "inDelta": d, "merge": drag_key}),
+                                    _ => json!({"layers": targets, "outDelta": d, "merge": drag_key}),
                                 };
                                 actions.push(("layer.timing".into(), params));
                             }

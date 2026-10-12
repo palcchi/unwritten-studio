@@ -391,6 +391,9 @@ their on-screen scale, as text is vector in After Effects; on shape layers and v
 switch is Continuously Rasterize and does the same. Quality: Draft samples
 nearest-neighbour, Wireframe draws the layer bounds. Slip edit (`layer.slip`, Alt+PageUp/Down,
 dragging the source bar in the timeline) moves the source under fixed in/out points.
+Dragging a layer bar's in or out edge with several layers selected trims every selected layer by
+the same amount from its own in/out point (`layer.timing {inDelta | outDelta}`), clamped to the
+comp and to one frame of layer, as one undo step.
 
 **Nested comps** show nothing before they start or after they end (`Comp::covers`), even when
 the precomp layer is trimmed or remapped past them. A comp with **Preserve frame rate when nested

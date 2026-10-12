@@ -331,6 +331,24 @@ fn defaults_have_no_conflicts_and_match_the_menus() {
     assert!(t.bindables.len() > 500);
 }
 
+/// Cmd+Left / Cmd+Right Arrow step a frame like Page Up / Page Down (Shift: 10 frames).
+#[test]
+fn cmd_arrows_step_frames_like_page_keys() {
+    let s = Session::default();
+    let t = s.shortcuts();
+    for (id, keys) in [
+        ("time.nextFrame", ["PageDown", "Cmd+ArrowRight"]),
+        ("time.previousFrame", ["PageUp", "Cmd+ArrowLeft"]),
+        ("time.forward10", ["Shift+PageDown", "Cmd+Shift+ArrowRight"]),
+        ("time.back10", ["Shift+PageUp", "Cmd+Shift+ArrowLeft"]),
+    ] {
+        assert_eq!(t.keys.get(id).map(Vec::as_slice), Some(keys.map(String::from).as_slice()), "{id}");
+        // The menus and tooltips keep showing the Page key.
+        assert_eq!(t.shortcut_of(id, &json!(null)), Some(keys[0]));
+    }
+    assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
+}
+
 #[test]
 fn shortcut_edits_detect_conflicts_and_create_a_custom_preset() {
     let store = Arc::new(MemoryConfig::default());

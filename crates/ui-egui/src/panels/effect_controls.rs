@@ -1397,7 +1397,7 @@ pub fn viewer_hook(
             app.auto.add("viewer.textColorPick", map.area, &pick.field);
             let chip = Rect::from_min_size(map.area.min + vec2(10.0, 10.0), vec2(220.0, 22.0));
             painter.rect_filled(chip, 11.0, Color32::from_black_alpha(180));
-            painter.text(chip.center(), Align2::CENTER_CENTER, format!("Click to sample text {}", pick.field), Tokens::ui(11.5), t.text);
+            painter.text(chip.center(), Align2::CENTER_CENTER, crate::i18n::tr_args("Click to sample text {}", &[&pick.field]), Tokens::ui(11.5), t.text);
             if let Some(pos) = resp.hover_pos() {
                 ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
                 let c = map.to_comp(pos);

@@ -213,7 +213,7 @@ pub fn character(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             } else if let Some(tt) = &target {
                 app.ui.fx_pick = None;
                 app.ui.text_color_pick = Some(TextColorPick { layer: tt.layer, field: key.into(), range: tt.range });
-                app.ui.status = format!("Click in the Composition panel to sample text {label}");
+                app.ui.status = crate::i18n::tr_args("Click in the Composition panel to sample text {}", &[&label]);
             }
         }
         p.text(pos2(er.max.x + 6.0, y + 10.0), Align2::LEFT_CENTER, label, Tokens::ui(11.5), t.text_dim);

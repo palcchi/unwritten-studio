@@ -215,6 +215,9 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             }
         }
     }
+    // Enter is OK, unless it belongs to the rename field or an open preset menu. A recorded Enter
+    // never gets here: the recorder took the frame's key events above.
+    close |= st.rename.is_none() && !egui::Popup::is_any_open(ctx) && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Enter));
     // Modifiers: toggles, or the ones held on the keyboard.
     let held = ctx.input(|i| i.modifiers);
     let held = [held.ctrl && cfg!(target_os = "macos"), held.command, held.alt, held.shift];
@@ -629,6 +632,29 @@ mod tests {
             // The window less the modal's margin and its frame padding.
             assert!(y + h <= size.y - 24.0 - 18.0 + 0.5, "OK ends at {} in a {size:?} window", y + h);
         }
+    }
+
+    #[test]
+    fn enter_is_ok_except_while_recording_or_renaming() {
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        // Recording: Enter is the recorded key.
+        open(&mut app);
+        app.dialog_state.shortcuts.recording = true;
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, Some(Dialog::Shortcuts));
+        assert_eq!(app.dialog_state.shortcuts.pending, "Enter");
+        // Renaming a preset: Enter belongs to the name field.
+        app.dialog_state.shortcuts.rename = Some("Mine".into());
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, Some(Dialog::Shortcuts));
+        // Otherwise it closes the editor, also with the search field focused.
+        app.dialog_state.shortcuts.rename = None;
+        frame(&mut app, &ctx, vec![]);
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, None);
     }
 
     #[test]

@@ -1066,3 +1066,14 @@ fn add_item_keeps_footage_longer_than_the_comp_at_full_length() {
     let layer = s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap();
     assert_eq!(layer.out_point.seconds(), 10.0);
 }
+
+/// View > Go to Time's dialog sends its Frame field as a float; `time.set` used to reject it
+/// with "need `time`, `frame` or `timecode`".
+#[test]
+fn go_to_time_accepts_a_float_frame_from_the_dialog() {
+    let (mut s, _) = setup();
+    let r = s.execute("time.set", json!({"frame": 12.0})).unwrap();
+    assert_eq!(r["frame"], json!(12));
+    let r = s.execute("time.set", json!({"frame": 7})).unwrap();
+    assert_eq!(r["frame"], json!(7));
+}

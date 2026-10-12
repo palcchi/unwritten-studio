@@ -675,6 +675,14 @@ fn interface_language_is_validated_persisted_and_backward_compatible() {
     let mut es = Session { config: Some(store.clone()), ..Default::default() };
     es.load_settings();
     assert_eq!(es.prefs.general.language, "es");
+    // Czech uses the same validation, persistence and JSON round-trip as every catalog.
+    assert!(crate::prefs::LANGUAGES.contains(&("Čeština", "cs")));
+    s.execute("prefs.set", json!({"key": "general.language", "value": "cs"})).unwrap();
+    assert_eq!(s.execute("prefs.get", json!({"key": "general.language"})).unwrap(), json!("cs"));
+    let mut cs = Session { config: Some(store.clone()), ..Default::default() };
+    cs.load_settings();
+    assert_eq!(cs.prefs.general.language, "cs");
+    assert_eq!(Prefs::from_json(r#"{"general":{"language":"cs"}}"#).general.language, "cs");
     s.execute("prefs.set", json!({"key": "general.language", "value": "ja"})).unwrap();
     let mut reloaded = Session { config: Some(store), ..Default::default() };
     reloaded.load_settings();

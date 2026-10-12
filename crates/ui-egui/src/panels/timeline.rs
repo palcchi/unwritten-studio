@@ -3494,9 +3494,7 @@ fn prop_menu(
     item(ui, "essentialGraphics", "Add Property to Essential Graphics", false, "essential.addProperty", json!({"comp": comp.0, "layer": l, "prop": uid}));
 }
 
-/// A layer row's or bar's context menu. As in After Effects, right-clicking a layer that is part
-/// of the selection keeps the selection and the menu acts on all of it; right-clicking an
-/// unselected layer selects only that layer.
+/// Whether `layer` shows vector footage (SVG, PDF, AI, EPS).
 pub(crate) fn vector_footage_layer(project: &effectcraft_engine::project::Project, layer: &Layer) -> bool {
     layer
         .source
@@ -3518,6 +3516,9 @@ fn collapse_applies(layer: &Layer, project: &effectcraft_engine::project::Projec
     }
 }
 
+/// A layer row's or bar's context menu. As in After Effects, right-clicking a layer that is part
+/// of the selection keeps the selection and the menu acts on all of it; right-clicking an
+/// unselected layer selects only that layer.
 fn layer_context_menu(resp: &egui::Response, comp: &Comp, layer: &Layer, selected: &[LayerId], vector: bool, actions: &mut Vec<(String, serde_json::Value)>) {
     let in_selection = selected.contains(&layer.id);
     if resp.secondary_clicked() && !in_selection && !layer.switches.locked {

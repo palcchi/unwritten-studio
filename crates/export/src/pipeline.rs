@@ -15,9 +15,11 @@ use web_time::Instant;
 
 use crate::{Job, RenderQuality, out};
 
-/// GPU frames rendered at once by default, the same cap as the export scheduler's
-/// `MAX_INFLIGHT` (3 hides readback and recording without stacking up working textures).
-pub(crate) const GPU_INFLIGHT_DEFAULT: usize = 3;
+/// GPU frames rendered at once by default: one, as the export scheduler's single GPU worker
+/// renders image sequences (#898: frames in flight beyond one only with asynchronous YUV
+/// readback). Measured on the #879 project at 1080p on an 8 GB card: 6.3 GB peak with one,
+/// 7.0 to 7.8 GB with two, and the whole card with three, where main fell back to the CPU.
+pub(crate) const GPU_INFLIGHT_DEFAULT: usize = 1;
 /// Overrides [`GPU_INFLIGHT_DEFAULT`]: a whole number of frames, at least 1.
 pub(crate) const GPU_INFLIGHT_ENV: &str = "EFFECTCRAFT_GPU_INFLIGHT";
 
@@ -164,7 +166,7 @@ impl<'a> Cx<'a> {
         }
         // #879: with a GPU accelerator every frame in flight holds its own working textures, so
         // a whole batch rendered at once can exhaust VRAM (or shared memory, which crashes
-        // instead of falling back). Cap the frames rendering at once; the CPU path is unchanged.
+        // instead of falling back). Render one GPU frame at a time by default; the CPU path is unchanged.
         let cap = self.job.accel.map(|_| gpu_inflight(std::env::var(GPU_INFLIGHT_ENV).ok().as_deref()));
         map_frames(ks, cap, |k| f(k, self.frame(comp, k)))
     }
@@ -471,7 +473,7 @@ mod tests {
     #[test]
     fn gpu_inflight_override_is_a_positive_number_or_the_default() {
         assert_eq!(gpu_inflight(None), GPU_INFLIGHT_DEFAULT);
-        assert_eq!(gpu_inflight(Some("1")), 1);
+        assert_eq!(gpu_inflight(Some("3")), 3);
         assert_eq!(gpu_inflight(Some(" 5 ")), 5);
         for bad in ["0", "", "-2", "three", "2.5"] {
             assert_eq!(gpu_inflight(Some(bad)), GPU_INFLIGHT_DEFAULT, "{bad:?}");

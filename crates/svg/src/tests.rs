@@ -120,6 +120,45 @@ fn nested_svg_percentages_use_the_nearest_viewport() {
 }
 
 #[test]
+fn non_finite_viewboxes_do_not_panic_or_produce_nan_geometry() {
+    for attrs in ["viewBox=\"0 0 1e400 100\"", "viewBox=\"0 0 100 1e400\"", "viewBox=\"-1e400 0 100 100\""] {
+        for shape in ["<rect width=\"0%\" height=\"50%\"/>", "<circle r=\"0%\"/>"] {
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" {attrs}>{shape}<rect width="50%" height="50%"/></svg>"#);
+            let d = parse(svg.as_bytes()).unwrap();
+            assert_eq!((d.width, d.height), (300.0, 150.0));
+            let shapes = d.flatten();
+            assert_eq!(shapes.len(), 1);
+            assert!(matches!(shapes[0].2.geom, Geom::Rect { x, y, w, h, rx, ry }
+                if [x, y, w, h, rx, ry].iter().all(|v| v.is_finite()) && w == 150.0 && h == 75.0));
+            assert!(shapes[0].0.as_coeffs().iter().all(|v| v.is_finite()));
+        }
+    }
+}
+
+#[test]
+fn non_finite_nested_viewports_do_not_panic_or_produce_nan_geometry() {
+    for attrs in ["width=\"1e400\" height=\"10\"", "width=\"10\" height=\"1e400\""] {
+        for shape in ["<rect width=\"0%\" height=\"50%\"/>", "<circle r=\"0%\"/>"] {
+            let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg"><svg {attrs}>{shape}<rect width="50%" height="50%"/></svg></svg>"#);
+            let d = parse(svg.as_bytes()).unwrap();
+            let shapes = d.flatten();
+            assert_eq!(shapes.len(), 1);
+            assert!(matches!(shapes[0].2.geom, Geom::Rect { x, y, w, h, rx, ry }
+                if [x, y, w, h, rx, ry].iter().all(|v| v.is_finite()) && w > 0.0 && h > 0.0));
+            assert!(shapes[0].0.as_coeffs().iter().all(|v| v.is_finite()));
+        }
+    }
+}
+
+#[test]
+fn zero_size_nested_viewport_draws_nothing() {
+    for attrs in ["width=\"0\" height=\"10\"", "width=\"10\" height=\"0\""] {
+        let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg"><svg {attrs}><rect width="50%" height="50%"/></svg></svg>"#);
+        assert!(parse(svg.as_bytes()).unwrap().flatten().is_empty(), "{attrs}");
+    }
+}
+
+#[test]
 fn malformed_input() {
     assert!(parse(b"<html/>").is_err());
     assert!(parse(b"not xml").is_err());

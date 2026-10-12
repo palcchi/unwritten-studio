@@ -60,6 +60,10 @@ pub fn probe_model(path: &str, bytes: &[u8], resolve: &dyn Fn(&str) -> Option<Ve
 
 /// Probe in-memory file contents; `path` names the footage (and is stored as `Footage::path`).
 pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
+    // DPX / Cineon film scans (our own reader; `image` has none).
+    if let Some(f) = crate::dpx::probe(path, &bytes)? {
+        return Ok(f);
+    }
     if let Some(f) = crate::layered::probe(path, &bytes)? {
         return Ok(f);
     }

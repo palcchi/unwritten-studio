@@ -1010,8 +1010,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add("viewer.referenceAxes", Rect::from_center_size(corner, vec2(56.0, 56.0)), "3D reference axes");
     }
 
-    super::expr_editor::error_banner(app, ui, area);
-
     // Track points of the current track (Tracker panel) on its layer, while that layer is selected.
     let mut track_hits = vec![];
     let track_cur = super::tracker::viewer_track(app);

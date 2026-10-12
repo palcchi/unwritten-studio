@@ -16,6 +16,7 @@ pub mod credits;
 pub mod dock;
 mod dock_shared;
 pub mod dock_ui;
+mod expression_diagnostics;
 pub mod frames;
 pub mod gpu_failure;
 pub mod header;
@@ -325,6 +326,7 @@ pub struct EffectcraftApp {
     /// Audio panel VU meters.
     pub meter: audio::Meter,
     /// Waveform peak summaries per footage item (see `panels::waveform`).
+    pub(crate) expression_diagnostics: expression_diagnostics::Diagnostics,
     pub(crate) waveforms: panels::waveform::Cache,
     /// Last reveal shortcut and when (double-press shortcuts such as LL).
     pub(crate) last_reveal: Option<(String, f64)>,
@@ -410,6 +412,7 @@ impl EffectcraftApp {
             audio: None,
             scrub: None,
             meter: Default::default(),
+            expression_diagnostics: Default::default(),
             waveforms: Default::default(),
             last_reveal: None,
             applied_prefs: None,

@@ -357,6 +357,8 @@ impl MediaPool {
         }
         match Inner::frame_at(&self.inner, footage, t, true, size, float) {
             Ok(img) => Some(img),
+            // nobody wants the frame any more (`cancellable`): not an error
+            Err(MediaError::Cancelled) => None,
             Err(e) => {
                 log::warn!("media: frame of {} at {:?}: {e}", footage.path, t);
                 None
@@ -805,6 +807,12 @@ impl FootageSource for MediaPool {
     }
     fn cache_budget(&self) -> Option<usize> {
         Some(self.budget())
+    }
+    /// A movie's decoder gives up on a seek (before it, and between samples while it decodes
+    /// forward from the keyframe) once `cancel` is set: a scrub's superseded frames no longer
+    /// hold the decoder the frame under the pointer waits for (#329).
+    fn cancellable(&self, cancel: &Arc<AtomicBool>, f: &mut dyn FnMut()) {
+        filmcraft_media::cancel::with_cancel(cancel, f)
     }
     fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>> {
         self.frame_sized(item, footage, t, None, FloatCurve::Srgb)

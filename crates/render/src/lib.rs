@@ -23,6 +23,7 @@ pub mod text;
 pub mod three_d;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use auto::{AutoKey, AutoPick};
 pub use cache::{CacheStats, LayerCache, LayerStore, PrefetchStore};
@@ -109,6 +110,80 @@ pub trait FootageSource: Send + Sync {
     /// `None` when the footage is not vector or cannot be read.
     fn vector_frame(&self, _item: ItemId, _footage: &Footage, _scale: f64) -> Option<Arc<Image>> {
         None
+    }
+    /// Run `f`, which reads frames from this source, as work that can be called off: once
+    /// `cancel` is set, long decodes it starts (a movie seeking back to a keyframe and decoding
+    /// forward) stop early and their frames come back `None`. Sources that can't stop a decode
+    /// just run `f`. See [`CancellableFootage`].
+    fn cancellable(&self, _cancel: &Arc<AtomicBool>, f: &mut dyn FnMut()) {
+        f()
+    }
+    /// Reads through this source have been called off: frames may have come back `None` that
+    /// exist, so what was made from them must not be kept.
+    fn called_off(&self) -> bool {
+        false
+    }
+}
+
+/// A render's view of a [`FootageSource`] whose frame reads can be called off with `cancel`
+/// (a viewer frame nobody waits for any more, #329). Every read goes through
+/// [`FootageSource::cancellable`] on its own, so reads made for this render on another thread
+/// (a parallel loop) answer to this render's flag, and reads for other renders never do.
+pub struct CancellableFootage<'a> {
+    pub inner: &'a dyn FootageSource,
+    pub cancel: Arc<AtomicBool>,
+}
+
+impl CancellableFootage<'_> {
+    fn read<R>(&self, f: impl FnOnce() -> Option<R>) -> Option<R> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return None;
+        }
+        let (mut f, mut out) = (Some(f), None);
+        self.inner.cancellable(&self.cancel, &mut || out = f.take().and_then(|f| f()));
+        out
+    }
+}
+
+impl FootageSource for CancellableFootage<'_> {
+    fn frame(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<Image>> {
+        self.read(|| self.inner.frame(item, footage, t))
+    }
+    fn frame_at_size(&self, item: ItemId, footage: &Footage, t: Tick, width: u32, height: u32) -> Option<Arc<Image>> {
+        self.read(|| self.inner.frame_at_size(item, footage, t, width, height))
+    }
+    fn audio(&self, item: ItemId, footage: &Footage, t: Tick, frames: usize, rate: u32) -> Option<Vec<f32>> {
+        self.inner.audio(item, footage, t, frames, rate)
+    }
+    fn aux(&self, item: ItemId, footage: &Footage, t: Tick) -> Option<Arc<effectcraft_raster::AuxChannels>> {
+        self.inner.aux(item, footage, t)
+    }
+    fn model(&self, item: ItemId, footage: &Footage) -> Option<Arc<effectcraft_model::Model>> {
+        self.inner.model(item, footage)
+    }
+    fn set_cache_budget(&self, bytes: usize) {
+        self.inner.set_cache_budget(bytes)
+    }
+    fn purge(&self) {
+        self.inner.purge()
+    }
+    fn forget(&self, path: &str) {
+        self.inner.forget(path)
+    }
+    fn set_conform_folder(&self, folder: Option<std::path::PathBuf>) {
+        self.inner.set_conform_folder(folder)
+    }
+    fn cache_budget(&self) -> Option<usize> {
+        self.inner.cache_budget()
+    }
+    fn vector_frame(&self, item: ItemId, footage: &Footage, scale: f64) -> Option<Arc<Image>> {
+        self.inner.vector_frame(item, footage, scale)
+    }
+    fn cancellable(&self, cancel: &Arc<AtomicBool>, f: &mut dyn FnMut()) {
+        self.inner.cancellable(cancel, f)
+    }
+    fn called_off(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed) || self.inner.called_off()
     }
 }
 
@@ -602,6 +677,12 @@ impl<'a> Renderer<'a> {
             through: [None; MAX_THROUGH],
             through_lost: false,
         }
+    }
+
+    /// The layer cache to keep this render's buffers in: none once its footage reads were
+    /// called off, as they may have come back empty ([`FootageSource::called_off`], #329).
+    fn cache_to_keep(&self) -> Option<&'a LayerCache> {
+        self.cache.filter(|_| !self.footage.called_off())
     }
 
     /// A layer's Quality switch, limited by the precomp layers above it when
@@ -1279,7 +1360,7 @@ impl<'a> Renderer<'a> {
                 let b = self.footage.frame_with(item, f, f.frame_rate.tick_of(i + 1), None, float);
                 if let (Some(a), Some(b)) = (a, b) {
                     let img = blend_frames(mode, &a, &b, w as f32);
-                    if let (Some(c), Some(k)) = (self.cache, key) {
+                    if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
                         c.insert(k, Arc::new(Buf { img: img.clone(), offset: [0.0; 2], scale: 1.0 }));
                     }
                     return Some(Arc::new(img));
@@ -1327,7 +1408,7 @@ impl<'a> Renderer<'a> {
         let mut nb = (*b).clone();
         color::convert(&mut nb.img, &c);
         let nb = Arc::new(nb);
-        if let (Some(cache), Some(k)) = (self.cache, key) {
+        if let (Some(cache), Some(k)) = (self.cache_to_keep(), key) {
             cache.insert(k, nb.clone());
         }
         nb
@@ -1345,7 +1426,7 @@ impl<'a> Renderer<'a> {
             return Some((b, key));
         }
         let flat = Arc::new(styles::Styled { passes: st.passes.iter().map(|(b, m)| ((**b).clone(), *m)).collect(), body: (*st.body).clone() }.flatten());
-        if let (Some(c), Some(k)) = (self.cache, key) {
+        if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
             c.insert(k, flat.clone());
         }
         Some((flat, key))
@@ -1376,7 +1457,7 @@ impl<'a> Renderer<'a> {
         }
         let buf = self.masked_source(ctx, layer)?;
         let buf = Arc::new(self.apply_effects_timed(ctx, layer, buf, false, usize::MAX, timing.map(|t| &mut t.effects)));
-        if let (Some(c), Some(k)) = (self.cache, key) {
+        if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
             c.insert(k, buf.clone());
         }
         Some((buf, key))
@@ -1401,7 +1482,7 @@ impl<'a> Renderer<'a> {
             buf = self.effect_space_stack(ctx, layer, buf, false, effects, None, origin);
         }
         let buf = Arc::new(buf);
-        if let (Some(c), Some(k)) = (self.cache, key) {
+        if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
             c.insert(k, buf.clone());
         }
         Some(buf)
@@ -1433,7 +1514,7 @@ impl<'a> Renderer<'a> {
         }
         let body = Arc::new(st.body);
         let passes: Vec<_> = st.passes.into_iter().map(|(b, m)| (Arc::new(b), m)).collect();
-        if let (Some(c), Some(k)) = (self.cache, key) {
+        if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
             c.insert(k, body.clone());
             for (i, (b, _)) in passes.iter().enumerate() {
                 c.insert(cache::derive(k, i as u64 + 1), b.clone());
@@ -2057,7 +2138,7 @@ impl<'a> Renderer<'a> {
         let mut foot = self.source(ctx, layer)?;
         let _ = masks::apply(ctx, layer, &mut foot, self.mask_blur(ctx, layer));
         let foot = Arc::new(foot);
-        if let (Some(c), Some(k)) = (self.cache, key) {
+        if let (Some(c), Some(k)) = (self.cache_to_keep(), key) {
             c.insert(k, foot.clone());
         }
         Some(foot)

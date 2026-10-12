@@ -6,6 +6,9 @@ The desktop app exposes a control channel for agents, tests and the MCP bridge:
 effectcraft --control 9877        # or EFFECTCRAFT_CONTROL_PORT=9877
 ```
 
+The port must be a number from 1 to 65535, and `--control` overrides the variable. A bad port or an
+unknown option prints an error and the app exits with status 1 before it opens a window.
+
 - **Transport:** TCP on `127.0.0.1` only, one JSON object per line in each direction. Connections are
   persistent; requests on one connection are answered in order.
 - **Request:** `{"id": 1, "method": "engine.execute", "params": {...}}` (`id` is echoed back, `params`

@@ -114,6 +114,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("tool.orbit", "Orbit Tool", [], Some("1")),
     uic!("tool.panCamera", "Pan Camera Tool", [], Some("2")),
     uic!("tool.dolly", "Dolly Tool", [], Some("3")),
+    uic!("tool.camera", "Camera Tools", [], Some("C")),
     uic!("tool.rotate", "Rotation Tool", [], Some("W")),
     uic!("tool.panBehind", "Pan Behind Tool", [], Some("Y")),
     uic!("tool.shape", "Shape Tools", [], Some("Q")),
@@ -377,6 +378,16 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         return frontend(app, ctx, "window.workspace", json!({"name": ws}));
     }
     if let Some(t) = id.strip_prefix("tool.") {
+        // C cycles through the camera tools.
+        if t == "camera" {
+            let tools = [Tool::Orbit, Tool::PanCamera, Tool::Dolly];
+            let next = match tools.iter().position(|x| *x == app.ui.tool) {
+                Some(i) => tools[(i + 1) % tools.len()],
+                None => Tool::Orbit,
+            };
+            app.ui.tool = next;
+            return Ok(json!({"tool": next}));
+        }
         // Slot shortcuts cycle through the slot's tools.
         let slot = match t {
             "shape" => Some(8),
@@ -2216,6 +2227,7 @@ mod tests {
             ("window.nextPanel", "Alt+Shift+."),
             ("window.previousPanel", "Alt+Shift+,"),
             ("window.closeAll", "Cmd+Shift+W"),
+            ("tool.camera", "C"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }
@@ -2293,6 +2305,19 @@ mod tests {
         app.show_panel(PanelKind::Project);
         run(&mut app, "window.closeAll");
         assert!(!app.ui.dock.contains(PanelKind::Project));
+    }
+
+    #[test]
+    fn c_cycles_the_camera_tools() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.ui.tool = Tool::Selection;
+        let mut seen = vec![];
+        for _ in 0..4 {
+            invoke(&mut app, &ctx, "tool.camera", json!({})).unwrap();
+            seen.push(app.ui.tool);
+        }
+        assert_eq!(seen, [Tool::Orbit, Tool::PanCamera, Tool::Dolly, Tool::Orbit]);
     }
 
     #[test]

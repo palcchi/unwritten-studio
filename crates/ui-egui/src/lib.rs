@@ -1153,6 +1153,9 @@ impl EffectcraftApp {
         };
         let mut queued = self.frames.inflight();
         let series = self.frame_series(cid, scale);
+        // The preview's position orders prefetch and eviction (#595).
+        let playhead = plan.filter(|p| p.video).map(|p| frames::Playhead { series, cur, start: p.start, end: p.end, step: p.step, looping: p.looping });
+        self.frames.set_playhead(playhead);
         if self.playback.caching
             && let Some(p) = plan
         {
@@ -1193,7 +1196,10 @@ impl EffectcraftApp {
             return;
         }
         let step = plan.map_or(1, |p| p.step);
-        for k in 0..ahead * 3 {
+        // Never further ahead than the RAM preview holds: those frames would evict the ones the
+        // preview shows first, or be evicted before it gets there (#595).
+        let window = (ahead * 3).min(self.frames_that_fit(&c, scale) - 1);
+        for k in 0..window {
             if queued >= ahead as usize || !video {
                 break;
             }

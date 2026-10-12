@@ -19,32 +19,55 @@ use crate::{Job, RenderQuality, out};
 /// renders image sequences (#898: frames in flight beyond one only with asynchronous YUV
 /// readback). Measured on the #879 project at 1080p on an 8 GB card: 6.3 GB peak with one,
 /// 7.0 to 7.8 GB with two, and the whole card with three, where main fell back to the CPU.
+/// Not sized from free VRAM: the GPU backend reports no free or total device memory on every
+/// platform, so a portable estimate is not available here.
 pub(crate) const GPU_INFLIGHT_DEFAULT: usize = 1;
 /// Overrides [`GPU_INFLIGHT_DEFAULT`]: a whole number of frames, at least 1.
 pub(crate) const GPU_INFLIGHT_ENV: &str = "EFFECTCRAFT_GPU_INFLIGHT";
 
 /// GPU frames in flight from the `EFFECTCRAFT_GPU_INFLIGHT` value: a positive whole number, or
-/// the default when it is unset, 0 or not a number.
+/// the default (with a warning when a value was given) when it is 0, negative, not a number or
+/// too large.
 pub(crate) fn gpu_inflight(var: Option<&str>) -> usize {
-    var.and_then(|v| v.trim().parse::<usize>().ok()).filter(|&n| n >= 1).unwrap_or(GPU_INFLIGHT_DEFAULT)
-}
-
-/// `f` over the frames `ks` in parallel, results in `ks` order. With `cap`, at most that many
-/// run at once: the frames go in consecutive chunks of `cap`, each rendered in parallel. A
-/// chunk holds no lock or slot, so a failing or panicking frame cannot leak one, and nested
-/// parallelism inside `f` (or a single thread) cannot deadlock.
-pub(crate) fn map_frames<T: Send>(ks: Vec<u64>, cap: Option<usize>, f: impl Fn(u64) -> T + Sync + Send) -> Vec<T> {
-    use rayon::prelude::*;
-    match cap {
-        None => ks.into_par_iter().map(f).collect(),
-        Some(n) => {
-            let mut out = Vec::with_capacity(ks.len());
-            for chunk in ks.chunks(n.max(1)) {
-                out.par_extend(chunk.par_iter().map(|&k| f(k)));
-            }
-            out
+    let Some(v) = var else { return GPU_INFLIGHT_DEFAULT };
+    match v.trim().parse::<usize>() {
+        Ok(n) if n >= 1 => n,
+        _ => {
+            log::warn!(target: "effectcraft_export", "{GPU_INFLIGHT_ENV}={v:?} is not a whole number of frames of at least 1: using {GPU_INFLIGHT_DEFAULT}");
+            GPU_INFLIGHT_DEFAULT
         }
     }
+}
+
+/// `render` then `encode` over the frames `ks`, results in `ks` order.
+///
+/// Without `cap` every frame renders and encodes in one parallel batch (the CPU path, as
+/// before). With `cap` (GPU frames in flight), the frames go in windows of
+/// `max(cap, threads)`: each window renders in consecutive chunks of `cap` (at most `cap`
+/// renders at once), then encodes in parallel, so only the render is serialised and at most
+/// one window of rendered images is held in memory. Chunks hold no lock or slot, so a failing
+/// or panicking frame cannot leak one, and nested parallelism (or a single thread) cannot
+/// deadlock.
+pub(crate) fn map_frames<I: Send, T: Send>(
+    ks: Vec<u64>,
+    cap: Option<usize>,
+    render: impl Fn(u64) -> I + Sync + Send,
+    encode: impl Fn(u64, I) -> T + Sync + Send,
+) -> Vec<T> {
+    use rayon::prelude::*;
+    let Some(n) = cap.map(|n| n.max(1)) else {
+        return ks.into_par_iter().map(|k| encode(k, render(k))).collect();
+    };
+    let window = n.max(rayon::current_num_threads());
+    let mut out = Vec::with_capacity(ks.len());
+    for win in ks.chunks(window) {
+        let mut imgs = Vec::with_capacity(win.len());
+        for chunk in win.chunks(n) {
+            imgs.par_extend(chunk.par_iter().map(|&k| render(k)));
+        }
+        out.par_extend(win.par_iter().copied().zip(imgs.into_par_iter()).map(|(k, img)| encode(k, img)));
+    }
+    out
 }
 
 /// A job being exported: the job, the project with the Render Settings overrides applied, the
@@ -164,11 +187,15 @@ impl<'a> Cx<'a> {
             }
             return out;
         }
-        // #879: with a GPU accelerator every frame in flight holds its own working textures, so
-        // a whole batch rendered at once can exhaust VRAM (or shared memory, which crashes
-        // instead of falling back). Render one GPU frame at a time by default; the CPU path is unchanged.
-        let cap = self.job.accel.map(|_| gpu_inflight(std::env::var(GPU_INFLIGHT_ENV).ok().as_deref()));
-        map_frames(ks, cap, |k| f(k, self.frame(comp, k)))
+        map_frames(ks, self.gpu_cap(), |k| self.frame(comp, k), f)
+    }
+
+    /// GPU frames rendered at once (#879), decided once per batch: with a GPU accelerator every
+    /// frame in flight holds its own working textures, so a whole batch rendered at once can
+    /// exhaust VRAM (or shared memory, which crashes instead of falling back). `None` when the
+    /// frames render on the CPU: no accelerator, or a Software Only project.
+    fn gpu_cap(&self) -> Option<usize> {
+        (self.job.accel.is_some() && self.project.settings.gpu_acceleration).then(|| gpu_inflight(std::env::var(GPU_INFLIGHT_ENV).ok().as_deref()))
     }
 
     /// Output frame `i`: sampled (fields, pulldown), at the colour depth, cropped and resized.
@@ -408,13 +435,21 @@ mod tests {
     fn run_capped(n: u64, cap: Option<usize>) -> (Vec<u64>, usize) {
         use std::sync::atomic::{AtomicUsize, Ordering};
         let (now, max) = (AtomicUsize::new(0), AtomicUsize::new(0));
-        let out = map_frames((0..n).collect(), cap, |k| {
-            let c = now.fetch_add(1, Ordering::SeqCst) + 1;
-            max.fetch_max(c, Ordering::SeqCst);
-            std::thread::sleep(std::time::Duration::from_millis(2));
-            now.fetch_sub(1, Ordering::SeqCst);
-            k * 10
-        });
+        let out = map_frames(
+            (0..n).collect(),
+            cap,
+            |k| {
+                let c = now.fetch_add(1, Ordering::SeqCst) + 1;
+                max.fetch_max(c, Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(2));
+                now.fetch_sub(1, Ordering::SeqCst);
+                k
+            },
+            |k, img| {
+                assert_eq!(k, img);
+                k * 10
+            },
+        );
         (out, max.load(Ordering::SeqCst))
     }
 
@@ -454,20 +489,107 @@ mod tests {
         assert_eq!(out.len(), 10);
         assert_eq!(max, 1);
         // Nested parallelism inside a frame (as the renderer has) on one thread.
-        let out = pool.install(|| map_frames((0..6).collect(), Some(2), |k| (0..4u64).into_par_iter().map(|i| i + k).sum::<u64>()));
+        let out = pool.install(|| map_frames((0..6).collect(), Some(2), |k| (0..4u64).into_par_iter().map(|i| i + k).sum::<u64>(), |_, v| v));
         assert_eq!(out, (0..6).map(|k| 6 + 4 * k).collect::<Vec<_>>());
     }
 
     #[test]
     fn a_failing_frame_does_not_hold_up_the_rest() {
-        let out = map_frames((0..9).collect(), Some(1), |k| if k == 3 { Err(k) } else { Ok(k) });
+        let out = map_frames((0..9).collect(), Some(1), |k| if k == 3 { Err(k) } else { Ok(k) }, |_, r| r);
         assert_eq!(out.iter().filter(|r| r.is_err()).count(), 1);
         assert_eq!(out.len(), 9);
         assert_eq!(out[8], Ok(8));
         // A panicking frame propagates once and leaves no slot behind: the next batch runs.
-        let r = std::panic::catch_unwind(|| map_frames((0..6).collect(), Some(2), |k| if k == 2 { panic!("frame {k}") } else { k }));
+        let r = std::panic::catch_unwind(|| map_frames((0..6).collect(), Some(2), |k| if k == 2 { panic!("frame {k}") } else { k }, |_, k| k));
         assert!(r.is_err());
         assert_eq!(run_capped(6, Some(2)).0.len(), 6);
+    }
+
+    #[test]
+    fn encoding_is_not_capped_with_the_render() {
+        // Only the GPU render is serialised: a window of frames encodes in parallel.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        let (now, max) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let out = pool.install(|| {
+            map_frames(
+                (0..8).collect(),
+                Some(1),
+                |k| k,
+                |k, _| {
+                    let c = now.fetch_add(1, Ordering::SeqCst) + 1;
+                    max.fetch_max(c, Ordering::SeqCst);
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    now.fetch_sub(1, Ordering::SeqCst);
+                    k
+                },
+            )
+        });
+        assert_eq!(out, (0..8).collect::<Vec<_>>());
+        assert!(max.load(Ordering::SeqCst) > 1, "encodes ran one at a time");
+    }
+
+    /// An accelerator that renders nothing itself (the tests only check whether frames are capped).
+    struct NoAccel;
+    impl effectcraft_render::Accelerator for NoAccel {
+        fn name(&self) -> String {
+            "none".into()
+        }
+        fn comp_frame(&self, _r: &Renderer, _comp: effectcraft_project::ItemId, _t: Tick) -> Option<Image> {
+            None
+        }
+        fn supports_effect(&self, _id: &str) -> bool {
+            false
+        }
+        fn effects(&self, _chain: &[effectcraft_render::FxStep], _buf: &effectcraft_effects::Buf, _levels: Option<f32>) -> Option<effectcraft_effects::Buf> {
+            None
+        }
+    }
+
+    #[test]
+    fn software_only_projects_are_not_capped() {
+        // Review of #879: an accelerator alone capped Software Only projects, which render on the CPU.
+        use effectcraft_project::render_queue::{OutputFormat, OutputModule, RenderSettings};
+        use effectcraft_render::NoFootage;
+        let (settings, output) = (RenderSettings::default(), OutputModule::for_format(OutputFormat::PngSequence));
+        let accel = NoAccel;
+        for (gpu, want) in [(false, None), (true, Some(GPU_INFLIGHT_DEFAULT))] {
+            let mut p = Project::default();
+            p.settings.gpu_acceleration = gpu;
+            let job = Job {
+                project: &p,
+                footage: &NoFootage,
+                expr: None,
+                accel: Some(&accel),
+                comp: effectcraft_project::ItemId(0),
+                settings: &settings,
+                output: &output,
+                path: "/c/f_[#####].png",
+                sink: None,
+                nested_switches: true,
+                options: Default::default(),
+            };
+            if std::env::var_os(GPU_INFLIGHT_ENV).is_none() {
+                assert_eq!(Cx::new(&job).gpu_cap(), want, "gpu acceleration {gpu}");
+            } else {
+                assert_eq!(Cx::new(&job).gpu_cap().is_some(), gpu);
+            }
+        }
+        let p = Project::default();
+        let job = Job {
+            project: &p,
+            footage: &NoFootage,
+            expr: None,
+            accel: None,
+            comp: effectcraft_project::ItemId(0),
+            settings: &settings,
+            output: &output,
+            path: "/c/f_[#####].png",
+            sink: None,
+            nested_switches: true,
+            options: Default::default(),
+        };
+        assert_eq!(Cx::new(&job).gpu_cap(), None, "no accelerator");
     }
 
     #[test]
@@ -475,7 +597,7 @@ mod tests {
         assert_eq!(gpu_inflight(None), GPU_INFLIGHT_DEFAULT);
         assert_eq!(gpu_inflight(Some("3")), 3);
         assert_eq!(gpu_inflight(Some(" 5 ")), 5);
-        for bad in ["0", "", "-2", "three", "2.5"] {
+        for bad in ["0", "", "-2", "three", "2.5", "99999999999999999999999"] {
             assert_eq!(gpu_inflight(Some(bad)), GPU_INFLIGHT_DEFAULT, "{bad:?}");
         }
     }

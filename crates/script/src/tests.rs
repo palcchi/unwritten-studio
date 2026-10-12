@@ -1010,3 +1010,25 @@ fn scripted_text_range_selector_resolves_and_is_the_only_selector() {
     );
     assert_eq!(o.result, json!([1, "ADBE Text Selector", 50, 100, "ADBE Text Percent Offset"]));
 }
+
+/// #808: sourcePointToComp and compPointToSource follow the layer's transform.
+#[test]
+fn source_point_conversions_follow_the_layer_transform() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Repro", 1920, 1080, 1, 10, 25);
+        var layer = comp.layers.addSolid([1, 0, 0], "S", 200, 100, 1);
+        layer.transform.position.setValue([400, 300]);
+        layer.transform.scale.setValue([50, 50]);
+        var a = layer.sourcePointToComp([0, 0]);
+        var b = layer.compPointToSource([400, 300]);
+        [a[0], a[1], b[0], b[1]]
+        "#,
+    );
+    let v = o.result;
+    let near = |x: &Value, want: f64| x.as_f64().is_some_and(|g| (g - want).abs() < 1e-6);
+    assert!(near(&v[0], 350.0) && near(&v[1], 275.0), "{v}");
+    assert!(near(&v[2], 100.0) && near(&v[3], 50.0), "{v}");
+}

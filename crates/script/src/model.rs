@@ -44,6 +44,7 @@ pub fn query(s: &mut Session, kind: &str, a: &J) -> R {
         "textdoc" => textdoc(s, a),
         "markers" => markers(s, a),
         "sourceRect" => source_rect(s, a),
+        "pointConvert" => point_convert(s, a),
         "resolveAdd" => resolve_add(s, a),
         "menuCommandId" => Ok(menu_command_id(a.get("name").and_then(J::as_str).unwrap_or(""))),
         "commandAt" => {
@@ -575,6 +576,29 @@ fn markers(s: &Session, a: &J) -> R {
         })
         .collect();
     Ok(J::Array(out))
+}
+
+/// A layer's source point in comp space (`toComp`) or the reverse, through the layer's transform
+/// and its parents' at comp time (#808: `sourcePointToComp`, `compPointToSource`).
+fn point_convert(s: &Session, a: &J) -> R {
+    let (cid, c, l) = layer_of(s, a)?;
+    let t = f(a, "time").map(Tick::from_seconds_f64).unwrap_or_else(|| s.time_of(cid));
+    let p = a.get("point").and_then(J::as_array).ok_or("missing point")?;
+    let x = p.first().and_then(J::as_f64).unwrap_or(0.0);
+    let y = p.get(1).and_then(J::as_f64).unwrap_or(0.0);
+    let mut ctx = EvalCtx::new(&s.project, cid, c, t);
+    ctx.expr = s.expr.as_deref();
+    let (layer_space, _) = ctx.layer_to_comp(l);
+    let m = if a.get("toComp").and_then(J::as_bool).unwrap_or(true) {
+        layer_space
+    } else {
+        layer_space.inverse().ok_or("the layer's transform can't be inverted")?
+    };
+    let k = m.0;
+    let w = k[2][0] * x + k[2][1] * y + k[2][2];
+    let (ox, oy) = (k[0][0] * x + k[0][1] * y + k[0][2], k[1][0] * x + k[1][1] * y + k[1][2]);
+    let (ox, oy) = if w != 0.0 && w.is_finite() { (ox / w, oy / w) } else { (ox, oy) };
+    Ok(json!([ox, oy]))
 }
 
 fn source_rect(s: &Session, a: &J) -> R {

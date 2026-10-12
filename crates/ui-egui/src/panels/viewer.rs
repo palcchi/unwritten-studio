@@ -206,6 +206,16 @@ use super::viewer_overlays::{self as ov, VertexHit};
 use super::viewer_tools as vt;
 
 const HANDLE: f32 = 7.0;
+/// How close (screen points) the pointer must be to a path vertex or tangent handle to grab it.
+const VERTEX_GRAB: f32 = 6.0;
+
+/// The reach of a path vertex at `pos` (#1042): a vertex marker sitting under, or just beside, a
+/// bounding-box handle would lose the press to the handle (the handle reaches further than the
+/// vertex), so wherever a box handle is in range the vertex reaches as far as the handle does.
+/// Vertices then win in the handle's whole zone, as in After Effects.
+fn vertex_grab_radius(pos: Pos2, handles: impl IntoIterator<Item = Pos2>) -> f32 {
+    if handles.into_iter().any(|h| h.distance(pos) < HANDLE + 2.0) { HANDLE + 2.0 } else { VERTEX_GRAB }
+}
 /// Shown when a Roto Brush tool is used in the Composition panel (#753).
 const ROTO_HINT: &str = "The Roto Brush works in the Layer panel. Double-click the layer to open it.";
 
@@ -939,6 +949,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // Bounding-box handles: (layer, handle, screen point, its resize cursor).
     let mut handle_hits: Vec<(LayerId, usize, Pos2, egui::CursorIcon)> = Vec::new();
     let mut vertex_hits: Vec<VertexHit> = Vec::new();
+    let mut vertex_marks: Vec<ov::VertexMark> = Vec::new();
     let mut key_hits: Vec<ov::KeyHit> = Vec::new();
     let mut motion_frames: Vec<ov::PathFrame> = Vec::new();
     let mut paths: Vec<ov::PathInfo> = Vec::new();
@@ -965,7 +976,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             if app.ui.viewer.show_masks {
                 let pen = ui.data(|d| d.get_temp::<(LayerId, u64)>(pen_id()));
                 let hover = ui.input(|i| i.pointer.hover_pos());
-                ov::draw_paths(app, &painter, &map, &ectx, l, col, &sel_vertices, pen, hover, &mut vertex_hits, &mut paths);
+                ov::draw_paths(app, &painter, &map, &ectx, l, col, &sel_vertices, pen, hover, &mut vertex_hits, &mut vertex_marks, &mut paths);
             }
             // Settings ▸ Previews ▸ Show Internal Wireframes: outlines of the layers inside a
             // selected collapsed precomp.
@@ -1043,6 +1054,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
     }
+
+    // Path points last, over the boxes' handles (#1042).
+    ov::draw_vertex_marks(&painter, &vertex_marks, app.session.prefs.general.path_point_size as f32 + 1.0);
 
     // Settings ▸ 3D: Extended Viewer (3D layers outlined beyond the comp frame) and Show 3D
     // Reference Axes (world X/Y/Z in the corner, turning with the view).
@@ -1240,6 +1254,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             app.ui.status = e;
         }
     }
+    // Path vertices and tangent handles take the press before the bounding-box handles (#1042).
+    let vertex_at = |pos: Pos2, tangents: bool| -> Option<VertexHit> {
+        let reach = vertex_grab_radius(pos, handle_hits.iter().map(|(_, _, h, _)| *h));
+        vertex_hits.iter().rev().filter(|h| h.tangent.is_some() == tangents).find(|h| h.pos.distance(pos) < reach).copied()
+    };
     let gid = egui::Id::new("viewer-gesture");
     // An overlay on top of the viewer (e.g. the camera tracker points) takes the hover, but the pointer is still over the viewer: keep wheel zoom working.
     let hover_pos = resp.hover_pos().or_else(|| if resp.contains_pointer() { ui.input(|i| i.pointer.hover_pos()) } else { None });
@@ -1277,6 +1296,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     egui::CursorIcon::Move
                 } else if let Some((_, vertical)) = vt::guide_at(app, &comp, &map, hp) {
                     if vertical { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical }
+                } else if vertex_at(hp, true).or_else(|| vertex_at(hp, false)).is_some() {
+                    // A path point under a box handle is grabbed first: no resize cursor.
+                    egui::CursorIcon::PointingHand
                 } else if let Some((.., cursor)) = handle_hits.iter().find(|(_, _, h, _)| h.distance(hp) < HANDLE) {
                     *cursor
                 } else {
@@ -1320,9 +1342,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     {
         ui.data_mut(|d| d.remove::<Gesture>(egui::Id::new("viewer-gesture")));
     }
-    let vertex_at = |pos: Pos2, tangents: bool| -> Option<VertexHit> {
-        vertex_hits.iter().rev().filter(|h| h.tangent.is_some() == tangents).find(|h| h.pos.distance(pos) < 6.0).copied()
-    };
     // On-canvas text editing (Type tool, double-click a text layer) owns its clicks and drags.
     let text_owns = super::viewer_text::hook(app, ui, &painter, &map, &ectx, &resp, space_pan);
     if resp.drag_started()
@@ -2610,6 +2629,22 @@ fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames:
 mod tests {
     use super::*;
     use effectcraft_engine::geom::{Mat4, vec3};
+
+    /// #1042: a path vertex lying under, or just beside, a bounding-box handle is grabbed
+    /// instead of the handle; away from every handle the reach is unchanged.
+    #[test]
+    fn vertex_reaches_as_far_as_a_box_handle_over_it() {
+        let handle = pos2(100.0, 100.0);
+        let vertex = pos2(100.0, 100.0);
+        // The press lands 8 points off the vertex, still on the handle's square.
+        let press = pos2(108.0, 100.0);
+        let pick = |p: Pos2, handles: &[Pos2]| vertex.distance(p) < vertex_grab_radius(p, handles.iter().copied());
+        assert!(handle.distance(press) < HANDLE + 2.0, "the handle would take this press");
+        assert!(pick(press, &[handle]), "the vertex wins over the handle");
+        assert!(!pick(press, &[]), "no handle there: the usual reach");
+        assert!(pick(pos2(105.0, 100.0), &[]));
+        assert!(!pick(pos2(120.0, 100.0), &[handle]), "past the handle: nothing");
+    }
 
     /// #882: the frame's corner sits on a physical pixel at any display scaling, so 100 % maps
     /// comp pixels 1:1 onto screen pixels.

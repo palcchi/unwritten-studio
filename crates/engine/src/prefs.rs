@@ -32,6 +32,9 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("Українська", "uk"),
     ("Español", "es"),
     ("Português (Brasil)", "pt-br"),
+    ("Русский", "ru"),
+    ("Français", "fr"),
+    ("Deutsch", "de"),
 ];
 
 /// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).

@@ -1014,7 +1014,7 @@ fn label_index(l: Label) -> usize {
 
 /// The column header's context menu: show or hide the optional columns.
 fn column_menu(app: &mut EffectcraftApp, resp: &egui::Response) {
-    crate::widgets::context_menu(&resp, |ui| {
+    crate::widgets::context_menu(resp, |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("Columns")).weak());
         for (key, label, _) in COLUMNS {
             let mut on = app.ui.project_columns.iter().any(|c| c == key);

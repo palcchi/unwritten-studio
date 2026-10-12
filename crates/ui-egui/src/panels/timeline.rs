@@ -2684,7 +2684,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add("timeline.empty", empty_rect, "Right-click to create a layer");
     }
     for (response, area) in [(&outline_empty, "outline"), (&empty, "graph")] {
-        crate::widgets::context_menu(&response, |ui| {
+        crate::widgets::context_menu(response, |ui| {
             let menu = ui.menu_button(crate::i18n::tr("New"), |ui| {
                 for (key, label, command, params) in [
                     ("text", "Text", "layer.newText", json!({})),
@@ -3511,7 +3511,7 @@ fn layer_context_menu(resp: &egui::Response, comp: &Comp, layer: &Layer, selecte
         actions.push(("layer.select".into(), json!({"layers": [layer.id.0]})));
     }
     let targets: Vec<u64> = if in_selection { comp.layers.iter().filter(|l| selected.contains(&l.id)).map(|l| l.id.0).collect() } else { vec![layer.id.0] };
-    crate::widgets::context_menu(&resp, |ui| layer_menu(ui, &targets, vector, actions));
+    crate::widgets::context_menu(resp, |ui| layer_menu(ui, &targets, vector, actions));
 }
 
 /// Shared layer actions for Timeline rows and Composition context menus.

@@ -226,3 +226,32 @@ fn context_menu_rows_leave_no_gap_between_them() {
     }
     snapshot(&mut h, "project-rows");
 }
+
+/// #976: a layer's context menu has After Effects' Markers ▸ Add Marker, which marks the layer that
+/// was right-clicked (not the one selected before, and not the composition) at the current time.
+#[test]
+fn layer_context_menu_adds_a_layer_marker() {
+    let mut h = harness();
+    let solid = |h: &mut Harness<'_, EffectcraftApp>, name: &str| -> u64 {
+        h.state_mut().session.execute("layer.newSolid", json!({"name": name, "color": "#406080"})).unwrap()["layer"].as_u64().unwrap()
+    };
+    let (below, top) = (solid(&mut h, "Below"), solid(&mut h, "Top"));
+    h.state_mut().session.execute("layer.select", json!({"layers": [below]})).unwrap();
+    h.state_mut().session.execute("time.set", json!({"time": 1.5})).unwrap();
+    h.run_steps(3);
+    let r = rect(&h, &format!("timeline.layer.{top}.row"));
+    right_click(&mut h, pos2(r.min.x + 210.0, r.center().y));
+    h.get_by_label("Markers ⏵").click();
+    h.run_steps(3);
+    snapshot(&mut h, "layer-markers");
+    h.get_by_label("Add Marker").click();
+    h.run_steps(3);
+    let now = h.state().session.time().seconds();
+    let comp = h.state().session.active_comp().unwrap();
+    let markers = |id: u64| -> Vec<f64> { comp.layer(effectcraft_engine::project::LayerId(id)).unwrap().markers.iter().map(|m| m.time.seconds()).collect() };
+    assert_eq!(markers(top), vec![now]);
+    assert!((now - 1.5).abs() < 0.01, "at the current time: {now}");
+    assert!(markers(below).is_empty(), "{:?}", markers(below));
+    assert!(comp.markers.is_empty(), "no composition marker");
+    assert_eq!(h.state().session.history.undo.last().map(|u| u.0.as_str()), Some("Add Marker"));
+}

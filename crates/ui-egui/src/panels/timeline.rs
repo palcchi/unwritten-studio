@@ -3569,6 +3569,9 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], vector: bool, action
         item(ui, "Freeze Frame", "layer.freezeFrame", json!({"layers": layers}));
         item(ui, "Freeze on Last Frame", "layer.freezeOnLastFrame", json!({"layers": layers}));
     });
+    ui.menu_button(crate::i18n::tr("Markers"), |ui| {
+        item(ui, "Add Marker", "layer.addMarker", json!({"layers": layers}));
+    });
     ui.menu_button(crate::i18n::tr("Blending Mode"), |ui| {
         widgets::menu_scroll(ui, |ui| {
             for m in BlendMode::ALL {

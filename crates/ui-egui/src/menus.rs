@@ -777,7 +777,6 @@ fn toggle(slot: &mut bool, p: &Value) -> Value {
     json!(*slot)
 }
 
-
 /// Perform a frontend command (from `Event::Frontend`).
 pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Value) -> Result<Value, String> {
     let now = ctx.input(|i| i.time);

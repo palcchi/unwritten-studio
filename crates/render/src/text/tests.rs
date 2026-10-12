@@ -118,6 +118,7 @@ fn range_start_end_and_offset_are_capped() {
     set(l, "text/animators/#1/selectors/#1/end", Value::Scalar(50.0));
     set(l, "text/animators/#1/selectors/#1/offset", Value::Scalar(100.0));
     assert_eq!(selection(&p, cid, 0.0, a), vec![0.0; 4]);
+    let l = &mut p.comp_mut(cid).unwrap().layers[0];
     set(l, "text/animators/#1/selectors/#1/offset", Value::Scalar(0.0));
     assert_eq!(selection(&p, cid, 0.0, a), vec![1.0, 1.0, 0.0, 0.0]);
 }

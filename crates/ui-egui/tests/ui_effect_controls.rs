@@ -673,10 +673,29 @@ fn effect_control_name_can_be_renamed_from_its_header() {
     h.step();
     h.key_press(egui::Key::Enter);
     h.run_steps(3);
-    let current_name = |h: &Harness<'_, EffectcraftApp>| {
-        layer(&h.state().session, x.small).effects().unwrap().groups().find(|g| g.uid == x.point_fx).unwrap().name.clone()
-    };
+    let current_name =
+        |h: &Harness<'_, EffectcraftApp>| layer(&h.state().session, x.small).effects().unwrap().groups().find(|g| g.uid == x.point_fx).unwrap().name.clone();
     assert_eq!(current_name(&h), "Speed");
     h.state_mut().session.execute("edit.undo", json!({})).unwrap();
     assert_eq!(current_name(&h), "Point Control");
+}
+
+#[test]
+fn effect_rename_escape_keeps_the_name() {
+    let (app, x) = app();
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    settle(&mut h);
+    let point = rect_of(&h, &format!("effectControls.effect.{}.name", x.point_fx)).center();
+    click(&mut h, point);
+    click(&mut h, point);
+    h.run_steps(3);
+    assert!(ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("Speed".into()));
+    h.step();
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    let name = layer(&h.state().session, x.small).effects().unwrap().groups().find(|g| g.uid == x.point_fx).unwrap().name.clone();
+    assert_eq!(name, "Point Control");
+    assert!(!ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
 }

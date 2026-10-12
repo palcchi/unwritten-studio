@@ -626,7 +626,8 @@ impl Inner {
     /// and log it the first time. I/O errors (missing or unreadable file) are not decoder
     /// problems and are left to the missing-footage handling.
     fn note_problem(&self, path: &Arc<str>, codec: &str, e: &MediaError) {
-        if matches!(e, MediaError::Io(_)) {
+        // A decode called off for a newer frame (#329) says nothing about the file either.
+        if matches!(e, MediaError::Io(_) | MediaError::Cancelled) {
             return;
         }
         let reason = describe_problem(codec, e);
@@ -922,8 +923,10 @@ fn read_stereo(src: &SharedSource, s0: i64, frames: usize, rate: u32) -> std::re
 /// The one-line reason a movie shows no picture: its `codec` (the probe's, e.g. "H.264 (High
 /// 4:2:2)") and what the decoder said, without the error wrappers it passed through.
 fn describe_problem(codec: &str, e: &MediaError) -> String {
-    let (MediaError::Io(s) | MediaError::Unsupported(s) | MediaError::Decode(s)) = e;
-    let mut detail = s.as_str();
+    let mut detail = match e {
+        MediaError::Io(s) | MediaError::Unsupported(s) | MediaError::Decode(s) => s.as_str(),
+        MediaError::Cancelled => "the decode was called off",
+    };
     let mut unsupported = matches!(e, MediaError::Unsupported(_));
     while let Some(rest) = ["decode error: ", "unsupported media: ", "unsupported: ", "I/O error: "].iter().find_map(|p| detail.strip_prefix(p)) {
         unsupported |= detail.starts_with("unsupported");

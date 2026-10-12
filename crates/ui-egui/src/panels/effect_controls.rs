@@ -1126,12 +1126,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.min.y + 4.0), vec2(40.0, 18.0));
         if let Some(mut value) = editing.as_ref().cloned() {
             let name_rect = Rect::from_min_max(pos2(tw.max.x + 6.0, r.min.y + 2.0), pos2(reset.min.x - 6.0, r.max.y - 2.0));
-            let response = ui.put(
-                name_rect,
-                egui::TextEdit::singleline(&mut value).id(rename_id.with("field")).font(Tokens::semibold(12.0)),
-            );
+            let response = ui.put(name_rect, egui::TextEdit::singleline(&mut value).id(rename_id.with("field")).font(Tokens::semibold(12.0)));
             app.auto.add(&format!("effectControls.effect.{}.nameEdit", g.uid), name_rect, "Effect name");
-            let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            // Escape cancels. egui drops the field's focus on Escape in the same frame, so the
+            // key is checked on the focus being lost as well as held.
+            let escape = (response.has_focus() || response.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Escape));
             let commit = response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if escape || commit {
                 ctx.data_mut(|d| d.remove::<String>(rename_id));
@@ -1201,7 +1200,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             item(ui, "Copy", true, "effect.copy", json!({"layer": lid, "effect": g.uid}));
             item(ui, "Paste", has_clip, "effect.paste", json!({"layers": [lid]}));
             item(ui, "Duplicate", true, "effect.duplicate", json!({"layer": lid, "effect": g.uid}));
-            if ui.button("Rename").clicked() {
+            if ui.button(crate::i18n::tr("Rename")).clicked() {
                 ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
                 ctx.memory_mut(|m| m.request_focus(rename_id.with("field")));
                 ui.close();

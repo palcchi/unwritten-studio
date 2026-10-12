@@ -4004,7 +4004,7 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
     ("file.openDemoProject", "Open Demo Project", "Abrir projeto de demonstração"),
 ];
 
-// >>> generated i18n catalogs (out-i18n/assemble.py)
+// >>> Russian, French and German menu catalogs
 
 /// Russian (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.

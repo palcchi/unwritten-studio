@@ -5,4 +5,3 @@ target/
 /log
 .DS_Store
 .claude/worktrees/
-/out-i18n/

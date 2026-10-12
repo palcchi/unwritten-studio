@@ -346,8 +346,16 @@ fn check_access(s: &Session, path: &str, write: bool) -> Result<std::path::PathB
     Err(format!("Unable to access {path}: scripts can only read files in the project's folder unless {GATE} is on"))
 }
 
-/// `__file(op, path, data)`: `read` → text, `write`/`append` → bytes, `exists` → bool, `list` →
-/// names, `mkdir`, `remove`, `isDir`.
+/// Encode a binary script string as bytes, without silently corrupting code points outside
+/// the one-byte range supported by ExtendScript's BINARY encoding.
+fn binary_bytes(data: &str) -> Result<Vec<u8>, String> {
+    data.chars()
+        .map(|c| u8::try_from(c as u32).map_err(|_| format!("BINARY encoding cannot represent U+{:04X}", c as u32)))
+        .collect()
+}
+
+/// `__file(op, path, data)`: text and one-byte-per-character BINARY reads/writes,
+/// byte-for-byte copy, plus file and folder operations.
 fn native_file(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let op = arg_string(args, 0, ctx)?;
     let path = arg_string(args, 1, ctx)?;
@@ -366,18 +374,35 @@ fn native_file(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
                 let Ok(p) = check_access(s, &path, false) else { return Ok(json!(false)) };
                 Ok(json!(if op == "exists" { p.exists() } else { p.is_dir() }))
             }
-            "read" => {
+            "read" | "readBinary" => {
                 let p = check_access(s, &path, false)?;
                 let bytes = s.services.read_file(&p.to_string_lossy()).map_err(|e| format!("Unable to read {path}: {e}"))?;
-                Ok(json!(String::from_utf8_lossy(&bytes)))
+                if op == "readBinary" {
+                    // Each byte becomes a single JS character (U+0000..U+00FF).
+                    Ok(json!(bytes.into_iter().map(char::from).collect::<String>()))
+                } else {
+                    Ok(json!(String::from_utf8_lossy(&bytes)))
+                }
             }
-            "write" | "append" => {
+            "write" | "writeBinary" | "append" => {
                 let p = check_access(s, &path, true)?;
                 let ps = p.to_string_lossy().to_string();
                 let mut bytes = if op == "append" { s.services.read_file(&ps).unwrap_or_default() } else { vec![] };
-                bytes.extend_from_slice(data.as_bytes());
+                if op == "writeBinary" {
+                    bytes.extend(binary_bytes(&data)?);
+                } else {
+                    bytes.extend_from_slice(data.as_bytes());
+                }
                 s.services.write_file(&ps, &bytes).map_err(|e| format!("Unable to write {path}: {e}"))?;
                 Ok(json!(bytes.len()))
+            }
+            "copy" => {
+                let src = check_access(s, &path, false)?;
+                let dst = check_access(s, &data, true)?;
+                // Copy the original bytes, not UTF-8-decoded script text.
+                let bytes = s.services.read_file(&src.to_string_lossy()).map_err(|e| format!("Unable to read {path}: {e}"))?;
+                s.services.write_file(&dst.to_string_lossy(), &bytes).map_err(|e| format!("Unable to write {data}: {e}"))?;
+                Ok(json!(true))
             }
             "list" => {
                 let p = check_access(s, &path, false)?;

@@ -2118,6 +2118,20 @@ mod tests {
         assert!(cmds.contains(&egui::ViewportCommand::Maximized(false)), "{cmds:?}");
     }
 
+    /// The default keys of the keyboard-only commands parse and reach them.
+    #[test]
+    fn keyboard_only_commands_are_bound() {
+        let app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        for (id, keys) in [
+            ("time.workAreaStart", "Shift+Home"),
+            ("time.workAreaEnd", "Shift+End"),
+            ("time.previousInOut", "Cmd+Alt+Shift+ArrowLeft"),
+            ("time.nextInOut", "Cmd+Alt+Shift+ArrowRight"),
+        ] {
+            assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
+        }
+    }
+
     #[test]
     fn dispatch_uses_the_active_custom_preset() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());

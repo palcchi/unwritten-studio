@@ -776,3 +776,20 @@ fn binary_file_io_preserves_all_byte_values() {
     assert!(invalid.error.is_some(), "code points above 255 must not be truncated");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn script_undo_uses_stable_after_effects_command_id() {
+    let mut s = session();
+    let lookup = ok(&mut s, "app.findMenuCommandId('Undo')");
+    assert_eq!(lookup.result, json!(16));
+    // ID 16 used to index an unrelated command as the registry grew. It must
+    // undo the preceding layer creation rather than dispatching by position.
+    let r = ok(
+        &mut s,
+        "var c = app.project.items.addComp('Undo ID', 100, 100, 1, 1, 24); c.layers.addNull(); app.executeCommand(16); c.numLayers",
+    );
+    assert_eq!(r.result, json!(0));
+    assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 0);
+    // Lookup of other command names still uses the existing registry.
+    assert!(ok(&mut s, "app.findMenuCommandId('New Project')").result.as_u64().unwrap_or(0) > 0);
+}

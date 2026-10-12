@@ -23,7 +23,7 @@ pub fn probe(path: impl AsRef<Path>) -> Result<Footage> {
     probe_bytes(&path.to_string_lossy(), bytes.into())
 }
 
-/// Probe a 3D model (glTF 2.0 / OBJ / STL): a [`FootageKind::Model`] item whose duration is its
+/// Probe a 3D model (glTF 2.0 / OBJ / STL / FBX): a [`FootageKind::Model`] item whose duration is its
 /// longest animation. `resolve` reads sibling resources.
 pub fn probe_model(path: &str, bytes: &[u8], resolve: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Footage> {
     let m = effectcraft_model::load(path, bytes, resolve).map_err(|e| MediaError::Decode(format!("{path}: {e}")))?;
@@ -32,6 +32,7 @@ pub fn probe_model(path: &str, bytes: &[u8], resolve: &dyn Fn(&str) -> Option<Ve
     let codec = match effectcraft_model::format_of(path) {
         Some("obj") => "OBJ",
         Some("stl") => "STL",
+        Some("fbx") => "FBX",
         Some("glb") => "GLB",
         _ => "glTF",
     };

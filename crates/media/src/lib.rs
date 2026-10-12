@@ -58,7 +58,7 @@ pub const AUDIO_EXTENSIONS: &[&str] = filmcraft_media::AUDIO_EXTENSIONS;
 pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm"];
 
 /// File extensions recognised as 3D models (Advanced 3D model layers).
-pub const MODEL_EXTENSIONS: &[&str] = &["gltf", "glb", "obj", "stl"];
+pub const MODEL_EXTENSIONS: &[&str] = &["gltf", "glb", "obj", "stl", "fbx"];
 
 /// Whether `path` has an extension we can import.
 pub fn is_importable(path: &std::path::Path) -> bool {

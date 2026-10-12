@@ -597,7 +597,7 @@ const SIMPLIFIED_CHINESE_FAMILIES: &[&str] =
 /// Traditional interface with Simplified forms - the faces do not differ in *coverage*, which is
 /// what the fallback search checks, so the script has to pick the list.
 const TRADITIONAL_CHINESE_FAMILIES: &[&str] =
-    &["Microsoft JhengHei", "MingLiU", "PingFang TC", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", "WenQuanYi Micro Hei"];
+    &["Microsoft JhengHei", "MingLiU", "PingFang TC", "Heiti TC", "Hiragino Sans CNS", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC"];
 const KOREAN_FAMILIES: &[&str] = &["Malgun Gothic", "Gulim", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "Source Han Sans KR", "NanumGothic"];
 /// The platforms' plain text families for the other scripts the bundled fonts lack, in the same
 /// order (Windows, macOS, then the Linux/Noto names).
@@ -1107,7 +1107,10 @@ mod tests {
         assert!(SIMPLIFIED_CHINESE_FAMILIES.iter().any(|f| f.contains("PingFang SC") && !f.contains("Source")));
         assert!(!SIMPLIFIED_CHINESE_FAMILIES.iter().any(|f| f.contains("TC") || f.contains("JhengHei")));
         assert!(TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains("PingFang TC")));
-        assert!(!TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains(" SC") || f.contains("YaHei")));
+        assert!(!TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains(" SC") || f.contains("YaHei") || f.contains("WenQuanYi")));
+        assert!(TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains("Heiti TC") || f.contains("Hiragino Sans CNS")));
+        // The arm the fallback itself walks: Han hands over the list the locale's script picked.
+        assert_eq!(families_for(FallbackScript::Han), chinese_families_for(&active_cjk_locale()));
         // Han text is the only thing these lists serve; the Japanese order does not change.
         assert_eq!(han_order_for("ja_JP.UTF-8")[0], FallbackScript::Japanese);
     }

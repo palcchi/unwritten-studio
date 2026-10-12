@@ -973,6 +973,7 @@ fn add_item_keeps_footage_longer_than_the_comp_at_full_length() {
     let f = effectcraft_project::Footage {
         width: 100,
         height: 100,
+        kind: effectcraft_project::FootageKind::Video,
         has_video: true,
         duration: effectcraft_time::Tick::from_seconds_f64(10.0),
         ..Default::default()

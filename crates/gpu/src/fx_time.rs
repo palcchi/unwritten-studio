@@ -45,11 +45,17 @@ pub(crate) fn apply(e: &mut Enc, id: &str, ctx: &EffectCtx, b: GBuf) -> Option<G
             let fd = 1.0 / ctx.fps();
             mean_of(e, ctx, b, &(-back..=fwd).map(|k| ctx.time + k as f64 * fd).collect::<Vec<_>>())
         }
-        // Pixel Motion Blur synthesizes along measured motion vectors (#535); a plan that
-        // cannot be built (no host) declines to the CPU effect.
+        // Pixel Motion Blur synthesizes along measured motion vectors (#535); without a plan (no
+        // host to read neighbouring frames) it averages the shutter's frames, as the CPU effect does.
         "ec.time.pixelmotionblur" => match effectcraft_effects::pmb_plan(ctx) {
             Some(plan) => render_plan(e, &plan),
-            None => None,
+            None => {
+                let angle = if ctx.params.e("shutterControl") == 1 { ctx.params.f("shutterAngle") } else { 180.0 };
+                let n = ctx.params.f("shutterSamples").round().clamp(1.0, 64.0) as usize;
+                let span = angle.clamp(0.0, 720.0) / 360.0 / ctx.fps();
+                let times: Vec<f64> = (0..n).map(|i| ctx.time - span * 0.5 + if n > 1 { span * i as f64 / (n - 1) as f64 } else { span * 0.5 }).collect();
+                mean_of(e, ctx, b, &times)
+            }
         },
         "ec.time.timewarp" => timewarp(e, ctx, b),
         _ => None,

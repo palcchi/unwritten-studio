@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use effectcraft_project::{AlphaMode, Footage, FootageKind};
 use effectcraft_time::{FrameRate, Tick};
+use image::metadata::Orientation;
 
 use crate::{MediaError, Result, ext_of, rate_from_fc};
 
@@ -90,8 +91,17 @@ pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
         return probe_still_bytes(path, &bytes, fmt);
     }
     let name = Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());
+    let turn = video_turn(&bytes);
     let src = filmcraft_codecs::open_bytes(&name, bytes)?;
-    Ok(footage_from_info(path, src.info()))
+    let mut f = footage_from_info(path, src.info());
+    // The size as displayed: a movie shot with the camera on its side trades width and height.
+    if swaps_sides(turn) {
+        std::mem::swap(&mut f.width, &mut f.height);
+        if f.pixel_aspect > 0.0 {
+            f.pixel_aspect = 1.0 / f.pixel_aspect;
+        }
+    }
+    Ok(f)
 }
 
 pub(crate) fn footage_from_info(path: &str, info: &filmcraft_media::MediaInfo) -> Footage {
@@ -181,7 +191,12 @@ fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Resul
     }
     let reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), fmt);
     let (w, h, has_alpha) = match reader.into_decoder() {
-        Ok(dec) => (dec.dimensions().0, dec.dimensions().1, dec.color_type().has_alpha()),
+        Ok(mut dec) => {
+            // The size as displayed: an Exif orientation of a quarter turn swaps the sides.
+            let (w, h) = dec.dimensions();
+            let (w, h) = if swaps_sides(dec.orientation().unwrap_or(Orientation::NoTransforms)) { (h, w) } else { (w, h) };
+            (w, h, dec.color_type().has_alpha())
+        }
         Err(e) => {
             // A multi-layer OpenEXR file without an unnamed RGB layer.
             let img = (fmt == image::ImageFormat::OpenExr).then(|| crate::exr_channels::layered_image(bytes)).flatten();
@@ -190,4 +205,40 @@ fn probe_still_bytes(path: &str, bytes: &[u8], fmt: image::ImageFormat) -> Resul
         }
     };
     Ok(still_footage(path, w, h, fmt, has_alpha))
+}
+
+/// Whether an Exif orientation turns the picture a quarter turn (its width and height trade places).
+pub(crate) fn swaps_sides(o: Orientation) -> bool {
+    matches!(o, Orientation::Rotate90 | Orientation::Rotate270 | Orientation::Rotate90FlipH | Orientation::Rotate270FlipH)
+}
+
+/// Decode a still the way it is meant to be seen: its Exif orientation (a camera held sideways, a
+/// mirrored scan) is applied to the pixels, as image viewers do. A file without
+/// the tag, or with a broken one, decodes as stored.
+pub(crate) fn load_oriented(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+    use image::ImageDecoder;
+    let mut dec = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?.into_decoder()?;
+    let orientation = dec.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut img = image::DynamicImage::from_decoder(dec)?;
+    img.apply_orientation(orientation);
+    Ok(img)
+}
+
+/// The rotation an MP4/MOV movie is shown with (a phone held upright records sideways frames and
+/// says so in its video track's header): the quarter turn nearest the track's rotation. Only the
+/// rotation counts; any mirroring, scaling or offset in the header is ignored, and other
+/// containers have none.
+pub(crate) fn video_turn(bytes: &[u8]) -> Orientation {
+    let Ok(file) = filmcraft_isobmff::open(bytes) else { return Orientation::NoTransforms };
+    let Some(m) = file.tracks.iter().find(|t| t.kind == filmcraft_isobmff::TrackKind::Video).map(|t| t.matrix) else {
+        return Orientation::NoTransforms;
+    };
+    // [a b u; c d v; x y w]: (a, b) is where the picture's x axis points.
+    let (a, b) = (m[0] as i64, m[1] as i64);
+    match (a.abs() >= b.abs(), a >= 0, b >= 0) {
+        (true, true, _) => Orientation::NoTransforms,
+        (true, false, _) => Orientation::Rotate180,
+        (false, _, true) => Orientation::Rotate90,
+        (false, _, false) => Orientation::Rotate270,
+    }
 }

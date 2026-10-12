@@ -1430,6 +1430,7 @@ dependencies = [
  "filmcraft-codecs",
  "filmcraft-color",
  "filmcraft-frame",
+ "filmcraft-isobmff",
  "filmcraft-media",
  "filmcraft-time",
  "gif",

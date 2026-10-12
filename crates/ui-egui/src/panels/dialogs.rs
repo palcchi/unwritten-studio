@@ -168,7 +168,8 @@ pub(crate) fn modal_vertical(ctx: &egui::Context, title: &str, size: egui::Vec2,
 fn modal_with_scroll(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, vertical_only: bool, body: impl FnOnce(&mut egui::Ui)) {
     let max_height = (modal_space(ctx).y - 84.0).max(40.0);
     modal_fit(ctx, title, size, t, |ui, _| {
-        egui::ScrollArea::both().max_height(max_height).auto_shrink([false, true]).show(ui, body);
+        let scroll = if vertical_only { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };
+        scroll.max_height(max_height).auto_shrink([false, true]).show(ui, body);
     });
 }
 
@@ -186,8 +187,7 @@ pub(crate) fn modal_fit(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &
             // The id stays keyed on the untranslated source, so switching language cannot move it.
             ui.label(egui::RichText::new(tr(title)).font(Tokens::semibold(15.0)).color(t.tab_text_active));
             ui.add_space(10.0);
-            let scroll = if vertical_only { egui::ScrollArea::vertical() } else { let title_h = ui.cursor() };
-            scroll.top() - ui.min_rect().top();
+            let title_h = ui.cursor().top() - ui.min_rect().top();
             body(ui, (size.y - 36.0 - title_h).max(40.0));
         });
 }

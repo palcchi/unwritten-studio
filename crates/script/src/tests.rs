@@ -828,6 +828,24 @@ fn script_remove_keys_batches_a_range_as_one_edit() {
     assert!(invalid.error.is_some());
 }
 
+/// #814: one key is looked up without serialising the whole list (removeKey on a property with
+/// thousands of keys was linear in the key count), and the key calls behave as before.
+#[test]
+fn script_key_lookup_fetches_only_that_key() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        "var c = app.project.items.addComp('Keys', 100, 100, 1, 100, 25); var p = c.layers.addNull().transform.rotation;\
+         var ts = [], vs = []; for (var i = 0; i < 2000; i++) { ts.push(i / 25); vs.push(i); } p.setValuesAtTimes(ts, vs);\
+         var q = { comp: p.__layer.__comp, layer: p.__layer.__id, uid: p.__uid };\
+         q.index = 2; var one = __get('keys', q); q.index = 2000; var none = __get('keys', q);\
+         p.removeKey(p.numKeys); p.removeKey(1);\
+         var err = ''; try { p.keyTime(1999); } catch (e) { err = e.message; }\
+         [one.count, one.key.time, none.key, p.numKeys, p.keyTime(1), p.keyValue(1998), err]",
+    );
+    assert_eq!(o.result, json!([2000, 0.08, null, 1998, 0.04, 1998, "keyIndex 1999 is out of range 1..1998"]));
+}
+
 #[test]
 fn script_layer_comment_and_unnamed_marker_params_round_trip() {
     let mut s = session();

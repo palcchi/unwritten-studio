@@ -828,10 +828,11 @@ Property.prototype.property = function () { return null; };
   };
   P.__keys = function () { return __get("keys", { comp: this.__layer.__comp, layer: this.__layer.__id, uid: this.__uid }); };
   P.__key = function (i) {
-    var k = this.__keys();
     i = __num(i, "keyIndex");
-    if (i < 1 || i > k.length || Math.floor(i) !== i) throw __err("keyIndex " + i + " is out of range 1.." + k.length);
-    return k[i - 1];
+    // Only the key asked for: fetching the whole list made every key call linear (#814).
+    var r = i >= 1 && Math.floor(i) === i ? __get("keys", { comp: this.__layer.__comp, layer: this.__layer.__id, uid: this.__uid, index: i - 1 }) : null;
+    if (!r || !r.key) throw __err("keyIndex " + i + " is out of range 1.." + (r ? r.count : this.numKeys));
+    return r.key;
   };
   // Script value → engine JSON for `prop.set` / `prop.addKey`.
   P.__toEngine = function (v, info, time) {

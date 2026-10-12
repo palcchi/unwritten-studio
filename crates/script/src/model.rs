@@ -502,27 +502,28 @@ fn keys(s: &Session, a: &J) -> R {
             .collect();
         J::Array(v)
     };
-    let out: Vec<J> = p
-        .keys
-        .iter()
-        .enumerate()
-        .map(|(i, k)| {
-            // Spatial tangents as the motion path plays (auto-Bezier and continuous keys too).
-            let (spatial_in, spatial_out) = if p.spatial { effectcraft_keyframe::spatial_tangents(&p.keys, i) } else { (k.spatial_in, k.spatial_out) };
-            json!({
-                "time": l.comp_time(k.time).seconds(),
-                "layerTime": k.time.seconds(),
-                "value": js_value(c, &k.value),
-                "inInterp": interp(k.in_interp), "outInterp": interp(k.out_interp),
-                "inEase": ease(i, false), "outEase": ease(i, true),
-                "continuous": k.continuous, "autoBezier": k.auto_bezier, "roving": k.roving,
-                "spatialIn": spatial_in, "spatialOut": spatial_out,
-                "spatialContinuous": k.spatial_continuous, "spatialAutoBezier": k.spatial_auto,
-                "selected": sel.contains(&k.time),
-            })
+    let key = |i: usize, k: &effectcraft_keyframe::Keyframe| -> J {
+        // Spatial tangents as the motion path plays (auto-Bezier and continuous keys too).
+        let (spatial_in, spatial_out) = if p.spatial { effectcraft_keyframe::spatial_tangents(&p.keys, i) } else { (k.spatial_in, k.spatial_out) };
+        json!({
+            "time": l.comp_time(k.time).seconds(),
+            "layerTime": k.time.seconds(),
+            "value": js_value(c, &k.value),
+            "inInterp": interp(k.in_interp), "outInterp": interp(k.out_interp),
+            "inEase": ease(i, false), "outEase": ease(i, true),
+            "continuous": k.continuous, "autoBezier": k.auto_bezier, "roving": k.roving,
+            "spatialIn": spatial_in, "spatialOut": spatial_out,
+            "spatialContinuous": k.spatial_continuous, "spatialAutoBezier": k.spatial_auto,
+            "selected": sel.contains(&k.time),
         })
-        .collect();
-    Ok(J::Array(out))
+    };
+    // `index` (zero-based): only that key, as `{count, key}` (`key` null when out of range), so
+    // looking keys up one at a time doesn't serialise the whole list each time (#814).
+    if let Some(i) = u(a, "index") {
+        let k = usize::try_from(i).ok().and_then(|i| p.keys.get(i).map(|k| key(i, k)));
+        return Ok(json!({"count": p.keys.len(), "key": k}));
+    }
+    Ok(J::Array(p.keys.iter().enumerate().map(|(i, k)| key(i, k)).collect()))
 }
 
 /// Apply `layer.setText` attribute keys to the Source Text document at `time` and return the new

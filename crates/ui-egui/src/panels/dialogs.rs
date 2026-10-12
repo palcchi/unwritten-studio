@@ -153,7 +153,7 @@ pub fn route_layer_settings(app: &mut EffectcraftApp, id: &str, params: &Value) 
 }
 
 /// The room a modal dialog may take: the window less a margin.
-fn modal_space(ctx: &egui::Context) -> egui::Vec2 {
+pub(crate) fn modal_space(ctx: &egui::Context) -> egui::Vec2 {
     (ctx.content_rect().size() - vec2(48.0, 48.0)).max(vec2(120.0, 80.0))
 }
 

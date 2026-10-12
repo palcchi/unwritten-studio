@@ -211,7 +211,12 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
   gate is a P0.
 - Fuzz the inputs we don't control: project files, imported media and documents, expressions,
   scripts, control-channel and MCP requests. Every crash found becomes a regression test
-  (AGENTS.md "Never crash").
+  (AGENTS.md "Never crash"). Project files are fuzzed (#779): a seeded, dependency-free mutation
+  fuzzer runs in `cargo test -p effectcraft-engine` (`fuzz_file_open_never_crashes`, `.ecproj`
+  JSON and `.ecprojx` XML through File ▸ Open, the first queries and a thumbnail render; longer
+  runs via `EFFECTCRAFT_FUZZ_ITERS` / `EFFECTCRAFT_FUZZ_SECS`). It found one crash, deeply nested
+  XML overflowing the stack, now refused. Imported media and documents, expressions, scripts and
+  control-channel / MCP requests are still to do.
 - Run the gate on every pull request in CI (gap 4): today no workflow runs the tests on PRs.
 - Fix the open crash reports first (gap 3).
 - Done when: the gate is green on stable, runs on every pull request, and the fuzzers run

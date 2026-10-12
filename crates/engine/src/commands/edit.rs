@@ -863,7 +863,15 @@ pub fn specs() -> Vec<CommandSpec> {
             has_comp,
             paste_svg
         ),
-        cmd!("edit.pasteReversedKeyframes", "Paste Reversed Keyframes", ["Edit"], None, "{layers?, prop?|path?, time?}", has_key_clip, paste_reversed),
+        cmd!(
+            "edit.pasteReversedKeyframes",
+            "Paste Reversed Keyframes",
+            ["Edit"],
+            Some("Cmd+Shift+V"),
+            "{layers?, prop?|path?, time?}",
+            has_key_clip,
+            paste_reversed
+        ),
         cmd!("edit.clear", "Clear", ["Edit"], Some("Delete"), "{layers?}", layers_or_keys, delete),
         cmd!("edit.duplicate", "Duplicate", ["Edit"], Some("Cmd+D"), "{layers?} (effects or shape items when they are selected)", has_layers, duplicate),
         cmd!("edit.splitLayer", "Split Layer", ["Edit"], Some("Cmd+Shift+D"), "{layers?}", has_layers, split),

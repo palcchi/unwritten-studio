@@ -650,7 +650,7 @@ Edit
     All 3D Cache... | edit.purge {"what":"3d"}
     Undo | edit.purgeUndo
     Image Cache Memory | edit.purge {"what":"image"}
-    Snapshot | edit.purge {"what":"snapshot"}
+    Snapshot | edit.purge {"what":"snapshot"} | Cmd+Shift+F5
   ---
   Edit Original... | edit.editOriginal
   ---
@@ -775,8 +775,8 @@ Layer
     Draft | layer.quality {"quality":"draft"} | Cmd+Shift+U
     Wireframe | layer.quality {"quality":"wireframe"} | Cmd+Alt+Shift+U
     ---
-    Bilinear | layer.sampling {"sampling":"bilinear"}
-    Bicubic | layer.sampling {"sampling":"bicubic"}
+    Bilinear | layer.sampling {"sampling":"bilinear"} | Alt+B
+    Bicubic | layer.sampling {"sampling":"bicubic"} | Alt+Shift+B
   Switches
     Hide Other Video | layer.hideOtherVideo
     Show All Video | layer.showAllVideo

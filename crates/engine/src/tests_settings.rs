@@ -410,6 +410,26 @@ fn fast_previews_and_show_channel_modes_have_default_keys() {
     assert_eq!(s.state.viewer.channel.id(), "rgb");
 }
 
+/// Default keys for commands and menu entries that had none.
+#[test]
+fn default_keys_for_commands_that_had_none() {
+    let s = Session::default();
+    let t = s.shortcuts();
+    for (id, params, key) in [
+        ("edit.pasteReversedKeyframes", json!(null), "Cmd+Shift+V"),
+        ("edit.purge", json!({"what": "snapshot"}), "Cmd+Shift+F5"),
+        ("layer.sampling", json!({"sampling": "bilinear"}), "Alt+B"),
+        ("layer.sampling", json!({"sampling": "bicubic"}), "Alt+Shift+B"),
+        ("view.res.custom", json!(null), "Cmd+Alt+J"),
+        ("file.setProxy", json!(null), "Cmd+Alt+P"),
+        ("file.openRecent", json!(null), "Cmd+Alt+Shift+P"),
+        ("anim.applyRecentPreset", json!(null), "Cmd+Alt+Shift+F"),
+    ] {
+        assert_eq!(t.shortcut_of(id, &params), Some(key), "{id} {params}");
+    }
+    assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
+}
+
 /// Cmd+Left / Cmd+Right Arrow step a frame like Page Up / Page Down (Shift: 10 frames).
 #[test]
 fn cmd_arrows_step_frames_like_page_keys() {

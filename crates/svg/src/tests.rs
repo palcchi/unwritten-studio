@@ -87,6 +87,28 @@ fn paths_gradients_css_use() {
 }
 
 #[test]
+fn root_svg_percentages_use_the_document_viewport() {
+    for (attrs, width, height) in [
+        ("width=\"100\" height=\"80\"", 100.0, 80.0),
+        ("width=\"50%\" height=\"200%\"", 150.0, 300.0),
+        ("", 300.0, 150.0),
+        ("width=\"100\" height=\"80\" viewBox=\"0 0 200 160\"", 200.0, 160.0),
+        ("width=\"NaN%\" height=\"1e400\"", 300.0, 150.0),
+    ] {
+        let svg = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" {attrs}><rect x="25%" y="25%" width="50%" height="50%"/></svg>"#);
+        let d = parse(svg.as_bytes()).unwrap();
+        let shapes = d.flatten();
+        assert_eq!(shapes.len(), 1);
+        assert!(
+            matches!(shapes[0].2.geom, Geom::Rect { x, y, w, h, .. }
+            if x == width / 4.0 && y == height / 4.0 && w == width / 2.0 && h == height / 2.0),
+            "{attrs}: {:?}",
+            shapes[0].2.geom
+        );
+    }
+}
+
+#[test]
 fn nested_svg_percentages_use_the_nearest_viewport() {
     let d = parse(
         br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80" viewBox="0 0 100 80">

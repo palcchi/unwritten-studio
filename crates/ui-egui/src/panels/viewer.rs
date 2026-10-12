@@ -1131,7 +1131,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if context_layers.is_empty() {
             ui.label(crate::i18n::tr("No unlocked layer selected"));
         } else {
-            super::timeline::layer_menu(ui, &context_layers, &mut context_actions);
+            let vector = context_layers
+                .iter()
+                .filter_map(|id| comp.layer(effectcraft_engine::project::LayerId(*id)))
+                .any(|layer| super::timeline::vector_footage_layer(&app.session.project, layer));
+            super::timeline::layer_menu(ui, &context_layers, vector, &mut context_actions);
         }
     });
     for (id, params) in context_actions {

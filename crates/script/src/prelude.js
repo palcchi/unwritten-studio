@@ -27,6 +27,25 @@ function __str(v) {
   return String(v);
 }
 
+// ExtendScript includes the ES3 String.substr(start, length) method, which Boa
+// does not currently provide. Follow its legacy length (not end-index) semantics.
+if (typeof String.prototype.substr !== "function") {
+  Object.defineProperty(String.prototype, "substr", {
+    value: function (start, length) {
+      if (this === null || this === undefined) throw new TypeError("String.substr called on null or undefined");
+      var text = String(this), n = text.length;
+      var from = Number(start);
+      if (isNaN(from)) from = 0;
+      // ToIntegerOrInfinity, then clamp positive or negative offsets.
+      from = from < 0 ? Math.max(n + Math.ceil(from), 0) : Math.min(Math.floor(from), n);
+      var count = length === undefined ? n - from : Number(length);
+      if (isNaN(count) || count <= 0) return "";
+      return text.slice(from, from + count);
+    },
+    writable: true, configurable: true
+  });
+}
+
 // ------------------------------------------------------------------ enums
 
 function __enum(name, keys, base) {

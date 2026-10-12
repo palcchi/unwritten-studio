@@ -379,6 +379,97 @@ fn vp9_webm_frames() {
     }
 }
 
+/// MXF OP1a as broadcast cameras write it: long-GOP MPEG-2 4:2:2 (XDCAM-like, B-frames) with
+/// 24-bit PCM audio.
+fn mpeg2_mxf() -> Option<PathBuf> {
+    ffmpeg_fixture(
+        "testsrc2_mpeg2_pcm.mxf",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1280x720:rate=25:duration=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=2",
+            "-c:v",
+            "mpeg2video",
+            "-pix_fmt",
+            "yuv422p",
+            "-q:v",
+            "2",
+            "-g",
+            "12",
+            "-bf",
+            "2",
+            "-c:a",
+            "pcm_s24le",
+            "-ac",
+            "2",
+        ],
+    )
+}
+
+/// MXF OP1a with intra-only DNxHD 36 (Avid's offline codec).
+fn dnxhd_mxf() -> Option<PathBuf> {
+    ffmpeg_fixture(
+        "testsrc2_dnxhd.mxf",
+        &["-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=25:duration=1", "-c:v", "dnxhd", "-b:v", "36M", "-pix_fmt", "yuv422p"],
+    )
+}
+
+/// MXF is importable footage (After Effects imports it), whatever the extension's case.
+#[test]
+fn mxf_is_importable() {
+    assert!(effectcraft_media::is_importable(Path::new("/media/A001C003.mxf")));
+    assert!(effectcraft_media::is_importable(Path::new("/media/A001C003.MXF")));
+    assert!(!effectcraft_media::is_importable(Path::new("/media/A001C003.avi")), "no AVI demuxer yet");
+}
+
+#[test]
+fn mxf_mpeg2_with_pcm_audio() {
+    let Some(p) = mpeg2_mxf() else { return };
+    let f = probe(&p).expect("probe");
+    assert_eq!(f.kind, FootageKind::Video);
+    assert_eq!((f.width, f.height), (1280, 720));
+    assert_eq!(f.frame_rate, FrameRate::FPS_25);
+    assert!((f.duration.seconds() - 2.0).abs() < 0.1, "duration {:?}", f.duration.seconds());
+    assert!(f.has_video && f.has_audio);
+    eprintln!("mxf mpeg-2: codec {:?}", f.codec);
+    let pool = MediaPool::new();
+    // sequential, a backwards seek, a jump into a GOP (B-frames reordered), the last frame
+    for n in [0usize, 1, 2, 3, 30, 7, 49] {
+        let img = pool.frame_at(&f, t_of(f.frame_rate, n as i64)).expect("frame");
+        let db = psnr(&img, &reference_frame(&p, n));
+        eprintln!("mxf mpeg-2 frame {n}: {db:.2} dB");
+        assert!(db > 35.0, "frame {n}: {db:.2} dB");
+    }
+    let s = pool.audio_samples(&f, Tick(TICKS_PER_SECOND / 2), 4800, 48_000);
+    assert_eq!(s.len(), 9600);
+    let rms = (s.iter().map(|v| v * v).sum::<f32>() / s.len() as f32).sqrt();
+    // ffmpeg's sine source upmixed to stereo: −24 dBFS RMS
+    assert!((rms - 0.0625).abs() < 0.01, "rms {rms}");
+}
+
+#[test]
+fn mxf_dnxhd_frames() {
+    let Some(p) = dnxhd_mxf() else { return };
+    let f = probe(&p).expect("probe");
+    assert_eq!(f.kind, FootageKind::Video);
+    assert_eq!((f.width, f.height), (1920, 1080));
+    assert_eq!(f.frame_rate, FrameRate::FPS_25);
+    assert!(!f.has_audio);
+    eprintln!("mxf dnxhd: codec {:?}", f.codec);
+    let pool = MediaPool::new();
+    for n in [0usize, 12, 24, 3] {
+        let img = pool.frame_at(&f, t_of(f.frame_rate, n as i64)).expect("frame");
+        let db = psnr(&img, &reference_frame(&p, n));
+        eprintln!("mxf dnxhd frame {n}: {db:.2} dB");
+        assert!(db > 35.0, "frame {n}: {db:.2} dB");
+    }
+}
+
 #[test]
 fn png_sequence_import() {
     let Some(first) = png_sequence() else { return };

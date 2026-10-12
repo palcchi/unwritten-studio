@@ -491,6 +491,8 @@ const JAPANESE: &[(&str, &str)] = &[
     ("Type a command or effect…", "コマンドまたはエフェクトを入力…"),
     ("URL:", "URL:"),
     ("Undock Panel", "パネルのドッキングを解除"),
+    ("Move Panel to New Window", "新規ウィンドウにパネルを移動"),
+    ("Move Panel to Main Window", "メインウィンドウにパネルを移動"),
     ("Unlink {}", "{}のリンクを解除"),
     (
         "Use this option to place the currently selected layers together into a new intermediate composition.",
@@ -931,6 +933,8 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("Type a command or effect…", "输入命令或效果…"),
     ("URL:", "URL："),
     ("Undock Panel", "取消停靠面板"),
+    ("Move Panel to New Window", "将面板移至新窗口"),
+    ("Move Panel to Main Window", "将面板移回主窗口"),
     ("Unfreeze", "解冻"),
     ("Unlink {}", "取消链接 {}"),
     (
@@ -1461,6 +1465,8 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("Type a command or effect…", "輸入命令或效果…"),
     ("URL:", "URL："),
     ("Undock Panel", "取消停靠面板"),
+    ("Move Panel to New Window", "將面板移至新視窗"),
+    ("Move Panel to Main Window", "將面板移回主視窗"),
     ("Unfreeze", "解凍"),
     ("Unlink {}", "取消鏈接 {}"),
     (
@@ -2006,6 +2012,8 @@ const UKRAINIAN: &[(&str, &str)] = &[
     ("URL:", "URL:"),
     ("Undock Panel", "Від’єднати панель"),
     ("Unfreeze", "Розморозити"),
+    ("Move Panel to New Window", "Перемістити панель у нове вікно"),
+    ("Move Panel to Main Window", "Перемістити панель у головне вікно"),
     ("Unlink {}", "Від’єднати {}"),
     (
         "Use this option to place the currently selected layers together into a new intermediate composition.",

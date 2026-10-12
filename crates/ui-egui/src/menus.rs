@@ -127,6 +127,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("window.dockPanel", "Dock Panel", [], None),
     uic!("window.floatPanel", "Undock Panel", [], None),
     uic!("window.closePanel", "Close Panel", [], None),
+    uic!("window.panelWindow", "Move Panel to New Window", [], None),
 ];
 
 pub fn panel_command_id(p: PanelKind) -> String {
@@ -450,6 +451,22 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             return Err(error.unwrap_or_else(|| "invalid docking layout".into()));
         }
         return Ok(Value::Null);
+    }
+    // Multiple monitors: {panel, window?: bool} moves a panel into its own native window (or
+    // back into the main window; no `window` toggles).
+    if id == "window.panelWindow" {
+        // A panel name ("Info", "Effect Controls") or its serialized form ({"Viewer": 2}).
+        let value = params.get("panel").ok_or("panelWindow: need `panel`")?;
+        let panel = match value.as_str() {
+            Some(name) => PanelKind::from_name(name).ok_or(format!("unknown panel `{name}`"))?,
+            None => serde_json::from_value::<PanelKind>(value.clone()).map_err(|_| "panelWindow: unknown `panel`".to_string())?,
+        };
+        let window = match params.get("window") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(value.as_bool().ok_or("panelWindow: `window` must be true or false")?),
+        };
+        let window = app.set_panel_window(ctx, panel, window)?;
+        return Ok(json!({"window": window}));
     }
     // A UI-only command (not in the engine's menus), so `frontend` gets it from here.
     if id == "window.maximizeApp" {

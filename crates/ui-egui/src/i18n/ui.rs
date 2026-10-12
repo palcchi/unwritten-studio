@@ -81,6 +81,9 @@ pub(crate) fn tr_args(text: &str, args: &[&dyn Display]) -> String {
 
 /// Japanese: the same rows, in the same order, as the Chinese catalogs below (the tests keep the two in step).
 const JAPANESE: &[(&str, &str)] = &[
+    ("Appearance Settings…", "外観設定…"),
+    ("Add to favorites", "お気に入りに追加"),
+    ("Remove from favorites", "お気に入りから削除"),
     ("   OK   ", "   OK   "),
     ("  Delete  ", "  削除  "),
     (" Open Auto-Save ", " 自動保存を開く "),
@@ -521,6 +524,9 @@ const JAPANESE: &[(&str, &str)] = &[
 ];
 
 const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
+    ("Appearance Settings…", "外观设置…"),
+    ("Add to favorites", "添加到收藏"),
+    ("Remove from favorites", "从收藏中移除"),
     ("   OK   ", "   确定   "),
     ("  Delete  ", "  删除  "),
     (" Open Auto-Save ", " 打开自动保存 "),
@@ -1053,6 +1059,9 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
 ];
 
 const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
+    ("Appearance Settings…", "外觀設定…"),
+    ("Add to favorites", "加入最愛"),
+    ("Remove from favorites", "從最愛移除"),
     ("   OK   ", "   確定   "),
     ("  Delete  ", "  刪除  "),
     (" Open Auto-Save ", " 開啟自動儲存 "),
@@ -1582,6 +1591,9 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
 /// Ukrainian (uk): original translations of the same interface rows as the Chinese catalogs.
 /// Technical names, key names and substituted project content keep their original spelling.
 const UKRAINIAN: &[(&str, &str)] = &[
+    ("Appearance Settings…", "Налаштування вигляду…"),
+    ("Add to favorites", "Додати до вибраного"),
+    ("Remove from favorites", "Видалити з вибраного"),
     ("   OK   ", "   Гаразд   "),
     ("  Delete  ", "  Видалити  "),
     (" Open Auto-Save ", " Відкрити автозбереження "),

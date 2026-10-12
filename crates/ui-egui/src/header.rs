@@ -216,9 +216,35 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     };
     let tip = tr_args("Appearance Mode: {}", &[&mode]);
     let r = Rect::from_min_max(pos2(rx - 26.0, cy - 13.0), pos2(rx, cy + 13.0));
-    if widgets::icon_button(ui, r, icon, false, &t, egui::Id::new("hdr-appearance")).on_hover_text(&tip).clicked() {
+    let response = widgets::icon_button(ui, r, icon, false, &t, egui::Id::new("hdr-appearance")).on_hover_text(&tip);
+    if response.clicked() {
         app.cycle_appearance(ui.ctx());
     }
+    response.context_menu(|ui| {
+        let settings = ui.button(tr("Appearance Settings…"));
+        app.auto.add("header.appearanceSettings", settings.rect, "Appearance Settings…");
+        if settings.clicked() {
+            crate::panels::settings::open(app, "appearance");
+            ui.close();
+        }
+        let favorites = app.session.prefs.appearance.favorite_themes.clone();
+        for options in [effectcraft_engine::prefs::LIGHT_THEMES, effectcraft_engine::prefs::DARK_THEMES] {
+            let group: Vec<_> = options.iter().filter(|(_, id)| favorites.iter().any(|saved| saved == id)).collect();
+            if !group.is_empty() {
+                ui.separator();
+            }
+            for (label, id) in group {
+                let r = ui.selectable_label(app.ui.theme.name() == *id, tr(label));
+                app.auto.add(&format!("header.favoriteTheme.{id}"), r.rect, label);
+                if r.clicked() {
+                    if let Some(kind) = crate::theme::ThemeKind::from_name(id) {
+                        app.set_theme(ui.ctx(), kind);
+                    }
+                    ui.close();
+                }
+            }
+        }
+    });
     app.auto.add("header.appearance", r, &tip);
     rx = r.min.x - 4.0;
     rx -= 10.0;

@@ -49,6 +49,42 @@ pub fn saved_by(text: &str) -> Option<String> {
     serde_json::from_str::<Meta>(text).ok()?.saved_by
 }
 
+/// The compositions that were open when a project file was saved (`activeComp` and `openComps`
+/// next to `savedBy`), so it reopens where it was left (#748). Editor state rather than project
+/// content: opening a comp doesn't make the project unsaved, and it isn't part of
+/// [`Project`]. Older files have none; older versions ignore it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedView {
+    /// The comp shown in the viewer and the Timeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_comp: Option<ItemId>,
+    /// The open comps (Timeline tabs), in tab order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub open_comps: Vec<ItemId>,
+}
+
+/// The view a project file was saved with ([`SavedView`]); empty for older files. Values that
+/// aren't ids are ignored (whether an id still names a comp is up to the caller).
+pub fn saved_view(text: &str) -> SavedView {
+    #[derive(Deserialize)]
+    struct Meta {
+        #[serde(rename = "activeComp", default)]
+        active_comp: Option<serde_json::Value>,
+        #[serde(rename = "openComps", default)]
+        open_comps: Option<serde_json::Value>,
+    }
+    let Ok(m) = serde_json::from_str::<Meta>(text) else { return SavedView::default() };
+    SavedView {
+        active_comp: m.active_comp.as_ref().and_then(serde_json::Value::as_u64).map(ItemId),
+        open_comps: m
+            .open_comps
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .map_or_else(Vec::new, |a| a.iter().filter_map(serde_json::Value::as_u64).map(ItemId).collect()),
+    }
+}
+
 /// Whether version `a` (`major.minor.patch`, pre-release suffixes ignored) is newer than `b`.
 pub fn is_newer_version(a: &str, b: &str) -> bool {
     let parts = |v: &str| -> [u64; 3] {
@@ -1318,14 +1354,20 @@ impl Project {
     /// to read back, so a save never writes a file that can't be opened (JSON has no NaN or
     /// infinity: such a value would be written as `null`).
     pub fn to_file_json(&self) -> Result<String, ProjectError> {
+        self.to_file_json_with_view(&SavedView::default())
+    }
+    /// [`Project::to_file_json`] that also records the open compositions ([`SavedView`]).
+    pub fn to_file_json_with_view(&self, view: &SavedView) -> Result<String, ProjectError> {
         #[derive(Serialize)]
         struct File<'a> {
             #[serde(rename = "savedBy")]
             saved_by: &'a str,
             #[serde(flatten)]
+            view: &'a SavedView,
+            #[serde(flatten)]
             project: &'a Project,
         }
-        let text = serde_json::to_string_pretty(&File { saved_by: APP_VERSION, project: self })
+        let text = serde_json::to_string_pretty(&File { saved_by: APP_VERSION, view, project: self })
             .map_err(|e| ProjectError::Invalid(format!("the project can't be saved: {e}")))?;
         Project::from_json(&text)
             .map_err(|e| ProjectError::Invalid(format!("the project can't be saved: it holds a value a project file can't store ({e})")))?;

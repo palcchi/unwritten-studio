@@ -95,7 +95,10 @@ XML). Saving goes through `Project::to_file_json`, which checks that the text re
 anything is written (JSON can't hold NaN or infinity), and files are written atomically. Opening
 a file that a newer EffectCraft saved shows a warning: fields this version doesn't know are
 dropped if it saves the project. Save, Save As, Save a Copy and Increment and Save keep the
-file's format (`.ecprojx` stays XML).
+file's format (`.ecprojx` stays XML). Next to `savedBy` the file records the active comp and the
+open comp tabs (`activeComp`, `openComps`), which opening restores; they are editor state, not
+part of `Project`, so older files (and ids that no longer name a comp) open on the first comp and
+older versions ignore them.
 
 `schema` changes when a saved value changes meaning; a project from an older schema is converted
 when it is opened (`effectcraft_engine::upgrade_effects`, which also refreshes effect instances

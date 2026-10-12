@@ -1010,3 +1010,19 @@ fn scripted_text_range_selector_resolves_and_is_the_only_selector() {
     );
     assert_eq!(o.result, json!([1, "ADBE Text Selector", 50, 100, "ADBE Text Percent Offset"]));
 }
+
+/// #1063: a script asks a light's options for After Effects' "ADBE Casts Shadows".
+#[test]
+fn light_options_accept_the_after_effects_casts_shadows_name() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Repro", 1920, 1080, 1, 10, 25);
+        var light = comp.layers.addLight("Key", [100, 100]);
+        var c = light.property("ADBE Light Options Group").property("ADBE Casts Shadows");
+        c == null ? "null" : c.name
+        "#,
+    );
+    assert_ne!(o.result, json!("null"), "{:?}", o.result);
+}

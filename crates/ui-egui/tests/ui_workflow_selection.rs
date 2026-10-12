@@ -508,3 +508,47 @@ fn project_context_move_to_root_acts_on_the_whole_selection() {
         assert_eq!(project.item(effectcraft_engine::project::ItemId(*id)).unwrap().parent, None);
     }
 }
+
+/// A text layer's timeline context menu offers Create Shapes from Text and Create Masks from
+/// Text (After Effects), which convert the layer; a non-text layer does not show them (#872).
+#[test]
+fn timeline_context_menu_creates_shapes_and_masks_from_text() {
+    use effectcraft_engine::project::LayerSource;
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name":"Type","width":320,"height":180,"duration":4})).unwrap();
+    s.execute("layer.newText", json!({"text":"Abc"})).unwrap();
+    s.execute("layer.newSolid", json!({"name":"Plate","width":40,"height":40,"color":"#406080"})).unwrap();
+    s.execute("edit.deselectAll", json!({})).unwrap();
+    let text = s.active_comp().unwrap().layers.iter().find(|l| matches!(l.source, LayerSource::Text)).unwrap().id.0;
+    let plate = s.active_comp().unwrap().layers.iter().find(|l| l.name == "Plate").unwrap().id.0;
+    let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.run_steps(3);
+    let row = |h: &Harness<'_, EffectcraftApp>, id: u64| {
+        let r = rect(h, &format!("timeline.layer.{id}.row"));
+        pos2(r.min.x + 210.0, r.center().y)
+    };
+    let right_click = |h: &mut Harness<'_, EffectcraftApp>, p: Pos2| {
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerMoved(p));
+            h.input_mut().events.push(Event::PointerButton { pos: p, button: PointerButton::Secondary, pressed, modifiers: Modifiers::NONE });
+            h.step();
+        }
+        h.run_steps(3);
+    };
+    // The text layer offers both conversions; Create Shapes from Text works.
+    h.state_mut().session.execute("layer.select", json!({"layers": [text]})).unwrap();
+    h.run_steps(3);
+    let at = row(&h, text);
+    right_click(&mut h, at);
+    h.get_by_label("Create Shapes from Text").click();
+    h.run_steps(3);
+    let shapes = h.state().session.active_comp().unwrap().layers.iter().filter(|l| matches!(l.source, LayerSource::Shape)).count();
+    assert_eq!(shapes, 1, "a shape layer was created from the text");
+    // A non-text layer does not show the text conversions.
+    h.state_mut().session.execute("layer.select", json!({"layers": [plate]})).unwrap();
+    h.run_steps(3);
+    let at = row(&h, plate);
+    right_click(&mut h, at);
+    assert!(h.query_by_label("Create Shapes from Text").is_none(), "no text conversion for a solid");
+    assert!(h.query_by_label("Create Masks from Text").is_none(), "no text conversion for a solid");
+}

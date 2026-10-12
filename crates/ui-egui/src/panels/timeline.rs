@@ -1905,7 +1905,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         None => start_rename(&ctx, layer.id.0, &layer.name),
                     }
                 }
-                layer_context_menu(&row_resp, &comp, layer, &selected, vector_footage_layer(&app.session.project, layer), &mut actions);
+                layer_context_menu(&row_resp, &comp, layer, &selected, LayerMenuCaps::of(&app.session.project, layer), &mut actions);
                 // Switches.
                 let sws: [(Icon, bool, &str, bool); 8] = [
                     (Icon::Shy, sw.shy, "shy", true),
@@ -2124,7 +2124,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             set_anchor(&ctx, cid, layer.id);
                         }
                     }
-                    layer_context_menu(&body, &comp, layer, &selected, vector_footage_layer(&app.session.project, layer), &mut actions);
+                    layer_context_menu(&body, &comp, layer, &selected, LayerMenuCaps::of(&app.session.project, layer), &mut actions);
                     let drag_key = format!("bar-{}", layer.id.0);
                     for (resp, kind) in [(&body, "move"), (&lin, "in"), (&lout, "out")] {
                         if resp.dragged() {
@@ -3516,20 +3516,42 @@ fn collapse_applies(layer: &Layer, project: &effectcraft_engine::project::Projec
     }
 }
 
+/// Which Create ▸ conversions the layer context menu offers, from the targeted layer's kind.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct LayerMenuCaps {
+    /// SVG / PDF / AI / EPS footage: Create Shapes from Vector Layer.
+    pub vector: bool,
+    /// A text layer: Create Shapes from Text / Create Masks from Text.
+    pub text: bool,
+}
+
+impl LayerMenuCaps {
+    pub(crate) fn of(project: &effectcraft_engine::project::Project, layer: &Layer) -> Self {
+        Self { vector: vector_footage_layer(project, layer), text: matches!(layer.source, LayerSource::Text) }
+    }
+}
+
 /// A layer row's or bar's context menu. As in After Effects, right-clicking a layer that is part
 /// of the selection keeps the selection and the menu acts on all of it; right-clicking an
 /// unselected layer selects only that layer.
-fn layer_context_menu(resp: &egui::Response, comp: &Comp, layer: &Layer, selected: &[LayerId], vector: bool, actions: &mut Vec<(String, serde_json::Value)>) {
+fn layer_context_menu(
+    resp: &egui::Response,
+    comp: &Comp,
+    layer: &Layer,
+    selected: &[LayerId],
+    caps: LayerMenuCaps,
+    actions: &mut Vec<(String, serde_json::Value)>,
+) {
     let in_selection = selected.contains(&layer.id);
     if resp.secondary_clicked() && !in_selection && !layer.switches.locked {
         actions.push(("layer.select".into(), json!({"layers": [layer.id.0]})));
     }
     let targets: Vec<u64> = if in_selection { comp.layers.iter().filter(|l| selected.contains(&l.id)).map(|l| l.id.0).collect() } else { vec![layer.id.0] };
-    crate::widgets::context_menu(resp, |ui| layer_menu(ui, &targets, vector, actions));
+    crate::widgets::context_menu(resp, |ui| layer_menu(ui, &targets, caps, actions));
 }
 
 /// Shared layer actions for Timeline rows and Composition context menus.
-pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], vector: bool, actions: &mut Vec<(String, serde_json::Value)>) {
+pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], caps: LayerMenuCaps, actions: &mut Vec<(String, serde_json::Value)>) {
     let Some(&id) = layers.first() else { return };
     let mut item = |ui: &mut egui::Ui, label: &str, cmd: &str, params: serde_json::Value| {
         if ui.button(label).clicked() {
@@ -3548,8 +3570,12 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], vector: bool, action
         item(ui, "Adjustment Layer", "layer.newAdjustment", json!({}));
     });
     item(ui, "Layer Settings…", "layer.settings", json!({}));
-    if vector {
+    if caps.vector {
         item(ui, "Create Shapes from Vector Layer", "layer.create", json!({"op": "shapesFromVector", "layers": layers}));
+    }
+    if caps.text {
+        item(ui, "Create Shapes from Text", "layer.create", json!({"op": "shapesFromText", "layers": layers}));
+        item(ui, "Create Masks from Text", "layer.create", json!({"op": "masksFromText", "layers": layers}));
     }
     ui.separator();
     ui.menu_button(crate::i18n::tr("Masks"), |ui| {

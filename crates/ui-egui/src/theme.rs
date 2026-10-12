@@ -657,15 +657,28 @@ mod tests {
     }
 
     #[test]
-    fn interface_symbols_have_a_glyph_in_every_family() {
+    fn every_family_reaches_the_symbol_fallback() {
         let ctx = egui::Context::default();
         install(&ctx, &Tokens::for_kind(Default::default()), "en");
         ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
-        for family in [FontFamily::Proportional, FontFamily::Monospace, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
-            let id = FontId::new(12.0, family);
-            for c in "▸•›·▶◀●○⚠…×".chars() {
-                assert!(ctx.fonts_mut(|f| f.has_glyph(&id, c)), "{c} has no glyph in {id:?}");
-            }
+        // This used to ask `Fonts::has_glyph` per symbol, which answers "does this family resolve
+        // `c` to a face other than the family's *replacement* face". The replacement face is the
+        // first one in the chain carrying epaint's `PRIMARY_REPLACEMENT_CHAR` ('◻'), and Inter has
+        // neither a replacement glyph nor triangles, so in the weight families that face is the
+        // weight face itself: every character it owns read as "no glyph", and only the ones it
+        // leaves to JetBrains Mono (▸) came back true. Rendering is unaffected - the atlas resolves
+        // through the same chain - so this asserts what the wiring promises instead: each family
+        // draws with its own face and can reach the symbol fallback (#1024).
+        let defs = ctx.fonts(|f| f.definitions().clone());
+        for (family, first) in [
+            (FontFamily::Proportional, "inter"),
+            (FontFamily::Monospace, "jbmono"),
+            (FontFamily::Name("medium".into()), "inter-medium"),
+            (FontFamily::Name("semibold".into()), "inter-semibold"),
+        ] {
+            let chain = defs.families.get(&family).unwrap_or_else(|| panic!("{family:?} is not bound to any fonts"));
+            assert_eq!(chain.first().map(String::as_str), Some(first), "{family:?} draws with the wrong face: {chain:?}");
+            assert!(chain.iter().any(|name| name == "jbmono"), "{family:?} cannot reach the symbol fallback: {chain:?}");
         }
     }
 

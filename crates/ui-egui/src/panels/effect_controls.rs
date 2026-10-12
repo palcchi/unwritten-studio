@@ -1053,6 +1053,14 @@ fn histogram_only(app: &mut EffectcraftApp, ui: &mut egui::Ui, p: &egui::Painter
 
 // ---------------------------------------------------------------------------------------------
 
+/// Open the rename field on effect `uid` (Enter with the effect selected), name selected.
+pub fn start_rename(ctx: &egui::Context, uid: u64, name: &str) {
+    let id = egui::Id::new(("ec-rename", uid));
+    ctx.data_mut(|d| d.insert_temp(id, name.to_string()));
+    ctx.data_mut(|d| d.insert_temp(id.with("select"), true));
+    ctx.memory_mut(|m| m.request_focus(id.with("field")));
+}
+
 pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let p = ui.painter().with_clip_rect(rect);
@@ -1134,6 +1142,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 response.request_focus();
             }
             app.auto.add(&format!("effectControls.effect.{}.nameEdit", g.uid), name_rect, "Effect name");
+            if ctx.data_mut(|d| d.remove_temp::<bool>(rename_id.with("select"))).unwrap_or(false) {
+                widgets::select_all(&ctx, response.id, &value);
+            }
             // Escape cancels. egui drops the field's focus on Escape in the same frame, so the
             // key is checked on the focus being lost as well as held.
             let escape = (response.has_focus() || response.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Escape));

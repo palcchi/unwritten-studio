@@ -573,6 +573,41 @@ pub fn locate(app: &EffectcraftApp, layer: u64, time: Option<f64>) -> Option<(f3
 
 /// Start renaming the first selected layer (Enter in the Timeline).
 pub fn begin_rename(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    // A selected effect, mask, shape group or text animator renames before its layer (as in
+    // After Effects, #1061).
+    let group = app.session.state.selected_props.iter().rev().find_map(|(lid, uid)| {
+        let g = app.session.active_comp()?.layer(*lid)?.props.find_group(*uid).filter(|g| g.is_instance())?;
+        Some((lid.0, g.uid, g.name.clone(), matches!(g.kind, GroupKind::Effect { .. })))
+    });
+    if let Some((layer, uid, name, is_fx)) = group {
+        // An effect in a visible Effect Controls panel renames there, the rest in the Timeline.
+        if is_fx && app.auto.previous.iter().chain(app.auto.elements.iter()).any(|e| e.id == format!("effectControls.effect.{uid}.name")) {
+            super::effect_controls::start_rename(ctx, uid, &name);
+        } else {
+            // Show the group's row first: the field lives in it.
+            fn ancestors(g: &PropGroup, uid: u64, out: &mut Vec<u64>) -> bool {
+                for sg in g.groups() {
+                    if sg.uid == uid || ancestors(sg, uid, out) {
+                        out.push(sg.uid);
+                        return true;
+                    }
+                }
+                false
+            }
+            let mut open = vec![];
+            if let Some(l) = app.session.active_comp().and_then(|c| c.layer(LayerId(layer))) {
+                ancestors(&l.props, uid, &mut open);
+            }
+            open.retain(|u| *u != uid);
+            app.ui.timeline.open_layers.insert(layer);
+            app.ui.timeline.open_groups.extend(open);
+            ctx.data_mut(|d| {
+                d.insert_temp(group_rename_id(), (layer, uid, name));
+                d.insert_temp(rename_focus_id(), true);
+            });
+        }
+        return;
+    }
     if let Some(l) = app.session.state.selected_layers.first().and_then(|id| app.session.active_comp().and_then(|c| c.layer(*id))) {
         start_rename(ctx, l.id.0, &l.name);
     }
@@ -596,6 +631,11 @@ fn start_rename(ctx: &egui::Context, id: u64, name: &str) {
         d.insert_temp(egui::Id::new("tl-rename"), (id, name.to_string()));
         d.insert_temp(rename_focus_id(), true);
     });
+}
+
+/// The Timeline's open group rename field: (layer, group uid, text).
+fn group_rename_id() -> egui::Id {
+    egui::Id::new("tl-group-rename")
 }
 
 fn rename_focus_id() -> egui::Id {
@@ -2197,7 +2237,27 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     app.auto.add(&format!("timeline.group.{uid}.eye"), er, name);
                 }
-                lp.text(pos2(indent + 10.0, cy), Align2::LEFT_CENTER, name, Tokens::ui(12.0), t.text);
+                let group_edit: Option<(u64, u64, String)> = ctx.data(|d| d.get_temp(group_rename_id()));
+                if let Some((_, _, mut buf)) = group_edit.filter(|(rl, ru, _)| *rl == layer.id.0 && ru == uid) {
+                    let field = Rect::from_min_max(pos2(indent + 8.0, r.min.y + 2.0), pos2((cw.switches - 4.0).max(indent + 60.0), r.max.y - 2.0));
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
+                    let er = child.add(egui::TextEdit::singleline(&mut buf).font(Tokens::ui(12.0)).desired_width(field.width()));
+                    app.auto.add(&format!("timeline.group.{uid}.nameEdit"), er.rect, &buf);
+                    if ctx.data_mut(|d| d.remove_temp::<bool>(rename_focus_id())).unwrap_or(false) {
+                        er.request_focus();
+                        widgets::select_all(&ctx, er.id, &buf);
+                    }
+                    if er.lost_focus() {
+                        if !ui.input(|i| i.key_pressed(egui::Key::Escape)) && !buf.trim().is_empty() && buf != *name {
+                            actions.push(("prop.renameGroup".into(), json!({"layer": layer.id.0, "prop": uid, "name": buf})));
+                        }
+                        ctx.data_mut(|d| d.remove::<(u64, u64, String)>(group_rename_id()));
+                    } else {
+                        ctx.data_mut(|d| d.insert_temp(group_rename_id(), (layer.id.0, *uid, buf)));
+                    }
+                } else {
+                    lp.text(pos2(indent + 10.0, cy), Align2::LEFT_CENTER, name, Tokens::ui(12.0), t.text);
+                }
                 text_anim_popups(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
                 shape_add_popup(app, ui, &lp, layer, *uid, cw.switches, cy, &mut actions);
                 if *uid == GEOM_BIT | layer.id.0 {

@@ -322,6 +322,9 @@ pub struct TimelineState {
     /// Visible span start (seconds) and pixels per second; None = fit comp.
     pub start: f64,
     pub pps: Option<f64>,
+    /// The span (`start`, `pps`) Zoom to Fit Comp left, which it goes back to when pressed again.
+    #[serde(skip)]
+    pub before_fit: Option<(f64, f64)>,
     pub scroll_y: f32,
     /// Left column area width.
     pub columns_w: f32,
@@ -403,6 +406,7 @@ impl Default for TimelineState {
         TimelineState {
             start: 0.0,
             pps: None,
+            before_fit: None,
             scroll_y: 0.0,
             columns_w: 560.0,
             outline_scroll: 0.0,

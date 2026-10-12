@@ -545,6 +545,21 @@ pub fn toggle_frame_zoom(app: &mut EffectcraftApp, ctx: &egui::Context) {
     set_zoom(&mut app.ui.timeline, &comp, MAX_PPS, fit, cti, w as f64 / 2.0);
 }
 
+/// `Shift+;`: show the whole comp; from there, go back to the span it was pressed in.
+pub fn toggle_fit_zoom(app: &mut EffectcraftApp, ctx: &egui::Context) {
+    let tl = &mut app.ui.timeline;
+    if let Some(pps) = tl.pps {
+        tl.before_fit = Some((tl.start, pps));
+        tl.pps = None;
+        tl.start = 0.0;
+        return;
+    }
+    let Some((start, pps)) = tl.before_fit.take() else { return };
+    let Some((_, w)) = ctx.data(|d| d.get_temp::<(f32, f32)>(egui::Id::new("timeline-graph-area"))) else { return };
+    let Some(comp) = app.session.active_comp_arc() else { return };
+    set_zoom(&mut app.ui.timeline, &comp, pps, fit_pps(w, &comp), start, 0.0);
+}
+
 /// Zoom the time ruler around the CTI.
 pub fn zoom(app: &mut EffectcraftApp, ctx: &egui::Context, k: f64) {
     let Some((_, w)) = ctx.data(|d| d.get_temp::<(f32, f32)>(egui::Id::new("timeline-graph-area"))) else { return };

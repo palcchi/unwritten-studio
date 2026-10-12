@@ -186,7 +186,7 @@ struct Inner {
     files: Mutex<HashMap<String, Arc<[u8]>>>,
     /// Parsed 3D models by path (`None`: failed to load; not retried until `forget`).
     models: Mutex<HashMap<String, Option<Arc<effectcraft_model::Model>>>>,
-    /// Decoded animated GIFs by path, loaded by the first caller while the others wait (an
+    /// Decoded animated GIFs and WebPs by path, loaded by the first caller while the others wait (an
     /// `Err` is not retried until `forget`).
     gifs: Mutex<HashMap<Arc<str>, GifSlot>>,
     cache: Mutex<CacheState>,
@@ -592,7 +592,7 @@ impl Inner {
         .clone()
     }
 
-    /// The decoded frames of the animated GIF at `path`. The first caller decodes it, outside the
+    /// The decoded frames of the animated GIF or WebP at `path`. The first caller decodes it, outside the
     /// map's lock; callers asking for the same file meanwhile wait for that.
     fn gif(&self, path: &Arc<str>) -> Result<Arc<Anim>> {
         let slot = lock(&self.gifs).entry(path.clone()).or_default().clone();
@@ -760,7 +760,7 @@ impl Inner {
                 };
                 Ok(dynamic_to_image(&img, op))
             }
-            Some(mt) if gif_anim::is_gif(footage) => {
+            Some(mt) if gif_anim::is_animated(footage) => {
                 let anim = self.gif(path)?;
                 let frame = anim.frame_at(Tick(mt.0)).ok_or_else(|| MediaError::Decode(format!("{path}: no frames")))?;
                 Ok(dynamic_to_image(frame, op))

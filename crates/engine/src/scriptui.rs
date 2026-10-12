@@ -374,6 +374,11 @@ pub struct ScriptUiEvent {
 /// (`{ok, output, error}`) and updates [`Session::script_ui`].
 pub type ScriptUiDispatch = fn(&mut Session, &ScriptUiEvent) -> std::result::Result<Value, String>;
 
+/// Runs the scripts' `app.scheduleTask` tasks that are due; returns
+/// `{ran, output, errors: [{message, line, file}], next (ms until the next task is due, or null)}`
+/// and updates [`Session::script_ui`]. Frontends call it every frame (see [`ScriptUi::run_tasks`]).
+pub type ScriptTaskRunner = fn(&mut Session) -> Value;
+
 /// The open script windows.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -384,11 +389,32 @@ pub struct ScriptUi {
     /// The scripting engine's event hand-off (set with [`Session::script`]).
     #[serde(skip)]
     pub dispatch: Option<ScriptUiDispatch>,
+    /// The scripting engine's scheduled-task runner (set with [`Session::script`]).
+    #[serde(skip)]
+    pub tasks: Option<ScriptTaskRunner>,
+    /// Bumped whenever the project is closed or replaced (New / Open / Close Project): repeating
+    /// tasks of scripts without an open window stop then.
+    #[serde(skip)]
+    pub project_epoch: u64,
+    /// The script contexts of this session with scheduled tasks (kept by the scripting engine).
+    #[serde(skip)]
+    pub task_hosts: Vec<u32>,
 }
 
 impl ScriptUi {
     pub fn window(&self, id: u32) -> Option<&ScriptWindow> {
         self.windows.iter().find(|w| w.id == id)
+    }
+
+    /// Run the scripts' due `app.scheduleTask` tasks ([`ScriptTaskRunner`]); `None` without a
+    /// scripting engine.
+    pub fn run_tasks(s: &mut Session) -> Option<Value> {
+        let f = s.script_ui.tasks?;
+        // A task may close its ScriptUI panel: forget it then.
+        let open = crate::commands::scripts::open_panel_names(s);
+        let r = f(s);
+        crate::commands::scripts::forget_closed_panels(s, &open);
+        Some(r)
     }
 
     /// Replace the windows a script host published (laying them out).
@@ -685,6 +711,12 @@ pub(crate) fn set(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let kind = if p.get("changing").and_then(Value::as_bool) == Some(true) { "changing" } else { "change" };
     dispatch(s, ScriptUiEvent { window, widget, kind: kind.into(), value })
+}
+
+/// `script.runTasks`: run the scripts' `app.scheduleTask` tasks that are due now (frontends do
+/// it every frame; headless hosts and agents call this).
+pub(crate) fn run_tasks(s: &mut Session, _: &Value) -> Result<Value> {
+    ScriptUi::run_tasks(s).ok_or_else(|| EngineError::Other("scripting is not available in this build".into()))
 }
 
 /// `scriptui.close`: close a window (a dialog's `show()` returns `result`, default 2 = Cancel).

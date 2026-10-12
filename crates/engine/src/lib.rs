@@ -989,6 +989,7 @@ impl Session {
         self.roto_job = None;
         self.roto_pending.clear();
         self.drop_tasks();
+        self.script_ui.project_epoch = self.script_ui.project_epoch.wrapping_add(1);
         p.fix_next_id();
         upgrade_effects(&mut p);
         self.project = Arc::new(p);

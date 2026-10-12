@@ -1418,6 +1418,18 @@ pub(crate) fn entry_shortcut(app: &EffectcraftApp, e: &MenuEntry) -> Option<Stri
     app.session.shortcuts().shortcut_of(&e.command, &e.params).map(str::to_string)
 }
 
+/// Whether panel `p` is on screen: the front tab of a floating window, or of a docked group
+/// (an open frame in a stack) that a maximized panel does not cover.
+pub(crate) fn panel_shown(app: &EffectcraftApp, p: PanelKind) -> bool {
+    if app.ui.floating.iter().any(|f| f.panels.get(f.active) == Some(&p)) {
+        return true;
+    }
+    match app.ui.maximized.filter(|m| app.ui.dock.contains(*m)) {
+        Some(m) => m == p,
+        None => app.ui.dock.is_visible(p),
+    }
+}
+
 /// Check-mark state of frontend toggles (engine state is answered by the engine).
 pub(crate) fn entry_checked(app: &EffectcraftApp, e: &MenuEntry) -> Option<bool> {
     let v = &app.ui.viewer;
@@ -1436,6 +1448,8 @@ pub(crate) fn entry_checked(app: &EffectcraftApp, e: &MenuEntry) -> Option<bool>
             Some(v.res.label().eq_ignore_ascii_case(e.command.trim_start_matches("view.res.")))
         }
         "window.workspace" => Some(pstr("name").is_some_and(|n| n == app.ui.workspace)),
+        // The Tools panel is the header toolbar: always on screen.
+        "window.panel" => Some(pstr("panel").is_some_and(|n| n.eq_ignore_ascii_case("tools") || PanelKind::from_name(n).is_some_and(|p| panel_shown(app, p)))),
         "view.panelBackground" if e.params.get("pick").is_none() => {
             let cur = match v.pasteboard {
                 None => "mediumGray",

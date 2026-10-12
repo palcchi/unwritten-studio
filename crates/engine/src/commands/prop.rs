@@ -1144,7 +1144,27 @@ fn velocity(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn convert_expr_to_keys(s: &mut Session, p: &Value) -> Result<Value> {
-    let (cid, lid, uid) = prop_ref(s, p, "prop.convertExpressionToKeyframes")?;
+    const CMD: &str = "prop.convertExpressionToKeyframes";
+    // Without a property (the menu item, a script's `app.executeCommand`) it converts the selected ones.
+    if p.get("path").is_none() && p.get("prop").is_none() && p.get("layer").is_none() {
+        let cid = comp_id(s, p)?;
+        let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
+        let sel: Vec<(LayerId, Uid)> =
+            selected_leaf_props(s).into_iter().filter(|(l, u)| comp.layer(*l).and_then(|l| l.props.find(*u)).is_some_and(Property::has_expression)).collect();
+        if sel.is_empty() {
+            return Err(bad(CMD, "no `path` given and no selected property has an expression"));
+        }
+        let mut n = 0;
+        for (lid, uid) in sel {
+            n += convert_one_expr(s, cid, lid, uid)?.as_u64().unwrap_or(0);
+        }
+        return Ok(json!(n));
+    }
+    let (cid, lid, uid) = prop_ref(s, p, CMD)?;
+    convert_one_expr(s, cid, lid, uid)
+}
+
+fn convert_one_expr(s: &mut Session, cid: ItemId, lid: LayerId, uid: Uid) -> Result<Value> {
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?.clone();
     let layer = comp.layer(lid).ok_or(EngineError::NoComp)?.clone();
     let pr = layer.props.find(uid).ok_or_else(|| bad("prop.convertExpressionToKeyframes", "no property"))?.clone();

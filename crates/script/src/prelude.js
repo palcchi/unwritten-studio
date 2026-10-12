@@ -1304,6 +1304,14 @@ Object.defineProperty(ShapeLayer.prototype, "source", { get: function () { retur
 function CameraLayer(comp, id) { return this.__init(comp, id, "CameraLayer"); }
 CameraLayer.prototype = Object.create(Layer.prototype);
 CameraLayer.prototype.constructor = CameraLayer;
+// Camera scripts (Google Earth Studio exports among them) key `cameraLayer.position`,
+// `.xRotation` and `.zoom` directly, as on AVLayer: return the live Property objects.
+["pointOfInterest", "position", "orientation", "xRotation", "yRotation", "zRotation"].forEach(function (name) {
+  Object.defineProperty(CameraLayer.prototype, name, { get: function () { return this.transform[name]; } });
+});
+["zoom", "depthOfField", "focusDistance", "aperture", "blurLevel"].forEach(function (name) {
+  Object.defineProperty(CameraLayer.prototype, name, { get: function () { return this.cameraOptions[name]; } });
+});
 
 function LightLayer(comp, id) { return this.__init(comp, id, "LightLayer"); }
 LightLayer.prototype = Object.create(Layer.prototype);

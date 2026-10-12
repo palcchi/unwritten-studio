@@ -252,3 +252,19 @@ fn roving_keys_follow_and_the_selection_stays_on_the_moved_keys() {
     }
     assert_eq!(s.state.selected_keys.iter().map(|k| k.layer.0).collect::<Vec<_>>(), vec![ids[1], ids[0]]);
 }
+
+#[test]
+fn moving_staggered_keys_keeps_their_subframe_spacing() {
+    let (mut s, ids) = setup(4);
+    for id in &ids {
+        add_key(&mut s, *id, "transform/opacity", 0.0, json!(0));
+    }
+    select_keys(&mut s, &ids.iter().map(|id| (*id, "transform/opacity", 0.0)).collect::<Vec<_>>());
+    s.execute_checked("keys.quickOffset", json!({"delta": 1.0 / 30.0})).unwrap();
+    // A plain move (and a nudge) translates them: it used to put each key on its nearest frame.
+    s.execute_checked("keys.move", json!({"delta": 1.0 / 30.0})).unwrap();
+    s.execute_checked("keys.nudgeForward", json!({})).unwrap();
+    for (i, id) in ids.iter().enumerate() {
+        assert_eq!(key_times(&s, *id, "transform/opacity"), vec![2 * F + F * i as i64 / 3], "layer {i}");
+    }
+}

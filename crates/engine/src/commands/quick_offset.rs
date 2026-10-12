@@ -9,7 +9,7 @@ use effectcraft_project::LayerId;
 use effectcraft_time::{TICKS_PER_SECOND, Tick};
 use serde_json::{Value, json};
 
-use super::prop::{key_gesture, move_key_refs};
+use super::prop::{key_gesture, layer_shift, move_key_refs};
 use super::{CommandSpec, b_p, bad, f_p, has_keys, has_layers, layers_p, merge_p};
 use crate::{EngineError, Result, Session, cmd};
 
@@ -110,11 +110,8 @@ fn keys(s: &mut Session, p: &Value) -> Result<Value> {
         st.selected_keys = move_key_refs(comp, &from, |l, t| {
             let Some(d) = by_layer.get(&l.id) else { return Ok(t) };
             let what = format!("a key of \"{}\"", l.name);
-            let at = l.layer_time(shifted(l.comp_time(t), *d, NAME, &what)?);
-            if at < Tick::MIN || at > Tick::MAX {
-                return Err(bad(NAME, format!("{what} would move out of range")));
-            }
-            Ok(at)
+            shifted(l.start_time, *d, NAME, &what)?;
+            shifted(t, layer_shift(l, *d), NAME, &what)
         })?;
         Ok(json!({"keys": st.selected_keys.len(), "layers": order.iter().map(|id| json!({"layer": id.0, "offset": by_layer.get(id).copied().unwrap_or_default().seconds()})).collect::<Vec<_>>()}))
     })

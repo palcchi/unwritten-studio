@@ -928,9 +928,16 @@ pub(crate) fn move_key_refs(comp: &mut effectcraft_project::Comp, from: &[KeyRef
     Ok(from.iter().filter_map(|k| remapped.get(k).copied()).filter(|k| seen.insert(*k)).collect())
 }
 
-/// Move the selected keys by `d` comp seconds, snapped to the comp's frames in comp time (keys
-/// of time-stretched layers move with the pointer, not by the layer-time distance). Keys of
-/// locked layers stay. A key landing on another key of its property replaces it.
+/// A move of `d` in comp time as the move of `l`'s layer times (through its stretch, reversed
+/// too), without a round trip through comp time.
+pub(crate) fn layer_shift(l: &Layer, d: Tick) -> Tick {
+    l.layer_time(l.start_time + d)
+}
+
+/// Move the selected keys by `d` comp seconds, rounded to whole frames: the keys keep their
+/// spacing, subframe offsets (Quick Offset) included, and keys of time-stretched layers move with
+/// the pointer, not by the layer-time distance. Keys of locked layers stay. A key landing on
+/// another key of its property replaces it.
 pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: Tick) -> Result<Value> {
     let cid = s.active_comp_id().ok_or(EngineError::NoComp)?;
     let (from, total, base) = key_gesture(s, merge, d, false);
@@ -940,8 +947,8 @@ pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: T
             *proj = (*b).clone();
         }
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
-        let fr = comp.frame_rate;
-        st.selected_keys = move_key_refs(comp, &from, |l, t| Ok(l.layer_time(fr.snap_nearest(l.comp_time(t) + total))))?;
+        let d = comp.frame_rate.snap_nearest(total);
+        st.selected_keys = move_key_refs(comp, &from, |l, t| Ok(t + layer_shift(l, d)))?;
         Ok(json!(st.selected_keys.len()))
     })
 }

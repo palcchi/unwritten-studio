@@ -32,6 +32,7 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("Українська", "uk"),
     ("Español", "es"),
     ("Português (Brasil)", "pt-br"),
+    ("Čeština", "cs"),
 ];
 
 /// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).

@@ -782,6 +782,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         }
         let footage = matches!(it.kind, ItemKind::Footage(_));
         crate::widgets::context_menu(&resp, |ui| {
+            // First on a comp, as in After Effects; for this comp, not the viewer's (#1058).
+            if matches!(it.kind, ItemKind::Comp(_)) && ui.button(crate::i18n::tr("Composition Settings…")).clicked() {
+                actions.push(("comp.settings".into(), json!({"comp": id.0})));
+                ui.close();
+            }
             if ui.button(crate::i18n::tr("Delete")).clicked() {
                 actions.push(("project.delete".into(), json!({"items": targets(app, *id, selected)})));
                 ui.close();

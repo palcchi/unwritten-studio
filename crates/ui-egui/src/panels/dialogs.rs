@@ -20,6 +20,9 @@ pub struct DialogState {
     /// from them, as in After Effects).
     pub last_new_comp: Option<CompDraft>,
     pub editing_existing: bool,
+    /// The composition Composition Settings edits (the Project panel's row menu can pick one
+    /// the viewer doesn't show).
+    pub editing_comp: Option<ItemId>,
     pub solid_name: String,
     pub solid_color: [f32; 3],
     pub solid_size: [u32; 2],
@@ -75,6 +78,11 @@ pub fn open_new_comp(app: &mut EffectcraftApp) {
 
 pub fn open_comp_settings(app: &mut EffectcraftApp) -> Result<(), String> {
     let cid = app.session.active_comp_id().ok_or("no composition is open")?;
+    open_comp_settings_for(app, cid)
+}
+
+/// Composition Settings on `cid`, open in the viewer or not.
+pub fn open_comp_settings_for(app: &mut EffectcraftApp, cid: ItemId) -> Result<(), String> {
     let c = app.session.project.comp(cid).ok_or("no composition")?;
     app.dialog_state.comp = CompDraft {
         name: app.session.project.item(cid).map(|i| i.name.clone()).unwrap_or_default(),
@@ -95,6 +103,7 @@ pub fn open_comp_settings(app: &mut EffectcraftApp) -> Result<(), String> {
         ..Default::default()
     };
     app.dialog_state.editing_existing = true;
+    app.dialog_state.editing_comp = Some(cid);
     app.dialog = Some(Dialog::CompSettings);
     Ok(())
 }
@@ -362,7 +371,10 @@ fn comp_settings(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens, exis
     app.dialog_state.comp = d;
     match result {
         Some(serde_json::Value::Null) => app.dialog = None,
-        Some(params) => {
+        Some(mut params) => {
+            if existing && let (Some(cid), Some(m)) = (app.dialog_state.editing_comp, params.as_object_mut()) {
+                m.insert("comp".into(), json!(cid.0));
+            }
             let r = if existing { app.session.execute("comp.settings", params) } else { app.session.execute("comp.new", params) };
             if !existing && r.is_ok() {
                 app.dialog_state.last_new_comp = Some(app.dialog_state.comp.clone());

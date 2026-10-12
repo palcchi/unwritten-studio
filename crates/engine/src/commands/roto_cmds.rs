@@ -268,16 +268,22 @@ fn span(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(cmd, "the Roto Brush is frozen: Unfreeze it to change the span"));
     }
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
-    let lim = rt::frame_limits(comp, l);
+    let [lo, hi] = rt::frame_limits(comp, l);
     let mut d = data_of(g);
     let base = d.base.ok_or_else(|| bad(cmd, "no strokes yet"))?;
     let first = d.strokes.iter().map(|s| s.frame).min().unwrap_or(base);
     let last = d.strokes.iter().map(|s| s.frame).max().unwrap_or(base);
+    // Trimming or shortening the comp can leave saved strokes outside the layer. No span
+    // inside its new bounds can contain those strokes; keep them for undo or a later untrim.
+    if first < lo || last > hi {
+        return Err(bad(cmd, "strokes outside the layer: restore the layer/comp timing or clear those strokes before changing the span"));
+    }
+    let [start, end] = &mut d.span;
     if let Some(a) = f_p(p, "start") {
-        d.span[0] = (a.round() as i64).clamp(lim[0], first);
+        *start = (a.round() as i64).clamp(lo, first);
     }
     if let Some(b) = f_p(p, "end") {
-        d.span[1] = (b.round() as i64).clamp(last, lim[1]);
+        *end = (b.round() as i64).clamp(last, hi);
     }
     write_data(s, "Segmentation Span", cid, lid, uid, &d)?;
     Ok(json!({"layer": lid.0, "effect": uid, "span": d.span, "base": base}))

@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~30 points of "ready for real work" and ~350–620 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (full re-measure against After Effects 2026 26.5; standard progress-docs layout) · **Target:** Adobe After Effects 2026 (26.5.0.89)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** patch (Roto Brush span validation after trimming) · **Target:** Adobe After Effects 2026 (26.5.0.89)
 
 EffectCraft aims to do what After Effects does, with the same panels, menus and behaviour, written
 from scratch in Rust. This page is the one-page summary; the evidence is in
@@ -117,6 +117,8 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 
 ## Progress log
 
+- 2026-10-12: Roto Brush span edits report strokes outside a trimmed layer without panicking;
+  strokes and undo history are preserved so restoring the timing allows the span edit again.
 - 2026-10-11: Ukrainian panels caught up with the Chinese catalogs. The 95 rows the panel
   catalog gained since 9 October are translated: the Home screen (recent files, their Kind and
   Opened columns, the empty and no-match states), the viewer's toolbar tooltips, magnification,
@@ -148,6 +150,7 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | patch | Roto Brush span validation after trimming; command regressions for both layer edges |
 | 2026-10-10 | minor | Hours to ≈ 95% for each audience |
 | 2026-10-10 | minor | Headline adds mainstream practitioner (≈ 47%) and essentials user (≈ 52%) |
 | 2026-10-10 | minor | Stage checked against the new core-workflow gate (all six pass; still alpha) |

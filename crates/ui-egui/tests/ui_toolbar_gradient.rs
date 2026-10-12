@@ -28,7 +28,14 @@ fn setup(items: &[&str], tool: serde_json::Value, select: bool) -> (Harness<'sta
     for kind in items {
         s.execute("layer.addShapeItem", json!({"layer": l, "kind": kind})).unwrap();
     }
-    s.execute("shape.toolOptions", tool).unwrap();
+    s.execute("shape.toolOptions", tool.clone()).unwrap();
+    // The toolbar shows a selected shape layer's own Fill / Stroke kind (#732), so the layer gets
+    // the kind too.
+    if select && let Some(o) = tool.as_object() {
+        let mut p = o.clone();
+        p.insert("layers".into(), json!([l]));
+        s.execute("shape.fillStroke", serde_json::Value::Object(p)).unwrap();
+    }
     s.state.selected_layers = if select { vec![LayerId(l)] } else { vec![] };
     s.state.selected_props.clear();
     let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
@@ -104,16 +111,14 @@ fn a_gradient_stroke_swatch_edits_the_gradient_stroke() {
     assert_eq!((target.layer, target.prop), (l, uid), "on the Gradient Stroke's Colors");
 }
 
-/// With no shape layer selected, or one without that gradient, the swatch opens the options (the
-/// kind new shapes get) as before.
+/// With no shape layer selected the swatch opens the options (the kind new shapes get) as before.
+/// (A selected shape layer shows its own kind, #732, so a gradient kind always has its gradient.)
 #[test]
 fn without_a_selected_gradient_the_swatch_opens_the_options() {
-    for (items, select) in [(vec![], true), (vec!["gfill"], false)] {
-        let (mut h, _) = setup(&items, json!({"fillType": "linear"}), select);
-        click(&mut h, "header.fill", Modifiers::NONE);
-        assert_eq!(h.state().dialog, None, "{items:?} selected={select}: no editor");
-        assert!(options_open(&h, "fill"), "{items:?} selected={select}: Fill Options");
-    }
+    let (mut h, _) = setup(&["gfill"], json!({"fillType": "linear"}), false);
+    click(&mut h, "header.fill", Modifiers::NONE);
+    assert_eq!(h.state().dialog, None, "no editor");
+    assert!(options_open(&h, "fill"), "Fill Options");
 }
 
 /// The rest of the toolbar is unchanged: the words open the options, a Solid Color swatch opens the

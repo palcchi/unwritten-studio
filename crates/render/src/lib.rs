@@ -1122,8 +1122,10 @@ impl<'a> Renderer<'a> {
         // #659: an authored layer's buffer spans only its painted content while the stack works
         // on the layer's whole region (`layer_size`): give the buffer the room a sized source
         // already has, so tiling or displacement can place pixels outside the content instead
-        // of losing them at its edge. Only when something will actually run.
-        if fx.groups().any(|g| g.enabled && matches!(&g.kind, GroupKind::Effect { effect } if effectcraft_effects::find(effect).is_some_and(|s| !effectcraft_effects::audio_fx::is_audio_effect(s.id)))) {
+        // of losing them at its edge. Only when something will actually run, and not for an
+        // adjustment layer, whose buffer is the comp below and already spans it.
+        if !adjustment
+            && fx.groups().any(|g| g.enabled && matches!(&g.kind, GroupKind::Effect { effect } if effectcraft_effects::find(effect).is_some_and(|s| !effectcraft_effects::audio_fx::is_audio_effect(s.id)))) {
             target.cover(layer_size);
         }
         let mut mask_shapes = masks::shapes(ctx, layer);

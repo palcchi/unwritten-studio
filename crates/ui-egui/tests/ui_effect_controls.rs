@@ -528,7 +528,7 @@ fn radial_center_stays_draggable_when_its_property_is_selected() {
 #[test]
 fn clicking_an_effect_parameter_activates_its_header_and_handles() {
     let (app, x) = app();
-    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app);
     settle(&mut h);
     let name = rect_of(&h, &format!("effectControls.prop.{}.name", x.point)).center();
     click(&mut h, name);
@@ -660,12 +660,11 @@ fn file_and_text_parameters_have_widgets() {
 #[test]
 fn effect_control_name_can_be_renamed_from_its_header() {
     let (app, x) = app();
-    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app);
     settle(&mut h);
     let name = format!("effectControls.effect.{}.name", x.point_fx);
     let point = rect_of(&h, &name).center();
-    click(&mut h, point);
-    click(&mut h, point);
+    double_click(&mut h, point);
     h.run_steps(3);
     assert!(ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
@@ -683,11 +682,10 @@ fn effect_control_name_can_be_renamed_from_its_header() {
 #[test]
 fn effect_rename_escape_keeps_the_name() {
     let (app, x) = app();
-    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).with_step_dt(1.0 / 60.0).build_eframe(|_| app);
     settle(&mut h);
     let point = rect_of(&h, &format!("effectControls.effect.{}.name", x.point_fx)).center();
-    click(&mut h, point);
-    click(&mut h, point);
+    double_click(&mut h, point);
     h.run_steps(3);
     assert!(ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
@@ -698,4 +696,15 @@ fn effect_rename_escape_keeps_the_name() {
     let name = layer(&h.state().session, x.small).effects().unwrap().groups().find(|g| g.uid == x.point_fx).unwrap().name.clone();
     assert_eq!(name, "Point Control");
     assert!(!ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
+}
+
+/// Two presses within egui's double-click time (one frame apart).
+fn double_click(h: &mut Harness<'_, EffectcraftApp>, pos: egui::Pos2) {
+    h.event(egui::Event::PointerMoved(pos));
+    h.step();
+    for pressed in [true, false, true, false] {
+        h.event(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        h.step();
+    }
+    h.run_steps(2);
 }

@@ -504,6 +504,14 @@ mod tests {
         // Enter is OK and Cmd+Backspace is Delete.
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        // The dialog opens with Comment focused (#922), a multi-line field where Enter types a
+        // new line; with the focus elsewhere, Enter is OK.
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.auto.begin_frame();
+            crate::panels::dialogs::show(&mut app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        ctx.memory_mut(|m| m.stop_text_input());
         app.dialog_state.marker.chapter = "Entered".into();
         crate::panels::dialogs::press_key(&mut app, &ctx, egui::Key::Enter, egui::Modifiers::NONE);
         assert!(app.dialog.is_none());

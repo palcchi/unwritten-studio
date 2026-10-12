@@ -1127,6 +1127,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if let Some(mut value) = editing.as_ref().cloned() {
             let name_rect = Rect::from_min_max(pos2(tw.max.x + 6.0, r.min.y + 2.0), pos2(reset.min.x - 6.0, r.max.y - 2.0));
             let response = ui.put(name_rect, egui::TextEdit::singleline(&mut value).id(rename_id.with("field")).font(Tokens::semibold(12.0)));
+            // Focus the field the frame it first exists: focusing an id not yet on screen leaves
+            // the accessibility tree with a focus it doesn't contain.
+            if ctx.data_mut(|d| d.remove_temp::<bool>(rename_id.with("start"))).is_some() {
+                crate::widgets::select_all(&ctx, response.id, &value);
+                response.request_focus();
+            }
             app.auto.add(&format!("effectControls.effect.{}.nameEdit", g.uid), name_rect, "Effect name");
             // Escape cancels. egui drops the field's focus on Escape in the same frame, so the
             // key is checked on the focus being lost as well as held.
@@ -1170,7 +1176,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         );
         if hresp.double_clicked() {
             ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
-            ctx.memory_mut(|m| m.request_focus(rename_id.with("field")));
+            ctx.data_mut(|d| d.insert_temp(rename_id.with("start"), true));
         }
         hresp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, &g.name));
         app.auto.add(&format!("effectControls.effect.{}", g.uid), r, &g.name);
@@ -1202,7 +1208,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             item(ui, "Duplicate", true, "effect.duplicate", json!({"layer": lid, "effect": g.uid}));
             if ui.button(crate::i18n::tr("Rename")).clicked() {
                 ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
-                ctx.memory_mut(|m| m.request_focus(rename_id.with("field")));
+                ctx.data_mut(|d| d.insert_temp(rename_id.with("start"), true));
                 ui.close();
             }
             ui.separator();

@@ -4009,6 +4009,12 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
 /// Russian (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const RUSSIAN: &[(&str, &str, &str)] = &[
+    ("comp.copyFrame", "Copy Frame to Clipboard", "Копировать кадр в буфер обмена"),
+    ("", "Front", "Передняя грань"),
+    ("", "Bevel", "Фаска"),
+    ("", "Side", "Боковая грань"),
+    ("", "Back", "Задняя грань"),
+    ("layer.addTextAnimator", "Color", "Цвет"),
     ("", "EffectCraft", "EffectCraft"),
     ("app.about", "About EffectCraft...", "О EffectCraft..."),
     ("", "Settings...", "Настройки..."),
@@ -4632,6 +4638,12 @@ const RUSSIAN: &[(&str, &str, &str)] = &[
 /// French (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const FRENCH: &[(&str, &str, &str)] = &[
+    ("comp.copyFrame", "Copy Frame to Clipboard", "Copier l'image dans le presse-papiers"),
+    ("", "Front", "Avant"),
+    ("", "Bevel", "Biseau"),
+    ("", "Side", "Côté"),
+    ("", "Back", "Arrière"),
+    ("layer.addTextAnimator", "Color", "Couleur"),
     ("", "EffectCraft", "EffectCraft"),
     ("app.about", "About EffectCraft...", "À propos d’EffectCraft..."),
     ("", "Settings...", "Préférences..."),
@@ -5255,6 +5267,12 @@ const FRENCH: &[(&str, &str, &str)] = &[
 /// German (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const GERMAN: &[(&str, &str, &str)] = &[
+    ("comp.copyFrame", "Copy Frame to Clipboard", "Frame in die Zwischenablage kopieren"),
+    ("", "Front", "Vorderseite"),
+    ("", "Bevel", "Abschrägung"),
+    ("", "Side", "Seite"),
+    ("", "Back", "Rückseite"),
+    ("layer.addTextAnimator", "Color", "Farbe"),
     ("", "EffectCraft", "EffectCraft"),
     ("app.about", "About EffectCraft...", "Über EffectCraft..."),
     ("", "Settings...", "Voreinstellungen..."),

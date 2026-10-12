@@ -382,6 +382,9 @@ fn set_switch(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_p(p, "switch").ok_or_else(|| bad("layer.setSwitch", "missing `switch`"))?.to_string();
     let v = b_p(p, "value");
     let label = format!("Layer Switch ({name})");
+    if b_p(p, "others") == Some(true) {
+        return set_switch_others(s, cid, &ids, &name, v, &label);
+    }
     // `merge`: a switch dragged over several layers in the Timeline is one undo step.
     let r = s.edit(&label, merge_p(p), |proj, _| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
@@ -395,6 +398,38 @@ fn set_switch(s: &mut Session, p: &Value) -> Result<Value> {
             last = target;
         }
         Ok(last)
+    })?;
+    Ok(json!(r))
+}
+
+/// `layer.setSwitch {others: true}` (Alt-click on an A/V feature in the Timeline): the named
+/// layers stand alone, shown / heard / soloed / unlocked while every other layer the switch
+/// applies to is the opposite; when they already do, the other layers come back. `value` sets
+/// the other layers directly.
+fn set_switch_others(s: &mut Session, cid: ItemId, ids: &[LayerId], name: &str, value: Option<bool>, label: &str) -> Result<Value> {
+    let r = s.edit(label, None, |proj, _| {
+        let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
+        // The state that sets a layer apart: unlocked for Lock, on for the rest.
+        let active = !matches!(name, "lock" | "locked");
+        // Track mattes keep their video off by design.
+        let mattes: Vec<LayerId> =
+            if matches!(name, "video" | "eye") { comp.layers.iter().filter_map(|l| l.track_matte.map(|m| m.layer)).collect() } else { Vec::new() };
+        let applies = |l: &Layer| match name {
+            "audio" => l.props.sub("audio").is_some(),
+            "lock" | "locked" => true,
+            _ => l.source.is_av() && !mattes.contains(&l.id),
+        };
+        let mut alone = true;
+        for l in comp.layers.iter().filter(|l| applies(l)) {
+            let Some(on) = switch_value(l, name) else { return Err(bad("layer.setSwitch", format!("unknown switch `{name}`"))) };
+            alone &= on == (ids.contains(&l.id) == active);
+        }
+        let others = value.unwrap_or(alone == active);
+        for l in comp.layers.iter_mut().filter(|l| applies(l)) {
+            let v = if ids.contains(&l.id) { active } else { others };
+            set_switch_value(l, name, v);
+        }
+        Ok(others)
     })?;
     Ok(json!(r))
 }
@@ -1538,7 +1573,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Layer Switch",
             [],
             None,
-            "{layers?, switch: video|audio|solo|lock|shy|collapse|quality|fx|frameBlend|motionBlur|adjustment|threeD|guide|preserveTransparency, value?, merge?}",
+            "{layers?, switch: video|audio|solo|lock|shy|collapse|quality|fx|frameBlend|motionBlur|adjustment|threeD|guide|preserveTransparency, value?, merge?, others? (the named layers alone: the other layers get the opposite state, or come back)}",
             has_layers,
             set_switch
         ),

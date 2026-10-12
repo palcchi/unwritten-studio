@@ -52,6 +52,41 @@ fn layer_quality_sampling_frame_blending_and_undo() {
     assert!(s.execute("layer.quality", json!({"quality": "fancy"})).is_err());
 }
 
+/// `layer.setSwitch {others: true}` (Alt-click on an A/V feature): the layer stands alone, the
+/// other layers come back the next time.
+#[test]
+fn set_switch_others() {
+    let mut s = comp();
+    let a = solid(&mut s, "#ff0000");
+    let b = solid(&mut s, "#00ff00");
+    let c = solid(&mut s, "#0000ff");
+    let get = |s: &Session, f: fn(&effectcraft_project::Layer) -> bool| [a, b, c].map(|l| f(&layer(s, l)));
+    s.execute("layer.setSwitch", json!({"layers": [b], "switch": "video", "value": false})).unwrap();
+    // B is hidden: it is shown, alone; then the others come back; one undo step each.
+    s.execute("layer.setSwitch", json!({"layers": [b], "switch": "video", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.video), [false, true, false]);
+    s.execute("layer.setSwitch", json!({"layers": [b], "switch": "video", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.video), [true; 3]);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.video), [false, true, false]);
+    // Solo.
+    s.execute("layer.setSwitch", json!({"layers": [a], "switch": "solo", "value": true})).unwrap();
+    s.execute("layer.setSwitch", json!({"layers": [c], "switch": "solo", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.solo), [false, false, true]);
+    // Lock: the layer stays unlocked and the others lock, then unlock.
+    s.execute("layer.setSwitch", json!({"layers": [a], "switch": "lock", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.locked), [false, true, true]);
+    s.execute("layer.setSwitch", json!({"layers": [a], "switch": "lock", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.locked), [false; 3]);
+    // A track matte keeps its video off.
+    s.execute("layer.setTrackMatte", json!({"layer": b, "matte": a})).unwrap();
+    s.execute("layer.setSwitch", json!({"layers": [a], "switch": "video", "value": false})).unwrap();
+    s.execute("layer.setSwitch", json!({"layers": [c], "switch": "video", "others": true})).unwrap();
+    s.execute("layer.setSwitch", json!({"layers": [c], "switch": "video", "others": true})).unwrap();
+    assert_eq!(get(&s, |l| l.switches.video), [false, true, true]);
+    assert!(s.execute("layer.setSwitch", json!({"layers": [c], "switch": "nope", "others": true})).is_err());
+}
+
 #[test]
 fn layer_switches_menu() {
     let mut s = comp();

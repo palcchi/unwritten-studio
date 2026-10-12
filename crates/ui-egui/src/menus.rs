@@ -2127,6 +2127,8 @@ mod tests {
             ("time.workAreaEnd", "Shift+End"),
             ("time.previousInOut", "Cmd+Alt+Shift+ArrowLeft"),
             ("time.nextInOut", "Cmd+Alt+Shift+ArrowRight"),
+            ("comp.workAreaToSelection", "Cmd+Alt+B"),
+            ("comp.activateRecent", "Shift+Escape"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }

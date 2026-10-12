@@ -1,5 +1,6 @@
 //! The keyboard-only commands: time navigation, the work area, selection and layer timing.
 
+use effectcraft_time::Tick;
 use serde_json::json;
 
 use crate::Session;
@@ -48,4 +49,49 @@ fn time_goes_to_the_work_area_and_to_in_and_out_points() {
     s.execute("time.set", json!({"time": 8.0})).unwrap();
     s.execute("time.nextInOut", json!({})).unwrap();
     assert!((secs(&s) - (10.0 - frame)).abs() < 1e-9);
+}
+
+#[test]
+fn work_area_follows_the_selected_layers() {
+    let (mut s, ids) = session([(1.0, 3.0), (2.0, 6.0), (0.0, 10.0)]);
+    s.execute("layer.select", json!({"layers": [ids[0], ids[1]]})).unwrap();
+    s.execute("comp.workAreaToSelection", json!({})).unwrap();
+    let wa = s.active_comp().unwrap().work_area;
+    assert_eq!((wa.0.seconds(), wa.1.seconds()), (1.0, 6.0));
+    // With nothing selected: the whole composition.
+    s.execute("edit.deselectAll", json!({})).unwrap();
+    s.execute("comp.workAreaToSelection", json!({})).unwrap();
+    let wa = s.active_comp().unwrap().work_area;
+    assert_eq!((wa.0, wa.1.seconds()), (Tick::ZERO, 10.0));
+    // One undo step each.
+    assert!(s.undo());
+    assert_eq!(s.active_comp().unwrap().work_area.1.seconds(), 6.0);
+    // Layers reaching outside the comp don't take the work area with them.
+    s.execute("layer.timing", json!({"layers": [ids[0]], "delta": -5.0})).unwrap();
+    s.execute("layer.select", json!({"layers": [ids[0]]})).unwrap();
+    s.execute("comp.workAreaToSelection", json!({})).unwrap();
+    let wa = s.active_comp().unwrap().work_area;
+    assert!(wa.0 == Tick::ZERO && wa.1 > wa.0);
+}
+
+#[test]
+fn the_most_recent_comp_of_the_hierarchy_comes_back() {
+    let mut s = Session::default();
+    let new = |s: &mut Session, name: &str| s.execute("comp.new", json!({"name": name, "duration": 4})).unwrap()["comp"].as_u64().unwrap();
+    let main = new(&mut s, "Main");
+    let nested = new(&mut s, "Nested");
+    let other = new(&mut s, "Other");
+    // Main contains Nested; Other stands alone.
+    s.execute("comp.open", json!({"comp": main})).unwrap();
+    s.execute("layer.addItem", json!({"item": nested})).unwrap();
+    s.execute("comp.open", json!({"comp": nested})).unwrap();
+    s.execute("comp.open", json!({"comp": other})).unwrap();
+    // Other has no related comp to go back to.
+    assert!(s.execute("comp.activateRecent", json!({})).unwrap().is_null());
+    s.execute("comp.open", json!({"comp": main})).unwrap();
+    // From Main: Other was active last, but Nested is the one in Main's hierarchy.
+    s.execute("comp.activateRecent", json!({})).unwrap();
+    assert_eq!(s.state.active_comp.map(|c| c.0), Some(nested));
+    s.execute("comp.activateRecent", json!({})).unwrap();
+    assert_eq!(s.state.active_comp.map(|c| c.0), Some(main));
 }

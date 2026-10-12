@@ -291,6 +291,15 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             _ => {}
         }
     }
+    // Edit ▸ Paste with SVG markup on the system clipboard pastes it as a shape layer (After
+    // Effects 26.3). Copying in the app replaces the system clipboard with a note naming what
+    // was copied, so SVG there was copied after anything copied in the app.
+    if id == "edit.paste" && no_params(&params) && app.session.state.text_edit.is_none() {
+        let text = ctx.data_mut(|d| d.remove_temp::<String>(system_paste_id())).or_else(|| app.hooks.clipboard_text.as_ref().and_then(|f| f()));
+        if let Some(svg) = text.filter(|t| effectcraft_engine::vector::is_svg_text(t)) {
+            return run_engine(app, ctx, "edit.pasteSvg", json!({"svg": svg}));
+        }
+    }
     // Clear follows panel focus, including the Edit menu and keyboard shortcut.
     if id == "edit.clear" && params.as_object().is_some_and(|p| p.is_empty()) && app.ui.focused == PanelKind::Project {
         // Through `invoke`, so deleting items that compositions use still asks first (M3.16).
@@ -1563,6 +1572,11 @@ fn mods_match(want: egui::Modifiers, got: egui::Modifiers) -> bool {
 
 /// Set (egui temp data) from a plain Spacebar press until its release while a tap would still
 /// run the Spacebar shortcut.
+/// The system clipboard's text of this frame's paste event, for the Edit ▸ Paste it runs.
+fn system_paste_id() -> egui::Id {
+    egui::Id::new("menus-system-paste")
+}
+
 fn space_tap_id() -> egui::Id {
     egui::Id::new("spacebar-tap")
 }
@@ -1644,6 +1658,9 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
     // Text editing in the viewer takes the clipboard events itself.
     let clipboard = app.session.state.text_edit.is_none();
     let project = app.ui.focused == PanelKind::Project;
+    // The paste event's text: Edit ▸ Paste pastes SVG markup as a shape layer.
+    let pasted =
+        if clipboard { ctx.input(|i| i.events.iter().rev().find_map(|e| if let egui::Event::Paste(t) = e { Some(t.clone()) } else { None })) } else { None };
     let mut events: Vec<(egui::Key, egui::Modifiers, bool)> = ctx.input(|i| {
         // The windowing layer turns Ctrl+C / Ctrl+X / Ctrl+V into clipboard events instead of
         // key presses: map them back to the keys (with the modifiers held) so Edit ▸ Copy, Cut,
@@ -1759,9 +1776,15 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
         }
         if let Some((_, _, id, params)) = binds.iter().find(|(m, k, ..)| *k == key && mods_match(*m, mods)) {
             let (id, params) = (id.clone(), if params.is_null() { json!({}) } else { params.clone() });
+            if id == "edit.paste"
+                && let Some(t) = &pasted
+            {
+                ctx.data_mut(|d| d.insert_temp(system_paste_id(), t.clone()));
+            }
             if let Err(e) = invoke(app, ctx, &id, params) {
                 app.ui.status = e;
             }
+            ctx.data_mut(|d| d.remove_temp::<String>(system_paste_id()));
         }
     }
 }

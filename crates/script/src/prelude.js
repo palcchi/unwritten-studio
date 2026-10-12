@@ -1018,7 +1018,7 @@ MarkerProperty.prototype = {
     t = __num(t, "time");
     if (!(mv instanceof MarkerValue)) throw __err("value must be a MarkerValue");
     var p = this.__p({ time: t, duration: mv.duration || 0, comment: mv.comment, chapter: mv.chapter, url: mv.url, frameTarget: mv.frameTarget, protected: !!mv.protectedRegion, label: mv.label || 0 });
-    p.cuePoint = mv.cuePointName ? { name: mv.cuePointName, navigation: !mv.eventCuePoint, params: mv.__params } : null;
+    p.cuePoint = (mv.cuePointName || mv.__params.length) ? { name: mv.cuePointName, navigation: !mv.eventCuePoint, params: mv.__params } : null;
     var l = this.__list(), at = -1;
     for (var i = 0; i < l.length; i++) if (Math.abs(l[i].time - t) < 1e-6) at = i;
     if (at >= 0) p.index = at;
@@ -1119,6 +1119,7 @@ Layer.prototype = {
     __call("edit.label", this.__p({ label: n }));
   },
   get comment() { return this.__info().comment; },
+  set comment(v) { __call("layer.setComment", this.__p({ comment: String(v) })); },
   get selected() { return this.__info().selected; },
   set selected(v) {
     var sel = this.containingComp.__info().selectedLayers;

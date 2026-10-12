@@ -588,21 +588,16 @@ const JAPANESE_FAMILIES: &[&str] = &[
     "IPAGothic",
     "VL Gothic",
 ];
-const CHINESE_FAMILIES: &[&str] = &[
-    "Microsoft YaHei",
-    "Microsoft JhengHei",
-    "SimSun",
-    "MingLiU",
-    "PingFang SC",
-    "PingFang TC",
-    "Noto Sans CJK SC",
-    "Noto Sans CJK TC",
-    "Noto Sans SC",
-    "Noto Sans TC",
-    "Source Han Sans SC",
-    "Source Han Sans TC",
-    "WenQuanYi Micro Hei",
-];
+/// Han ideograph families for Simplified Chinese, in the order the platforms' own fallback tables
+/// prefer them (Windows, macOS, then the Linux/Noto names). Missing ones cost one name lookup each.
+const SIMPLIFIED_CHINESE_FAMILIES: &[&str] =
+    &["Microsoft YaHei", "SimSun", "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "WenQuanYi Micro Hei"];
+/// The same for Traditional Chinese. The two scripts share almost all of their code points but not
+/// the glyph forms (`东` against `東`'s neighbours, `直`, `骨`), so one list for both drew a
+/// Traditional interface with Simplified forms - the faces do not differ in *coverage*, which is
+/// what the fallback search checks, so the script has to pick the list.
+const TRADITIONAL_CHINESE_FAMILIES: &[&str] =
+    &["Microsoft JhengHei", "MingLiU", "PingFang TC", "Noto Sans CJK TC", "Noto Sans TC", "Source Han Sans TC", "WenQuanYi Micro Hei"];
 const KOREAN_FAMILIES: &[&str] = &["Malgun Gothic", "Gulim", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Noto Sans KR", "Source Han Sans KR", "NanumGothic"];
 /// The platforms' plain text families for the other scripts the bundled fonts lack, in the same
 /// order (Windows, macOS, then the Linux/Noto names).
@@ -691,10 +686,29 @@ fn han_order() -> [FallbackScript; 3] {
     han_order_for(&active_cjk_locale())
 }
 
+/// Whether a CJK tag asks for Traditional Chinese: a `Hant` script, or a Taiwan, Hong Kong or
+/// Macao region (`zh-TW`, `zh_HK`, `zh_MO.UTF-8`). Anything else Chinese - including a bare `zh` -
+/// is Simplified, as in the interface's own locale mapping.
+fn asks_traditional_chinese(tag: &str) -> bool {
+    tag.to_ascii_lowercase().split(['-', '_', '.']).any(|p| matches!(p, "hant" | "tw" | "hk" | "mo"))
+}
+
+/// The Chinese families to try first for `tag`: one list per script, since coverage does not tell
+/// the two apart - a Simplified face covers the Traditional glyphs' code points, so the fallback
+/// search would keep it and draw the wrong forms.
+fn chinese_families_for(tag: &str) -> &'static [&'static str] {
+    if asks_traditional_chinese(tag) { TRADITIONAL_CHINESE_FAMILIES } else { SIMPLIFIED_CHINESE_FAMILIES }
+}
+
+/// [`chinese_families_for`] for the locale in force ([`active_cjk_locale`]).
+fn chinese_families() -> &'static [&'static str] {
+    chinese_families_for(&active_cjk_locale())
+}
+
 fn families_for(s: FallbackScript) -> &'static [&'static str] {
     match s {
         FallbackScript::Japanese => JAPANESE_FAMILIES,
-        FallbackScript::Han => CHINESE_FAMILIES,
+        FallbackScript::Han => chinese_families(),
         FallbackScript::Korean => KOREAN_FAMILIES,
         FallbackScript::Arabic => ARABIC_FAMILIES,
         FallbackScript::Hebrew => HEBREW_FAMILIES,
@@ -1077,6 +1091,25 @@ mod tests {
         // registered fallbacks; this only checks that clearing it returns to the environment).
         assert_eq!(requested_cjk_locale(), None, "tests run without a request");
         assert_eq!(han_order(), han_order_for(&active_cjk_locale()));
+    }
+
+    #[test]
+    fn the_chinese_family_list_follows_the_script_the_locale_asks_for() {
+        for tag in ["zh", "zh-CN", "zh_Hans", "zh_CN.UTF-8", "zh-SG"] {
+            assert_eq!(chinese_families_for(tag), SIMPLIFIED_CHINESE_FAMILIES, "{tag}");
+        }
+        for tag in ["zh-Hant", "zh-Hant-TW", "zh_TW", "zh-HK", "zh_MO.UTF-8"] {
+            assert_eq!(chinese_families_for(tag), TRADITIONAL_CHINESE_FAMILIES, "{tag}");
+        }
+        // Each list carries its own script's faces and not the other's, which is the point of
+        // splitting them: `PingFang SC` covers the same code points as `PingFang TC`, so the
+        // fallback search would have kept it and drawn Simplified forms in a Traditional interface.
+        assert!(SIMPLIFIED_CHINESE_FAMILIES.iter().any(|f| f.contains("PingFang SC") && !f.contains("Source")));
+        assert!(!SIMPLIFIED_CHINESE_FAMILIES.iter().any(|f| f.contains("TC") || f.contains("JhengHei")));
+        assert!(TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains("PingFang TC")));
+        assert!(!TRADITIONAL_CHINESE_FAMILIES.iter().any(|f| f.contains(" SC") || f.contains("YaHei")));
+        // Han text is the only thing these lists serve; the Japanese order does not change.
+        assert_eq!(han_order_for("ja_JP.UTF-8")[0], FallbackScript::Japanese);
     }
 
     #[test]

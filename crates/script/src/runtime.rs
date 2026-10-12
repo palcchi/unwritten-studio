@@ -8,6 +8,7 @@ use std::sync::Arc;
 use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source, js_string};
 use effectcraft_engine::project::Project;
 use effectcraft_engine::{ScriptRequest, Session};
+use effectcraft_engine::history::History;
 use serde_json::{Value as J, json};
 
 const PRELUDE: &str = include_str!("prelude.js");
@@ -63,8 +64,9 @@ impl Outcome {
 pub(crate) struct Active {
     pub(crate) session: Session,
     pub(crate) output: Vec<String>,
-    /// Open undo groups: (name, project snapshot when the outermost group began).
-    pub(crate) groups: Vec<(String, Arc<Project>)>,
+    /// Open groups: name, project snapshot, original bounded history and saved-project
+    /// identity. The history snapshot preserves earlier steps if long groups hit the limit.
+    pub(crate) groups: Vec<(String, Arc<Project>, History, Arc<Project>)>,
     pub(crate) name: String,
     /// The script context running (its `app.scheduleTask` tasks are kept under this id, see
     /// [`crate::tasks`]).
@@ -240,12 +242,18 @@ fn native_undo(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
         match op.as_str() {
             "begin" => {
                 let snap = a.session.project.clone();
-                a.groups.push((if name.is_empty() || name == "undefined" { "Script".into() } else { name }, snap));
+                a.groups.push((
+                    if name.is_empty() || name == "undefined" { "Script".into() } else { name },
+                    snap,
+                    a.session.history.clone(),
+                    a.session.saved_project.clone(),
+                ));
             }
             _ => {
                 if a.groups.len() == 1 {
-                    let (name, snap) = a.groups.pop().unwrap_or_default();
-                    collapse(&mut a.session, &name, &snap);
+                    if let Some((name, snap, prior, saved)) = a.groups.pop() {
+                        collapse(&mut a.session, &name, &snap, &prior, &saved);
+                    }
                 } else {
                     a.groups.pop();
                 }
@@ -257,17 +265,29 @@ fn native_undo(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
     Ok(JsValue::undefined())
 }
 
-/// Fold the undo steps recorded since the project was `snap` into one step called `name`.
-pub(crate) fn collapse(s: &mut Session, name: &str, snap: &Arc<Project>) {
+/// Fold every command in a group into a single bounded-history entry, even if the
+/// oldest intermediate undo state was trimmed before the group ended.
+pub(crate) fn collapse(
+    s: &mut Session,
+    name: &str,
+    snap: &Arc<Project>,
+    prior: &History,
+    saved: &Arc<Project>,
+) {
     let h = &mut s.history;
-    let Some(start) = h.undo.iter().rposition(|(_, p)| Arc::ptr_eq(p, snap)) else {
-        // Nothing was recorded (or history was reset by New / Open Project).
-        return;
-    };
-    let first = h.undo[start].1.clone();
-    h.undo.truncate(start);
-    h.undo.push((name.to_string(), first));
-    h.merge_key = None;
+    if let Some(start) = h.undo.iter().rposition(|(_, p)| Arc::ptr_eq(p, snap)) {
+        // The group is short enough that its opening snapshot is still in history.
+        let first = h.undo[start].1.clone();
+        h.undo.truncate(start);
+        h.undo.push((name.to_string(), first));
+        h.merge_key = None;
+    } else if !Arc::ptr_eq(&s.project, snap) && Arc::ptr_eq(&s.saved_project, saved) && !h.undo.is_empty() {
+        // The group exceeded Levels of Undo. Restore the pre-group history (including
+        // older steps and redo branches) and record one step for the *whole* group.
+        // A New / Open Project changes saved_project; never resurrect the old history.
+        *h = prior.clone();
+        h.record(name, snap.clone(), s.prefs.general.undo_levels.max(1) as usize);
+    }
 }
 
 /// `__task("schedule", code, delayMs, repeat)` → id; `__task("cancel", id)` (see
@@ -616,8 +636,8 @@ impl Drop for Restore<'_> {
 /// and take the output so far.
 pub(crate) fn settle() -> Vec<String> {
     with_active(|a| {
-        if let Some((name, snap)) = a.groups.first().cloned() {
-            collapse(&mut a.session, &name, &snap);
+        if let Some((name, snap, prior, saved)) = a.groups.first().cloned() {
+            collapse(&mut a.session, &name, &snap, &prior, &saved);
             a.groups.clear();
         }
         a.session.sanitize_state();

@@ -793,3 +793,25 @@ fn script_undo_uses_stable_after_effects_command_id() {
     // Lookup of other command names still uses the existing registry.
     assert!(ok(&mut s, "app.findMenuCommandId('New Project')").result.as_u64().unwrap_or(0) > 0);
 }
+
+#[test]
+fn long_script_undo_group_counts_as_one_level() {
+    let mut s = session();
+    s.prefs.general.undo_levels = 3;
+    ok(&mut s, "var c = app.project.items.addComp('Long Undo', 100, 100, 1, 1, 24); c.layers.addNull();");
+    assert_eq!(s.history.undo.len(), 2);
+    // More edits than the history cap must still be one undoable group.
+    ok(
+        &mut s,
+        "var c = app.project.item(1); app.beginUndoGroup('Forty layers'); for (var i = 0; i < 40; i++) c.layers.addNull(); app.endUndoGroup();",
+    );
+    assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 41);
+    assert_eq!(s.history.undo.len(), 3);
+    assert_eq!(s.history.undo[2].0, "Forty layers");
+    s.undo();
+    assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 1);
+    // Entries preceding the group remain available instead of being trimmed by
+    // the forty intermediate operations.
+    s.undo();
+    assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 0);
+}

@@ -1120,9 +1120,30 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
         }
         app.auto.add(&format!("effectControls.effect.{}.twirl", g.uid), tw, &g.name);
-        let name = bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &g.name, Tokens::semibold(12.0), t.text);
-        app.auto.add(&format!("effectControls.effect.{}.name", g.uid), name, &g.name);
+        let rename_id = egui::Id::new(("ec-rename", g.uid));
+        let editing: Option<String> = ctx.data(|d| d.get_temp(rename_id));
         let reset = Rect::from_min_size(pos2(r.max.x - 96.0, r.min.y + 4.0), vec2(40.0, 18.0));
+        if let Some(mut value) = editing.as_ref().cloned() {
+            let name_rect = Rect::from_min_max(pos2(tw.max.x + 6.0, r.min.y + 2.0), pos2(reset.min.x - 6.0, r.max.y - 2.0));
+            let response = ui.put(
+                name_rect,
+                egui::TextEdit::singleline(&mut value).id(rename_id.with("field")).font(Tokens::semibold(12.0)),
+            );
+            app.auto.add(&format!("effectControls.effect.{}.nameEdit", g.uid), name_rect, "Effect name");
+            let escape = response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            let commit = response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if escape || commit {
+                ctx.data_mut(|d| d.remove::<String>(rename_id));
+                if !escape && !value.trim().is_empty() && value != g.name {
+                    actions.push(("prop.renameGroup".into(), json!({"layer": layer.id.0, "prop": g.uid, "name": value})));
+                }
+            } else {
+                ctx.data_mut(|d| d.insert_temp(rename_id, value));
+            }
+        } else {
+            let name = bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &g.name, Tokens::semibold(12.0), t.text);
+            app.auto.add(&format!("effectControls.effect.{}.name", g.uid), name, &g.name);
+        }
         let rresp = ui.interact(reset, egui::Id::new(("ec-reset", g.uid)), Sense::click());
         bp.text(reset.center(), Align2::CENTER_CENTER, crate::i18n::tr("Reset"), Tokens::ui(11.5), if rresp.hovered() { t.hot_text } else { t.text_dim });
         app.auto.add(&format!("effectControls.effect.{}.reset", g.uid), reset, "Reset");
@@ -1145,8 +1166,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let hresp = ui.interact(
             Rect::from_min_max(pos2(tw.max.x, r.min.y), pos2(reset.min.x - 4.0, r.max.y)),
             egui::Id::new(("ec-hdr", g.uid)),
-            Sense::click_and_drag(),
+            if editing.is_some() { Sense::hover() } else { Sense::click_and_drag() },
         );
+        if hresp.double_clicked() {
+            ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
+            ctx.memory_mut(|m| m.request_focus(rename_id.with("field")));
+        }
         hresp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, &g.name));
         app.auto.add(&format!("effectControls.effect.{}", g.uid), r, &g.name);
         if hresp.clicked() || hresp.drag_started() || hresp.secondary_clicked() {
@@ -1175,6 +1200,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             item(ui, "Copy", true, "effect.copy", json!({"layer": lid, "effect": g.uid}));
             item(ui, "Paste", has_clip, "effect.paste", json!({"layers": [lid]}));
             item(ui, "Duplicate", true, "effect.duplicate", json!({"layer": lid, "effect": g.uid}));
+            if ui.button("Rename").clicked() {
+                ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
+                ctx.memory_mut(|m| m.request_focus(rename_id.with("field")));
+                ui.close();
+            }
             ui.separator();
             item(ui, "Reset", true, "effect.reset", json!({"layer": lid, "effect": g.uid}));
             item(ui, "Remove", true, "effect.remove", json!({"layer": lid, "effect": g.uid}));

@@ -656,3 +656,27 @@ fn file_and_text_parameters_have_widgets() {
     assert_eq!(v, KV::Str("left*".into()));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn effect_control_name_can_be_renamed_from_its_header() {
+    let (app, x) = app();
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| app);
+    settle(&mut h);
+    let name = format!("effectControls.effect.{}.name", x.point_fx);
+    let point = rect_of(&h, &name).center();
+    click(&mut h, point);
+    click(&mut h, point);
+    h.run_steps(3);
+    assert!(ids(&h).contains(&format!("effectControls.effect.{}.nameEdit", x.point_fx)));
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    h.event(egui::Event::Text("Speed".into()));
+    h.step();
+    h.key_press(egui::Key::Enter);
+    h.run_steps(3);
+    let current_name = |h: &Harness<'_, EffectcraftApp>| {
+        layer(&h.state().session, x.small).effects().unwrap().groups().find(|g| g.uid == x.point_fx).unwrap().name.clone()
+    };
+    assert_eq!(current_name(&h), "Speed");
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(current_name(&h), "Point Control");
+}

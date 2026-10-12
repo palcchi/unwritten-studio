@@ -308,6 +308,11 @@ fn wgpu_options(backends: Option<eframe::wgpu::Backends>) -> eframe::WgpuConfigu
         if let Some(b) = backends {
             setup.instance_descriptor.backends = b;
         }
+        // Nothing draws or dispatches indirectly, so wgpu's check of indirect arguments only costs
+        // a compute shader when the device is created, one that Metal can't compile on an Intel
+        // Iris Pro: the device is lost and the window never opens.
+        // `WGPU_VALIDATION_INDIRECT_CALL=1` turns the check back on.
+        setup.instance_descriptor.flags = setup.instance_descriptor.flags.difference(eframe::wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL).with_env();
         setup.device_descriptor = std::sync::Arc::new(|adapter| eframe::wgpu::DeviceDescriptor {
             label: Some("EffectCraft device"),
             required_limits: device_limits(adapter.limits()),
@@ -442,6 +447,18 @@ mod tests {
     }
 
     /// The window's device never asks for more than the adapter offers (#198).
+    #[test]
+    fn the_window_instance_skips_indirect_call_validation() {
+        if std::env::var_os("WGPU_VALIDATION_INDIRECT_CALL").is_some() {
+            return;
+        }
+        let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = super::wgpu_options(None).wgpu_setup else {
+            panic!("the default setup creates its own instance");
+        };
+        // Intel Metal can't compile the validation's compute shader, and the device is lost.
+        assert!(!setup.instance_descriptor.flags.contains(eframe::wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL));
+    }
+
     #[test]
     fn device_limits_fit_the_adapter() {
         use eframe::wgpu::Limits;

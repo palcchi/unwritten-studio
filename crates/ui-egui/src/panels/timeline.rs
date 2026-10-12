@@ -3980,6 +3980,8 @@ mod tests {
         let n_keys = app.ui.timeline.reveal_props.len();
         assert_eq!(app.ui.timeline.reveal, vec!["props"]);
         assert!(n_keys >= 1);
+        let bx = app.session.state.selected_layers[0].0;
+        app.session.execute("prop.set", json!({"layer": bx, "path": "effects/#1/blurriness", "value": 12})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
         assert!(app.ui.timeline.reveal_props.len() > n_keys, "UU reveals modified properties too");
     }
@@ -4007,9 +4009,14 @@ mod tests {
         let at = |n: &str| rows.iter().position(|r| r == n).unwrap();
         assert_eq!(rows[at("Plate") + 1].trim(), "Scale", "{rows:?}");
         assert_eq!(rows[at("Box") + 1].trim(), "Position", "{rows:?}");
-        // UU (modified), then U later: Box shows its keyframed properties only again.
+        // UU (modified): the effect's changed parameter only, under the effect twirled open.
+        // Then U later: Box shows its keyframed properties only again.
+        app.session.execute("prop.set", json!({"layer": bx, "path": "effects/#1/blurriness", "value": 12})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
-        assert!(labels(&app).iter().any(|r| r.trim() == ">Gaussian Blur"), "UU shows the effect");
+        let rows = labels(&app);
+        let fx = rows.iter().position(|r| r.trim().ends_with("Gaussian Blur")).unwrap_or_else(|| panic!("UU shows the effect: {rows:?}"));
+        assert_eq!(rows[fx + 1].trim(), "Blurriness", "{rows:?}");
+        assert!(!rows.iter().any(|r| r.trim() == "Blur Dimensions"), "unchanged parameters stay hidden: {rows:?}");
         app.last_reveal = Some(("keyframes".into(), -10.0));
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
         app.last_reveal = Some(("keyframes".into(), -10.0));

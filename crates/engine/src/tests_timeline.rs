@@ -814,6 +814,27 @@ fn modified_reveal_takes_in_options_and_layer_styles() {
     assert_eq!(modified(&mut s, light), ["/lightOptions/intensity"]);
 }
 
+/// UU shows the parameters of an effect that differ from a new instance's, not the whole effect:
+/// a just-applied effect shows nothing, and a reset parameter goes again.
+#[test]
+fn modified_reveal_shows_changed_effect_parameters_only() {
+    let (mut s, l) = setup();
+    s.execute("layer.select", json!({"layers": [l]})).unwrap();
+    s.execute("effect.apply", json!({"effect": "ec.blur.gaussian"})).unwrap();
+    let modified = |s: &mut Session| -> Vec<String> {
+        let r = s.execute("anim.reveal", json!({"kind": "modified"})).unwrap();
+        r["props"].as_array().unwrap().iter().filter_map(|p| p["prop"].as_u64()).map(|u| path_of(s, l, u)).collect()
+    };
+    assert!(modified(&mut s).is_empty(), "{:?}", modified(&mut s));
+    s.execute("prop.set", json!({"layer": l, "path": "effects/#1/blurriness", "value": 12})).unwrap();
+    assert_eq!(modified(&mut s), ["/effects/ec.blur.gaussian/blurriness"]);
+    // Keyframed at its default value: animated, so still shown.
+    s.execute("prop.set", json!({"layer": l, "path": "effects/#1/blurriness", "value": 0})).unwrap();
+    assert!(modified(&mut s).is_empty(), "{:?}", modified(&mut s));
+    s.execute("prop.toggleAnimation", json!({"layer": l, "path": "effects/#1/blurriness"})).unwrap();
+    assert_eq!(modified(&mut s), ["/effects/ec.blur.gaussian/blurriness"]);
+}
+
 /// Enable Time Remapping on a layer extended past its source's end (its last frame frozen) puts
 /// the end key at the source's end, not at the extended out point (#290).
 #[test]

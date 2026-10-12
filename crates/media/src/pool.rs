@@ -589,12 +589,17 @@ impl Inner {
             // Files on disk are read in place (the index, then samples on demand) rather than
             // whole; in-memory files (`add_bytes`) and wasm32 builds open from bytes.
             let in_memory = lock(&self.files).contains_key(&**path);
-            let in_place = if in_memory { None } else { crate::stream::open_source(std::path::Path::new(&**path)) };
+            let file = std::path::Path::new(&**path);
+            let in_place = if in_memory { None } else { crate::stream::open_source(file) };
+            let in_place = in_place.map(|src| {
+                let turn = crate::stream::movie_header(file).map_or(Orientation::NoTransforms, |h| crate::probe::video_turn(&h));
+                src.map(|src| (src, turn))
+            });
             let opened = in_place.unwrap_or_else(|| {
                 self.read(path).and_then(|bytes| {
                     let name = std::path::Path::new(&**path).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
                     let turn = crate::probe::video_turn(&bytes);
-                filmcraft_codecs::open_bytes(&name, bytes).map(|src| (src, turn)).map_err(MediaError::from)
+                    filmcraft_codecs::open_bytes(&name, bytes).map(|src| (src, turn)).map_err(MediaError::from)
                 })
             });
             match opened {

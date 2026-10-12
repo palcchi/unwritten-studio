@@ -85,6 +85,57 @@ pub(crate) fn open_source(_path: &Path) -> Option<Result<SharedSource>> {
     None
 }
 
+/// The leading `ftyp` and the `moov` box of an ISO-BMFF movie on disk (all a track's display
+/// matrix needs), without reading the samples: top-level box headers are walked with positional
+/// reads. `None` when the file isn't ISO-BMFF or its `moov` is missing or implausibly large.
+#[cfg(any(unix, windows))]
+pub(crate) fn movie_header(path: &Path) -> Option<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    const MAX_MOOV: u64 = 64 << 20;
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let mut out = Vec::new();
+    let mut pos = 0u64;
+    for _ in 0..4096 {
+        if pos.checked_add(8)? > len {
+            return None;
+        }
+        f.seek(SeekFrom::Start(pos)).ok()?;
+        let mut h = [0u8; 16];
+        f.read_exact(&mut h[..8]).ok()?;
+        let kind = [h[4], h[5], h[6], h[7]];
+        let mut size = u64::from(u32::from_be_bytes([h[0], h[1], h[2], h[3]]));
+        if size == 1 {
+            f.read_exact(&mut h[8..16]).ok()?;
+            size = u64::from_be_bytes([h[8], h[9], h[10], h[11], h[12], h[13], h[14], h[15]]);
+        } else if size == 0 {
+            size = len - pos;
+        }
+        if size < 8 || pos.checked_add(size)? > len {
+            return None;
+        }
+        if kind == *b"ftyp" || kind == *b"moov" {
+            if size > MAX_MOOV {
+                return None;
+            }
+            f.seek(SeekFrom::Start(pos)).ok()?;
+            let mut b = vec![0u8; usize::try_from(size).ok()?];
+            f.read_exact(&mut b).ok()?;
+            out.extend_from_slice(&b);
+            if kind == *b"moov" {
+                return Some(out);
+            }
+        }
+        pos += size;
+    }
+    None
+}
+
+#[cfg(not(any(unix, windows)))]
+pub(crate) fn movie_header(_path: &Path) -> Option<Vec<u8>> {
+    None
+}
+
 /// Probing in place: the opened container when `path` is a movie/audio container a reader opener
 /// handles and nothing probed before containers (stills, layered and vector documents, 3D models)
 /// claims it. `None`: probe the whole file's bytes as before.

@@ -6,9 +6,9 @@ use std::mem::ManuallyDrop;
 use std::sync::Arc;
 
 use boa_engine::{Context, JsNativeError, JsResult, JsString, JsValue, NativeFunction, Source, js_string};
+use effectcraft_engine::history::History;
 use effectcraft_engine::project::Project;
 use effectcraft_engine::{ScriptRequest, Session};
-use effectcraft_engine::history::History;
 use serde_json::{Value as J, json};
 
 const PRELUDE: &str = include_str!("prelude.js");
@@ -267,13 +267,7 @@ fn native_undo(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
 
 /// Fold every command in a group into a single bounded-history entry, even if the
 /// oldest intermediate undo state was trimmed before the group ended.
-pub(crate) fn collapse(
-    s: &mut Session,
-    name: &str,
-    snap: &Arc<Project>,
-    prior: &History,
-    saved: &Arc<Project>,
-) {
+pub(crate) fn collapse(s: &mut Session, name: &str, snap: &Arc<Project>, prior: &History, saved: &Arc<Project>) {
     let h = &mut s.history;
     if let Some(start) = h.undo.iter().rposition(|(_, p)| Arc::ptr_eq(p, snap)) {
         // The group is short enough that its opening snapshot is still in history.
@@ -369,9 +363,7 @@ fn check_access(s: &Session, path: &str, write: bool) -> Result<std::path::PathB
 /// Encode a binary script string as bytes, without silently corrupting code points outside
 /// the one-byte range supported by ExtendScript's BINARY encoding.
 fn binary_bytes(data: &str) -> Result<Vec<u8>, String> {
-    data.chars()
-        .map(|c| u8::try_from(c as u32).map_err(|_| format!("BINARY encoding cannot represent U+{:04X}", c as u32)))
-        .collect()
+    data.chars().map(|c| u8::try_from(c as u32).map_err(|_| format!("BINARY encoding cannot represent U+{:04X}", c as u32))).collect()
 }
 
 /// `__file(op, path, data)`: text and one-byte-per-character BINARY reads/writes,

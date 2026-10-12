@@ -731,7 +731,6 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-
 #[test]
 fn binary_file_io_preserves_all_byte_values() {
     let dir = std::env::temp_dir().join(format!("ec-script-binary-{}", std::process::id()));
@@ -746,26 +745,29 @@ fn binary_file_io_preserves_all_byte_values() {
     s.prefs.scripting.allow_scripts_write_files = true;
     let q = |p: &std::path::Path| serde_json::to_string(&p.to_string_lossy()).unwrap();
 
-    let read = ok(&mut s, &format!(
-        "var f = new File({}); f.encoding = 'BINARY'; f.open('r'); var data = f.read(); f.close(); [data.length, data.charCodeAt(0), data.charCodeAt(6), data.charCodeAt(7)]",
-        q(&src)
-    ));
+    let read = ok(
+        &mut s,
+        &format!(
+            "var f = new File({}); f.encoding = 'BINARY'; f.open('r'); var data = f.read(); f.close(); [data.length, data.charCodeAt(0), data.charCodeAt(6), data.charCodeAt(7)]",
+            q(&src)
+        ),
+    );
     assert_eq!(read.result, json!([9, 0x89, 0x80, 0xff]));
 
-    ok(&mut s, &format!(
-        "var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0, 127, 128, 255, 10)); f.close();",
-        q(&dst)
-    ));
+    ok(
+        &mut s,
+        &format!(
+            "var f = new File({}); f.encoding = 'BINARY'; f.open('w'); f.write(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0, 127, 128, 255, 10)); f.close();",
+            q(&dst)
+        ),
+    );
     assert_eq!(std::fs::read(&dst).unwrap(), original);
 
     let copy = ok(&mut s, &format!("new File({}).copy({})", q(&src), q(&copied)));
     assert_eq!(copy.result, json!(true));
     assert_eq!(std::fs::read(&copied).unwrap(), original);
 
-    ok(&mut s, &format!(
-        "var f = new File({}); f.encoding = 'BINARY'; f.open('a'); f.write(String.fromCharCode(0xfe)); f.close();",
-        q(&dst)
-    ));
+    ok(&mut s, &format!("var f = new File({}); f.encoding = 'BINARY'; f.open('a'); f.write(String.fromCharCode(0xfe)); f.close();", q(&dst)));
     assert_eq!(std::fs::read(&dst).unwrap(), [original.as_slice(), &[0xfe]].concat());
 
     let invalid = run_code(
@@ -784,10 +786,7 @@ fn script_undo_uses_stable_after_effects_command_id() {
     assert_eq!(lookup.result, json!(16));
     // ID 16 used to index an unrelated command as the registry grew. It must
     // undo the preceding layer creation rather than dispatching by position.
-    let r = ok(
-        &mut s,
-        "var c = app.project.items.addComp('Undo ID', 100, 100, 1, 1, 24); c.layers.addNull(); app.executeCommand(16); c.numLayers",
-    );
+    let r = ok(&mut s, "var c = app.project.items.addComp('Undo ID', 100, 100, 1, 1, 24); c.layers.addNull(); app.executeCommand(16); c.numLayers");
     assert_eq!(r.result, json!(0));
     assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 0);
     // Lookup of other command names still uses the existing registry.
@@ -801,10 +800,7 @@ fn long_script_undo_group_counts_as_one_level() {
     ok(&mut s, "var c = app.project.items.addComp('Long Undo', 100, 100, 1, 1, 24); c.layers.addNull();");
     assert_eq!(s.history.undo.len(), 2);
     // More edits than the history cap must still be one undoable group.
-    ok(
-        &mut s,
-        "var c = app.project.item(1); app.beginUndoGroup('Forty layers'); for (var i = 0; i < 40; i++) c.layers.addNull(); app.endUndoGroup();",
-    );
+    ok(&mut s, "var c = app.project.item(1); app.beginUndoGroup('Forty layers'); for (var i = 0; i < 40; i++) c.layers.addNull(); app.endUndoGroup();");
     assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 41);
     assert_eq!(s.history.undo.len(), 3);
     assert_eq!(s.history.undo[2].0, "Forty layers");
@@ -828,11 +824,7 @@ fn script_remove_keys_batches_a_range_as_one_edit() {
     s.undo();
     let restored = ok(&mut s, "app.project.item(1).layer(1).transform.rotation.numKeys");
     assert_eq!(restored.result, json!(5));
-    let invalid = run_code(
-        &mut s,
-        "app.project.item(1).layer(1).transform.rotation.removeKeys(0, 2)",
-        "remove-keys-range.jsx",
-    );
+    let invalid = run_code(&mut s, "app.project.item(1).layer(1).transform.rotation.removeKeys(0, 2)", "remove-keys-range.jsx");
     assert!(invalid.error.is_some());
 }
 
@@ -983,8 +975,14 @@ fn script_text_path_options_expose_after_effects_match_names() {
     assert_eq!(
         r.result,
         json!([
-            ["ADBE Text Path", "ADBE Text Reverse Path", "ADBE Text Perpendicular To Path",
-             "ADBE Text Force Align Path", "ADBE Text First Margin", "ADBE Text Last Margin"],
+            [
+                "ADBE Text Path",
+                "ADBE Text Reverse Path",
+                "ADBE Text Perpendicular To Path",
+                "ADBE Text Force Align Path",
+                "ADBE Text First Margin",
+                "ADBE Text Last Margin"
+            ],
             "ADBE Text Path",
             "ADBE Text Perpendicular To Path"
         ])

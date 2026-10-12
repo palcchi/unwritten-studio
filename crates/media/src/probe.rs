@@ -18,7 +18,10 @@ pub fn probe(path: impl AsRef<Path>) -> Result<Footage> {
     let path = path.as_ref();
     // A movie is read in place (its index), not loaded whole.
     if let Some(src) = crate::stream::probe_source(path) {
-        return Ok(footage_from_info(&path.to_string_lossy(), src?.info()));
+        let mut f = footage_from_info(&path.to_string_lossy(), src?.info());
+        let turn = crate::stream::movie_header(path).map_or(Orientation::NoTransforms, |h| video_turn(&h));
+        turn_footage(&mut f, turn);
+        return Ok(f);
     }
     let bytes = std::fs::read(path).map_err(|e| MediaError::Io(format!("{}: {e}", path.display())))?;
     if crate::MODEL_EXTENSIONS.contains(&ext_of(path).as_str()) {
@@ -94,14 +97,18 @@ pub fn probe_bytes(path: &str, bytes: Arc<[u8]>) -> Result<Footage> {
     let turn = video_turn(&bytes);
     let src = filmcraft_codecs::open_bytes(&name, bytes)?;
     let mut f = footage_from_info(path, src.info());
-    // The size as displayed: a movie shot with the camera on its side trades width and height.
+    turn_footage(&mut f, turn);
+    Ok(f)
+}
+
+/// The size as displayed: a movie shot with the camera on its side trades width and height.
+fn turn_footage(f: &mut Footage, turn: Orientation) {
     if swaps_sides(turn) {
         std::mem::swap(&mut f.width, &mut f.height);
         if f.pixel_aspect > 0.0 {
             f.pixel_aspect = 1.0 / f.pixel_aspect;
         }
     }
-    Ok(f)
 }
 
 pub(crate) fn footage_from_info(path: &str, info: &filmcraft_media::MediaInfo) -> Footage {

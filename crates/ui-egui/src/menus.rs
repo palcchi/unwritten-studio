@@ -561,6 +561,7 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         }
         "view.fit" => {
             app.ui.viewer.zoom = None;
+            app.ui.viewer.fit_up_to_100 = false;
             app.ui.viewer.pan = [0.0, 0.0];
             return Ok(Value::Null);
         }

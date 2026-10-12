@@ -2131,6 +2131,15 @@ mod tests {
             ("comp.activateRecent", "Shift+Escape"),
             ("keys.deselectAll", "Shift+F2"),
             ("keys.deselectAll", "Cmd+Alt+Shift+A"),
+            ("layer.extendSelectionNext", "Cmd+Shift+ArrowDown"),
+            ("layer.moveInToStart", "Alt+Home"),
+            ("layer.moveEarlier", "Alt+PageUp"),
+            ("layer.moveLater10", "Alt+Shift+PageDown"),
+            ("layer.stretchInToTime", "Cmd+Shift+,"),
+            ("layer.stretchOutToTime", "Cmd+Alt+,"),
+            ("layer.mask.selectNext", "Alt+`"),
+            ("layer.mask.selectPrevious", "Alt+Shift+`"),
+            ("layer.castsShadows", "Alt+Shift+C"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }

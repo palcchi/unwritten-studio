@@ -23,6 +23,12 @@ fn secs(s: &Session) -> f64 {
     s.time().seconds()
 }
 
+fn span(s: &Session, id: u64) -> (f64, f64) {
+    let c = s.active_comp().unwrap();
+    let l = c.layers.iter().find(|l| l.id.0 == id).unwrap();
+    (l.in_point.seconds(), l.out_point.seconds())
+}
+
 #[test]
 fn time_goes_to_the_work_area_and_to_in_and_out_points() {
     let (mut s, ids) = session([(1.0, 3.0), (2.0, 6.0), (0.0, 10.0)]);
@@ -106,4 +112,107 @@ fn keyframes_and_properties_deselect_but_layers_stay() {
     s.execute("keys.deselectAll", json!({})).unwrap();
     assert!(s.state.selected_keys.is_empty() && s.state.selected_props.is_empty());
     assert_eq!(s.state.selected_layers.len(), 1);
+}
+
+#[test]
+fn selection_extends_through_the_stack() {
+    let (mut s, ids) = session([(0.0, 10.0); 3]);
+    s.execute("layer.select", json!({"layers": [ids[0]]})).unwrap();
+    s.execute("layer.extendSelectionNext", json!({})).unwrap();
+    s.execute("layer.extendSelectionNext", json!({})).unwrap();
+    let mut sel: Vec<u64> = s.state.selected_layers.iter().map(|l| l.0).collect();
+    sel.sort();
+    let mut all = ids.clone();
+    all.sort();
+    assert_eq!(sel, all);
+    // At the end of the stack the selection stays.
+    s.execute("layer.extendSelectionNext", json!({})).unwrap();
+    assert_eq!(s.state.selected_layers.len(), 3);
+    s.execute("layer.select", json!({"layers": [ids[2]]})).unwrap();
+    s.execute("layer.extendSelectionPrevious", json!({})).unwrap();
+    assert_eq!(s.state.selected_layers.len(), 2);
+    assert!(s.state.selected_layers.iter().any(|l| l.0 == ids[1]));
+}
+
+#[test]
+fn layers_move_to_the_comp_ends_and_by_ten_frames() {
+    let (mut s, ids) = session([(1.0, 3.0), (2.0, 6.0), (0.0, 10.0)]);
+    s.execute("layer.select", json!({"layers": [ids[0], ids[1]]})).unwrap();
+    s.execute("layer.moveInToStart", json!({})).unwrap();
+    assert_eq!((span(&s, ids[0]), span(&s, ids[1])), ((0.0, 2.0), (0.0, 4.0)));
+    s.execute("layer.moveOutToEnd", json!({})).unwrap();
+    assert_eq!((span(&s, ids[0]), span(&s, ids[1])), ((8.0, 10.0), (6.0, 10.0)));
+    s.execute("layer.moveEarlier10", json!({})).unwrap();
+    let (a, b) = span(&s, ids[0]);
+    assert!((a - (8.0 - 10.0 / 30.0)).abs() < 1e-9 && (b - (10.0 - 10.0 / 30.0)).abs() < 1e-9);
+    s.execute("layer.moveLater10", json!({})).unwrap();
+    assert_eq!(span(&s, ids[0]), (8.0, 10.0));
+    s.execute("layer.moveLater", json!({})).unwrap();
+    s.execute("layer.moveEarlier", json!({})).unwrap();
+    assert_eq!(span(&s, ids[0]), (8.0, 10.0));
+    // The unselected layer never moved.
+    assert_eq!(span(&s, ids[2]), (0.0, 10.0));
+    for (id, keys) in [
+        ("layer.moveEarlier", "Alt+PageUp"),
+        ("layer.moveLater", "Alt+PageDown"),
+        ("layer.moveEarlier10", "Alt+Shift+PageUp"),
+        ("layer.moveLater10", "Alt+Shift+PageDown"),
+    ] {
+        assert_eq!(crate::find_command(id).and_then(|c| c.shortcut), Some(keys));
+    }
+}
+
+#[test]
+fn in_and_out_points_stretch_to_the_current_time() {
+    let (mut s, ids) = session([(2.0, 4.0), (0.0, 10.0), (0.0, 10.0)]);
+    let stretch = |s: &Session| s.active_comp().unwrap().layers.iter().find(|l| l.id.0 == ids[0]).unwrap().stretch;
+    s.execute("layer.select", json!({"layers": [ids[0]]})).unwrap();
+    // In point to 1 s: the Out point holds, the layer is 3 s long at 150 %.
+    s.execute("time.set", json!({"time": 1.0})).unwrap();
+    s.execute("layer.stretchInToTime", json!({})).unwrap();
+    assert_eq!(span(&s, ids[0]), (1.0, 4.0));
+    assert!((stretch(&s) - 150.0).abs() < 1e-6);
+    // Out point to 7 s: the In point holds, 6 s at 300 %.
+    s.execute("time.set", json!({"time": 7.0})).unwrap();
+    s.execute("layer.stretchOutToTime", json!({})).unwrap();
+    assert_eq!(span(&s, ids[0]), (1.0, 7.0));
+    assert!((stretch(&s) - 300.0).abs() < 1e-6);
+    // A current time before the In point can't be the Out point: the layer is left alone.
+    s.execute("time.set", json!({"time": 0.5})).unwrap();
+    s.execute("layer.stretchOutToTime", json!({})).unwrap();
+    assert_eq!(span(&s, ids[0]), (1.0, 7.0));
+    assert!(s.execute("layer.timeStretch", json!({"to": "middle"})).is_err());
+}
+
+#[test]
+fn masks_are_stepped_through_and_wrap() {
+    let (mut s, ids) = session([(0.0, 10.0); 3]);
+    s.execute("layer.select", json!({"layers": [ids[0]]})).unwrap();
+    assert!(s.execute("layer.mask.selectNext", json!({})).is_err());
+    for _ in 0..3 {
+        s.execute("layer.addMask", json!({"shape": "rect"})).unwrap();
+    }
+    s.execute("keys.deselectAll", json!({})).unwrap();
+    let step = |s: &mut Session, cmd: &str| s.execute(cmd, json!({})).unwrap()["index"].as_u64().unwrap();
+    assert_eq!(step(&mut s, "layer.mask.selectNext"), 1);
+    assert_eq!(step(&mut s, "layer.mask.selectNext"), 2);
+    assert_eq!(step(&mut s, "layer.mask.selectNext"), 3);
+    assert_eq!(step(&mut s, "layer.mask.selectNext"), 1);
+    assert_eq!(step(&mut s, "layer.mask.selectPrevious"), 3);
+    assert_eq!(s.state.selected_props.len(), 1);
+    s.execute("keys.deselectAll", json!({})).unwrap();
+    assert_eq!(step(&mut s, "layer.mask.selectPrevious"), 3);
+}
+
+#[test]
+fn casts_shadows_toggles_on_3d_layers_only() {
+    let (mut s, ids) = session([(0.0, 10.0); 3]);
+    s.execute("layer.select", json!({"layers": [ids[0], ids[1]]})).unwrap();
+    assert!(s.execute("layer.castsShadows", json!({})).is_err());
+    s.execute("layer.setSwitch", json!({"layers": [ids[0]], "switch": "threeD", "value": true})).unwrap();
+    let before = s.execute("layer.castsShadows", json!({})).unwrap();
+    assert_eq!(before["layers"], json!([ids[0]]));
+    let after = s.execute("layer.castsShadows", json!({})).unwrap();
+    assert_ne!(before["castsShadows"], after["castsShadows"]);
+    assert_eq!(s.execute("layer.castsShadows", json!({"value": true})).unwrap()["castsShadows"], json!(true));
 }

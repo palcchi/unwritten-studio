@@ -340,6 +340,25 @@ var __attr = {
   },
 };
 
+// Layers, property groups and properties are callable, like After Effects: `layer("Effects")`,
+// `fx(1)` and `effect("Slider Control")("Slider")` are `.property(...)`. A Proxy is callable
+// only around a function, so the object's state moves onto an arrow function (no `prototype`;
+// its own `name` and `length` are removed so the object's getters show) with the object's
+// prototype; `instanceof` and attribute access are unchanged.
+function __callable(o) {
+  var f = () => undefined;
+  delete f.name;
+  delete f.length;
+  Object.setPrototypeOf(f, Object.getPrototypeOf(o));
+  var keys = Object.keys(o);
+  for (var i = 0; i < keys.length; i++) f[keys[i]] = o[keys[i]];
+  var self = new Proxy(f, {
+    get: __attr.get,
+    apply: function (t, thisArg, args) { return self.property(args[0]); },
+  });
+  return self;
+}
+
 // 1-based collections with `[n]` access.
 var __coll = {
   get: function (t, k, r) {
@@ -604,7 +623,7 @@ function PropertyGroup(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "PropertyGroup";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 PropertyGroup.prototype = Object.create(PropertyBase.prototype);
 PropertyGroup.prototype.constructor = PropertyGroup;
@@ -647,7 +666,7 @@ function MaskPropertyGroup(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "MaskPropertyGroup";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 MaskPropertyGroup.prototype = Object.create(PropertyGroup.prototype);
 MaskPropertyGroup.prototype.constructor = MaskPropertyGroup;
@@ -679,7 +698,7 @@ function Property(layer, uid) {
   this.__layer = layer;
   this.__uid = uid;
   this.__kind = "Property";
-  return new Proxy(this, __attr);
+  return __callable(this);
 }
 Property.prototype = Object.create(PropertyBase.prototype);
 Property.prototype.constructor = Property;
@@ -981,7 +1000,7 @@ Layer.prototype = {
     this.__comp = comp;
     this.__id = id;
     this.__kind = kind;
-    return new Proxy(this, __attr);
+    return __callable(this);
   },
   __info: function () { return __get("layer", { comp: this.__comp, layer: this.__id }); },
   __p: function (o) {

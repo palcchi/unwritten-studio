@@ -899,6 +899,19 @@ Property.prototype.property = function () { return null; };
     return __call(id, params);
   };
   P.removeKey = function (i) { this.__keyCmd(i, "keys.delete"); };
+  // EffectCraft extension: remove an inclusive range with one engine edit instead of
+  // cloning the project for every removed key. Indices are one-based as in removeKey.
+  P.removeKeys = function (first, last) {
+    var keys = this.__keys();
+    first = __num(first, "first key");
+    last = __num(last, "last key");
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first || last > keys.length)
+      throw __err("removeKeys: key range is out of bounds");
+    var targets = [];
+    for (var i = first; i <= last; i++)
+      targets.push({ layer: this.__layer.__id, prop: this.__uid, index: i - 1 });
+    return __call("keys.delete", { comp: this.__layer.__comp, __keys: targets });
+  };
   P.keyInInterpolationType = function (i) { return KeyframeInterpolationType[this.__key(i).inInterp]; };
   P.keyOutInterpolationType = function (i) { return KeyframeInterpolationType[this.__key(i).outInterp]; };
   // Values that don't interpolate (checkboxes, popups, text) only hold.

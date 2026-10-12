@@ -815,3 +815,23 @@ fn long_script_undo_group_counts_as_one_level() {
     s.undo();
     assert_eq!(s.project.comp(ItemId(1)).unwrap().layers.len(), 0);
 }
+
+#[test]
+fn script_remove_keys_batches_a_range_as_one_edit() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        "var c = app.project.items.addComp('Batch Keys', 100, 100, 1, 10, 25); var p = c.layers.addNull().transform.rotation; for (var i = 0; i < 5; i++) p.setValueAtTime(i, i * 10); p.removeKeys(2, 4); [p.numKeys, p.keyTime(1), p.keyTime(2)]",
+    );
+    assert_eq!(o.result, json!([2, 0, 4]));
+    // The entire deletion is one undo step; keys outside the range survive.
+    s.undo();
+    let restored = ok(&mut s, "app.project.item(1).layer(1).transform.rotation.numKeys");
+    assert_eq!(restored.result, json!(5));
+    let invalid = run_code(
+        &mut s,
+        "app.project.item(1).layer(1).transform.rotation.removeKeys(0, 2)",
+        "remove-keys-range.jsx",
+    );
+    assert!(invalid.error.is_some());
+}

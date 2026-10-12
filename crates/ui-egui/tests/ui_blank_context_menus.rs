@@ -226,3 +226,36 @@ fn context_menu_rows_leave_no_gap_between_them() {
     }
     snapshot(&mut h, "project-rows");
 }
+
+/// The layer context menu offers the whole effect palette as an "Effects" submenu (synced with
+/// the Effect menu), between Blending Mode and Arrange; picking an effect applies it.
+#[test]
+fn timeline_layer_context_menu_has_the_effects_submenu_and_applies_an_effect() {
+    let mut h = harness();
+    let layer = h.state_mut().session.execute("layer.newNull", json!({"name": "Null"})).unwrap()["layer"].as_u64().unwrap();
+    h.run_steps(3);
+    let r = rect(&h, &format!("timeline.layer.{layer}.row"));
+    right_click(&mut h, pos2(r.min.x + 210.0, r.center().y));
+    // The palette sits between Blending Mode and Arrange, as After Effects' layer menu does.
+    let blending = h.get_by_label("Blending Mode ⏵").rect();
+    let effects = h.get_by_label("Effects ⏵").rect();
+    let arrange = h.get_by_label("Arrange ⏵").rect();
+    assert!(blending.bottom() <= effects.top() && effects.bottom() <= arrange.top(), "Effects between Blending Mode and Arrange");
+    h.get_by_label("Effects ⏵").click();
+    h.run_steps(3);
+    h.get_by_label("Blur & Sharpen ⏵").click();
+    h.run_steps(3);
+    h.get_by_label("Gaussian Blur").click();
+    h.run_steps(3);
+    let names: Vec<String> = h
+        .state()
+        .session
+        .active_comp()
+        .unwrap()
+        .layer(effectcraft_engine::project::LayerId(layer))
+        .unwrap()
+        .effects()
+        .map(|f| f.groups().map(|g| g.name.clone()).collect())
+        .unwrap_or_default();
+    assert_eq!(names, ["Gaussian Blur"]);
+}

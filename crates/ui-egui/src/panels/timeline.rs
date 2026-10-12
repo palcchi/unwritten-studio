@@ -3579,6 +3579,7 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], vector: bool, action
             }
         })
     });
+    ui.menu_button(crate::i18n::tr("Effects"), |ui| effects_submenu(ui, layers, &mut item));
     ui.menu_button(crate::i18n::tr("Arrange"), |ui| {
         item(ui, "Bring Layer to Front", "layer.arrange", json!({"layers": layers, "to": "front"}));
         item(ui, "Bring Layer Forward", "layer.arrange", json!({"layers": layers, "to": "forward"}));
@@ -3590,6 +3591,31 @@ pub(crate) fn layer_menu(ui: &mut egui::Ui, layers: &[u64], vector: bool, action
     item(ui, "Duplicate", "edit.duplicate", json!({"layers": layers}));
     item(ui, "Split Layer", "edit.splitLayer", json!({"layers": layers}));
     item(ui, "Delete", "edit.clear", json!({"layers": layers}));
+}
+
+/// The layer context menu's Effects submenu: every effect from the registry grouped by category,
+/// in the same order as the Effect menu's palette, so the two stay in sync automatically.
+fn effects_submenu(ui: &mut egui::Ui, layers: &[u64], item: &mut dyn FnMut(&mut egui::Ui, &str, &str, serde_json::Value)) {
+    let mut cats: Vec<(&str, Vec<&'static effectcraft_engine::effects::EffectSpec>)> = Vec::new();
+    for e in effectcraft_engine::effects::all() {
+        match cats.iter_mut().find(|(c, _)| *c == e.category) {
+            Some((_, v)) => v.push(e),
+            None => cats.push((e.category, vec![e])),
+        }
+    }
+    cats.sort_by_key(|(c, _)| c.to_ascii_lowercase());
+    widgets::menu_scroll(ui, |ui| {
+        for (cat, mut fx) in cats {
+            fx.sort_by_key(|e| e.name.to_ascii_lowercase());
+            ui.menu_button(cat, |ui| {
+                widgets::menu_scroll(ui, |ui| {
+                    for e in fx {
+                        item(ui, e.name, "effect.apply", json!({"effect": e.id, "layers": layers}));
+                    }
+                });
+            });
+        }
+    });
 }
 
 fn fmt_num(v: f64, d: usize) -> String {

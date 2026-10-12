@@ -1883,7 +1883,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 // Switches.
                 let sws: [(Icon, bool, &str, bool); 8] = [
                     (Icon::Shy, sw.shy, "shy", true),
-                    (Icon::Collapse, sw.collapse, "collapse", matches!(layer.source, LayerSource::Comp { .. } | LayerSource::Shape | LayerSource::Text)),
+                    (Icon::Collapse, sw.collapse, "collapse", collapse_applies(layer, &app.session.project)),
                     (Icon::Quality, sw.quality == effectcraft_engine::project::Quality::Best, "quality", layer.source.is_av()),
                     (Icon::Fx, sw.effects, "fx", layer.effects().is_some_and(|f| !f.children.is_empty())),
                     (
@@ -3442,6 +3442,19 @@ fn prop_menu(
     item(ui, "essentialGraphics", "Add Property to Essential Graphics", false, "essential.addProperty", json!({"comp": comp.0, "layer": l, "prop": uid}));
 }
 
+/// Whether the Collapse Transformations / Continuously Rasterize switch applies: precomps, shape and text
+/// layers, and vector footage (SVG, PDF, AI, EPS), which the renderer re-rasterizes at the layer's scale.
+fn collapse_applies(layer: &Layer, project: &effectcraft_engine::project::Project) -> bool {
+    match &layer.source {
+        LayerSource::Comp { .. } | LayerSource::Shape | LayerSource::Text => true,
+        LayerSource::Footage { item } => {
+            let kind = project.item(*item).map(|i| &i.kind);
+            matches!(kind, Some(effectcraft_engine::project::ItemKind::Footage(f)) if effectcraft_engine::render::is_vector_footage(f))
+        }
+        _ => false,
+    }
+}
+
 fn layer_context_menu(resp: &egui::Response, layer: &Layer, actions: &mut Vec<(String, serde_json::Value)>) {
     resp.context_menu(|ui| layer_menu(ui, &[layer.id.0], actions));
 }
@@ -3696,6 +3709,24 @@ mod tests {
         assert_eq!(edge_scroll_speed_x(100.0, 500.0, 300.0), 0.0);
         assert!(edge_scroll_speed_x(100.0, 500.0, 501.0) > 0.0 && edge_scroll_speed_x(100.0, 500.0, 99.0) < 0.0);
         assert!(edge_scroll_speed_x(100.0, 500.0, 600.0) > edge_scroll_speed_x(100.0, 500.0, 520.0));
+    }
+
+    /// #957: vector footage gets the Continuously Rasterize switch; raster footage does not.
+    #[test]
+    fn collapse_switch_shows_for_vector_footage_only() {
+        use effectcraft_engine::color::Label;
+        use effectcraft_engine::project::{Footage, ItemKind, Project};
+        let mut p = Project::default();
+        let mut layer_for = |name: &str, codec: &str| {
+            let footage = Footage { path: name.into(), codec: codec.into(), ..Default::default() };
+            let item = p.add_item(name, Label::SeaFoam, None, ItemKind::Footage(footage));
+            let comp = Comp::new(64, 36, effectcraft_engine::time::FrameRate::new(30, 1), Tick::from_seconds_f64(1.0));
+            effectcraft_engine::project::build::layer(&mut p, &comp, name, LayerSource::Footage { item }, (0, 0), None)
+        };
+        let svg = layer_for("logo.svg", "SVG");
+        let png = layer_for("photo.png", "PNG");
+        assert!(collapse_applies(&svg, &p));
+        assert!(!collapse_applies(&png, &p));
     }
 
     /// A comp with two solids; "Box" has an animated Position and a Gaussian Blur.

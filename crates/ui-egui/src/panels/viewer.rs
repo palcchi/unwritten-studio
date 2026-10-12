@@ -1113,6 +1113,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let context_layers: Vec<u64> =
         app.session.state.selected_layers.iter().filter(|id| comp.layer(**id).is_some_and(|l| !l.switches.locked)).map(|id| id.0).collect();
     let mut context_actions = Vec::new();
+    let copy_frame = crate::i18n::label(app, "comp.copyFrame", "Copy Frame to Clipboard");
     resp.context_menu(|ui| {
         let hits = ui.data(|d| d.get_temp::<Vec<(u64, String)>>(menu_hits_id)).unwrap_or_default();
         if !hits.is_empty() {
@@ -1132,6 +1133,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             ui.label(crate::i18n::tr("No unlocked layer selected"));
         } else {
             super::timeline::layer_menu(ui, &context_layers, &mut context_actions);
+        }
+        ui.separator();
+        if ui.button(copy_frame).clicked() {
+            context_actions.push(("comp.copyFrame".to_owned(), serde_json::json!({"comp": cid.0})));
+            ui.close();
         }
     });
     for (id, params) in context_actions {

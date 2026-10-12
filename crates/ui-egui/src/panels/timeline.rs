@@ -3907,6 +3907,28 @@ mod tests {
         assert!(rows.iter().any(|r| r.trim() == ">Transform"), "{rows:?}");
     }
 
+    /// U and UU show Time Remap on a layer with time remapping enabled.
+    #[test]
+    fn u_and_uu_reveal_time_remap() {
+        let mut s = effectcraft_engine::Session::default();
+        let inner = s.execute("comp.new", json!({"name": "Inner", "width": 32, "height": 32, "duration": 2})).unwrap()["comp"].as_u64().unwrap();
+        s.execute("comp.new", json!({"name": "Main", "width": 64, "height": 64, "duration": 4})).unwrap();
+        let nested = s.execute("layer.addItem", json!({"item": inner})).unwrap()["layer"].as_u64().unwrap();
+        let mut app = EffectcraftApp::new(s);
+        let ctx = egui::Context::default();
+        crate::menus::invoke(&mut app, &ctx, "layer.enableTimeRemap", json!({"layers": [nested]})).unwrap();
+        app.session.execute("layer.select", json!({"layers": [nested]})).unwrap();
+        for uu in [false, true] {
+            app.ui.timeline.layer_reveal.clear();
+            app.last_reveal = uu.then(|| ("keyframes".into(), f64::MAX));
+            crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
+            assert_eq!(app.ui.timeline.layer_reveal.get(&nested), Some(&vec!["props".to_string()]), "UU: {uu}");
+            let rows = labels(&app);
+            let at = rows.iter().position(|r| r == "Inner").unwrap();
+            assert_eq!(rows[at + 1].trim(), "Time Remap", "UU: {uu}: {rows:?}");
+        }
+    }
+
     /// Enabling time remapping twirls the layer open on Time Remap (#157); disabling it reveals
     /// nothing.
     #[test]

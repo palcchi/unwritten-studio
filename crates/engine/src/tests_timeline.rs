@@ -712,6 +712,25 @@ fn deleting_time_remap_turns_time_remapping_off() {
     assert_eq!(prop(&s, l, "timeRemap").keys.len(), 1);
 }
 
+/// U (keyframes), the animation reveal and UU (modified) take in Time Remap, which sits at the
+/// top of the layer's tree rather than in a group.
+#[test]
+fn reveal_shortcuts_take_in_time_remap() {
+    let (mut s, l) = precomp_setup();
+    let revealed = |s: &mut Session, kind: &str| -> Vec<u64> {
+        let r = s.execute("anim.reveal", json!({"kind": kind})).unwrap();
+        r["props"].as_array().unwrap().iter().filter(|p| p["layer"] == l).filter_map(|p| p["prop"].as_u64()).collect()
+    };
+    for kind in ["keyframes", "animation", "modified"] {
+        assert!(revealed(&mut s, kind).is_empty(), "{kind}: nothing to reveal before remapping");
+    }
+    s.execute("layer.enableTimeRemap", json!({})).unwrap();
+    let uid = prop(&s, l, "timeRemap").uid;
+    for kind in ["keyframes", "animation", "modified"] {
+        assert_eq!(revealed(&mut s, kind), vec![uid], "{kind}");
+    }
+}
+
 /// Enable Time Remapping on a layer extended past its source's end (its last frame frozen) puts
 /// the end key at the source's end, not at the extended out point (#290).
 #[test]

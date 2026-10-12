@@ -31,6 +31,33 @@ fn layer<'a>(c: &'a Comp, name: &str) -> &'a Layer {
     c.layers.iter().find(|l| l.name == name).unwrap_or_else(|| panic!("no layer {name}"))
 }
 
+/// #1063 (item 8): Source Text retains CR while sourceRectAtTime sees both lines.
+#[test]
+fn carriage_return_source_text_has_multiline_script_bounds() {
+    let mut s = session();
+    let result = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Line breaks", 640, 360, 1, 1, 30);
+        var crDoc = new TextDocument("Line 1\rLine 2");
+        crDoc.font = "Inter";
+        crDoc.fontSize = 40;
+        var lfDoc = new TextDocument("Line 1\nLine 2");
+        lfDoc.font = "Inter";
+        lfDoc.fontSize = 40;
+        var cr = comp.layers.addText(crDoc);
+        var lf = comp.layers.addText(lfDoc);
+        var crRect = cr.sourceRectAtTime(0, false);
+        var lfRect = lf.sourceRectAtTime(0, false);
+        [cr.text.sourceText.value.text, crRect.height, lfRect.height, crRect.width, lfRect.width]
+        "#,
+    );
+    assert_eq!(result.result[0], "Line 1\rLine 2");
+    assert!(result.result[1].as_f64().unwrap() > 40.0);
+    assert_eq!(result.result[1], result.result[2]);
+    assert_eq!(result.result[3], result.result[4]);
+}
+
 #[test]
 fn builds_a_comp_end_to_end() {
     let mut s = session();

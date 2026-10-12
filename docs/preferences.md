@@ -225,3 +225,17 @@ checkpoint after a client restart.
 
 Commands: `file.autoSave` (now), `file.recoveryInfo`, `file.openRecent {index? | path?}`,
 `file.clearRecent`, `file.revert`, `file.incrementAndSave`.
+
+## Logs
+
+The desktop app writes its log records to standard error and to `Logs/effectcraft.log` in the
+config directory. Each launch moves the previous log to `effectcraft.1.log` (and that one to
+`effectcraft.2.log`), so the log of a run that crashed survives the next start; a log stops
+growing at 16 MiB. A launch from the Dock, the Start menu or a launcher has no terminal, so
+attach these files to a bug report. Help ▸ Reveal Logging File shows this run's log (or Help ▸
+Enable Logging's `EffectCraft Log.txt` while that is on, which keeps every EffectCraft record
+across launches).
+
+By default the log has `info` records from EffectCraft and warnings and errors from everything
+else. `RUST_LOG` replaces that with env_logger-style directives: `debug`,
+`warn,effectcraft_render=trace`, `wgpu_core=info`. The control-channel token is never logged.

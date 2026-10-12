@@ -288,7 +288,12 @@ fn enable_logging(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn reveal_log(s: &mut Session, _: &Value) -> Result<Value> {
-    let file = crate::logging::current_file().unwrap_or_else(|| log_file(s));
+    // Enable Logging's file while it is on, else this run's session log.
+    let file = crate::logging::current_file()
+        .filter(|_| crate::logging::is_enabled())
+        .or_else(crate::logging::session_file)
+        .or_else(crate::logging::current_file)
+        .unwrap_or_else(|| log_file(s));
     let path = file.to_string_lossy().to_string();
     let url = super::layer_menu::folder_url(&path);
     s.events.push(Event::OpenUrl(url.clone()));

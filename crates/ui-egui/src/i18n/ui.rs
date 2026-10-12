@@ -525,6 +525,8 @@ const JAPANESE: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "⌘/Ctrl+ドラッグでピンの動きを記録"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {}は次のコマンドで使用中:"),
+    ("Total Offset", "合計オフセット"),
+    ("Per Layer", "レイヤーごと"),
 ];
 
 const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
@@ -1060,6 +1062,8 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("After Effects project", "After Effects 项目"),
     ("Lottie animation", "Lottie 动画"),
     ("Project", "项目"),
+    ("Total Offset", "总偏移"),
+    ("Per Layer", "每个图层"),
 ];
 
 const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
@@ -1590,6 +1594,8 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("After Effects project", "After Effects 專案"),
     ("Lottie animation", "Lottie 動畫"),
     ("Project", "專案"),
+    ("Total Offset", "總偏移"),
+    ("Per Layer", "每個圖層"),
 ];
 
 /// Ukrainian (uk): original translations of the same interface rows as the Chinese catalogs.
@@ -2146,6 +2152,8 @@ const UKRAINIAN: &[(&str, &str)] = &[
     ("After Effects project", "Проєкт After Effects"),
     ("Lottie animation", "Анімація Lottie"),
     ("Project", "Проєкт"),
+    ("Total Offset", "Загальний зсув"),
+    ("Per Layer", "На шар"),
 ];
 
 // Brazilian Portuguese.
@@ -2580,6 +2588,8 @@ const PORTUGUESE: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "⌘/Ctrl+arraste um pino para gravar seu movimento"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {} é usado por:"),
+    ("Total Offset", "Deslocamento total"),
+    ("Per Layer", "Por camada"),
 ];
 
 /// Czech (cs): original translations covering every row in the Chinese panel catalogs.
@@ -3115,6 +3125,8 @@ const CZECH: &[(&str, &str)] = &[
         "Tyto sousední klíčové snímky nelze interpolovat, protože mají různý počet bodů přechodu.",
     ),
     ("Variable fonts only", "Jen proměnná písma"),
+    ("Total Offset", "Celkový posun"),
+    ("Per Layer", "Na vrstvu"),
 ];
 
 #[cfg(test)]

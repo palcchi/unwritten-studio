@@ -1127,16 +1127,59 @@ fn layer_drag_id() -> egui::Id {
 }
 
 /// A keyframe drag in progress: where the pointer started, the grabbed key's comp time
-/// (seconds) and how many frames the selected keys have moved so far.
+/// (seconds), how many frames the selected keys have moved so far and, for a Quick Offset
+/// (Ctrl/Cmd+Alt), how many layers it staggers.
 #[derive(Clone, Copy, Debug)]
 struct KeyDrag {
     origin_x: f32,
     anchor: f64,
     applied: i64,
+    quick: Option<usize>,
 }
 
 fn key_drag_id() -> egui::Id {
     egui::Id::new("tl-key-drag")
+}
+
+/// A Quick Offset drag of selected layer bars (Ctrl/Cmd+Alt, #1012): where the pointer started,
+/// how many layers it staggers and how many frames the last one has moved so far.
+#[derive(Clone, Copy, Debug)]
+struct QuickBar {
+    origin_x: f32,
+    layers: usize,
+    applied: i64,
+}
+
+fn quick_bar_id(layer: LayerId) -> egui::Id {
+    egui::Id::new(("tl-quick-bar", layer.0))
+}
+
+/// How many layers a Quick Offset of `layers` staggers (#1012): the unlocked ones, each once, if
+/// there are at least two.
+fn quick_offset_layers(comp: &Comp, layers: impl IntoIterator<Item = LayerId>) -> Option<usize> {
+    let mut seen: Vec<LayerId> = vec![];
+    for id in layers {
+        if !seen.contains(&id) && comp.layer(id).is_some_and(|l| !l.switches.locked) {
+            seen.push(id);
+        }
+    }
+    (seen.len() >= 2).then_some(seen.len())
+}
+
+/// A Quick Offset's feedback: the last layer's move and the step from one layer to the next.
+fn quick_offset_note(frames: i64, layers: usize) -> String {
+    let per = frames as f64 / layers.saturating_sub(1).max(1) as f64;
+    format!("{}: {:+} f   {}: {:+.2} f", tr("Total Offset"), frames, tr("Per Layer"), per)
+}
+
+/// A Timeline drag's readout by the pointer (After Effects shows it in the Info panel).
+fn drag_tip(ctx: &egui::Context, t: &Tokens, ptr: Pos2, note: String) {
+    let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tl-key-drag-tip")));
+    let g = fg.layout_no_wrap(note, Tokens::ui(11.5), t.text);
+    let r = Rect::from_min_size(ptr + vec2(14.0, 14.0), g.size() + vec2(10.0, 6.0));
+    fg.rect_filled(r, 3.0, t.panel_bg);
+    fg.rect_stroke(r, 3.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
+    fg.galley(r.min + vec2(5.0, 3.0), g, t.text);
 }
 
 /// A switch pressed and dragged over other rows: the switch, the state the press gave it, and
@@ -2126,7 +2169,41 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     layer_context_menu(&body, &comp, layer, &selected, vector_footage_layer(&app.session.project, layer), &mut actions);
                     let drag_key = format!("bar-{}", layer.id.0);
+                    // Ctrl/Cmd+Alt dragging a selected bar: Quick Offset (#1012), chosen as the
+                    // drag starts. The last selected layer moves by whole frames with the pointer.
+                    let mods = ui.input(|i| i.modifiers);
+                    if body.drag_started()
+                        && is_sel
+                        && mods.command
+                        && mods.alt
+                        && let Some(n) = quick_offset_layers(&comp, selected.iter().copied())
+                        && let Some(p) = ctx.input(|i| i.pointer.press_origin())
+                    {
+                        ctx.data_mut(|d| d.insert_temp(quick_bar_id(layer.id), QuickBar { origin_x: p.x, layers: n, applied: 0 }));
+                    }
+                    let quick = ctx.data(|d| d.get_temp::<QuickBar>(quick_bar_id(layer.id)));
+                    if let Some(mut q) = quick {
+                        if body.dragged()
+                            && let Some(ptr) = ctx.input(|i| i.pointer.latest_pos())
+                        {
+                            let frames = (((ptr.x - q.origin_x) as f64 / pps) / fd).round() as i64;
+                            if frames != q.applied {
+                                q.applied = frames;
+                                ctx.data_mut(|d| d.insert_temp(quick_bar_id(layer.id), q));
+                                let merge = format!("bar-quick-{}", layer.id.0);
+                                actions.push(("layer.quickOffset".into(), json!({"delta": frames as f64 * fd, "merge": merge, "fromStart": true})));
+                            }
+                            drag_tip(&ctx, &t, ptr, quick_offset_note(q.applied, q.layers));
+                        }
+                        if body.drag_stopped() {
+                            ctx.data_mut(|d| d.remove::<QuickBar>(quick_bar_id(layer.id)));
+                            ui_actions.push(UiAct::EndMerge);
+                        }
+                    }
                     for (resp, kind) in [(&body, "move"), (&lin, "in"), (&lout, "out")] {
+                        if kind == "move" && quick.is_some() {
+                            continue;
+                        }
                         if resp.dragged() {
                             let acc_id = egui::Id::new(("bar-acc", layer.id.0, kind));
                             let mut acc: f32 = ctx.data(|d| d.get_temp(acc_id).unwrap_or(0.0));
@@ -2564,6 +2641,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         let kr = Rect::from_center_size(c, vec2(12.0, 14.0));
                         let kresp = ui.interact(kr, egui::Id::new(("key", uid, k.time.0)), Sense::click_and_drag());
                         app.auto.add(&format!("timeline.key.{uid}.{}", fr.frame_at(ct)), kr, &format!("{} key", prop.name));
+                        // Exact (layer-time ticks): keys a Quick Offset puts on subframes can share a frame.
+                        app.auto.add(&format!("timeline.keyAt.{uid}.{}", k.time.0), kr, &format!("{} key", prop.name));
                         let mods = ui.input(|i| i.modifiers);
                         let this_key = json!({"keys": [{"layer": layer.id.0, "prop": uid, "time": k.time.seconds()}], "selectProperties": true});
                         if kresp.clicked() && mods.command {
@@ -2658,7 +2737,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         });
                         // Alt-drag the first or last key of a selected group: scale the group in time.
                         if kresp.drag_started()
-                            && ui.input(|i| i.modifiers.alt)
+                            && mods.alt
+                            && !mods.command
                             && let Some(c) = app.session.active_comp_arc()
                         {
                             super::graph_tools::alt_scale_begin(app, &ctx, &c, ct.seconds());
@@ -2671,7 +2751,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                             && !super::graph_tools::alt_scale_active(&ctx)
                             && let Some(p) = ctx.input(|i| i.pointer.press_origin())
                         {
-                            ctx.data_mut(|d| d.insert_temp(key_drag_id(), KeyDrag { origin_x: p.x, anchor: ct.seconds(), applied: 0 }));
+                            // Ctrl/Cmd+Alt: Quick Offset of the selected keys' layers (#1012).
+                            let quick = (mods.command && mods.alt && ks).then(|| quick_offset_layers(&comp, sel_keys.iter().map(|k| k.layer))).flatten();
+                            ctx.data_mut(|d| d.insert_temp(key_drag_id(), KeyDrag { origin_x: p.x, anchor: ct.seconds(), applied: 0, quick }));
                         }
                     }
                 }
@@ -2875,7 +2957,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
                 let total = ((target - kd.anchor) / fd).round() as i64;
                 if total != kd.applied {
-                    actions.push(("keys.move".into(), json!({"delta": (total - kd.applied) as f64 * fd, "merge": "key-drag"})));
+                    actions.push(match kd.quick {
+                        Some(_) => ("keys.quickOffset".into(), json!({"delta": total as f64 * fd, "merge": "key-quick-offset", "fromStart": true})),
+                        None => ("keys.move".into(), json!({"delta": (total - kd.applied) as f64 * fd, "merge": "key-drag"})),
+                    });
                     kd.applied = total;
                     ctx.data_mut(|d| d.insert_temp(key_drag_id(), kd));
                 }
@@ -2883,13 +2968,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 // Where the grabbed key is and how far the keys moved (After Effects shows this
                 // in the Info panel).
                 let at = Tick::from_seconds_f64(kd.anchor + kd.applied as f64 * fd);
-                let note = format!("{}   {:+} f", super::timecode(&app.session, &comp, at), kd.applied);
-                let fg = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tl-key-drag-tip")));
-                let g = fg.layout_no_wrap(note, Tokens::ui(11.5), t.text);
-                let r = Rect::from_min_size(ptr + vec2(14.0, 14.0), g.size() + vec2(10.0, 6.0));
-                fg.rect_filled(r, 3.0, t.panel_bg);
-                fg.rect_stroke(r, 3.0, Stroke::new(1.0, t.field_border), StrokeKind::Inside);
-                fg.galley(r.min + vec2(5.0, 3.0), g, t.text);
+                let note = match kd.quick {
+                    Some(n) => quick_offset_note(kd.applied, n),
+                    None => format!("{}   {:+} f", super::timecode(&app.session, &comp, at), kd.applied),
+                };
+                drag_tip(&ctx, &t, ptr, note);
                 app.ui.status = format!("Keyframe at {}", super::timecode(&app.session, &comp, at));
             }
             None => {

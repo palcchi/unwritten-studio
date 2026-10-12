@@ -375,6 +375,41 @@ fn defaults_have_no_conflicts_and_match_the_menus() {
     assert!(t.bindables.len() > 500);
 }
 
+/// Each Fast Previews and Show Channel mode is a command with a default key.
+#[test]
+fn fast_previews_and_show_channel_modes_have_default_keys() {
+    let s = Session::default();
+    let t = s.shortcuts();
+    for (id, key) in [
+        ("view.fastPreviews.off", "Cmd+Alt+1"),
+        ("view.fastPreviews.adaptive", "Cmd+Alt+2"),
+        ("view.fastPreviews.draft", "Cmd+Alt+3"),
+        ("view.fastPreviews.fastDraft", "Cmd+Alt+4"),
+        ("view.fastPreviews.wireframe", "Cmd+Alt+5"),
+        ("view.channel.red", "Alt+1"),
+        ("view.channel.green", "Alt+2"),
+        ("view.channel.blue", "Alt+3"),
+        ("view.channel.alpha", "Alt+4"),
+        ("view.channel.redColorized", "Alt+Shift+1"),
+        ("view.channel.greenColorized", "Alt+Shift+2"),
+        ("view.channel.blueColorized", "Alt+Shift+3"),
+        ("view.channel.rgbStraight", "Alt+Shift+4"),
+    ] {
+        assert_eq!(t.shortcut_of(id, &json!(null)), Some(key), "{id}");
+    }
+    assert!(t.all_conflicts().is_empty(), "{:?}", t.all_conflicts());
+    // The commands set their mode; a channel's key again is RGB.
+    let mut s = Session::default();
+    s.execute("view.fastPreviews.fastDraft", json!({})).unwrap();
+    assert_eq!(s.state.viewer.fast_previews.id(), "fastDraft");
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("red", true));
+    s.execute("view.channel.green", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("green", false));
+    s.execute("view.channel.green", json!({})).unwrap();
+    assert_eq!(s.state.viewer.channel.id(), "rgb");
+}
+
 /// Cmd+Left / Cmd+Right Arrow step a frame like Page Up / Page Down (Shift: 10 frames).
 #[test]
 fn cmd_arrows_step_frames_like_page_keys() {

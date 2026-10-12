@@ -757,15 +757,17 @@ impl Session {
         true
     }
 
-    /// Drop selections that no longer exist.
+    /// Drop selections that no longer exist. Every comp keeps its own layer selection (After
+    /// Effects), so selections in comps that are not open survive; only ids that are gone from
+    /// every comp are dropped (#1001).
     pub fn sanitize_state(&mut self) {
         let p = self.project.clone();
         self.state.open_comps.retain(|c| p.comp(*c).is_some());
         if self.state.active_comp.is_some_and(|c| p.comp(c).is_none()) {
             self.state.active_comp = self.state.open_comps.first().copied();
         }
-        if let Some(c) = self.active_comp() {
-            let ids: Vec<LayerId> = c.layers.iter().map(|l| l.id).collect();
+        {
+            let ids: Vec<LayerId> = p.comps().flat_map(|(_, c)| c.layers.iter().map(|l| l.id)).collect();
             self.state.selected_layers.retain(|l| ids.contains(l));
             self.state.selected_props.retain(|(l, _)| ids.contains(l));
             self.state.selected_keys.retain(|k| ids.contains(&k.layer));

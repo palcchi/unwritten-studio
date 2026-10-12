@@ -770,10 +770,7 @@ impl Inner {
                 {
                     return Err(MediaError::Decode(format!("{path}: {why}")));
                 }
-                let loaded = match crate::still_format(path, &bytes) {
-                    Some(fmt) => image::load_from_memory_with_format(&bytes, fmt),
-                    None => crate::probe::load_oriented(&bytes),
-                };
+                let loaded = crate::probe::load_oriented(&bytes, crate::still_format(path, &bytes));
                 let img = match loaded {
                     Ok(img) => img,
                     // A multi-layer OpenEXR file without an unnamed RGB layer: its colour layer.

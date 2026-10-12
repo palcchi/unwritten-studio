@@ -221,10 +221,15 @@ pub(crate) fn swaps_sides(o: Orientation) -> bool {
 
 /// Decode a still the way it is meant to be seen: its Exif orientation (a camera held sideways, a
 /// mirrored scan) is applied to the pixels, as image viewers do. A file without
-/// the tag, or with a broken one, decodes as stored.
-pub(crate) fn load_oriented(bytes: &[u8]) -> image::ImageResult<image::DynamicImage> {
+/// the tag, or with a broken one, decodes as stored. `fmt`: the format when the file's extension
+/// decides it (Targa has no signature to guess from), else guessed from the bytes.
+pub(crate) fn load_oriented(bytes: &[u8], fmt: Option<image::ImageFormat>) -> image::ImageResult<image::DynamicImage> {
     use image::ImageDecoder;
-    let mut dec = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?.into_decoder()?;
+    let reader = match fmt {
+        Some(fmt) => image::ImageReader::with_format(std::io::Cursor::new(bytes), fmt),
+        None => image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?,
+    };
+    let mut dec = reader.into_decoder()?;
     let orientation = dec.orientation().unwrap_or(Orientation::NoTransforms);
     let mut img = image::DynamicImage::from_decoder(dec)?;
     img.apply_orientation(orientation);

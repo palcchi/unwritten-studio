@@ -943,7 +943,9 @@ fn dpx_stills_match_ffmpeg() {
         assert!(effectcraft_media::is_importable(&p));
         let f = probe(&p).expect(pf);
         assert_eq!(f.kind, FootageKind::Still);
-        assert_eq!((f.width, f.height, f.codec.as_str()), (250, 100, codec), "{pf}");
+        assert_eq!((f.width, f.height), (250, 100), "{pf}");
+        // Some ffmpeg builds state the transfer (", linear"), which the codec name then carries.
+        assert!(f.codec == codec || f.codec.starts_with(&format!("{codec}, ")), "{pf}: {}", f.codec);
         assert_eq!(f.alpha, if alpha { AlphaMode::Straight } else { AlphaMode::Ignore }, "{pf}");
         let img = MediaPool::new().frame_at(&f, Tick::ZERO).expect(pf);
         let want = ffmpeg_rgba(&p, !codec.contains("8-bit"));

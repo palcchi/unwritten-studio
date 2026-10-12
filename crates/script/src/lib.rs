@@ -106,3 +106,5 @@ mod tests_ui_more;
 // #760: `$.evalFile` and `BridgeTalk`.
 #[cfg(test)]
 mod tests_evalfile;
+#[cfg(test)]
+mod tests_ui_mouse;

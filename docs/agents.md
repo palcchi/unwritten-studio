@@ -513,7 +513,10 @@ Scripts that build ScriptUI windows publish them to the session; agents drive th
 3. `scriptui.click {"widget": "ok"}` presses a button / toggles a checkbox / picks a radio button or
    tab; `scriptui.set {"widget": "#4", "value": "Shot_"}` types into edit text, moves a slider or
    picks a list item (index or text); `scriptui.close {"result": 2}` closes. Controls are addressed
-   by id, `#id`, `properties.name` or text; `window` can be omitted when one window is open. Each
+   by id, `#id`, `properties.name` or text; `window` can be omitted when one window is open.
+   `scriptui.mouse {"widget": "pad", "type": "mousedown", "x": 10, "y": 20}` sends a mouse event
+   (`mousedown`, `mouseup`, `mousemove`, `mouseover`, `mouseout`, `click`; `x`/`y` relative to the
+   control, `button`, `detail`, `shiftKey`…) to the script's `addEventListener` listeners. Each
    returns the handler run's `{ok, output, error}`.
 
 A dialog's `show()` waits for the user: the `script.run` / `file.runScript` reply carries

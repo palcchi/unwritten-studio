@@ -1375,6 +1375,19 @@ impl Project {
     pub fn find_by_name(&self, name: &str) -> Option<&Item> {
         self.items.values().find(|i| i.name == name)
     }
+    /// A numbered name for a copy of `base` that no project item has (Edit ▸ Duplicate): its
+    /// trailing number is dropped and the lowest free one from 2 is added (`Comp 1` → `Comp 2`,
+    /// `Name` → `Name 2`, then `Name 3`). Items for which `ignore` holds don't count.
+    pub fn numbered_item_name(&self, base: &str, ignore: impl Fn(&Item) -> bool) -> String {
+        let stem = base.trim_end_matches(|c: char| c.is_ascii_digit()).trim_end();
+        let taken = |n: &str| self.items.values().any(|i| i.name == n && !ignore(i));
+        (2u64..).map(|k| format!("{stem} {k}")).find(|n| !taken(n)).unwrap_or_default()
+    }
+    /// `base` when no project item has that name, else the next free numbered name as
+    /// [`Project::numbered_item_name`] gives it. Items for which `ignore` holds don't count.
+    pub fn unique_item_name(&self, base: &str, ignore: impl Fn(&Item) -> bool) -> String {
+        if self.items.values().any(|i| i.name == base && !ignore(i)) { self.numbered_item_name(base, ignore) } else { base.to_string() }
+    }
     pub fn folder_named(&self, name: &str) -> Option<ItemId> {
         self.items.values().find(|i| i.is_folder() && i.name == name).map(|i| i.id)
     }

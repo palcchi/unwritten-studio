@@ -291,13 +291,13 @@ fn native_task(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
     Ok(JsValue::from(id))
 }
 
-fn project_dir(s: &Session) -> Option<String> {
+pub(crate) fn project_dir(s: &Session) -> Option<String> {
     let p = s.path.as_deref()?;
     std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string())
 }
 
 /// Lexically normalized absolute path (`a/./b/../c` → `a/c`).
-fn normalize(p: &str) -> std::path::PathBuf {
+pub(crate) fn normalize(p: &str) -> std::path::PathBuf {
     use std::path::{Component, Path, PathBuf};
     let path = Path::new(p);
     let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
@@ -587,7 +587,23 @@ pub(crate) fn outcome(output: Vec<String>, result: Result<J, ScriptError>) -> Ou
 /// events reach the host through [`crate::dispatch_ui`]); palettes and panels keep their host
 /// alive for their handlers. The Script Console (and the web build) run inline, where dialogs
 /// don't block.
+///
+/// ExtendScript's `#include` / `#includepath` are inlined first, and errors point at the file
+/// and line they came from ([`crate::include`]).
 pub fn run(session: &mut Session, req: &ScriptRequest) -> Outcome {
+    let expanded = match crate::include::expand(session, req.code, req.name) {
+        Ok(x) => x,
+        Err(e) => return Outcome { error: Some(e), ..Default::default() },
+    };
+    let Some(x) = expanded else { return run_expanded(session, req) };
+    let mut out = run_expanded(session, &ScriptRequest { code: &x.code, name: req.name, console: req.console });
+    if let Some(e) = out.error.as_mut() {
+        x.locate(e);
+    }
+    out
+}
+
+fn run_expanded(session: &mut Session, req: &ScriptRequest) -> Outcome {
     if let Err(message) = check_nesting(req.code) {
         return Outcome { error: Some(ScriptError { message, file: req.name.into(), ..Default::default() }), ..Default::default() };
     }

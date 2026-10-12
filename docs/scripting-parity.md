@@ -22,7 +22,7 @@ our own scripts; no real-world script library has been run against both apps.
 | ScriptUI | Dialogs, palettes, dockable panels, resource strings, `onDraw` / ScriptUIGraphics | Same, dockable panels reopen at launch | good | `ui_scriptui`, `tests_ui*` |
 | Scripts menu, ScriptUI Panels folder | yes | yes | same | [plugins.md](plugins.md) |
 | Startup / Shutdown folders | yes | not run | missing | plugins.md |
-| `#include`, `#target` directives | yes | a script starting with one doesn't parse | missing | plugins.md; common in real scripts |
+| `#include`, `#target` directives | yes | `#include` / `//@include` / `#includepath` inline files relative to the including script (once each, nested at most 32 deep, under the scripts' file gate; errors name the included file and line); `#target`, `#targetengine`, `#strict` are ignored | good | `tests_include.rs` (#759); installed scripts and panels have no folder of their own, so they include from the project's folder or absolute paths |
 | `.jsxbin` | yes | no | out of scope | No public specification |
 | Keyboard shortcuts for scripts | yes | no | missing | plugins.md |
 | Command-line rendering `aerender` | yes | `effectcraft-cli render`, `script`, `exec` | same purpose | `apps/effectcraft-cli` |

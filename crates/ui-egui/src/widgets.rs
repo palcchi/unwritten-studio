@@ -586,6 +586,27 @@ pub fn menu_scroll<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
     egui::ScrollArea::vertical().max_height(max_h).min_scrolled_height(max_h).show(ui, add).inner
 }
 
+/// egui's menu style with no gap between the rows: the gap the app's item spacing left between
+/// two entries highlighted neither and swallowed a click there. The rows grow by that gap, so a
+/// menu keeps its size.
+pub fn menu_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.spacing.interact_size.y += style.spacing.item_spacing.y;
+    style.spacing.item_spacing.y = 0.0;
+}
+
+/// `resp`'s context menu in the app's [`menu_style`] (its submenus inherit it).
+pub fn context_menu(resp: &Response, add_contents: impl FnOnce(&mut Ui)) -> Option<egui::InnerResponse<()>> {
+    egui::Popup::context_menu(resp).style(menu_style).show(add_contents)
+}
+
+/// A button opening a menu in the app's [`menu_style`], for one outside the menu bar.
+pub fn menu_button<'a, R>(ui: &mut Ui, atoms: impl egui::IntoAtoms<'a>, add_contents: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<Option<R>> {
+    let config = egui::containers::menu::MenuConfig::new().style(menu_style);
+    let (response, inner) = egui::containers::menu::MenuButton::new(atoms).config(config).ui(ui, add_contents);
+    egui::InnerResponse::new(inner.map(|i| i.inner), response)
+}
+
 /// Whether a [`popup_menu`] is open (build its options only then: they can be long).
 pub fn popup_is_open(ui: &Ui, id: egui::Id) -> bool {
     ui.data(|d| d.get_temp(id.with("open")).unwrap_or(false))

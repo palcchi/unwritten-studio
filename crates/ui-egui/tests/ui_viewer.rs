@@ -1571,6 +1571,52 @@ fn timeline_twirl_arrows_open_layers_and_groups() {
 }
 
 #[test]
+fn command_clicking_a_group_twirl_opens_its_whole_tree() {
+    // Cmd-click (or Alt-click) the arrow of Effects, Contents, Masks…: every group under it
+    // twirls open with it, and closed again with it.
+    let mut h = harness();
+    let id = layer_id(&h, "Box");
+    h.state_mut().session.execute("effect.apply", json!({"effect": "Lumetri Color", "layers": [id]})).unwrap();
+    fn walk(g: &effectcraft_engine::project::PropGroup, out: &mut Vec<u64>) {
+        for sg in g.groups() {
+            out.push(sg.uid);
+            walk(sg, out);
+        }
+    }
+    let (effects, inner, transform) = {
+        let comp = h.state().session.active_comp().unwrap().clone();
+        let props = &comp.layer(LayerId(id)).unwrap().props;
+        let fx = props.sub("effects").unwrap();
+        let mut inner = vec![];
+        walk(fx, &mut inner);
+        (fx.uid, inner, props.sub("transform").unwrap().uid)
+    };
+    assert!(inner.len() > 1, "the effect has twirl-down groups of its own");
+    let at = rect(&h, &format!("timeline.layer.{id}.twirl")).center();
+    click(&mut h, at);
+    let at = rect(&h, &format!("timeline.group.{effects}.twirl")).center();
+    let cmd_click = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.input_mut().events.push(Event::ModifiersChanged(egui::Modifiers::COMMAND));
+        h.input_mut().events.push(Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::COMMAND });
+            h.step();
+        }
+        h.input_mut().events.push(Event::ModifiersChanged(Default::default()));
+        h.step();
+    };
+    cmd_click(&mut h);
+    let open = h.state().ui.timeline.open_groups.clone();
+    assert!(open.contains(&effects), "Effects twirls open");
+    assert!(inner.iter().all(|u| open.contains(u)), "and so does everything under it");
+    assert!(!open.contains(&transform), "other groups stay as they were");
+    cmd_click(&mut h);
+    let open = h.state().ui.timeline.open_groups.clone();
+    assert!(!open.contains(&effects) && !inner.iter().any(|u| open.contains(u)), "Cmd-click again closes the tree");
+}
+
+#[test]
 fn timeline_rename_commits_on_enter_and_on_click_away() {
     // The rename field (double-click a name, or Enter on a selected layer) used to grab the
     // keyboard every frame: clicking away or Enter could never leave it. (The harness can't

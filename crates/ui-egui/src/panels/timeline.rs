@@ -2177,7 +2177,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 if *has_children {
                     let tw = Rect::from_center_size(pos2(indent, cy), vec2(13.0, 13.0));
                     if widgets::twirl(ui, tw, *open, egui::Id::new(("gtw", uid)), &t).clicked() {
-                        ui_actions.push(UiAct::ToggleGroup(*uid));
+                        // Alt/Cmd-click twirls the whole tree under the group (as on a layer).
+                        ui_actions.push(UiAct::ToggleGroup(layer.id.0, *uid, ui.input(|i| i.modifiers.alt || i.modifiers.command)));
                     }
                     app.auto.add(&format!("timeline.group.{uid}.twirl"), tw, name);
                 }
@@ -2246,7 +2247,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                         actions.push(("prop.select".into(), json!({"layer": layer.id.0, "prop": uid, "selectKeys": false})));
                         actions.push(("window.panel".into(), json!({"panel": "EffectControls"})));
                     } else {
-                        ui_actions.push(UiAct::ToggleGroup(*uid));
+                        ui_actions.push(UiAct::ToggleGroup(layer.id.0, *uid, false));
                     }
                 }
             }
@@ -3103,9 +3104,22 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                 }
             }
-            UiAct::ToggleGroup(uid) => {
-                if !app.ui.timeline.open_groups.remove(&uid) {
-                    app.ui.timeline.open_groups.insert(uid);
+            UiAct::ToggleGroup(layer, uid, all) => {
+                let tl = &mut app.ui.timeline;
+                let open = !tl.open_groups.remove(&uid);
+                if open {
+                    tl.open_groups.insert(uid);
+                }
+                if all && let Some(g) = comp.layer(LayerId(layer)).and_then(|l| find_group(&l.props, uid)) {
+                    let mut uids = vec![];
+                    walk_groups(g, &mut uids);
+                    for u in uids {
+                        if open {
+                            tl.open_groups.insert(u);
+                        } else {
+                            tl.open_groups.remove(&u);
+                        }
+                    }
                 }
             }
             UiAct::SetTime(tt) => app.session.set_time(tt),
@@ -3229,7 +3243,8 @@ fn layer_cells(
 
 enum UiAct {
     ToggleLayer(u64, bool),
-    ToggleGroup(u64),
+    /// Layer, group uid, and whether the whole tree under the group follows.
+    ToggleGroup(u64, u64, bool),
     SetTime(Tick),
     EndMerge,
     /// Composition Settings on its 3D Renderer tab.
@@ -3241,6 +3256,11 @@ fn walk_groups(g: &PropGroup, out: &mut Vec<u64>) {
         out.push(sg.uid);
         walk_groups(sg, out);
     }
+}
+
+/// The group `uid` anywhere under `g`.
+fn find_group(g: &PropGroup, uid: u64) -> Option<&PropGroup> {
+    g.groups().find_map(|sg| if sg.uid == uid { Some(sg) } else { find_group(sg, uid) })
 }
 
 /// A stroke's Dashes "+" / "−" buttons (add or remove a Dash/Gap pair).

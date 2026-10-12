@@ -194,7 +194,7 @@ fn execute_file(s: &mut Session, p: &Value) -> Result<Value> {
         s.events.push(Event::Frontend { command: "app.confirmExecute".into(), params: json!({"path": path}) });
         return Ok(json!({"needsConfirmation": path}));
     }
-    let url = format!("file://{}", path.replace(' ', "%20"));
+    let url = super::layer_menu::file_url(path);
     s.events.push(Event::OpenUrl(url));
     Ok(json!({"opened": path}))
 }
@@ -620,4 +620,26 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("comp.vr.extractCubemap", "Extract Cubemap...", ["Composition", "VR"], None, "{comp?, faceSize?}", has_comp, extract_cubemap),
         query!("help.systemInfo", "System Information", "{}", |s, _| Ok(system_report(s))),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// `File.execute()` opens the file as a well-formed `file://` URL (spaces, `#`, `%`).
+    #[test]
+    fn execute_file_opens_an_encoded_file_url() {
+        let dir = std::env::temp_dir().join(format!("ec-exec-url-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("run #1 100%.txt");
+        std::fs::write(&f, "x").unwrap();
+        let mut s = crate::Session::default();
+        s.execute("prefs.set", json!({"key": "scripting.allowScriptsWriteFiles", "value": true})).unwrap();
+        s.drain_events();
+        s.execute("file.executeFile", json!({"path": f.to_string_lossy(), "confirmed": true})).unwrap();
+        let expected = super::super::layer_menu::file_url(&f.to_string_lossy());
+        assert!(expected.ends_with("/run%20%231%20100%25.txt"), "{expected}");
+        assert!(s.drain_events().iter().any(|e| matches!(e, crate::Event::OpenUrl(u) if *u == expected)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

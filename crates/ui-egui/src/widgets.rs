@@ -194,6 +194,24 @@ pub fn keep_focus(ctx: &egui::Context, field: &Response, text: &str) {
     }
 }
 
+/// Put the keyboard on a dialog's first text field the frame the dialog opens, with its whole
+/// `text` selected, so typing replaces the value without a click. Unlike [`keep_focus`] the
+/// focus is the user's afterwards.
+pub fn focus_on_open(ctx: &egui::Context, field: &Response, text: &str) {
+    // The dialog is open in consecutive passes; a gap means it was closed and opened again.
+    let shown = field.id.with("focus-on-open-pass");
+    let pass = ctx.cumulative_pass_nr();
+    let previous = ctx.data_mut(|d| {
+        let previous = d.get_temp::<u64>(shown);
+        d.insert_temp(shown, pass);
+        previous
+    });
+    if previous.is_none_or(|p| p.saturating_add(1) < pass) {
+        select_all(ctx, field.id, text);
+        field.request_focus();
+    }
+}
+
 /// Select all of the text field `id`'s `text`, so typing replaces it.
 pub fn select_all(ctx: &egui::Context, id: egui::Id, text: &str) {
     let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();

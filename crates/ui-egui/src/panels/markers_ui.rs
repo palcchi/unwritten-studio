@@ -139,6 +139,7 @@ pub fn dialog(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             ui.end_row();
             ui.label(tr("Comment:"));
             let r = ui.add(egui::TextEdit::multiline(&mut d.comment).desired_rows(3).desired_width(320.0));
+            crate::widgets::focus_on_open(ui.ctx(), &r, &d.comment);
             app.auto.add("dialog.marker.comment", r.rect, "Comment");
             ui.end_row();
             ui.label(tr("Chapter:"));

@@ -4050,6 +4050,32 @@ mod tests {
         }
     }
 
+    /// U shows Time Remap while remapping is enabled even after its keys are deleted (#990):
+    /// enabling remapping is itself the modification.
+    #[test]
+    fn u_reveals_keyless_time_remap() {
+        let mut s = effectcraft_engine::Session::default();
+        let inner = s.execute("comp.new", json!({"name": "Inner", "width": 32, "height": 32, "duration": 2})).unwrap()["comp"].as_u64().unwrap();
+        s.execute("comp.new", json!({"name": "Main", "width": 64, "height": 64, "duration": 4})).unwrap();
+        let nested = s.execute("layer.addItem", json!({"item": inner})).unwrap()["layer"].as_u64().unwrap();
+        let mut app = EffectcraftApp::new(s);
+        let ctx = egui::Context::default();
+        crate::menus::invoke(&mut app, &ctx, "layer.enableTimeRemap", json!({"layers": [nested]})).unwrap();
+        let uid = app.session.active_comp().unwrap().layer(LayerId(nested)).unwrap().props.prop("timeRemap").unwrap().uid;
+        for _ in 0..2 {
+            let t = app.session.active_comp().unwrap().layer(LayerId(nested)).unwrap().props.prop("timeRemap").unwrap().keys[0].time.seconds();
+            app.session.execute("keys.select", json!({"keys": [{"layer": nested, "prop": uid, "time": t}]})).unwrap();
+            app.session.execute("edit.clear", json!({})).unwrap();
+        }
+        assert!(app.session.active_comp().unwrap().layer(LayerId(nested)).unwrap().props.prop("timeRemap").unwrap().keys.is_empty());
+        app.session.execute("layer.select", json!({"layers": [nested]})).unwrap();
+        crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
+        assert_eq!(app.ui.timeline.layer_reveal.get(&nested), Some(&vec!["props".to_string()]));
+        let rows = labels(&app);
+        let at = rows.iter().position(|r| r == "Inner").unwrap();
+        assert_eq!(rows[at + 1].trim(), "Time Remap", "{rows:?}");
+    }
+
     /// Enabling time remapping twirls the layer open on Time Remap (#157); disabling it reveals
     /// nothing.
     #[test]

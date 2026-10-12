@@ -750,6 +750,31 @@ fn reveal_shortcuts_take_in_time_remap() {
     }
 }
 
+/// U (and the animation reveal) still show Time Remap after its keys are gone: enabling
+/// remapping is itself the modification, so a keyless remap must not vanish from U (#990).
+#[test]
+fn reveal_shortcuts_take_in_keyless_time_remap() {
+    let (mut s, l) = precomp_setup();
+    let revealed = |s: &mut Session, kind: &str| -> Vec<u64> {
+        let r = s.execute("anim.reveal", json!({"kind": kind})).unwrap();
+        r["props"].as_array().unwrap().iter().filter(|p| p["layer"] == l).filter_map(|p| p["prop"].as_u64()).collect()
+    };
+    s.execute("layer.enableTimeRemap", json!({})).unwrap();
+    let uid = prop(&s, l, "timeRemap").uid;
+    assert_eq!(prop(&s, l, "timeRemap").keys.len(), 2);
+    // Delete both keys one at a time; remapping stays enabled.
+    for _ in 0..2 {
+        let t = prop(&s, l, "timeRemap").keys[0].time.seconds();
+        s.execute("keys.select", json!({"keys": [{"layer": l, "prop": uid, "time": t}]})).unwrap();
+        s.execute("edit.clear", json!({})).unwrap();
+    }
+    let tr = prop(&s, l, "timeRemap");
+    assert!(tr.keys.is_empty(), "remapping is still enabled, with no keys");
+    for kind in ["keyframes", "animation", "modified"] {
+        assert_eq!(revealed(&mut s, kind), vec![uid], "{kind}");
+    }
+}
+
 /// UU on a layer nothing was changed on shows nothing, whatever its kind: cameras, lights, text
 /// and nulls have their own Transform defaults, and Separate Dimensions keeps the comp centre.
 #[test]

@@ -3546,8 +3546,14 @@ fn value_editor(
     // With several layers selected the edit applies to all of them (#491): a scrub by the same
     // change, a typed value as it is.
     let scrub = ui.ctx().dragged_id().is_some() && ui.input(|i| i.pointer.is_decidedly_dragging());
+    // Proportional Scrubbing (After Effects 26.2): Ctrl+Alt (Cmd+Opt) spreads the change over the
+    // selected layers by selection order, the first unchanged and the last by all of it.
+    let proportional = scrub && ui.input(|i| widgets::proportional_scrub(i.modifiers));
     let set = |actions: &mut Vec<(String, serde_json::Value)>, v: serde_json::Value| {
-        actions.push(("prop.set".into(), json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub})))
+        actions.push((
+            "prop.set".into(),
+            json!({"layer": layer.id.0, "prop": uid, "value": v, "merge": merge, "selected": true, "offset": scrub, "proportional": proportional}),
+        ))
     };
     let is_3d = layer.is_3d();
     let mut x = at.x;
@@ -3602,8 +3608,8 @@ fn value_editor(
                 dims.push(r);
                 if let Some(nv) = nv {
                     let mut nc = c.clone();
-                    // Alt edits one value of a linked pair.
-                    let shown = if linked && !ui.input(|i| i.modifiers.alt) { n.min(c.len()) } else { 1 };
+                    // Alt edits one value of a linked pair (Ctrl+Alt is a proportional scrub).
+                    let shown = if linked && !ui.input(|i| i.modifiers.alt && !widgets::proportional_scrub(i.modifiers)) { n.min(c.len()) } else { 1 };
                     let from = if shown == 1 { d } else { 0 };
                     for (e, v) in widgets::constrained(c.get(from..from + shown).unwrap_or_default(), d - from, nv).into_iter().enumerate() {
                         if let Some(slot) = nc.get_mut(from + e) {

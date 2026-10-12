@@ -121,7 +121,7 @@ pub fn hot_number_at(
         let mult = ui.input(|i| {
             if i.modifiers.shift {
                 10.0
-            } else if i.modifiers.command {
+            } else if i.modifiers.command && !proportional_scrub(i.modifiers) {
                 0.1
             } else {
                 1.0
@@ -136,6 +136,13 @@ pub fn hot_number_at(
         ui.data_mut(|d| d.insert_temp(editing_id, format!("{value:.decimals$}")));
     }
     (rect, out, resp.drag_stopped())
+}
+
+/// Ctrl+Alt (Cmd+Opt on macOS) held while scrubbing hot text: After Effects' Proportional
+/// Scrubbing, which spreads the change over the selected layers by selection order. Ctrl alone
+/// still scrubs finely and Shift by tens.
+pub fn proportional_scrub(m: egui::Modifiers) -> bool {
+    m.command && m.alt
 }
 
 /// [`hot_number_at`] for a whole number (an angle's revolutions): a drag steps it once every

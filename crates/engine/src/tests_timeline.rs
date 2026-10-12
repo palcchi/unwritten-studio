@@ -883,3 +883,66 @@ fn property_edits_apply_to_every_selected_layer() {
     s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
     assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
 }
+
+/// #770: Proportional Scrubbing (After Effects 26.2, Ctrl+Alt / Cmd+Opt scrub). The change is
+/// spread over the selected layers by selection order (not stacking order): the first keeps its
+/// value, the last takes all of it, the one between half; whichever layer is scrubbed. One undo
+/// step; a keyframed property gets a key at the current time, the unchanged first layer none.
+#[test]
+fn proportional_scrub_spreads_the_change_by_selection_order() {
+    let (mut s, a) = setup();
+    let b = s.execute("layer.newSolid", json!({"color": "#ff0000", "width": 50, "height": 50})).unwrap()["layer"].as_u64().unwrap();
+    let c = s.execute("layer.newSolid", json!({"color": "#00ff00", "width": 50, "height": 50})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("prop.set", json!({"layer": b, "path": "transform/rotation", "value": 20})).unwrap();
+    // Selection order c, a, b.
+    s.execute("layer.select", json!({"layers": [c]})).unwrap();
+    s.execute("layer.select", json!({"layers": [a], "add": true})).unwrap();
+    s.execute("layer.select", json!({"layers": [b], "toggle": true})).unwrap();
+    let rot = |s: &Session, l: u64| prop(s, l, "transform/rotation").value.as_f64();
+    let uid = prop(&s, a, "transform/rotation").uid;
+
+    // Scrub layer a (the middle one) by +10 a frame, three frames: the UI sends a's shown value
+    // plus the drag.
+    let undo = s.history.undo.len();
+    for _ in 0..3 {
+        let v = rot(&s, a) + 10.0;
+        s.execute("prop.set", json!({"layer": a, "prop": uid, "value": v, "selected": true, "offset": true, "proportional": true, "merge": "scrub-r"}))
+            .unwrap();
+    }
+    assert_eq!(rot(&s, c), 0.0, "the first selected layer keeps its value");
+    assert_eq!(rot(&s, a), 15.0, "the middle one moves by half");
+    assert_eq!(rot(&s, b), 50.0, "the last one moves by the whole change");
+    assert_eq!(s.history.undo.len(), undo + 1, "one undo step for the scrub");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!((rot(&s, c), rot(&s, a), rot(&s, b)), (0.0, 0.0, 20.0));
+
+    // Vectors and keyframes: Position animated on every layer, scrubbed on the last layer at 1 s.
+    for l in [a, b, c] {
+        s.execute("prop.set", json!({"layer": l, "path": "transform/position", "value": [100, 100], "time": 0.0})).unwrap();
+        s.execute("prop.toggleAnimation", json!({"layer": l, "path": "transform/position"})).unwrap();
+    }
+    s.execute("time.set", json!({"time": 1.0})).unwrap();
+    let pos_uid = prop(&s, b, "transform/position").uid;
+    s.execute("prop.set", json!({"layer": b, "prop": pos_uid, "value": [140, 80], "selected": true, "offset": true, "proportional": true})).unwrap();
+    let at1 = |s: &Session, l: u64| {
+        let p = prop(s, l, "transform/position");
+        (p.keys.len(), p.value_at(effectcraft_time::Tick::from_seconds_f64(1.0)).components()[..2].to_vec())
+    };
+    assert_eq!(at1(&s, c), (1, vec![100.0, 100.0]), "no key on the first selected layer");
+    assert_eq!(at1(&s, a), (2, vec![120.0, 90.0]));
+    assert_eq!(at1(&s, b), (2, vec![140.0, 80.0]));
+
+    // Without `proportional` a scrub still moves them all by the same change.
+    s.execute("prop.set", json!({"layer": a, "prop": uid, "value": 5, "selected": true, "offset": true})).unwrap();
+    assert_eq!((rot(&s, c), rot(&s, a), rot(&s, b)), (5.0, 5.0, 25.0));
+}
+
+#[test]
+fn proportional_share_is_linear_in_selection_order() {
+    use crate::commands::prop::proportional_share;
+    assert_eq!((0..5).map(|i| proportional_share(i, 5)).collect::<Vec<_>>(), [0.0, 0.25, 0.5, 0.75, 1.0]);
+    // One layer (or a bad count) takes the whole change; an index past the end the last share.
+    assert_eq!(proportional_share(0, 1), 1.0);
+    assert_eq!(proportional_share(0, 0), 1.0);
+    assert_eq!(proportional_share(usize::MAX, 3), 1.0);
+}

@@ -44,7 +44,7 @@ pub mod panels_cmds;
 pub(crate) mod path_nulls;
 mod paths;
 mod project_items;
-mod prop;
+pub(crate) mod prop;
 mod prop_groups;
 mod proxy;
 pub mod puppet;

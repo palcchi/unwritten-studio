@@ -15,6 +15,36 @@ use web_time::Instant;
 
 use crate::{Job, RenderQuality, out};
 
+/// GPU frames rendered at once by default, the same cap as the export scheduler's
+/// `MAX_INFLIGHT` (3 hides readback and recording without stacking up working textures).
+pub(crate) const GPU_INFLIGHT_DEFAULT: usize = 3;
+/// Overrides [`GPU_INFLIGHT_DEFAULT`]: a whole number of frames, at least 1.
+pub(crate) const GPU_INFLIGHT_ENV: &str = "EFFECTCRAFT_GPU_INFLIGHT";
+
+/// GPU frames in flight from the `EFFECTCRAFT_GPU_INFLIGHT` value: a positive whole number, or
+/// the default when it is unset, 0 or not a number.
+pub(crate) fn gpu_inflight(var: Option<&str>) -> usize {
+    var.and_then(|v| v.trim().parse::<usize>().ok()).filter(|&n| n >= 1).unwrap_or(GPU_INFLIGHT_DEFAULT)
+}
+
+/// `f` over the frames `ks` in parallel, results in `ks` order. With `cap`, at most that many
+/// run at once: the frames go in consecutive chunks of `cap`, each rendered in parallel. A
+/// chunk holds no lock or slot, so a failing or panicking frame cannot leak one, and nested
+/// parallelism inside `f` (or a single thread) cannot deadlock.
+pub(crate) fn map_frames<T: Send>(ks: Vec<u64>, cap: Option<usize>, f: impl Fn(u64) -> T + Sync + Send) -> Vec<T> {
+    use rayon::prelude::*;
+    match cap {
+        None => ks.into_par_iter().map(f).collect(),
+        Some(n) => {
+            let mut out = Vec::with_capacity(ks.len());
+            for chunk in ks.chunks(n.max(1)) {
+                out.par_extend(chunk.par_iter().map(|&k| f(k)));
+            }
+            out
+        }
+    }
+}
+
 /// A job being exported: the job, the project with the Render Settings overrides applied, the
 /// job's layer cache and per-frame timing for the render log.
 pub(crate) struct Cx<'a> {
@@ -132,8 +162,11 @@ impl<'a> Cx<'a> {
             }
             return out;
         }
-        use rayon::prelude::*;
-        ks.into_par_iter().map(|k| f(k, self.frame(comp, k))).collect()
+        // #879: with a GPU accelerator every frame in flight holds its own working textures, so
+        // a whole batch rendered at once can exhaust VRAM (or shared memory, which crashes
+        // instead of falling back). Cap the frames rendering at once; the CPU path is unchanged.
+        let cap = self.job.accel.map(|_| gpu_inflight(std::env::var(GPU_INFLIGHT_ENV).ok().as_deref()));
+        map_frames(ks, cap, |k| f(k, self.frame(comp, k)))
     }
 
     /// Output frame `i`: sampled (fields, pulldown), at the colour depth, cropped and resized.
@@ -367,6 +400,83 @@ fn premultiplied8(img: &Image) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rayon::prelude::*;
+
+    /// Frames `0..n` through [`map_frames`] with `cap`, recording the most running at once.
+    fn run_capped(n: u64, cap: Option<usize>) -> (Vec<u64>, usize) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (now, max) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let out = map_frames((0..n).collect(), cap, |k| {
+            let c = now.fetch_add(1, Ordering::SeqCst) + 1;
+            max.fetch_max(c, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            now.fetch_sub(1, Ordering::SeqCst);
+            k * 10
+        });
+        (out, max.load(Ordering::SeqCst))
+    }
+
+    #[test]
+    fn capped_frames_keep_their_order() {
+        let want: Vec<u64> = (0..40).map(|k| k * 10).collect();
+        for cap in [None, Some(1), Some(3), Some(7)] {
+            assert_eq!(run_capped(40, cap).0, want, "cap {cap:?}");
+        }
+    }
+
+    #[test]
+    fn gpu_frames_in_flight_respect_the_cap() {
+        // #879: every frame of a batch rendered on the GPU at once and exhausted VRAM.
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap();
+        pool.install(|| {
+            for cap in [1, 2, 3] {
+                let (out, max) = run_capped(30, Some(cap));
+                assert_eq!(out.len(), 30);
+                assert!(max <= cap, "cap {cap}: {max} frames ran at once");
+            }
+        });
+    }
+
+    #[test]
+    fn a_cap_above_the_frame_count_renders_them_all() {
+        let (out, max) = run_capped(2, Some(8));
+        assert_eq!(out, vec![0, 10]);
+        assert!(max <= 2);
+        assert!(run_capped(0, Some(3)).0.is_empty());
+    }
+
+    #[test]
+    fn cap_one_on_a_single_thread_does_not_deadlock() {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+        let (out, max) = pool.install(|| run_capped(10, Some(1)));
+        assert_eq!(out.len(), 10);
+        assert_eq!(max, 1);
+        // Nested parallelism inside a frame (as the renderer has) on one thread.
+        let out = pool.install(|| map_frames((0..6).collect(), Some(2), |k| (0..4u64).into_par_iter().map(|i| i + k).sum::<u64>()));
+        assert_eq!(out, (0..6).map(|k| 6 + 4 * k).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_failing_frame_does_not_hold_up_the_rest() {
+        let out = map_frames((0..9).collect(), Some(1), |k| if k == 3 { Err(k) } else { Ok(k) });
+        assert_eq!(out.iter().filter(|r| r.is_err()).count(), 1);
+        assert_eq!(out.len(), 9);
+        assert_eq!(out[8], Ok(8));
+        // A panicking frame propagates once and leaves no slot behind: the next batch runs.
+        let r = std::panic::catch_unwind(|| map_frames((0..6).collect(), Some(2), |k| if k == 2 { panic!("frame {k}") } else { k }));
+        assert!(r.is_err());
+        assert_eq!(run_capped(6, Some(2)).0.len(), 6);
+    }
+
+    #[test]
+    fn gpu_inflight_override_is_a_positive_number_or_the_default() {
+        assert_eq!(gpu_inflight(None), GPU_INFLIGHT_DEFAULT);
+        assert_eq!(gpu_inflight(Some("1")), 1);
+        assert_eq!(gpu_inflight(Some(" 5 ")), 5);
+        for bad in ["0", "", "-2", "three", "2.5"] {
+            assert_eq!(gpu_inflight(Some(bad)), GPU_INFLIGHT_DEFAULT, "{bad:?}");
+        }
+    }
 
     #[test]
     fn layers_render_once_per_job() {

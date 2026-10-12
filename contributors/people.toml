@@ -64,3 +64,7 @@ sync_github_name = true
 
 [people.webdevtodayjason]
 display_name = "Jason Brashear"
+
+[people.dotCooCoo]
+real_name = "Robert Lee"
+sync_github_name = true

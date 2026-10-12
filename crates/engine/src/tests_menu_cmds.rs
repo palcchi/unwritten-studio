@@ -1464,3 +1464,19 @@ fn interpret_footage_loop_from_form_float() {
         _ => panic!(),
     }
 }
+
+/// Looped video footage lasts its loops: a 2 s clip looped 3 times is a 6 s layer, and a layer
+/// that ran to the clip's end is re-timed when the loop count changes (#1045).
+#[test]
+fn interpret_footage_loop_extends_video_layers() {
+    let mut s = comp();
+    let p = s.execute("file.importPlaceholder", json!({"name": "Clip", "width": 320, "height": 240, "duration": 2})).unwrap()["item"].as_u64().unwrap();
+    let before = s.execute("layer.addItem", json!({"item": p})).unwrap()["layer"].as_u64().unwrap();
+    s.state.project_selection = vec![effectcraft_project::ItemId(p)];
+    s.execute("file.interpretFootage", json!({"loop": 3.0})).unwrap();
+    let after = s.execute("layer.addItem", json!({"item": p})).unwrap()["layer"].as_u64().unwrap();
+    let out = |s: &Session, l: u64| s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap().out_point.seconds();
+    assert_eq!(out(&s, after), 6.0, "a new layer plays every loop");
+    assert_eq!(out(&s, before), 6.0, "a layer that ran to the clip's end still does");
+    assert_eq!(s.project.item(effectcraft_project::ItemId(p)).unwrap().duration(), Some(Tick::from_seconds_f64(6.0)));
+}

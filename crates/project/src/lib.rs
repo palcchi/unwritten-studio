@@ -1158,6 +1158,11 @@ impl Footage {
         self.linear_light && !self.preserve_rgb
     }
 
+    /// How long the footage plays: its duration times Interpret Footage ▸ Loop.
+    pub fn looped_duration(&self) -> Tick {
+        Tick(self.duration.0.saturating_mul(self.loop_count.max(1) as i64))
+    }
+
     /// Source time as the footage's timecode: its frame `frame` from Start Timecode
     /// (`0:00:41:20`), as the Footage panel shows it.
     pub fn timecode(&self, frame: i64) -> String {
@@ -1281,7 +1286,7 @@ impl Item {
     pub fn duration(&self) -> Option<Tick> {
         match &self.kind {
             ItemKind::Comp(c) => Some(c.duration),
-            ItemKind::Footage(f) if f.kind != FootageKind::Still => Some(f.duration),
+            ItemKind::Footage(f) if f.kind != FootageKind::Still => Some(f.looped_duration()),
             _ => None,
         }
     }

@@ -15,6 +15,7 @@ pub mod placed;
 mod read;
 pub mod write;
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 pub use descriptor::{DValue, Descriptor};
@@ -794,9 +795,16 @@ impl Psd {
         let mut r = Reader::at(&self.data[..end], offset);
         let comp = r.u16()?;
         decode_pixels(w, h)?;
+        let raw = self.plane_bytes(comp, &mut r, w, h)?;
+        Ok(self.samples(&raw, w, h))
+    }
+
+    /// The raw bytes (`row_bytes(w)` × `h`) of one channel whose pixel data follows `r`'s position
+    /// (after the compression field). Uncompressed data is borrowed, not copied.
+    fn plane_bytes<'a>(&self, comp: u16, r: &mut Reader<'a>, w: usize, h: usize) -> Result<Cow<'a, [u8]>> {
         let rowb = self.row_bytes(w);
-        let raw = match comp {
-            0 => r.bytes(rowb * h)?.to_vec(),
+        Ok(match comp {
+            0 => Cow::Borrowed(r.bytes(rowb * h)?),
             1 => {
                 let mut counts = Vec::with_capacity(h.min(r.remaining() / 2));
                 for _ in 0..h {
@@ -806,7 +814,7 @@ impl Psd {
                 for c in counts {
                     unpack_bits(r.bytes(c)?, rowb, &mut out)?;
                 }
-                out
+                Cow::Owned(out)
             }
             2 | 3 => {
                 let rest = r.bytes(r.remaining())?;
@@ -815,11 +823,20 @@ impl Psd {
                 if comp == 3 {
                     self.unpredict(&mut v, w, h);
                 }
-                v
+                Cow::Owned(v)
             }
             c => return Err(Error::Unsupported(format!("compression {c}"))),
-        };
-        Ok(self.samples(&raw, w, h))
+        })
+    }
+
+    /// Plane `c` of the inflated ZIP data of consecutive planes, un-predicted in place (`comp` 3).
+    fn zip_plane<'v>(&self, comp: u16, v: &'v mut [u8], c: usize, w: usize, h: usize) -> Result<&'v [u8]> {
+        let rowb = self.row_bytes(w);
+        let plane = v.get_mut(c * rowb * h..(c + 1) * rowb * h).ok_or(Error::Truncated)?;
+        if comp == 3 {
+            self.unpredict(plane, w, h);
+        }
+        Ok(plane)
     }
 
     fn row_bytes(&self, w: usize) -> usize {
@@ -839,12 +856,16 @@ impl Psd {
                 }
             }
             32 => {
+                // One scratch row for the whole plane.
+                let mut planar = vec![0u8; w * 4];
+                #[cfg(test)]
+                counters::bump(&counters::SCRATCH);
                 for row in v.chunks_exact_mut(w * 4).take(h) {
                     for i in 1..row.len() {
                         row[i] = row[i].wrapping_add(row[i - 1]);
                     }
                     // Bytes are stored plane by plane (all first bytes, then all second bytes…).
-                    let planar = row.to_vec();
+                    planar.copy_from_slice(row);
                     for x in 0..w {
                         for b in 0..4 {
                             row[x * 4 + b] = planar[b * w + x];
@@ -934,13 +955,11 @@ impl Psd {
             }
             2 | 3 => {
                 let rest = r.bytes(r.remaining())?;
-                let v = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(rest, want * rowb * h).map_err(|e| Error::Invalid(format!("zip: {e:?}")))?;
+                let mut v =
+                    miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(rest, want * rowb * h).map_err(|e| Error::Invalid(format!("zip: {e:?}")))?;
+                // Each plane is un-predicted in place in the inflated buffer.
                 for (c, p) in planes.iter_mut().enumerate().take(want) {
-                    let mut plane = v.get(c * rowb * h..(c + 1) * rowb * h).ok_or(Error::Truncated)?.to_vec();
-                    if comp == 3 {
-                        self.unpredict(&mut plane, w, h);
-                    }
-                    *p = Some(self.samples(&plane, w, h));
+                    *p = Some(self.samples(self.zip_plane(comp, &mut v, c, w, h)?, w, h));
                 }
             }
             c => return Err(Error::Unsupported(format!("compression {c}"))),
@@ -1019,19 +1038,41 @@ impl Psd {
                 _ => None,
             };
             let def = m.default_color as f32 / 255.0;
-            for y in 0..oh {
-                let py = out_rect.top + y as i32;
-                for x in 0..ow {
-                    let px = out_rect.left + x as i32;
-                    let inside = py >= m.rect.top && py < m.rect.bottom && px >= m.rect.left && px < m.rect.right;
-                    let mut v = match (&mask, inside) {
-                        (Some(mk), true) => mk[(py - m.rect.top) as usize * mw + (px - m.rect.left) as usize],
-                        _ => def,
-                    };
-                    if m.inverted {
-                        v = 1.0 - v;
+            // The factor outside the mask rect, or everywhere when there is no mask data.
+            let outside = if m.inverted { 1.0 - def } else { def };
+            let scale = |px: &mut [[f32; 4]], v: f32| {
+                if v != 1.0 {
+                    for p in px {
+                        p[3] *= v;
                     }
-                    out[y * ow + x][3] *= v;
+                }
+            };
+            match &mask {
+                None => scale(&mut out, outside),
+                Some(mk) => {
+                    // The columns of the output that fall inside the mask rect (the same for every row).
+                    let lo = (i64::from(m.rect.left) - i64::from(out_rect.left)).clamp(0, ow as i64);
+                    let hi = (i64::from(m.rect.right) - i64::from(out_rect.left)).clamp(lo, ow as i64);
+                    let (lo, hi) = (lo as usize, hi as usize);
+                    for (y, row) in out.chunks_exact_mut(ow.max(1)).take(oh).enumerate() {
+                        let py = i64::from(out_rect.top) + y as i64;
+                        #[cfg(test)]
+                        counters::bump(&counters::INSIDE);
+                        if py < i64::from(m.rect.top) || py >= i64::from(m.rect.bottom) {
+                            scale(row, outside);
+                            continue;
+                        }
+                        let (left, rest) = row.split_at_mut(lo);
+                        let (mid, right) = rest.split_at_mut(hi - lo);
+                        scale(left, outside);
+                        scale(right, outside);
+                        // The mask row under `mid`: its first column is output column `lo`.
+                        let base = (py - i64::from(m.rect.top)) as usize * mw + (i64::from(out_rect.left) + lo as i64 - i64::from(m.rect.left)) as usize;
+                        for (i, p) in mid.iter_mut().enumerate() {
+                            let v = mk.get(base + i).copied().unwrap_or(def);
+                            p[3] *= if m.inverted { 1.0 - v } else { v };
+                        }
+                    }
                 }
             }
         }
@@ -1149,3 +1190,29 @@ fn lab_to_rgb(l: f32, a: f32, b: f32) -> [f32; 3] {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_opt;
+
+/// Test-only call counters (per thread), to prove what the optimised paths avoid doing.
+#[cfg(test)]
+pub(crate) mod counters {
+    use std::cell::Cell;
+    use std::thread::LocalKey;
+
+    thread_local! {
+        /// Scratch rows allocated by the 32-bit ZIP un-predictor.
+        pub static SCRATCH: Cell<usize> = const { Cell::new(0) };
+        /// `inside the mask rect` evaluations of the layer-mask loop.
+        pub static INSIDE: Cell<usize> = const { Cell::new(0) };
+        /// `square_to_quad` solves.
+        pub static QUAD: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub fn bump(c: &'static LocalKey<Cell<usize>>) {
+        c.with(|c| c.set(c.get() + 1));
+    }
+    /// Read and reset.
+    pub fn take(c: &'static LocalKey<Cell<usize>>) -> usize {
+        c.with(|c| c.replace(0))
+    }
+}

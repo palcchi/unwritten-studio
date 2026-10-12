@@ -2288,7 +2288,7 @@ fn create_shape(app: &mut EffectcraftApp, tool: Tool, a: [f64; 2], b: [f64; 2], 
 
 fn empty_state(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
-    let p = ui.painter();
+    let p = ui.painter().clone();
     p.rect_filled(rect, 0.0, t.pasteboard);
     let c = rect.center();
     p.text(c - vec2(0.0, 40.0), Align2::CENTER_CENTER, crate::i18n::tr("Composition"), Tokens::semibold(16.0), t.text);

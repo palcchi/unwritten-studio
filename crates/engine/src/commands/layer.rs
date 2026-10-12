@@ -857,9 +857,13 @@ fn timing(s: &mut Session, p: &Value) -> Result<Value> {
     let fr = s.project.comp(cid).ok_or(EngineError::NoComp)?.frame_rate;
     let snap = |k: &str| f_p(p, k).map(|v| fr.snap_nearest(Tick::from_seconds_f64(v)));
     let (delta, start, inp, outp) = (snap("delta"), snap("start"), snap("in"), snap("out"));
+    // Relative trims: each layer moves its own in/out point by the same amount, so dragging an
+    // edge of several selected layers trims them all together (as in AE).
+    let (in_delta, out_delta) = (snap("inDelta"), snap("outDelta"));
     s.edit("Layer Timing", merge_p(p), |proj, _| {
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let fd = comp.frame_duration();
+        let comp_dur = comp.duration;
         for l in comp.layers.iter_mut().filter(|l| ids.contains(&l.id)) {
             let shift = |l: &mut Layer, d: Tick| {
                 l.start_time += d;
@@ -890,6 +894,14 @@ fn timing(s: &mut Session, p: &Value) -> Result<Value> {
                     }
                     if let Some(o) = outp {
                         l.out_point = o.max(l.in_point + fd);
+                    }
+                    // Stops at the comp start/end (a point already past it doesn't jump onto
+                    // it), keeping at least one frame of layer.
+                    if let Some(d) = in_delta {
+                        l.in_point = (l.in_point + d).max(Tick::ZERO.min(l.in_point)).min(l.out_point - fd);
+                    }
+                    if let Some(d) = out_delta {
+                        l.out_point = (l.out_point + d).min(comp_dur.max(l.out_point)).max(l.in_point + fd);
                     }
                 }
             }
@@ -1530,7 +1542,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Layer Timing",
             [],
             None,
-            "{layers?, op?: moveInToTime|moveOutToTime|trimInToTime|trimOutToTime, delta?, start?, in?, out?, merge?}",
+            "{layers?, op?: moveInToTime|moveOutToTime|trimInToTime|trimOutToTime, delta?, start?, in?, out?, inDelta?, outDelta? (seconds, per layer), merge?}",
             has_layers,
             timing
         ),

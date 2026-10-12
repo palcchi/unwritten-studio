@@ -883,3 +883,46 @@ fn property_edits_apply_to_every_selected_layer() {
     s.execute("prop.set", json!({"layer": a, "path": "transform/rotation", "value": 30})).unwrap();
     assert_eq!(prop(&s, b, "transform/rotation").value.as_f64(), 0.0);
 }
+
+/// Dragging a trim edge with several layers selected trims every selected layer by the same
+/// amount from its own in/out point (as in AE), clamped to the comp and to one frame of layer;
+/// a whole merged drag is one undo step.
+#[test]
+fn relative_trim_moves_every_selected_layer_by_the_same_delta() {
+    let (mut s, a) = setup();
+    let b = s.execute("layer.newSolid", json!({"color": "#ff0000", "width": 100, "height": 100})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("layer.timing", json!({"layers": [a], "in": 0.5, "out": 2.0})).unwrap();
+    s.execute("layer.timing", json!({"layers": [b], "in": 1.0, "out": 3.5})).unwrap();
+    let io = |s: &Session, l: u64| {
+        let l = s.active_comp().unwrap().layer(effectcraft_project::LayerId(l)).unwrap();
+        (l.in_point.seconds(), l.out_point.seconds())
+    };
+    let near = |x: f64, y: f64| (x - y).abs() < 1e-9;
+    let undo_len = s.history.undo.len();
+    // In-point drag in frame steps, merged into one edit.
+    for _ in 0..3 {
+        s.execute("layer.timing", json!({"layers": [a, b], "inDelta": 0.1, "merge": "bar-trim"})).unwrap();
+    }
+    assert_eq!(s.history.undo.len(), undo_len + 1);
+    let ((ai, ao), (bi, bo)) = (io(&s, a), io(&s, b));
+    assert!(near(ai, 0.8) && near(ao, 2.0) && near(bi, 1.3) && near(bo, 3.5), "{ai} {ao} {bi} {bo}");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(near(io(&s, a).0, 0.5) && near(io(&s, b).0, 1.0));
+    s.history.merge_key = None;
+    // Out-point drag: b hits the comp end (4 s) while a keeps going.
+    s.execute("layer.timing", json!({"layers": [a, b], "outDelta": 1.0})).unwrap();
+    assert!(near(io(&s, a).1, 3.0) && near(io(&s, b).1, 4.0), "{:?} {:?}", io(&s, a), io(&s, b));
+    // In-point drag left: a stops at the comp start.
+    s.execute("layer.timing", json!({"layers": [a, b], "inDelta": -0.8})).unwrap();
+    assert!(near(io(&s, a).0, 0.0) && near(io(&s, b).0, 0.2), "{:?} {:?}", io(&s, a), io(&s, b));
+    // Trimming past the other edge keeps one frame of layer.
+    s.execute("layer.timing", json!({"layers": [a, b], "inDelta": 10.0})).unwrap();
+    let fd = 1.0 / 30.0;
+    assert!(near(io(&s, a).0, 3.0 - fd) && near(io(&s, b).0, 4.0 - fd), "{:?} {:?}", io(&s, a), io(&s, b));
+    s.execute("layer.timing", json!({"layers": [a, b], "outDelta": -10.0})).unwrap();
+    assert!(near(io(&s, a).1, 3.0) && near(io(&s, b).1, 4.0), "{:?} {:?}", io(&s, a), io(&s, b));
+    // A point already outside the comp trims from where it is instead of jumping onto the edge.
+    s.execute("layer.timing", json!({"layers": [a], "in": -1.0})).unwrap();
+    s.execute("layer.timing", json!({"layers": [a], "inDelta": 0.1})).unwrap();
+    assert!(near(io(&s, a).0, -0.9), "{:?}", io(&s, a));
+}

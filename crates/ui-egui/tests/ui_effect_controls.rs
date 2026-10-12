@@ -189,6 +189,43 @@ fn the_eyedropper_samples_under_the_pointer_in_a_region_of_interest() {
     assert!(c[0] > 0.98 && c[1] < 0.02 && c[2] < 0.02, "{c:?}");
 }
 
+/// A click before the viewer has a frame to sample (it is still rendering) leaves the eyedropper
+/// armed: it used the pick up without setting a colour.
+#[test]
+fn the_eyedropper_stays_armed_until_the_viewer_has_a_frame() {
+    // A large blurred frame, so the first render outlasts the click.
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Slow", "width": 7680, "height": 4320, "frameRate": 30, "duration": 1})).unwrap();
+    let back = s.execute("layer.newSolid", json!({"name": "Back", "color": "#20c040"})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("effect.apply", json!({"layers": [back], "effect": "Gaussian Blur"})).unwrap();
+    let top = s.execute("layer.newSolid", json!({"name": "Top", "color": "#ff0000", "width": 200, "height": 100})).unwrap()["layer"].as_u64().unwrap();
+    s.execute("effect.apply", json!({"layers": [top], "effect": "Color Control"})).unwrap();
+    let prop = layer(&s, top).effects().unwrap().groups().find(|g| g.match_id == "ec.control.color").and_then(|g| g.get("color")).map(|p| p.uid).unwrap();
+    s.execute("prop.set", json!({"layer": top, "prop": prop, "value": [0.0, 0.0, 1.0, 1.0]})).unwrap();
+    let colour = |h: &Harness<'_, EffectcraftApp>| {
+        let v = layer(&h.state().session, top).effects().unwrap().find(prop).unwrap().value.clone();
+        let KV::Color(c) = v else { panic!("{v:?}") };
+        c
+    };
+    let mut h = Harness::builder().with_size(egui::vec2(1700.0, 1100.0)).build_eframe(|_| EffectcraftApp::new(s));
+    h.state_mut().ui.fx_pick = Some(FxPick { kind: "color".into(), layer: top, prop, name: "Color".into() });
+    h.step();
+    let pos = effectcraft_ui_egui::panels::viewer::comp_to_screen(&h.ctx, [100.0, 100.0]).unwrap();
+    click(&mut h, pos);
+    // (A frame that made it in time was sampled: the colour below is checked either way.)
+    if h.state().ui.fx_pick.is_some() {
+        assert_eq!(colour(&h), [0.0, 0.0, 1.0, 1.0], "nothing sampled yet");
+        settle(&mut h);
+        click(&mut h, pos);
+        assert!(h.state().ui.fx_pick.is_none(), "the pick is used up");
+    }
+    let c = colour(&h);
+    let want = [0x20 as f64 / 255.0, 0xc0 as f64 / 255.0, 0x40 as f64 / 255.0];
+    for k in 0..3 {
+        assert!((c[k] - want[k]).abs() < 0.02, "{c:?} vs {want:?}");
+    }
+}
+
 /// Key Light's Screen Colour eyedropper picks from the effect's input: the shown frame is
 /// already keyed (the default screen colour takes most of a green), so sampling it would miss.
 #[test]

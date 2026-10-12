@@ -1,6 +1,6 @@
 # Localization parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Ukrainian panel catalog recounted after it caught up with the Chinese ones) · **Target:** Adobe After Effects 2026
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (catalogs recounted at `upstream/main` 470ea7a3: menus in 10 languages, panels in 6, Hangul probe (#599)) · **Target:** Adobe After Effects 2026
 
 How much of EffectCraft's interface is translated, language by language, compared with After
 Effects. [gaps.md](gaps.md) gap 16 and workstream G9 hold the work;
@@ -19,10 +19,11 @@ interface; Arabic and Hebrew text *in layers* is supported through its Middle Ea
 - **Menus:** `crates/ui-egui/src/i18n.rs`, one catalog per language keyed by
   `(command, English label)`. A test (`every_translation_key_exists_in_the_actual_menu_tree`)
   fails if any fixed menu entry is untranslated or a row is stale, so every catalog covers all
-  **618** fixed entries. The generated Effect menu (effect names) is deliberately left in English.
+  fixed entries (624 catalog rows each at 470ea7a3, counted). The generated Effect menu (effect names) is deliberately left in English.
 - **Panels, dialogs, buttons, tooltips:** `crates/ui-egui/src/i18n/ui.rs`, keyed by the English
-  source string, with English fallback. Catalogs exist for Japanese, Simplified and Traditional
-  Chinese, Ukrainian and Czech.
+  source string, with English fallback. Catalogs exist for Japanese (410 rows), Simplified and
+  Traditional Chinese (506 each), Ukrainian (505), Brazilian Portuguese (400) and Czech (501);
+  counted at 470ea7a3.
 - **Not translated anywhere yet:** effect names and their ≈ 1,650 parameter names
   (`crates/effects`), engine-generated text (property names, errors, undo labels), the Home
   screen's unwrapped literals (#574), Learn tutorials and documentation.
@@ -30,8 +31,7 @@ interface; Arabic and Hebrew text *in layers* is supported through its Middle Ea
   (`match_system_uses_the_system_language_where_there_is_a_catalog`).
 - **Fonts:** no bundled CJK font; the UI installs system fallbacks probed by script (Kana, Han,
   Arabic, Hebrew, Devanagari, Bengali, Gurmukhi, Gujarati, Tamil, Telugu, Kannada, Malayalam,
-  Thai: `crates/ui-egui/src/theme.rs`). There is no Hangul probe, so Korean renders as boxes on
-  macOS (#599). The web build has no system fonts.
+  Thai and Hangul: `crates/ui-egui/src/theme.rs`; the Hangul probe was added for #599, closed). The web build has no system fonts.
 - **Script support in the interface:** egui draws text without complex shaping or right-to-left
   layout, so an Arabic or Hindi interface would render unshaped and left to right. **In text
   layers** (`crates/text`) shaping (harfrust), bidi (UAX #9), vertical text and Tate-Chu-Yoko
@@ -39,8 +39,10 @@ interface; Arabic and Hebrew text *in layers* is supported through its Middle Ea
 
 ## Measurement
 
-Measured 10 October 2026 at `origin/main` 1446e27 by counting catalog rows. The denominator,
-**≈ 3,900 user-visible strings**, is estimated: 618 fixed menu entries + ≈ 1,320 capitalised UI
+Measured 10 October 2026 at `origin/main` 1446e27 and recounted on 12 October at `upstream/main`
+470ea7a3 by counting catalog rows (`const` tables in `crates/ui-egui/src/i18n.rs` and
+`i18n/ui.rs`; menu rows 624 per language, so the share is computed from 624 rather than 618). The
+denominator, **≈ 3,900 user-visible strings**, was estimated on 10 October and is kept: 618 fixed menu entries + ≈ 1,320 capitalised UI
 literals in `crates/ui-egui/src` outside tests and catalogs (a regex count, so an upper bound) +
 ≈ 1,650 distinct effect parameter names + 306 effect names. Engine messages are not counted, so
 the true percentages are slightly lower.
@@ -48,31 +50,31 @@ the true percentages are slightly lower.
 | Language | Code | UI strings translated | Dialogs / tooltips / help | Script support | Native review | Status | To `full` |
 |---|---|---|---|---|---|---|---|
 | English | `en` | ≈ 3,900 (100%, source) | All; docs in English | — | yes | full | — |
-| Simplified Chinese | `zh-hans` | 1,081 (≈ 28%): menus 618/618, panels 463 | Panels and dialogs partly (≈ 35% of panel strings); no help, effects untranslated; Home screen literals unwrapped (#574) | System CJK fallback; Han follows the UI language; CJK text in comps renders wrongly (#453); IME in text layers | no | partial | 6–9 h + review |
-| Spanish | `es` | 618 (≈ 16%) | Menus only | Latin, fine | no | menus only | 7–10 h + review |
+| Simplified Chinese | `zh-hans` | 1,130 (≈ 29%): menus 624 rows, panels 506 | Panels and dialogs partly; no help, effects untranslated; Home screen literals unwrapped (#574, closed) | System CJK fallback; Han follows the UI language; CJK text in comps renders wrongly (#453); IME in text layers | no | partial | 6–9 h + review |
+| Spanish | `es` | 624 (≈ 16%) | Menus only (panel catalog in open PR #996) | Latin, fine | no | menus only | 7–10 h + review |
 | Hindi | `hi` | 0 | — | UI: Devanagari fallback font but no shaping; text layers shape Devanagari | no | none (After Effects: none) | 9–13 h + shaping in the UI |
 | Arabic | `ar` | 0 | — | UI: Arabic fallback font but no shaping and no RTL layout; text layers: bidi + shaping | no | none (After Effects: none) | 9–13 h + 15–25 h RTL UI |
-| French | `fr` | 0 | — | Latin, fine | no | none | 8–12 h + review |
-| Portuguese (Brazil) | `pt-br` | 618 (≈ 16%) | Menus only | Latin, fine | no | menus only | 7–10 h + review |
+| French | `fr` | 624 (≈ 16%) | Menus only | Latin, fine | no | menus only | 7–10 h + review |
+| Portuguese (Brazil) | `pt-br` | 1,024 (≈ 26%): menus 624 rows, panels 400 | Panels and dialogs partly | Latin, fine | no | partial | 6–9 h + review |
 | Indonesian | `id` | 0 | — | Latin, fine | no | none (After Effects: none) | 8–12 h + review |
-| Japanese | `ja` | 1,015 (≈ 26%): menus 618/618, panels 397 | Panels and dialogs partly (≈ 30% of panel strings) | Japanese system fallback; vertical text and Tate-Chu-Yoko in text layers; IME | no | partial | 6–9 h + review |
-| German | `de` | 0 | — | Latin, fine | no | none | 8–12 h + review |
-| Korean | `ko` | 0 | — | No Hangul fallback probe: boxes on macOS (#599) | no | none | 9–13 h + review |
+| Japanese | `ja` | 1,034 (≈ 27%): menus 624 rows, panels 410 | Panels and dialogs partly | Japanese system fallback; vertical text and Tate-Chu-Yoko in text layers; IME | no | partial | 6–9 h + review |
+| German | `de` | 624 (≈ 16%) | Menus only (open PR #666 adds interface translations) | Latin, fine | no | menus only | 7–10 h + review |
+| Korean | `ko` | 0 | — | Hangul fallback probe added (#599, closed); not checked on macOS here | no | none | 9–13 h + review |
 | Vietnamese | `vi` | 0 | — | Latin with stacked diacritics; untested | no | none (After Effects: none) | 8–12 h + review |
 
 Other languages EffectCraft ships (3):
 
 | Language | Code | UI strings translated | Status | To `full` |
 |---|---|---|---|---|
-| Traditional Chinese | `zh-hant` | 1,081 (≈ 28%): menus 618/618, panels 463 | partial | 6–9 h + review |
-| Ukrainian | `uk` | 1,113 (≈ 29%): menus 618/618, panels 495/496 | partial | 6–9 h + review |
-| Czech | `cs` | 1,114 catalog entries (≈ 29%): menus 618/618, panels 496/496 (current Chinese catalog); added after the measurement above | All existing catalog entries covered; unwrapped UI, effects and engine text still in English; AI-assisted, not yet native-speaker proofread | Remaining strings + independent native review |
+| Traditional Chinese | `zh-hant` | 1,130 (≈ 29%): menus 624 rows, panels 506 | partial | 6–9 h + review |
+| Ukrainian | `uk` | 1,129 (≈ 29%): menus 624 rows, panels 505 | partial | 6–9 h + review |
+| Czech | `cs` | 1,125 (≈ 29%): menus 624 rows, panels 501 | Existing catalog entries covered; unwrapped UI, effects and engine text still in English; AI-assisted, not yet native-speaker proofread | Remaining strings + independent native review |
 
-After Effects also ships Italian and Russian, which EffectCraft does not (8–12 h each).
+Russian (`ru`) has a menu catalog (624 rows, ≈ 16%); After Effects also ships Italian, which EffectCraft does not (8–12 h).
 
-**Overall: ≈ 12%**, the average coverage of After Effects' 10 non-English languages
-(Simplified and Traditional Chinese 28%, Japanese 26%, Spanish and Portuguese 16%, French,
-German, Korean, Italian and Russian 0%). This is the localization row in
+**Overall: ≈ 18%**, the average coverage of After Effects' 10 non-English languages
+(Simplified and Traditional Chinese 29%, Japanese 27%, Brazilian Portuguese 26%, Spanish, French,
+German and Russian 16%, Korean and Italian 0%; 175 / 10, was ≈ 12% on 10 October). This is the localization row in
 [target-app-parity.md](target-app-parity.md#by-dimension).
 
 **Effort.** One-time work first: route effect names, parameter names and engine messages through
@@ -87,5 +89,6 @@ can give; none has had it.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Recounted: Russian, French, German and Czech menus (#873, #987), Brazilian Portuguese and Czech panels (#830, #987), Hangul probe (#599); overall ≈ 12% to ≈ 18%; Korean and Italian still absent |
 | 2026-10-10 | major | First localization parity document: catalog rows counted for all six languages, the twelve-language table, After Effects' 11 shipped languages from its bundle |
 | 2026-10-11 | minor | Ukrainian panel catalog brought level with the Chinese ones (495 of 496 rows, counted at this commit); its share rises to ≈ 29%. The other languages' panel counts are the 10 October measurement |

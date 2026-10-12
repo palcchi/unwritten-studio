@@ -1010,3 +1010,30 @@ fn scripted_text_range_selector_resolves_and_is_the_only_selector() {
     );
     assert_eq!(o.result, json!([1, "ADBE Text Selector", 50, 100, "ADBE Text Percent Offset"]));
 }
+
+/// `setInterpolationTypeAtKey` and `setTemporalEaseAtKey` (`keys.interpolation` / `keys.velocity`)
+/// act on effect parameters too, not just transform properties (#994).
+#[test]
+fn effect_parameter_interpolation_and_ease() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("E", 100, 100, 1, 5, 25);
+        var l = c.layers.addNull();
+        var slider = l.property("ADBE Effect Parade").addProperty("ADBE Slider Control").property(1);
+        slider.setValuesAtTimes([0, 1, 2], [0, 50, 100]);
+        slider.setInterpolationTypeAtKey(1, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+        slider.setTemporalEaseAtKey(2, [new KeyframeEase(0, 16.67)], [new KeyframeEase(0, 33.33)]);
+        var point = l.property("ADBE Effect Parade").addProperty("ADBE Point3D Control").property(1);
+        point.setValuesAtTimes([0, 1], [[0, 0, 0], [50, 50, 50]]);
+        point.setInterpolationTypeAtKey(1, KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+        [slider.keyInInterpolationType(1) == KeyframeInterpolationType.BEZIER,
+         slider.keyOutInterpolationType(1) == KeyframeInterpolationType.BEZIER,
+         slider.keyInTemporalEase(2)[0].influence,
+         slider.keyOutTemporalEase(2)[0].influence,
+         point.keyInInterpolationType(1) == KeyframeInterpolationType.BEZIER];
+        "#,
+    );
+    assert_eq!(o.result, json!([true, true, 16.67, 33.33, true]));
+}

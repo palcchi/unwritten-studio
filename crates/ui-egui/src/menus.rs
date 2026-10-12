@@ -35,6 +35,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("playback.stop", "Stop", [], None),
     uic!("view.fit", "Fit", [], Some("Shift+/")),
     uic!("view.actualSize", "100%", [], Some("/")),
+    uic!("view.fitUpTo100", "Fit up to 100%", [], Some("Alt+/")),
+    uic!("view.nextItem", "Next Composition in Viewer", [], Some("Shift+.")),
+    uic!("view.previousItem", "Previous Composition in Viewer", [], Some("Shift+,")),
     uic!("viewer.nudge.up", "Move Selected Layers Up 1 Pixel at Current Magnification", [], Some("ArrowUp")),
     uic!("viewer.nudge.down", "Move Selected Layers Down 1 Pixel at Current Magnification", [], Some("ArrowDown")),
     uic!("viewer.nudge.left", "Move Selected Layers Left 1 Pixel at Current Magnification", [], Some("ArrowLeft")),
@@ -574,6 +577,22 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             let on = !crate::panels::timeline::column_visible(&app.ui.timeline, "parent");
             crate::panels::timeline::set_column(&mut app.ui.timeline, "parent", on)?;
             return Ok(json!({"parent": on}));
+        }
+        "view.fitUpTo100" => {
+            app.ui.viewer.zoom = None;
+            app.ui.viewer.fit_up_to_100 = true;
+            app.ui.viewer.pan = [0.0, 0.0];
+            return Ok(Value::Null);
+        }
+        // Shift+, / Shift+.: the previous / next open composition (the viewer's tabs).
+        "view.nextItem" | "view.previousItem" => {
+            let open = app.session.state.open_comps.clone();
+            let Some(i) = app.session.state.active_comp.and_then(|c| open.iter().position(|o| *o == c)) else { return Ok(Value::Null) };
+            let step = if id == "view.nextItem" { 1 } else { open.len().saturating_sub(1) };
+            let Some(next) = open.get((i + step) % open.len().max(1)).copied().filter(|n| Some(*n) != app.session.state.active_comp) else {
+                return Ok(Value::Null);
+            };
+            return run_engine(app, ctx, "comp.open", json!({"comp": next.0}));
         }
         "view.actualSize" if app.ui.focused == PanelKind::Layer => {
             app.ui.layer_zoom = Some(1.0 / ctx.pixels_per_point());
@@ -2153,6 +2172,9 @@ mod tests {
             ("timeline.scrollToTime", "D"),
             ("timeline.scrollToLayer", "X"),
             ("timeline.parentColumn", "Shift+F4"),
+            ("view.fitUpTo100", "Alt+/"),
+            ("view.nextItem", "Shift+."),
+            ("view.previousItem", "Shift+,"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }
@@ -2174,6 +2196,32 @@ mod tests {
         assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), !parent);
         run(&mut app, "timeline.parentColumn");
         assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), parent);
+    }
+
+    #[test]
+    fn viewer_keys_fit_and_step_through_open_comps() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        let new = |app: &mut EffectcraftApp, name: &str| app.session.execute("comp.new", json!({"name": name, "duration": 4})).unwrap()["comp"].as_u64();
+        let active = |app: &EffectcraftApp| app.session.state.active_comp.map(|c| c.0);
+        // With one composition open there is nothing to step to.
+        let a = new(&mut app, "A");
+        run(&mut app, "view.nextItem");
+        assert_eq!(active(&app), a);
+        // Shift+, / Shift+.: through the open compositions, wrapping.
+        let b = new(&mut app, "B");
+        assert_eq!(active(&app), b);
+        run(&mut app, "view.nextItem");
+        assert_eq!(active(&app), a);
+        run(&mut app, "view.previousItem");
+        assert_eq!(active(&app), b);
+        // Alt+/ fits the viewer without magnifying past 100 %; Shift+/ fits fully again.
+        app.ui.viewer.zoom = Some(3.0);
+        run(&mut app, "view.fitUpTo100");
+        assert!(app.ui.viewer.zoom.is_none() && app.ui.viewer.fit_up_to_100);
+        run(&mut app, "view.fit");
+        assert!(!app.ui.viewer.fit_up_to_100);
     }
 
     #[test]

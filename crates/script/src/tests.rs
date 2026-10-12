@@ -963,3 +963,30 @@ fn script_item_and_layer_identity_survives_repeated_access() {
     );
     assert_eq!(o.result, json!([true, true]));
 }
+
+#[test]
+fn script_text_path_options_expose_after_effects_match_names() {
+    let mut s = session();
+    let r = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Text Path", 160, 90, 1, 2, 24);
+        var t = c.layers.addText("On a path");
+        var options = t.property("ADBE Text Properties").property("ADBE Text Path Options");
+        var names = [];
+        for (var i = 1; i <= options.numProperties; i++)
+          names.push(options.property(i).matchName);
+        [names, options.property("ADBE Text Path").matchName,
+         options.property("ADBE Text Perpendicular To Path").matchName]
+        "#,
+    );
+    assert_eq!(
+        r.result,
+        json!([
+            ["ADBE Text Path", "ADBE Text Reverse Path", "ADBE Text Perpendicular To Path",
+             "ADBE Text Force Align Path", "ADBE Text First Margin", "ADBE Text Last Margin"],
+            "ADBE Text Path",
+            "ADBE Text Perpendicular To Path"
+        ])
+    );
+}

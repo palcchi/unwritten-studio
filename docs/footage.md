@@ -98,6 +98,13 @@ vectors, positions and IDs are never the picture. EXtractoR reads every other la
 - **File ▸ Replace Footage ▸ File…** (Ctrl+H) points the item at another file. Pick a numbered
   file to replace it with that file's whole sequence (`file.replaceFootage {"path": …,
   "sequence": false}` for one frame).
+- **Replace with Precomposition (used N times)**, right-clicking a footage item or solid in the
+  Project panel, puts the item in a new composition of its size,
+  pixel aspect and frame rate, in the same folder, and switches every layer in every composition
+  that used the item to that composition. Layers keep their timing, transforms, effects and
+  masks, and the item stays in the project. The composition lasts as long as the footage, or as
+  the longest layer that showed a still or solid. One undo step (`file.replaceWithPrecomp
+  {"item"?}`).
 - **File ▸ Reload Footage** (Ctrl+Alt+L) reads the files again. A sequence picks up frames
   added to its folder (a render still in progress) and keeps its interpretation.
 

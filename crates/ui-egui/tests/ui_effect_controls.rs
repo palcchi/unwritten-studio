@@ -220,6 +220,34 @@ fn keyer_eyedropper_picks_the_screen_from_the_effect_input() {
     assert!(img.get(160, 90)[3] < 0.01, "{:?}", img.get(160, 90));
 }
 
+#[test]
+fn command_clicking_an_effect_twirl_closes_and_opens_its_groups() {
+    let (app, x) = app();
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| app);
+    let fx = h.state_mut().session.execute("effect.apply", json!({"layers": [x.small], "effect": "Lumetri Color"})).unwrap()["effects"][0].as_u64().unwrap();
+    // Only this effect open, so its header is on screen.
+    let l = layer(&h.state().session, x.small);
+    let others: Vec<u64> = l.effects().unwrap().groups().map(|g| g.uid).filter(|u| *u != fx).collect();
+    h.state_mut().ui.fx_closed.extend(others.iter().copied());
+    h.run_steps(3);
+    let inner: Vec<u64> = l.effects().unwrap().groups().find(|g| g.uid == fx).unwrap().groups().map(|g| g.uid).collect();
+    assert!(!inner.is_empty(), "the effect has twirl-down groups");
+    let cmd_click = |h: &mut Harness<'_, EffectcraftApp>| {
+        let at = rect_of(h, &format!("effectControls.effect.{fx}.twirl")).center();
+        h.event(egui::Event::ModifiersChanged(egui::Modifiers::COMMAND));
+        click(h, at);
+        h.event(egui::Event::ModifiersChanged(Default::default()));
+        h.step();
+    };
+    cmd_click(&mut h);
+    let closed = h.state().ui.fx_closed.clone();
+    assert!(closed.contains(&fx) && inner.iter().all(|u| closed.contains(u)), "the effect and its groups twirl closed");
+    cmd_click(&mut h);
+    let closed = h.state().ui.fx_closed.clone();
+    assert!(!closed.contains(&fx) && !inner.iter().any(|u| closed.contains(u)), "and open again together");
+    assert!(others.iter().all(|u| closed.contains(u)), "other effects stay as they were");
+}
+
 fn rect_of(h: &Harness<'_, EffectcraftApp>, id: &str) -> egui::Rect {
     let e = h.state().auto.previous.iter().chain(h.state().auto.elements.iter()).find(|e| e.id == id).unwrap_or_else(|| panic!("no {id}")).clone();
     egui::Rect::from_min_size(egui::pos2(e.rect[0], e.rect[1]), egui::vec2(e.rect[2], e.rect[3]))

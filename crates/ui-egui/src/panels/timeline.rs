@@ -3252,6 +3252,10 @@ enum UiAct {
 }
 
 fn walk_groups(g: &PropGroup, out: &mut Vec<u64>) {
+    // Audio's Waveform row is not in the property tree; it twirls along.
+    if g.match_id == "audio" {
+        out.push(WAVE_BIT | g.uid);
+    }
     for sg in g.groups() {
         out.push(sg.uid);
         walk_groups(sg, out);
@@ -3803,6 +3807,21 @@ fn value_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Alt/Cmd-click twirls Audio's Waveform row (not in the property tree) with the rest.
+    #[test]
+    fn the_waveform_row_twirls_with_its_tree() {
+        let mut root = PropGroup::new(1, "", "");
+        let mut audio = PropGroup::new(2, "audio", "Audio");
+        audio.children.push(PropGroup::new(3, "x", "X").into());
+        root.children.push(audio.into());
+        let mut uids = vec![];
+        walk_groups(&root, &mut uids);
+        assert_eq!(uids, vec![2, WAVE_BIT | 2, 3]);
+        let mut uids = vec![];
+        walk_groups(find_group(&root, 2).unwrap(), &mut uids);
+        assert_eq!(uids, vec![WAVE_BIT | 2, 3]);
+    }
 
     /// #710: with Time Display set to Frames the ruler labels are frame numbers (as under the
     /// CTI, from Start Numbering Frames At); otherwise seconds:frames.

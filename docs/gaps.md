@@ -81,7 +81,7 @@ are grouped by area; the issue tracker has the rest.
 | 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; #372 uncompressed single-file output; #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
 | 23 | **Essential Graphics interchange** | Templates are `.ectemplate`, not `.mogrt`; #338 Scale exposes X and Y; #611 FilmCraft rejects exported `.fcgt` | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
 | 24 | **Timeline depth requests** | #601 expand precomps in place, #602 reorderable render stack, #604 guide-only effects, #355 bulk keyframes, #425 keyframe confusion, #428 more shortcuts | Power-user speed | 15–30 h | G2 · [ui-parity.md](ui-parity.md) |
-| 25 | **Accessibility** | AccessKit is enabled in eframe and tests read focus labels, but no screen-reader pass, keyboard navigation audit or contrast check | Excludes users; After Effects supports screen readers poorly too | 15–30 h | G9 · [ui-parity.md](ui-parity.md) |
+| 25 | **Accessibility** | AccessKit is enabled in eframe and tests read focus labels; the Project panel has After Effects' arrow-key navigation and named, stateful AccessKit nodes (#776), but the other panels have had no screen-reader pass or keyboard navigation audit, and there is no contrast check | Excludes users; After Effects supports screen readers poorly too | 15–30 h | G9 · [ui-parity.md](ui-parity.md) |
 
 ## Where we're going: workstreams in priority order
 

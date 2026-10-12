@@ -2088,3 +2088,49 @@ fn fit_up_to_100_follows_the_maximized_panel() {
     h.run_steps(3);
     assert!((rect(&h, "viewer.comp").width() - 640.0 / ppp).abs() < 0.01);
 }
+
+/// The Rotation tool keeps counting past a full turn, as in After Effects: going round the anchor
+/// 1.5 turns clockwise gives 540° (1x +180.0°), going back 2 turns gives −180°, with no jump a
+/// revolution back where the pointer crosses the left of the anchor. One drag is one undo step.
+#[test]
+fn rotate_tool_counts_revolutions_both_ways() {
+    let mut h = harness();
+    let box_id = h.state().session.active_comp().unwrap().layers[0].id;
+    h.state_mut().session.execute("layer.select", json!({"layers": [box_id.0]})).unwrap();
+    h.state_mut().ui.tool = Tool::Rotate;
+    h.run_steps(2);
+    let rotation = |h: &Harness<'_, EffectcraftApp>| {
+        h.state().session.active_comp().unwrap().layer(box_id).unwrap().props.prop("transform/rotation").unwrap().value.as_f64()
+    };
+    let center = screen(&h, [320.0, 180.0]);
+    // Inside the 80 px box, so the drag starts on it (not on the Plate behind).
+    let r = (screen(&h, [350.0, 180.0]) - center).x;
+    let at = |deg: f64| center + vec2((deg.to_radians().cos() as f32) * r, (deg.to_radians().sin() as f32) * r);
+    let undo_before = h.state().session.history.undo.len();
+    // Press on the box, right of its anchor; then go round in 10° steps.
+    let press = center + vec2(r * 0.3, 0.0);
+    h.input_mut().events.push(Event::PointerMoved(press));
+    h.input_mut().events.push(Event::PointerButton { pos: press, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    let mut seen = vec![];
+    let mut walk = |h: &mut Harness<'_, EffectcraftApp>, degs: Vec<f64>| {
+        for d in degs {
+            h.input_mut().events.push(Event::PointerMoved(at(d)));
+            h.step();
+            seen.push(rotation(h));
+        }
+    };
+    walk(&mut h, (0..=54).map(|i| i as f64 * 10.0).collect());
+    // The gesture applies the previous frame's pointer: hold a frame.
+    h.step();
+    let cw = rotation(&h);
+    assert!((cw - 540.0).abs() < 1.0, "1.5 turns clockwise: {cw}");
+    walk(&mut h, (1..=72).map(|i| 540.0 - i as f64 * 10.0).collect());
+    let end = at(-180.0);
+    h.input_mut().events.push(Event::PointerButton { pos: end, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(2);
+    let ccw = rotation(&h);
+    assert!((ccw + 180.0).abs() < 1.0, "back two turns: {ccw}");
+    assert!(seen.windows(2).all(|w| (w[1] - w[0]).abs() <= 20.0), "no jump: {seen:?}");
+    assert_eq!(h.state().session.history.undo.len(), undo_before + 1, "one drag, one undo step");
+}

@@ -91,7 +91,11 @@ enum Gesture {
     Rotate {
         layer: LayerId,
         center: Pos2,
-        start_angle: f64,
+        /// The pointer's angle about the centre on the last frame (degrees, as atan2 gives it).
+        last_angle: f64,
+        /// The turn so far, summed frame by frame so it keeps counting past a full revolution in
+        /// either direction (After Effects: 1x +0.0°, −1x −90.0°…) instead of wrapping at ±180°.
+        turned: f64,
         start_rot: f64,
         /// The other selected layers and their rotations: they turn by the same angle.
         others: Vec<(LayerId, f64)>,
@@ -445,6 +449,26 @@ fn snap_handle(f: [f64; 2], h: [f64; 2], a: [f64; 2], l2c: &Mat3, axes: [bool; 2
     let q = inv.apply(gv2(s[0], s[1]));
     let q = [q.x - a[0], q.y - a[1]];
     [0, 1].map(|k| if axes[k] && h[k].abs() > 1e-9 { q[k] / h[k] } else { f[k] })
+}
+
+/// The turn from angle `from` to angle `to` (degrees), wrapped to (−180°, 180°]: the shortest way
+/// round, so summing it frame by frame follows the pointer across atan2's ±180° seam and past full
+/// revolutions. Non-finite input turns by nothing.
+fn turn_delta(from: f64, to: f64) -> f64 {
+    let d = to - from;
+    if !d.is_finite() {
+        return 0.0;
+    }
+    let w = (d + 180.0).rem_euclid(360.0) - 180.0;
+    if w <= -180.0 { w + 360.0 } else { w }
+}
+
+/// The Rotation tool's value: the rotation as the drag began plus the turn so far (which may span
+/// revolutions), snapped to 45° steps with Shift.
+fn rotate_value(start_rot: f64, turned: f64, shift: bool) -> f64 {
+    let r = start_rot + turned;
+    let r = if r.is_finite() { r } else { start_rot };
+    if shift { (r / 45.0).round() * 45.0 } else { r }
 }
 
 /// A drag `d` (comp pixels), kept to the axis it moves along most when `shift` is held.
@@ -1368,7 +1392,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 Gesture::Rotate {
                     layer: l,
                     center,
-                    start_angle: ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees(),
+                    last_angle: ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees(),
+                    turned: 0.0,
                     start_rot: rot,
                     others,
                 }
@@ -1570,12 +1595,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     let _ = app.session.execute("prop.set", json!({"layer": lid.0, "path": "transform/scale", "value": v, "merge": merge}));
                 }
             }
-            Gesture::Rotate { layer, center, start_angle, start_rot, others } => {
+            Gesture::Rotate { layer, center, last_angle, turned, start_rot, others } => {
+                // Count the turn incrementally: the absolute angle wraps at ±180°, so writing it
+                // straight would jump a revolution back each time the pointer went round.
                 let ang = ((pos.y - center.y) as f64).atan2((pos.x - center.x) as f64).to_degrees();
-                let mut r = start_rot + (ang - start_angle);
-                if mods.shift {
-                    r = (r / 45.0).round() * 45.0;
-                }
+                let turned = turned + turn_delta(last_angle, ang);
+                ui.data_mut(|dd| dd.insert_temp(gid, Gesture::Rotate { layer, center, last_angle: ang, turned, start_rot, others: others.clone() }));
+                // Shift snaps the accumulated value (so 405° snaps to 1x +45°, not to 45°).
+                let r = rotate_value(start_rot, turned, mods.shift);
                 let _ = app.session.execute("prop.set", json!({"layer": layer.0, "path": "transform/rotation", "value": r, "merge": merge}));
                 for (lid, r0) in others {
                     let _ =
@@ -2610,6 +2637,48 @@ fn show_frame(app: &mut EffectcraftApp, ctx: &egui::Context, key: crate::frames:
 mod tests {
     use super::*;
     use effectcraft_engine::geom::{Mat4, vec3};
+
+    /// The Rotation tool counts past a full turn in both directions, as in After Effects: the
+    /// pointer going round the anchor 1.5 turns clockwise gives 540°, then back 2 turns gives
+    /// −180°, with no jump where atan2 wraps from 180° to −180°.
+    #[test]
+    fn rotate_tool_accumulates_revolutions() {
+        // Screen y points down, so a growing atan2 angle is clockwise on screen.
+        let drag = |start: f64, steps: &[f64]| {
+            let (mut last, mut turned, mut out) = (start, 0.0, vec![]);
+            for &a in steps {
+                // atan2's range: (−180°, 180°].
+                let a = (a + 180.0).rem_euclid(360.0) - 180.0;
+                turned += turn_delta(last, a);
+                last = a;
+                out.push(turned);
+            }
+            (last, turned, out)
+        };
+        let cw: Vec<f64> = (1..=54).map(|i| i as f64 * 10.0).collect();
+        let (last, turned, seq) = drag(0.0, &cw);
+        assert!((turned - 540.0).abs() < 1e-9, "{turned}");
+        assert!(seq.windows(2).all(|w| (w[1] - w[0] - 10.0).abs() < 1e-9), "no jump: {seq:?}");
+        assert!((rotate_value(0.0, turned, false) - 540.0).abs() < 1e-9);
+        let ccw: Vec<f64> = (1..=72).map(|i| 540.0 - i as f64 * 10.0).collect();
+        let (_, back, seq) = drag(last, &ccw);
+        assert!(seq.windows(2).all(|w| (w[1] - w[0] + 10.0).abs() < 1e-9), "no jump: {seq:?}");
+        let total = turned + back;
+        assert!((total + 180.0).abs() < 1e-9, "{total}");
+        assert!((rotate_value(30.0, total, false) + 150.0).abs() < 1e-9);
+        // Shift snaps the accumulated value, not a wrapped one.
+        assert_eq!(rotate_value(0.0, 400.0, true), 405.0);
+        assert_eq!(rotate_value(0.0, -400.0, true), -405.0);
+        // Across the seam: 170° → −170° is +20°, and back is −20°; exactly half a turn is +180°.
+        assert!((turn_delta(170.0, -170.0) - 20.0).abs() < 1e-9);
+        assert!((turn_delta(-170.0, 170.0) + 20.0).abs() < 1e-9);
+        assert_eq!(turn_delta(0.0, 180.0), 180.0);
+        assert_eq!(turn_delta(0.0, -180.0), 180.0);
+        // Never crash or poison the value on non-finite input.
+        assert_eq!(turn_delta(f64::NAN, 10.0), 0.0);
+        assert_eq!(turn_delta(0.0, f64::INFINITY), 0.0);
+        assert_eq!(rotate_value(15.0, f64::NAN, false), 15.0);
+    }
 
     /// #882: the frame's corner sits on a physical pixel at any display scaling, so 100 % maps
     /// comp pixels 1:1 onto screen pixels.

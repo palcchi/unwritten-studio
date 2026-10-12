@@ -306,7 +306,7 @@ Effects are addressed by id (`ec.<category>.<name>`) or display name in commands
 | 3D Glasses | `ec.perspective.3dglasses` | 8 | GPU | 32 | Implemented |
 | Bevel Alpha | `ec.perspective.bevelalpha` | 4 | GPU | 32 | Implemented |
 | Bevel Edges | `ec.perspective.beveledges` | 4 | GPU | 32 | Implemented |
-| CC Cylinder | `ec.perspective.cccylinder` | 12 | GPU | 32 | Implemented |
+| CC Cylinder | `ec.perspective.cccylinder` | 15 | GPU | 32 | Implemented |
 | CC Environment | `ec.perspective.ccenvironment` | 4 | GPU | 32 | Implemented |
 | CC Sphere | `ec.perspective.ccsphere` | 14 | GPU | 32 | Implemented |
 | CC Spotlight | `ec.perspective.ccspotlight` | 8 | GPU | 32 | Implemented |

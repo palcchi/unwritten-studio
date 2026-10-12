@@ -160,3 +160,42 @@ fn a_quick_offset_drag_shows_the_total_and_per_layer_offset() {
         .collect();
     assert!(text.iter().any(|t| t.starts_with("Total Offset: +") && t.contains("Per Layer: +")), "{text:?}");
 }
+
+fn click(h: &mut Harness<'_, EffectcraftApp>, at: Pos2, modifiers: Modifiers) {
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.step();
+    h.input_mut().events.push(Event::ModifiersChanged(modifiers));
+    h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers });
+    h.step();
+    h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers });
+    h.step();
+    h.input_mut().events.push(Event::ModifiersChanged(Modifiers::default()));
+    h.run_steps(2);
+}
+
+/// A Shift-click range of layers and a box of keys, drawn from the bottom right up to the top left,
+/// stagger in the comp's layer order (top first), whichever way they were made (#1012).
+#[test]
+fn shift_ranges_and_key_boxes_stagger_in_comp_order() {
+    let (mut h, ids) = harness();
+    // ids[2] is the top layer, ids[0] the bottom one. Click the bottom bar, Shift-click the top.
+    let bar = |h: &Harness<'_, EffectcraftApp>, id: u64| center(h, &format!("timeline.layer.{id}.bar"));
+    let (bottom, top) = (bar(&h, ids[0]), bar(&h, ids[2]));
+    click(&mut h, bottom, Modifiers::default());
+    click(&mut h, top, Modifiers::SHIFT);
+    let selected: Vec<u64> = h.state().session.state.selected_layers.iter().map(|l| l.0).collect();
+    assert_eq!(selected, vec![ids[2], ids[1], ids[0]], "a Shift range is in comp order");
+    h.state_mut().session.execute("layer.quickOffset", json!({"delta": 2.0 / 30.0})).unwrap();
+    assert_eq!([start(&h, ids[2]), start(&h, ids[1]), start(&h, ids[0])], [0, F, 2 * F]);
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    // A box around the 1 s keys, drawn upwards and to the left.
+    let one = Tick::from_seconds_f64(1.0).0;
+    let key = |h: &Harness<'_, EffectcraftApp>, id: u64| center(h, &format!("timeline.keyAt.{}.{one}", opacity_uid(h, id)));
+    let (low, high) = (key(&h, ids[0]), key(&h, ids[2]));
+    drag(&mut h, low + vec2(30.0, 5.0), high - vec2(30.0, 5.0), Modifiers::default());
+    let order: Vec<u64> = h.state().session.state.selected_keys.iter().map(|k| k.layer.0).collect();
+    assert_eq!(order, vec![ids[2], ids[1], ids[0]], "a key box is in comp order");
+    h.state_mut().session.execute("keys.quickOffset", json!({"delta": 2.0 / 30.0})).unwrap();
+    assert_eq!([key_times(&h, ids[2])[1], key_times(&h, ids[1])[1], key_times(&h, ids[0])[1]], [one, one + F, one + 2 * F]);
+}

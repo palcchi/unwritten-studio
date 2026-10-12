@@ -640,6 +640,59 @@ fn default_effect_points_sit_at_the_centre_of_a_shape_layer() {
     }
 }
 
+/// #659: a tiling effect on a text layer tiles across the layer's whole region. The glyphs
+/// were cut off at their own bounding box: the effect computed over the comp-sized layer rect
+/// but wrote into the painted (glyph-bounds) buffer alone. Tiling shrinks each copy, so the
+/// probe is the x-span of the painted pixels, not their count.
+#[test]
+fn effects_on_text_reach_past_the_text_bounds() {
+    let (mut p, cid, comp) = setup();
+    let mut l = build::layer(&mut p, &comp, "Text", LayerSource::Text, (200, 100), None);
+    l.props.prop_mut("text/sourceText").unwrap().value = Value::Text(Box::new(TextDoc { text: "HI".into(), size: 24.0, ..Default::default() }));
+    l.props.prop_mut("transform/position").unwrap().value = Value::Vec3([50.0, 60.0, 0.0]);
+    p.comp_mut(cid).unwrap().layers.push(l.clone());
+    let plain = render_frame(&p, cid, Tick::ZERO, 1.0);
+    let painted = plain.data.iter().filter(|px| px[3] > 0.5).count();
+    add_effect_200(&mut p, &mut l, "ec.distort.cctiler", &[("scale", Value::Scalar(25.0))]);
+    p.comp_mut(cid).unwrap().layers = vec![l];
+    let tiled = render_frame(&p, cid, Tick::ZERO, 1.0);
+    let (mut lo, mut hi) = (u32::MAX, 0u32);
+    for y in 0..100 {
+        for x in 0..200 {
+            if tiled.get(x as i64, y as i64)[3] > 0.5 {
+                lo = lo.min(x);
+                hi = hi.max(x);
+            }
+        }
+    }
+    assert!(
+        painted > 50 && hi.saturating_sub(lo) > 100,
+        "CC Tiler tiles the glyphs across the layer region, not just its text bounds: {painted} painted, x-span {lo}..{hi}"
+    );
+}
+
+/// #658: CC Smear drags text glyphs beyond the text layer's own bounds. Pixels smeared past
+/// the painted rectangle used to fall off its edge, so the liquid trail never appeared.
+#[test]
+fn cc_smear_trails_text_past_its_bounds() {
+    let (mut p, cid, comp) = setup();
+    let mut l = build::layer(&mut p, &comp, "Text", LayerSource::Text, (200, 100), None);
+    l.props.prop_mut("text/sourceText").unwrap().value = Value::Text(Box::new(TextDoc { text: "HI".into(), size: 24.0, ..Default::default() }));
+    l.props.prop_mut("transform/position").unwrap().value = Value::Vec3([60.0, 60.0, 0.0]);
+    p.comp_mut(cid).unwrap().layers.push(l.clone());
+    let right = |img: &effectcraft_raster::Image| (0..100).map(|y| (0..200).filter(|x| img.get(*x, y)[3] > 0.5).max().unwrap_or(0)).max().unwrap_or(0);
+    let plain = right(&render_frame(&p, cid, Tick::ZERO, 1.0));
+    add_effect_200(
+        &mut p,
+        &mut l,
+        "ec.distort.ccsmear",
+        &[("from", Value::Vec2([110.0, 45.0])), ("to", Value::Vec2([185.0, 45.0])), ("reach", Value::Scalar(100.0)), ("radius", Value::Scalar(40.0))],
+    );
+    p.comp_mut(cid).unwrap().layers = vec![l];
+    let smeared = right(&render_frame(&p, cid, Tick::ZERO, 1.0));
+    assert!(plain > 40 && smeared > plain + 25, "CC Smear trails the glyphs past the text bounds: right edge {plain} → {smeared}");
+}
+
 /// A layer parameter pointing at a shape layer sees all of it (in its effect space), and the
 /// effect's own masks are in effect space too: Set Matte with a centred shape layer as the
 /// matte keeps the centre of a full-comp solid (#227).

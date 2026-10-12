@@ -766,8 +766,10 @@ pub fn show_form(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let mut regs: Vec<(String, egui::Rect, String)> = vec![];
     let mut browse: Option<usize> = None;
     let mut focused = false;
-    // Wide enough for a label column and a 240 px popup without a horizontal scroll bar.
-    super::dialogs::modal(ctx, &f.title.clone(), vec2(480.0, h), t, |ui| {
+    // Project Settings needs room for its labels and the selected GPU adapter name. At the
+    // generic form width its grid overflows, pushing the buttons off the visible area (#978).
+    let width = if f.title == "Project Settings" { 800.0 } else { 480.0 };
+    super::dialogs::modal(ctx, &f.title.clone(), vec2(width, h), t, |ui| {
         egui::Grid::new("form-grid").num_columns(2).spacing([14.0, 10.0]).show(ui, |ui| {
             for (i, fl) in f.fields.iter_mut().enumerate() {
                 ui.label(tr(&fl.label));

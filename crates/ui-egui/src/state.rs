@@ -449,6 +449,15 @@ pub struct FxPick {
     pub name: String,
 }
 
+/// A Character panel Fill or Stroke eyedropper waiting for a Composition viewer click.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TextColorPick {
+    pub layer: u64,
+    pub field: String,
+    /// Preserve the edited character range when focus moves from the panel to the viewer.
+    pub range: Option<[usize; 2]>,
+}
+
 /// Effects & Presets contents-menu options.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EffectsView {
@@ -580,6 +589,9 @@ pub struct UiState {
     /// Effect Controls: a point crosshair or colour eyedropper waiting for a viewer click.
     #[serde(default)]
     pub fx_pick: Option<FxPick>,
+    /// Character panel colour eyedropper waiting for a viewer click.
+    #[serde(default)]
+    pub text_color_pick: Option<TextColorPick>,
     /// Curves editor: shown channel (index into RGB/Red/Green/Blue/Alpha) per effect uid.
     #[serde(default)]
     pub fx_curve_channel: BTreeMap<u64, usize>,
@@ -676,6 +688,7 @@ impl Default for UiState {
             fx_closed: BTreeSet::new(),
             fx_slider_open: BTreeSet::new(),
             fx_pick: None,
+            text_color_pick: None,
             fx_curve_channel: BTreeMap::new(),
             fx_curve_pencil: BTreeSet::new(),
             fx_levels_channel: BTreeMap::new(),

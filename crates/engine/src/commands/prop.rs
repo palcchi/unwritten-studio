@@ -862,17 +862,78 @@ pub(crate) fn edit_keys(s: &mut Session, label: &str, merge: Option<&str>, f: im
     })
 }
 
+/// The keys a key drag's step applies to, the drag's total and the project as it was before the
+/// drag. Steps of one drag (one `merge` key) start again from the keys as they were then, so a key
+/// passed over survives; `d` adds to the drag's total, or is that total (`absolute`).
+pub(crate) fn key_gesture(
+    s: &Session,
+    merge: Option<&str>,
+    d: Tick,
+    absolute: bool,
+) -> (Vec<KeyRef>, Tick, Option<std::sync::Arc<effectcraft_project::Project>>) {
+    let gesture = merge.is_some_and(|m| s.history.merge_key.as_deref() == Some(m)) && s.key_move.as_ref().map(|g| g.merge.as_str()) == merge;
+    match (&s.key_move, s.history.undo.last()) {
+        (Some(g), Some((_, base))) if gesture => (g.from.clone(), if absolute { d } else { g.total + d }, Some(base.clone())),
+        _ => (s.state.selected_keys.clone(), d, None),
+    }
+}
+
+/// Move keys `from` to the layer times `to` gives (from a key's layer and layer time). A key
+/// landing on another key of its property replaces it, roving keys follow their neighbours and
+/// keys of locked layers stay. Returns the keys' new references in `from`'s order: the selection
+/// keeps the order it was made in.
+pub(crate) fn move_key_refs(comp: &mut effectcraft_project::Comp, from: &[KeyRef], to: impl Fn(&Layer, Tick) -> Result<Tick>) -> Result<Vec<KeyRef>> {
+    let mut remapped: std::collections::HashMap<KeyRef, KeyRef> = Default::default();
+    let mut groups: std::collections::BTreeMap<(LayerId, Uid), Vec<Tick>> = Default::default();
+    for k in from {
+        groups.entry((k.layer, k.prop)).or_default().push(k.time);
+    }
+    for ((lid, uid), times) in groups {
+        let Some(l) = comp.layer_mut(lid) else { continue };
+        let at = |time| KeyRef { layer: lid, prop: uid, time };
+        if l.switches.locked {
+            remapped.extend(times.iter().map(|t| (at(*t), at(*t))));
+            continue;
+        }
+        let moves: Vec<(Tick, Tick)> = times.iter().map(|t| Ok((*t, to(l, *t)?))).collect::<Result<_>>()?;
+        let Some(pr) = l.props.find_mut(uid) else { continue };
+        // Take the moving keys out, then put them back at their new times.
+        let mut moved = vec![];
+        for (old, new) in &moves {
+            if let Some(i) = key_at(&pr.keys, *old) {
+                let mut k = pr.keys.remove(i);
+                k.time = *new;
+                moved.push((*old, k));
+            }
+        }
+        // Target time -> the key's time before the move.
+        let mut targets: std::collections::HashMap<Tick, Tick> = Default::default();
+        for (old, k) in moved {
+            targets.insert(k.time, old);
+            match pr.keys.binary_search_by(|x| x.time.cmp(&k.time)) {
+                Ok(j) => pr.keys[j] = k,
+                Err(j) => pr.keys.insert(j, k),
+            }
+        }
+        // Resolve stored indices before roving keys change their times.
+        let tracked: Vec<(Tick, usize)> = targets.into_iter().filter_map(|(t, old)| key_at(&pr.keys, t).map(|i| (old, i))).collect();
+        effectcraft_keyframe::retime_roving(&mut pr.keys, pr.spatial);
+        for (old, i) in tracked {
+            if let Some(key) = pr.keys.get(i) {
+                remapped.insert(at(old), at(key.time));
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    Ok(from.iter().filter_map(|k| remapped.get(k).copied()).filter(|k| seen.insert(*k)).collect())
+}
+
 /// Move the selected keys by `d` comp seconds, snapped to the comp's frames in comp time (keys
 /// of time-stretched layers move with the pointer, not by the layer-time distance). Keys of
 /// locked layers stay. A key landing on another key of its property replaces it.
 pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: Tick) -> Result<Value> {
     let cid = s.active_comp_id().ok_or(EngineError::NoComp)?;
-    // A drag (steps with one merge key) starts again from the keys before it each step.
-    let gesture = merge.is_some_and(|m| s.history.merge_key.as_deref() == Some(m)) && s.key_move.as_ref().map(|g| g.merge.as_str()) == merge;
-    let (from, total, base) = match (&s.key_move, s.history.undo.last()) {
-        (Some(g), Some((_, base))) if gesture => (g.from.clone(), g.total + d, Some(base.clone())),
-        _ => (s.state.selected_keys.clone(), d, None),
-    };
+    let (from, total, base) = key_gesture(s, merge, d, false);
     s.key_move = merge.map(|m| crate::KeyMove { merge: m.to_string(), from: from.clone(), total });
     s.edit(label, merge, |proj, st| {
         if let Some(b) = base {
@@ -880,47 +941,7 @@ pub(crate) fn shift_keys(s: &mut Session, label: &str, merge: Option<&str>, d: T
         }
         let comp = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
         let fr = comp.frame_rate;
-        let mut groups: std::collections::BTreeMap<(LayerId, Uid), Vec<Tick>> = Default::default();
-        for k in &from {
-            groups.entry((k.layer, k.prop)).or_default().push(k.time);
-        }
-        let mut sel = vec![];
-        for ((lid, uid), times) in groups {
-            let Some(l) = comp.layer_mut(lid) else { continue };
-            let to = |t: Tick| l.layer_time(fr.snap_nearest(l.comp_time(t) + total));
-            let moves: Vec<(Tick, Tick)> = times.iter().map(|t| (*t, to(*t))).collect();
-            if l.switches.locked {
-                sel.extend(times.iter().map(|t| KeyRef { layer: lid, prop: uid, time: *t }));
-                continue;
-            }
-            let Some(pr) = l.props.find_mut(uid) else { continue };
-            // Take the moving keys out, then put them back at their new times.
-            let mut moved = vec![];
-            for (old, new) in &moves {
-                if let Some(i) = key_at(&pr.keys, *old) {
-                    let mut k = pr.keys.remove(i);
-                    k.time = *new;
-                    moved.push(k);
-                }
-            }
-            for k in moved {
-                sel.push(KeyRef { layer: lid, prop: uid, time: k.time });
-                match pr.keys.binary_search_by(|x| x.time.cmp(&k.time)) {
-                    Ok(j) => pr.keys[j] = k,
-                    Err(j) => pr.keys.insert(j, k),
-                }
-            }
-            // Roving keys follow their neighbours: keep the selection on them.
-            let before: Vec<Tick> = pr.keys.iter().map(|k| k.time).collect();
-            if effectcraft_keyframe::retime_roving(&mut pr.keys, pr.spatial) {
-                for r in sel.iter_mut().filter(|r| r.layer == lid && r.prop == uid) {
-                    if let Some(i) = before.iter().position(|t| *t == r.time) {
-                        r.time = pr.keys[i].time;
-                    }
-                }
-            }
-        }
-        st.selected_keys = sel;
+        st.selected_keys = move_key_refs(comp, &from, |l, t| Ok(l.layer_time(fr.snap_nearest(l.comp_time(t) + total))))?;
         Ok(json!(st.selected_keys.len()))
     })
 }

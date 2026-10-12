@@ -15,6 +15,7 @@ use effectcraft_ui_egui::dock::PanelKind;
 use effectcraft_ui_egui::panels::viewer::{comp_to_screen, last_fit};
 use egui::{Event, Modifiers, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
+use egui_kittest::kittest::Queryable;
 use serde_json::json;
 
 /// Comp "Main" (4 s at 30 fps, current time 1 s) with solids Top, Middle and Bottom, and comp
@@ -417,6 +418,35 @@ fn dropped_file_on_viewer_imports_and_adds_layer_at_pointer() {
     let Some(KV::Vec3(p)) = layer.props.prop("transform/position").map(|p| p.value.clone()) else { panic!("no position") };
     let tol = 1.0 / last_fit(&h.ctx) as f64 + 1e-6;
     assert!((p[0] - 80.0).abs() <= tol && (p[1] - 45.0).abs() <= tol, "{p:?}");
+}
+
+/// #678: a dropped Photoshop file asks how to import it, as File ▸ Import ▸ File… does; the
+/// Import Kind starts at Settings ▸ Import ▸ Default Drag Import As, and OK imports the drop.
+#[test]
+fn dropped_photoshop_file_shows_the_import_photoshop_file_dialog() {
+    let (mut h, _) = harness();
+    h.state_mut().session.importer = Some(Arc::new(Gated { started: AtomicUsize::new(0), allow: Arc::new(AtomicUsize::new(usize::MAX)) }));
+    h.state_mut().session.prefs.import.drag_import_as = "compLayerSizes".into();
+    h.event(Event::PointerMoved(rect(&h, "panel.Project").center()));
+    h.step();
+    h.input_mut().dropped_files.push(Arc::new(Dropped(std::env::temp_dir().join("Layers.PSD"))));
+    h.run_steps(2);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form), "the drop asks first");
+    h.run_steps(2);
+    assert!(h.query_by_label("Import Photoshop File").is_some());
+    assert!(h.query_by_value("Composition - Retain Layer Sizes").is_some(), "Import Kind starts at Default Drag Import As");
+    assert!(!h.state().session.project.items.values().any(|i| i.name == "Layers.PSD"), "nothing imported before OK");
+    click_id(&mut h, "form.cancel");
+    assert_eq!(h.state().dialog, None);
+
+    // With Default Drag Import As at Footage, OK imports the file as one item.
+    h.state_mut().session.prefs.import.drag_import_as = "footage".into();
+    h.input_mut().dropped_files.push(Arc::new(Dropped(std::env::temp_dir().join("Layers.PSD"))));
+    h.run_steps(4);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::Form));
+    assert!(h.query_by_value("Footage").is_some());
+    click_id(&mut h, "form.ok");
+    step_until(&mut h, |h| h.state().session.project.items.values().any(|i| i.name == "Layers.PSD"));
 }
 
 #[test]

@@ -4,7 +4,7 @@ use effectcraft_color::{BlendMode, Label};
 use effectcraft_keyframe::{Justify, TextDoc, Value as KV};
 use effectcraft_project::build::{self, Ids};
 use effectcraft_project::{
-    Comp, FrameBlend, GroupKind, ItemId, ItemKind, Layer, LayerId, LayerSource, MaskMode, MatteKind, Project, PropGroup, Quality, Solid, TrackMatte,
+    Comp, FrameBlend, GroupKind, ItemId, ItemKind, Layer, LayerId, LayerSource, MaskMode, MatteKind, Node, Project, PropGroup, Quality, Solid, TrackMatte,
 };
 use effectcraft_time::Tick;
 use serde_json::{Value, json};
@@ -1186,6 +1186,26 @@ fn add_shape_item(s: &mut Session, p: &Value) -> Result<Value> {
     let uid = s.edit("Add Shape Item", None, |proj, _| {
         let mut next = proj.next_id;
         let mut ids = Ids(&mut next);
+        // Front / Bevel / Side / Back ▸ property: into the group's surface item (one per group).
+        if let Some((surface, prop)) = build::shape_surface_kind(&kind) {
+            let target = shape_item_target(proj, cid, lid, group_uid)?;
+            let item = match target.children.iter().position(|c| matches!(c, Node::Group(g) if g.match_id == surface)) {
+                Some(i) => i,
+                None => {
+                    let g = build::shape_surface(&mut ids, surface).ok_or_else(|| bad("layer.addShapeItem", format!("unknown kind `{kind}`")))?;
+                    target.children.push(g.into());
+                    target.children.len() - 1
+                }
+            };
+            let Some(Node::Group(g)) = target.children.get_mut(item) else { return Err(bad("layer.addShapeItem", "no such group")) };
+            if g.get(prop).is_none() {
+                let p = build::shape_surface_prop(&mut ids, prop).ok_or_else(|| bad("layer.addShapeItem", format!("unknown kind `{kind}`")))?;
+                g.children.push(p.into());
+            }
+            let uid = g.uid;
+            proj.next_id = next;
+            return Ok(uid);
+        }
         let g = match kind.as_str() {
             "group" => build::shape_group(&mut ids, "Group 1", vec![]),
             "rect" | "rectangle" => build::shape_rect(&mut ids, [200.0, 200.0], [0.0, 0.0], 0.0),
@@ -1203,21 +1223,26 @@ fn add_shape_item(s: &mut Session, p: &Value) -> Result<Value> {
         };
         let uid = g.uid;
         proj.next_id = next;
-        let l = layer_mut(proj, cid, lid)?;
-        let contents = l.props.sub_mut("contents").ok_or_else(|| bad("layer.addShapeItem", "not a shape layer"))?;
-        let target = match group_uid {
-            Some(u) => contents
-                .find_group_mut(u)
-                .and_then(|g| if g.match_id == "contents" { Some(g) } else { g.sub_mut("contents") })
-                .ok_or_else(|| bad("layer.addShapeItem", "no such group"))?,
-            None => contents,
-        };
-        target.children.push(g.into());
+        shape_item_target(proj, cid, lid, group_uid)?.children.push(g.into());
         Ok(uid)
     })?;
     // The new item's property path, ready for prop.set / add_keyframe (`contents/trim#2/end`).
     let path = s.project.comp(cid).and_then(|c| c.layer(lid)).and_then(|l| l.props.match_path_of(uid));
     Ok(json!({"uid": uid, "path": path}))
+}
+
+/// The contents a new shape item goes into: the shape group `group_uid` (its Contents), else the
+/// layer's Contents.
+fn shape_item_target(proj: &mut Project, cid: ItemId, lid: LayerId, group_uid: Option<u64>) -> Result<&mut PropGroup> {
+    let l = layer_mut(proj, cid, lid)?;
+    let contents = l.props.sub_mut("contents").ok_or_else(|| bad("layer.addShapeItem", "not a shape layer"))?;
+    Ok(match group_uid {
+        Some(u) => contents
+            .find_group_mut(u)
+            .and_then(|g| if g.match_id == "contents" { Some(g) } else { g.sub_mut("contents") })
+            .ok_or_else(|| bad("layer.addShapeItem", "no such group"))?,
+        None => contents,
+    })
 }
 
 fn set_text(s: &mut Session, p: &Value) -> Result<Value> {
@@ -1570,7 +1595,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add (Shape)",
             [],
             None,
-            "{layer?, kind: group|rect|ellipse|star|polygon|path|fill|stroke|gfill|gstroke|trim|repeater|round|offset|pucker|twist|zigzag|wiggle|merge, group?: uid|path} → {uid, path}",
+            "{layer?, kind: group|rect|ellipse|star|polygon|path|fill|stroke|gfill|gstroke|trim|repeater|round|offset|pucker|twist|zigzag|wiggle|merge|frontColor|bevelColor|sideColor|backColor, group?: uid|path} → {uid, path} (frontColor…backColor: the group's Front / Bevel / Side / Back item, which colours that surface of every extruded paint in the group in Advanced 3D)",
             has_layers,
             add_shape_item
         ),

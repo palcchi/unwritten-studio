@@ -1022,6 +1022,14 @@ Animation
       Brightness | layer.addTextAnimator {"properties":["strokeBrightness"]}
       Opacity | layer.addTextAnimator {"properties":["strokeOpacity"]}
     Stroke Width | layer.addTextAnimator {"properties":["strokeWidth"]}
+    Front
+      Color | layer.addTextAnimator {"properties":["frontColor"]}
+    Bevel
+      Color | layer.addTextAnimator {"properties":["bevelColor"]}
+    Side
+      Color | layer.addTextAnimator {"properties":["sideColor"]}
+    Back
+      Color | layer.addTextAnimator {"properties":["backColor"]}
     ---
     Tracking | layer.addTextAnimator {"properties":["tracking"]}
     Line Anchor | layer.addTextAnimator {"properties":["lineAnchor"]}

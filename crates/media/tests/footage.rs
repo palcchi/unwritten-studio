@@ -674,3 +674,13 @@ fn conformed_flac_audio_reads_back_like_the_decoder() {
     assert_eq!(pool.audio_samples(&f, at, 4800, 48_000), decoded);
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+/// File ▸ Import of an STL part: importable by extension and probed as a 3D model item.
+#[test]
+fn stl_imports_as_a_model() {
+    assert!(effectcraft_media::is_importable(Path::new("part.stl")));
+    let ascii = "solid part\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid part\n";
+    let f = effectcraft_media::probe_bytes("part.stl", Arc::from(ascii.as_bytes())).expect("probe");
+    assert_eq!(f.kind, FootageKind::Model);
+    assert_eq!(f.codec, "STL (1 meshes, 1 triangles)");
+}

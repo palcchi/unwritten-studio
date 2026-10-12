@@ -53,6 +53,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("timeline.zoomIn", "Zoom In Time", [], Some("=")),
     uic!("timeline.zoomOut", "Zoom Out Time", [], Some("-")),
     uic!("timeline.zoomFit", "Zoom to Fit Comp", [], None),
+    uic!("timeline.scrollToTime", "Scroll to Current Time", [], Some("D")),
+    uic!("timeline.scrollToLayer", "Scroll Topmost Selected Layer to Top", [], Some("X")),
+    uic!("timeline.parentColumn", "Show/Hide Parent Column", [], Some("Shift+F4")),
     uic!("timeline.zoomFrameToggle", "Zoom In to Frame Level / Out to the Whole Comp", [], Some(";")),
     uic!("timeline.graphEditor", "Graph Editor", [], Some("Shift+F3")),
     uic!("timeline.switchesModes", "Toggle Switches / Modes", [], Some("F4")),
@@ -564,6 +567,13 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             app.ui.viewer.fit_up_to_100 = false;
             app.ui.viewer.pan = [0.0, 0.0];
             return Ok(Value::Null);
+        }
+        "timeline.scrollToTime" => app.ui.timeline.scroll_to = Some(crate::state::ScrollTo::Time),
+        "timeline.scrollToLayer" => app.ui.timeline.scroll_to = Some(crate::state::ScrollTo::Layer),
+        "timeline.parentColumn" => {
+            let on = !crate::panels::timeline::column_visible(&app.ui.timeline, "parent");
+            crate::panels::timeline::set_column(&mut app.ui.timeline, "parent", on)?;
+            return Ok(json!({"parent": on}));
         }
         "view.actualSize" if app.ui.focused == PanelKind::Layer => {
             app.ui.layer_zoom = Some(1.0 / ctx.pixels_per_point());
@@ -2140,9 +2150,30 @@ mod tests {
             ("layer.mask.selectNext", "Alt+`"),
             ("layer.mask.selectPrevious", "Alt+Shift+`"),
             ("layer.castsShadows", "Alt+Shift+C"),
+            ("timeline.scrollToTime", "D"),
+            ("timeline.scrollToLayer", "X"),
+            ("timeline.parentColumn", "Shift+F4"),
         ] {
             assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
         }
+    }
+
+    #[test]
+    fn timeline_keys_scroll_and_toggle_the_parent_column() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        // D and X leave a scroll for the Timeline to do when it is drawn.
+        run(&mut app, "timeline.scrollToTime");
+        assert_eq!(app.ui.timeline.scroll_to, Some(crate::state::ScrollTo::Time));
+        run(&mut app, "timeline.scrollToLayer");
+        assert_eq!(app.ui.timeline.scroll_to, Some(crate::state::ScrollTo::Layer));
+        // Shift+F4 shows and hides the Parent column.
+        let parent = crate::panels::timeline::column_visible(&app.ui.timeline, "parent");
+        run(&mut app, "timeline.parentColumn");
+        assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), !parent);
+        run(&mut app, "timeline.parentColumn");
+        assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), parent);
     }
 
     #[test]

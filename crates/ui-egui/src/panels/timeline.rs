@@ -1320,13 +1320,6 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let tc_rect = Rect::from_min_size(pos2(rect.min.x + 12.0, top + 6.0), vec2(150.0, 24.0));
     let tc_resp = ui.interact(tc_rect, egui::Id::new("tl-timecode"), Sense::click_and_drag());
     p.text(tc_rect.left_center(), Align2::LEFT_CENTER, &tc, Tokens::semibold(16.0), t.timecode);
-    // Audio-only preview (Video off in the Preview panel): the current time stays put, so the
-    // header says why and where the sound is (#1118).
-    if let Some(af) = app.video_preview_off() {
-        let at = af.map(|f| format!(" · {}", effectcraft_engine::time::format_timecode_ae(f + fr.frame_at(comp.display_start), fr, false))).unwrap_or_default();
-        let msg = format!("{}{at}", crate::i18n::tr("Video preview off: audio only"));
-        p.text(pos2(tc_rect.min.x, top + 40.0), Align2::LEFT_CENTER, msg, Tokens::ui(11.0), t.cache_green);
-    }
     // Under it the other style (frames under timecode, timecode under frames) and the rate.
     let settings = &app.session.project.settings;
     let other = if settings.time_display == effectcraft_engine::project::TimeDisplayStyle::Timecode {
@@ -1334,7 +1327,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     } else {
         effectcraft_engine::time::format_timecode_ae(fr.frame_at(time + comp.display_start), fr, false)
     };
-    p.text(pos2(tc_rect.min.x, tc_rect.max.y + 8.0), Align2::LEFT_CENTER, format!("{other} ({:.2} fps)", fr.as_f64()), Tokens::ui(10.5), t.text_faint);
+    // Audio-only preview (Video off in the Preview panel): the current time stays put, so that
+    // line says why and where the sound is instead (#1118).
+    if let Some(af) = app.video_preview_off() {
+        let at = af.map(|f| format!(" · {}", effectcraft_engine::time::format_timecode_ae(f + fr.frame_at(comp.display_start), fr, false))).unwrap_or_default();
+        let msg = format!("{}{at}", crate::i18n::tr("Video preview off: audio only"));
+        p.text(pos2(tc_rect.min.x, tc_rect.max.y + 8.0), Align2::LEFT_CENTER, msg, Tokens::ui(10.5), t.cache_green);
+    } else {
+        p.text(pos2(tc_rect.min.x, tc_rect.max.y + 8.0), Align2::LEFT_CENTER, format!("{other} ({:.2} fps)", fr.as_f64()), Tokens::ui(10.5), t.text_faint);
+    }
     app.auto.add("timeline.timecode", tc_rect, &tc);
     super::toggle_time_display(app, &tc_resp);
     if tc_resp.dragged() {

@@ -316,6 +316,7 @@ pub const IMPORT_FORMATS: &[&str] = &[
     "Opus",
     "glTF/GLB",
     "OBJ",
+    "STL",
     "Lottie JSON",
 ];
 

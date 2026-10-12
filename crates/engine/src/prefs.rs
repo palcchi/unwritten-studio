@@ -35,9 +35,6 @@ pub const LANGUAGES: &[(&str, &str)] = &[
     ("Čeština", "cs"),
 ];
 
-/// Settings ▸ Appearance ▸ UI Scale: (label, `appearance.uiScale` percent).
-pub const UI_SCALES: &[(&str, &str)] = &[("75%", "75"), ("100%", "100"), ("125%", "125"), ("150%", "150"), ("175%", "175"), ("200%", "200")];
-
 /// Settings ▸ Startup & Repair ▸ Window Graphics: (label, `startup.windowGraphics` value).
 pub const WINDOW_GRAPHICS: &[(&str, &str)] = &[("Automatic", "auto"), ("OpenGL (compatibility)", "gl")];
 
@@ -1171,7 +1168,7 @@ pub fn pages() -> Vec<Page> {
                 s("appearance.lightTheme", "Light Theme", Kind::Choice(LIGHT_THEMES), true),
                 s("appearance.darkTheme", "Dark Theme", Kind::Choice(DARK_THEMES), true),
                 s("appearance.brightness", "Brightness", Kind::Slider(-1.0, 1.0), true),
-                s("appearance.uiScale", "UI Scale", Kind::Choice(UI_SCALES), true),
+                s("appearance.uiScale", "UI Scale", Kind::Int(75, 200, "%"), true),
                 Section("Labels and Colors"),
                 s("appearance.useLabelColorForHandles", "Use Label Color for Layer Handles and Paths", B, true),
                 s("appearance.useLabelColorForTabs", "Use Label Color for Related Tabs", B, true),

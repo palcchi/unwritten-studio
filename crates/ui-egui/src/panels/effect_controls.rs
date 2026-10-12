@@ -1415,6 +1415,9 @@ pub fn viewer_hook(
                 if !picking && app.ui.viewer.show_layer_controls && matches!(&g.kind, GroupKind::Effect { effect } if effect == super::fx_editors::RESHAPE) {
                     super::fx_editors::reshape_overlay(app, ui, painter, map, ectx, layer, g, &m, &mut actions);
                 }
+                if !picking && app.ui.viewer.show_layer_controls && matches!(&g.kind, GroupKind::Effect { effect } if effect == super::fx_editors::MESH_WARP) {
+                    super::fx_editors::mesh_warp_overlay(app, ui, painter, map, ectx, layer, g, &fm, &mut actions);
+                }
                 let scope = FxScope { effect: &g.match_id, root: g, path: String::new() };
                 let mut pts = Vec::new();
                 visible_points(g, &scope, layer, ectx, 0, &mut pts);

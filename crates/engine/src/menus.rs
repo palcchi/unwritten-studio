@@ -693,6 +693,7 @@ Composition
     File... | comp.saveFrameAs
     Photoshop Layers... | comp.saveFrameAsPsd
     ProEXR... | comp.saveFrameAsExr
+  Copy Frame to Clipboard | comp.copyFrame
   Pre-render... | render.preRender
   Save Current Preview... | render.saveCurrentPreview
   ---

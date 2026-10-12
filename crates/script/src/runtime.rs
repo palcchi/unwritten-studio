@@ -65,18 +65,18 @@ pub(crate) struct Active {
     pub(crate) output: Vec<String>,
     /// Open undo groups: (name, project snapshot when the outermost group began).
     pub(crate) groups: Vec<(String, Arc<Project>)>,
-    /// `app.scheduleTask` queue: (id, code, repeat).
-    pub(crate) tasks: Vec<(u32, String, bool)>,
-    pub(crate) next_task: u32,
     pub(crate) name: String,
+    /// The script context running (its `app.scheduleTask` tasks are kept under this id, see
+    /// [`crate::tasks`]).
+    pub(crate) host: u32,
     /// Running on a script-host thread: modal dialogs hand the session back to the caller
     /// through this link while they wait.
     pub(crate) link: Option<crate::ui::Link>,
 }
 
 impl Active {
-    pub(crate) fn new(session: Session, name: &str) -> Active {
-        Active { session, output: vec![], groups: vec![], tasks: vec![], next_task: 0, name: name.to_string(), link: None }
+    pub(crate) fn new(session: Session, name: &str, host: u32) -> Active {
+        Active { session, output: vec![], groups: vec![], name: name.to_string(), host, link: None }
     }
 }
 
@@ -268,36 +268,42 @@ pub(crate) fn collapse(s: &mut Session, name: &str, snap: &Arc<Project>) {
     h.merge_key = None;
 }
 
-/// `__task("schedule", code, repeat)` → id; `__task("cancel", id)`.
+/// `__task("schedule", code, delayMs, repeat)` → id; `__task("cancel", id)` (see
+/// [`crate::tasks`]).
 fn native_task(_: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
     let op = arg_string(args, 0, ctx)?;
     if op == "cancel" {
-        let id = args.get(1).cloned().unwrap_or_default().to_number(ctx)? as u32;
-        let _ = with_active(|a| {
-            a.tasks.retain(|t| t.0 != id);
-            Ok(())
-        });
+        let id = args.get(1).cloned().unwrap_or_default().to_number(ctx)?;
+        if id.is_finite() && id >= 0.0 && id <= f64::from(u32::MAX) {
+            let _ = with_active(|a| {
+                crate::tasks::cancel(a.host, id as u32);
+                Ok(())
+            });
+        }
         return Ok(JsValue::undefined());
     }
     let code = arg_string(args, 1, ctx)?;
-    let repeat = args.get(2).cloned().unwrap_or_default().to_boolean();
+    let delay = args.get(2).cloned().unwrap_or_default().to_number(ctx)?;
+    let repeat = args.get(3).cloned().unwrap_or_default().to_boolean();
+    let now = web_time::Instant::now();
     let id = with_active(|a| {
-        a.next_task += 1;
-        let id = a.next_task;
-        a.tasks.push((id, code, repeat));
+        let id = crate::tasks::schedule(a.host, &a.name, a.session.script_ui.project_epoch, code, delay, repeat, now)?;
+        if !a.session.script_ui.task_hosts.contains(&a.host) {
+            a.session.script_ui.task_hosts.push(a.host);
+        }
         Ok(id)
     })
     .map_err(throw)?;
     Ok(JsValue::from(id))
 }
 
-fn project_dir(s: &Session) -> Option<String> {
+pub(crate) fn project_dir(s: &Session) -> Option<String> {
     let p = s.path.as_deref()?;
     std::path::Path::new(p).parent().map(|d| d.to_string_lossy().to_string())
 }
 
 /// Lexically normalized absolute path (`a/./b/../c` → `a/c`).
-fn normalize(p: &str) -> std::path::PathBuf {
+pub(crate) fn normalize(p: &str) -> std::path::PathBuf {
     use std::path::{Component, Path, PathBuf};
     let path = Path::new(p);
     let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().unwrap_or_default().join(path) };
@@ -415,7 +421,7 @@ pub(crate) fn new_context() -> Result<Context, String> {
         (js_string!("__query"), 2, native_query),
         (js_string!("__print"), 1, native_print),
         (js_string!("__undo"), 2, native_undo),
-        (js_string!("__task"), 3, native_task),
+        (js_string!("__task"), 4, native_task),
         (js_string!("__file"), 3, native_file),
         (js_string!("__sock"), 3, crate::socket::native_sock),
         (js_string!("__uiNewId"), 0, crate::ui::native_new_id),
@@ -553,14 +559,11 @@ pub(crate) fn settle() -> Vec<String> {
     .unwrap_or_default()
 }
 
-/// Evaluate a script file's code, then the one-shot tasks it scheduled (`app.scheduleTask`).
-pub(crate) fn eval_with_tasks(ctx: &mut Context, code: &str, file: &str) -> Result<J, ScriptError> {
+/// Evaluate a script file's code, then the one-shot tasks it scheduled (`app.scheduleTask`;
+/// repeating ones run later, see [`crate::tasks`]).
+pub(crate) fn eval_with_tasks(ctx: &mut Context, code: &str, file: &str, host: u32) -> Result<J, ScriptError> {
     let mut r = eval_in(ctx, code, file);
-    let tasks = with_active(|a| Ok(std::mem::take(&mut a.tasks))).unwrap_or_default();
-    for (_, code, repeat) in tasks {
-        if repeat {
-            continue;
-        }
+    for code in crate::tasks::take_one_shots(host) {
         if let Err(e) = eval_in(ctx, &code, "scheduled task")
             && r.is_ok()
         {
@@ -587,7 +590,23 @@ pub(crate) fn outcome(output: Vec<String>, result: Result<J, ScriptError>) -> Ou
 /// events reach the host through [`crate::dispatch_ui`]); palettes and panels keep their host
 /// alive for their handlers. The Script Console (and the web build) run inline, where dialogs
 /// don't block.
+///
+/// ExtendScript's `#include` / `#includepath` are inlined first, and errors point at the file
+/// and line they came from ([`crate::include`]).
 pub fn run(session: &mut Session, req: &ScriptRequest) -> Outcome {
+    let expanded = match crate::include::expand(session, req.code, req.name) {
+        Ok(x) => x,
+        Err(e) => return Outcome { error: Some(e), ..Default::default() },
+    };
+    let Some(x) = expanded else { return run_expanded(session, req) };
+    let mut out = run_expanded(session, &ScriptRequest { code: &x.code, name: req.name, console: req.console });
+    if let Some(e) = out.error.as_mut() {
+        x.locate(e);
+    }
+    out
+}
+
+fn run_expanded(session: &mut Session, req: &ScriptRequest) -> Outcome {
     if let Err(message) = check_nesting(req.code) {
         return Outcome { error: Some(ScriptError { message, file: req.name.into(), ..Default::default() }), ..Default::default() };
     }
@@ -660,7 +679,7 @@ pub fn check_nesting(code: &str) -> Result<(), String> {
 pub(crate) fn run_inline(session: &mut Session, req: &ScriptRequest) -> Outcome {
     let host = if req.console { crate::ui::CONSOLE_HOST } else { crate::ui::new_host_id() };
     let s = std::mem::take(session);
-    ACTIVE.with(|a| *a.borrow_mut() = Some(Active::new(s, req.name)));
+    ACTIVE.with(|a| *a.borrow_mut() = Some(Active::new(s, req.name, host)));
     let guard = Restore { target: session };
     let file = if req.name.is_empty() { "script" } else { req.name };
     let (result, windows) = if req.console {
@@ -681,10 +700,11 @@ pub(crate) fn run_inline(session: &mut Session, req: &ScriptRequest) -> Outcome 
     } else {
         match new_context() {
             Ok(mut ctx) => {
-                let r = eval_with_tasks(&mut ctx, req.code, file);
+                let r = eval_with_tasks(&mut ctx, req.code, file, host);
                 let windows = crate::ui::snapshot(&mut ctx);
-                if windows.iter().any(|w| w.visible) {
-                    // Palettes and panels outlive the run: keep their context for the handlers.
+                if windows.iter().any(|w| w.visible) || crate::tasks::has(host) {
+                    // Palettes, panels and repeating tasks outlive the run: keep their context
+                    // for the handlers and tasks.
                     crate::ui::keep_inline(host, ctx);
                 }
                 (r, windows)
@@ -694,6 +714,7 @@ pub(crate) fn run_inline(session: &mut Session, req: &ScriptRequest) -> Outcome 
     };
     let output = settle();
     drop(guard);
+    crate::tasks::set_epoch(host, session.script_ui.project_epoch);
     crate::ui::publish(session, host, req.name, windows);
     outcome(output, result)
 }

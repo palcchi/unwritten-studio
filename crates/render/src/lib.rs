@@ -36,6 +36,21 @@ use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
 pub use eval::{EvalCtx, ExprHost, effect_bounds, source_size};
 use rayon::prelude::*;
 
+/// How a [`FootageSource`] hands over float footage (OpenEXR, float TIFF), whose values are
+/// linear light: encoded with a curve, as the compositor takes footage, or as stored. Other
+/// footage is decoded the same way whatever it says. Interpret Footage ▸ Preserve RGB always
+/// reads the values as stored.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum FloatCurve {
+    /// The sRGB curve (managed projects, and Working Gamma 2.2).
+    #[default]
+    Srgb,
+    /// A pure 2.4 power curve (no working space, Working Gamma 2.4).
+    Gamma24,
+    /// The linear values as stored (Interpret As Linear Light encodes them afterwards).
+    Linear,
+}
+
 /// Supplies decoded footage frames (implemented by the media layer).
 pub trait FootageSource: Send + Sync {
     /// The frame of `item` at source time `t`, straight from the file (any size).
@@ -46,6 +61,16 @@ pub trait FootageSource: Send + Sync {
     /// [`effectcraft_raster::resample`] would.
     fn frame_at_size(&self, item: ItemId, footage: &Footage, t: Tick, _width: u32, _height: u32) -> Option<Arc<Image>> {
         self.frame(item, footage, t)
+    }
+    /// [`FootageSource::frame`] (`size: None`) or [`FootageSource::frame_at_size`] with float
+    /// footage handed over as `float` says ([`FootageSource::frame`] uses [`FloatCurve::Srgb`]).
+    /// Sources without float footage can leave the default, which ignores `float`.
+    fn frame_with(&self, item: ItemId, footage: &Footage, t: Tick, size: Option<(u32, u32)>, float: FloatCurve) -> Option<Arc<Image>> {
+        let _ = float;
+        match size {
+            Some((w, h)) => self.frame_at_size(item, footage, t, w, h),
+            None => self.frame(item, footage, t),
+        }
     }
     /// `frames` interleaved stereo sample frames of `item`'s audio from source time `t` at
     /// `rate` Hz (`None` when unavailable). The first sample is `t.to_units_floor(rate)`;
@@ -1109,7 +1134,7 @@ impl<'a> Renderer<'a> {
                 if let Some(pf) = self.proxy_for(*item)
                     && let Some(nc) = self.project.comp(*item)
                 {
-                    let img = self.footage.frame(*item, pf, lt)?;
+                    let img = self.footage.frame_with(*item, pf, lt, None, self.pipe.float_encoding())?;
                     return Some(self.footage_buf(&img, pf, nc.width, nc.height));
                 }
                 // Essential Properties overrides render the nested comp with this instance's
@@ -1220,7 +1245,7 @@ impl<'a> Renderer<'a> {
         if f.fields != effectcraft_project::FieldOrder::Off && matches!(f.kind, FootageKind::Video | FootageKind::Sequence) {
             let field_rate = FrameRate::new(f.frame_rate.num * 2, f.frame_rate.den);
             let i = field_rate.frame_at(t).max(0);
-            let img = self.footage.frame(item, f, f.frame_rate.tick_of(i / 2))?;
+            let img = self.footage.frame_with(item, f, f.frame_rate.tick_of(i / 2), None, self.pipe.float_curve(f))?;
             let dominant_upper = f.fields == effectcraft_project::FieldOrder::UpperFirst;
             // Upper field = even lines (0, 2, …).
             let parity = if (i % 2 == 0) == dominant_upper { 0 } else { 1 };
@@ -1234,6 +1259,7 @@ impl<'a> Renderer<'a> {
 
     fn footage_frame_raw(&self, ctx: &EvalCtx, layer: &Layer, item: ItemId, f: &Footage, t: Tick, size: Option<(u32, u32)>) -> Option<Arc<Image>> {
         let mode = frame_blend_mode(ctx, layer);
+        let float = self.pipe.float_curve(f);
         if mode != FrameBlend::Off && matches!(f.kind, FootageKind::Video | FootageKind::Sequence) {
             let (i, w) = frame_position(t, f.frame_rate);
             if w > 1e-6 {
@@ -1241,7 +1267,7 @@ impl<'a> Renderer<'a> {
                 let key = self.cache.map(|_| {
                     use std::hash::{Hash, Hasher};
                     let mut h = std::collections::hash_map::DefaultHasher::new();
-                    (0x00f8_a3e5_u64, item, i, (w as f32).to_bits(), mode as u8, f.frame_rate.num, f.frame_rate.den, &f.path).hash(&mut h);
+                    (0x00f8_a3e5_u64, item, i, (w as f32).to_bits(), mode as u8, f.frame_rate.num, f.frame_rate.den, &f.path, float).hash(&mut h);
                     h.finish()
                 });
                 if let (Some(c), Some(k)) = (self.cache, key)
@@ -1249,8 +1275,8 @@ impl<'a> Renderer<'a> {
                 {
                     return Some(Arc::new(b.img.clone()));
                 }
-                let a = self.footage.frame(item, f, f.frame_rate.tick_of(i));
-                let b = self.footage.frame(item, f, f.frame_rate.tick_of(i + 1));
+                let a = self.footage.frame_with(item, f, f.frame_rate.tick_of(i), None, float);
+                let b = self.footage.frame_with(item, f, f.frame_rate.tick_of(i + 1), None, float);
                 if let (Some(a), Some(b)) = (a, b) {
                     let img = blend_frames(mode, &a, &b, w as f32);
                     if let (Some(c), Some(k)) = (self.cache, key) {
@@ -1260,10 +1286,7 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
-        match size {
-            Some((w, h)) => self.footage.frame_at_size(item, f, t, w, h),
-            None => self.footage.frame(item, f, t),
-        }
+        self.footage.frame_with(item, f, t, size, float)
     }
 
     /// Source → masks, clamped/quantised to the project depth.

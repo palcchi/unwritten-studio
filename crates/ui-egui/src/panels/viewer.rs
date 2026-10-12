@@ -1113,6 +1113,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let context_layers: Vec<u64> =
         app.session.state.selected_layers.iter().filter(|id| comp.layer(**id).is_some_and(|l| !l.switches.locked)).map(|id| id.0).collect();
     let mut context_actions = Vec::new();
+    let copy_frame = crate::i18n::label(app, "comp.copyFrame", "Copy Frame to Clipboard");
     resp.context_menu(|ui| {
         let hits = ui.data(|d| d.get_temp::<Vec<(u64, String)>>(menu_hits_id)).unwrap_or_default();
         if !hits.is_empty() {
@@ -1132,6 +1133,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             ui.label(crate::i18n::tr("No unlocked layer selected"));
         } else {
             super::timeline::layer_menu(ui, &context_layers, &mut context_actions);
+        }
+        ui.separator();
+        if ui.button(copy_frame).clicked() {
+            context_actions.push(("comp.copyFrame".to_owned(), serde_json::json!({"comp": cid.0})));
+            ui.close();
         }
     });
     for (id, params) in context_actions {
@@ -2282,7 +2288,7 @@ fn create_shape(app: &mut EffectcraftApp, tool: Tool, a: [f64; 2], b: [f64; 2], 
 
 fn empty_state(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
-    let p = ui.painter();
+    let p = ui.painter().clone();
     p.rect_filled(rect, 0.0, t.pasteboard);
     let c = rect.center();
     p.text(c - vec2(0.0, 40.0), Align2::CENTER_CENTER, crate::i18n::tr("Composition"), Tokens::semibold(16.0), t.text);
@@ -2296,6 +2302,36 @@ fn empty_state(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         let _ = crate::menus::invoke(app, &ui.ctx().clone(), "file.import", json!({}));
     }
     app.auto.add("viewer.empty.import", b2, "New Composition From Footage");
+    // A Project item dropped on the empty viewer creates the first composition,
+    // just like dropping it onto an empty Timeline (#684). Multiple selected
+    // items use the existing New Comp from Selection dialog.
+    let ctx = ui.ctx().clone();
+    if let Some(crate::panels::DragPayload::Item(dragged)) = egui::DragAndDrop::payload::<crate::panels::DragPayload>(&ctx).as_deref()
+        && ui.rect_contains_pointer(rect)
+    {
+        let items: Vec<effectcraft_engine::project::ItemId> = crate::panels::project_drop_items(app, *dragged)
+            .into_iter()
+            .map(effectcraft_engine::project::ItemId)
+            .filter(|id| {
+                app.session.project.item(*id).is_some_and(|item| match &item.kind {
+                    effectcraft_engine::project::ItemKind::Footage(f) => f.kind != effectcraft_engine::project::FootageKind::Data,
+                    effectcraft_engine::project::ItemKind::Solid(_) | effectcraft_engine::project::ItemKind::Comp(_) => true,
+                    _ => false,
+                })
+            })
+            .collect();
+        if !items.is_empty() {
+            p.rect_stroke(rect.shrink(2.0), 0.0, Stroke::new(2.0, t.accent), StrokeKind::Inside);
+            app.auto.add("viewer.newCompDrop", rect, "Drop footage to create a composition");
+            if ctx.input(|i| i.pointer.any_released()) {
+                app.session.state.project_selection = items;
+                if let Err(e) = crate::menus::invoke(app, &ctx, "file.newCompFromSelection", json!({})) {
+                    app.ui.status = e;
+                }
+                egui::DragAndDrop::clear_payload(&ctx);
+            }
+        }
+    }
 }
 
 /// `#rrggbb` → sRGB bytes.

@@ -4,6 +4,7 @@
 mod align;
 mod align_data;
 mod anim;
+mod anim_presets;
 pub mod anim_tools;
 mod animation;
 pub(crate) mod app_more;
@@ -162,6 +163,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(layer_menu::specs());
         v.extend(create::specs());
         v.extend(animation::specs());
+        v.extend(anim_presets::specs());
         v.extend(view::specs());
         v.extend(viewer_cmds::specs());
         v.extend(shape_stroke::specs());
@@ -219,6 +221,11 @@ pub(crate) fn proxy_set(s: &mut Session, item: ItemId, footage: effectcraft_proj
 /// (id, name) of the text animation presets.
 pub fn text_preset_list() -> Vec<(String, String)> {
     text_anim::preset_names()
+}
+
+/// (id, name, category) of the built-in animation presets (Transitions…).
+pub fn builtin_preset_list() -> Vec<(String, String, String)> {
+    anim_presets::preset_names()
 }
 
 pub fn find(id: &str) -> Option<&'static CommandSpec> {

@@ -178,14 +178,27 @@ fn modal_with_scroll(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tok
 /// window.
 pub(crate) fn modal_fit(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &Tokens, body: impl FnOnce(&mut egui::Ui, f32)) {
     let size = size.min(modal_space(ctx));
-    egui::Modal::new(egui::Id::new(("modal", title)))
+    let id = egui::Id::new(("modal", title));
+    // Dragging the title row moves the dialog off what it edits. The offset is kept within the
+    // window, so dragging back never has to undo a part the dialog could not follow.
+    let offset_id = id.with("offset");
+    let room = ((ctx.content_rect().size() - size) * 0.5).max(vec2(0.0, 0.0));
+    let offset = ctx.data(|d| d.get_temp::<egui::Vec2>(offset_id)).unwrap_or_default().clamp(-room, room);
+    egui::Modal::new(id)
+        .area(egui::Modal::default_area(id).anchor(Align2::CENTER_CENTER, offset))
         .backdrop_color(Color32::from_black_alpha(120))
         .frame(egui::Frame::window(&ctx.style_of(ctx.theme())).fill(t.panel_bg).inner_margin(egui::Margin::same(18)))
         .show(ctx, |ui| {
             ui.set_width(size.x - 36.0);
             ui.set_min_height(size.y - 36.0);
             // The id stays keyed on the untranslated source, so switching language cannot move it.
-            ui.label(egui::RichText::new(tr(title)).font(Tokens::semibold(15.0)).color(t.tab_text_active));
+            let head = ui.label(egui::RichText::new(tr(title)).font(Tokens::semibold(15.0)).color(t.tab_text_active));
+            let row = Rect::from_x_y_ranges(ui.max_rect().x_range(), head.rect.y_range());
+            let grip = ui.interact(row, id.with("grip"), Sense::drag()).on_hover_cursor(egui::CursorIcon::Grab);
+            if grip.dragged() {
+                let moved = (offset + grip.drag_delta()).clamp(-room, room);
+                ui.ctx().data_mut(|d| d.insert_temp(offset_id, moved));
+            }
             ui.add_space(10.0);
             let title_h = ui.cursor().top() - ui.min_rect().top();
             body(ui, (size.y - 36.0 - title_h).max(40.0));

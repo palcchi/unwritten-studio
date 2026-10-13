@@ -429,6 +429,7 @@ mod tests {
     #[test]
     fn saved_workspaces_are_in_the_native_workspace_menu() {
         let mut app = app();
+        app.session.config = Some(std::sync::Arc::new(effectcraft_engine::config::MemoryConfig::default()));
         let ctx = egui::Context::default();
         crate::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name": "My Layout"})).unwrap();
         let entry = |app: &EffectcraftApp| build(app).items().into_iter().find(|i| i.label == "My Layout").cloned();

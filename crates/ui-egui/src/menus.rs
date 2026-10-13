@@ -839,18 +839,26 @@ fn clipboard_note(s: &effectcraft_engine::Session) -> String {
 }
 
 pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
-    let r = app.session.execute(id, params).map_err(|e| e.to_string());
+    // Events already queued belong to earlier invocations (`engine.execute` defers them).
+    let queued = app.session.events.len();
+    let mut r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
     } else if COPY_COMMANDS.contains(&id) && app.session.state.text_edit.is_none() {
         ctx.copy_text(clipboard_note(&app.session));
     }
     let events = app.session.drain_events();
-    for ev in events {
+    for (index, ev) in events.into_iter().enumerate() {
         match ev {
             effectcraft_engine::Event::Frontend { command, params } => {
                 if let Err(e) = frontend(app, ctx, &command, params) {
-                    app.ui.status = e;
+                    app.ui.status = e.clone();
+                    // A frontend-only command's own failure is the command's result (#696: a
+                    // workspace save that didn't reach disk reported success). An earlier
+                    // invocation's failure only sets the status.
+                    if index >= queued && command == id && r.is_ok() {
+                        r = Err(e);
+                    }
                 }
             }
             other => app.session.events.push(other),
@@ -1099,7 +1107,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             let name = app.ui.workspace.clone();
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
-            app.store_saved_workspaces();
+            app.store_saved_workspaces()?;
             json!({"workspace": name})
         }
         "window.saveWorkspaceAs" => {
@@ -1116,7 +1124,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
             app.ui.saved_workspaces.insert(name.clone(), app.ui.dock.clone());
             app.ui.saved_floating.insert(name.clone(), app.ui.floating.clone());
             app.ui.workspace = name.clone();
-            app.store_saved_workspaces();
+            app.store_saved_workspaces()?;
             json!({"workspace": name})
         }
         "window.editWorkspaces" => {
@@ -1141,10 +1149,11 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.saved_workspaces.remove(&name).is_none() && !builtin {
                     return Err(format!("no workspace `{name}`"));
                 }
-                app.store_saved_workspaces();
+                // Leave the deleted workspace first: a current workspace needs a definition.
                 if app.ui.workspace == name {
                     app.set_workspace("Default");
                 }
+                app.store_saved_workspaces()?;
                 return Ok(json!({"deleted": name}));
             }
             if let Some(new) = p.get("rename").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty() && *n != name) {
@@ -1159,7 +1168,7 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.workspace == name {
                     app.ui.workspace = new.to_string();
                 }
-                app.store_saved_workspaces();
+                app.store_saved_workspaces()?;
                 return Ok(json!({"renamed": new}));
             }
             json!({"workspaces": app.workspace_names()})

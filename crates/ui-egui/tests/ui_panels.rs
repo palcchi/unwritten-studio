@@ -172,6 +172,8 @@ fn saved_workspaces_persist_across_sessions() {
 #[test]
 fn saved_workspace_is_listed_in_the_workspace_menu() {
     let mut h = harness();
+    // Saving needs a settings folder.
+    h.state_mut().session.config = Some(Arc::new(MemoryConfig::default()));
     let ctx = h.ctx.clone();
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.workspace", json!({"name": "Minimal"})).unwrap();
     effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.saveWorkspaceAs", json!({"name": "My Layout"})).unwrap();

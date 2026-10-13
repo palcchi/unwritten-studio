@@ -117,6 +117,8 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 
 ## Progress log
 
+- 2026-10-12: Roto Brush span edits report strokes outside a trimmed layer without panicking;
+  strokes and undo history are preserved so restoring the timing allows the span edit again.
 - 2026-10-11: Ukrainian panels caught up with the Chinese catalogs. The 95 rows the panel
   catalog gained since 9 October are translated: the Home screen (recent files, their Kind and
   Opened columns, the empty and no-match states), the viewer's toolbar tooltips, magnification,
@@ -149,6 +151,7 @@ Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | Open-issue count (134 to 216), crash list and localization share (12% to 18%) updated to match docs/gaps.md |
+| 2026-10-12 | patch | Roto Brush span validation after trimming; command regressions for both layer edges |
 | 2026-10-10 | minor | Hours to ≈ 95% for each audience |
 | 2026-10-10 | minor | Headline adds mainstream practitioner (≈ 47%) and essentials user (≈ 52%) |
 | 2026-10-10 | minor | Stage checked against the new core-workflow gate (all six pass; still alpha) |

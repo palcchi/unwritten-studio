@@ -452,7 +452,10 @@ direction?: forward|backward|both, to?, wait?}` segments the span (in the backgr
 `wait`); strokes on any other frame correct it and propagation restarts from there.
 `roto.span {start?, end?}`, `roto.freeze {wait?}` / `roto.unfreeze`, `roto.clearStrokes {frame?,
 kind?}`, `roto.cancel` and `roto.options {diameter?, refineDiameter?, view?: alphaBoundary|alpha|
-alphaOverlay|none}` complete the set; every edit is one undo step. `roto.status {layer, frame?,
+alphaOverlay|none}` complete the set; every edit is one undo step. If trimming the layer or
+shortening the comp leaves strokes outside the layer, `roto.span` returns an error without
+changing the strokes: restore the timing or remove those strokes with `roto.clearStrokes` first.
+`roto.status {layer, frame?,
 matte?, compute?, compareTo?}` reports the base frame, span, computed and stroked frames, frozen
 state, job progress and, for a frame, the matte's area, centroid, RLE matte and IoU against a
 reference. Matte settings are ordinary properties (`effects/#1/rotoBrushMatte/searchRadius`,

@@ -27,6 +27,35 @@ pub(crate) fn hold_roto_cache_test_lock() {
 }
 const R: f64 = 40.0;
 
+fn span_after_trimming_strokes(trim: Value, span: Value, expected: [i64; 2]) {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"width": 64, "height": 64, "frameRate": 25, "duration": 1})).unwrap();
+    let layer = s.execute("layer.newSolid", json!({"width": 64, "height": 64})).unwrap()["layer"].as_u64().unwrap();
+    for frame in [0, 20] {
+        s.execute("roto.stroke", json!({"layer": layer, "frame": frame, "points": [[32, 32]], "radius": 4})).unwrap();
+    }
+    s.execute("layer.timing", trim).unwrap();
+    let before = s.project.to_json();
+    let error = s.execute("roto.span", span.clone()).unwrap_err().to_string();
+    assert!(error.contains("strokes outside the layer"), "{error}");
+    assert_eq!(s.project.to_json(), before, "refusing the span must preserve strokes and project state");
+    assert!(s.undo(), "the failed command must not add an undo step");
+    let result = s.execute("roto.span", span).unwrap();
+    assert_eq!(result["span"], json!(expected));
+    let status = s.execute("roto.status", json!({"layer": layer})).unwrap();
+    assert_eq!(status["strokeFrames"], json!([0, 20]));
+}
+
+#[test]
+fn roto_span_rejects_strokes_before_trimmed_in_point() {
+    span_after_trimming_strokes(json!({"in": 0.2}), json!({"start": 0}), [0, 20]);
+}
+
+#[test]
+fn roto_span_rejects_strokes_after_trimmed_out_point() {
+    span_after_trimming_strokes(json!({"out": 0.5}), json!({"end": 24}), [0, 24]);
+}
+
 fn noise(x: f64, y: f64, seed: u32) -> f64 {
     fn h(i: i64, j: i64, s: u32) -> f64 {
         let mut v = (i.wrapping_mul(73856093) ^ j.wrapping_mul(19349663) ^ (s as i64).wrapping_mul(83492791)) as u64;

@@ -1016,6 +1016,15 @@ impl Session {
         Ok((img.width, img.height, img.to_rgba8()))
     }
 
+    /// Make the media layer and the layer cache let go of what they decoded from `footage`'s
+    /// files (it keys frames by path, so an overwritten file would keep showing its old pixels).
+    pub(crate) fn forget_decoded(&self, footage: &effectcraft_project::Footage) {
+        for p in std::iter::once(&footage.path).chain(&footage.sequence) {
+            self.footage.forget(p);
+        }
+        self.layer_cache.clear();
+    }
+
     /// Replace the whole project (open/new), resetting history and state.
     pub fn replace_project(&mut self, mut p: Project, path: Option<String>) {
         if self.stop_render()
@@ -1042,6 +1051,14 @@ impl Session {
         self.script_ui.project_epoch = self.script_ui.project_epoch.wrapping_add(1);
         p.fix_next_id();
         upgrade_effects(&mut p);
+        // The media layer keys decoded frames by path: files of the new project may have changed
+        // since an earlier project decoded them (#1070).
+        for it in p.items.values() {
+            if let effectcraft_project::ItemKind::Footage(f) = &it.kind {
+                self.forget_decoded(f);
+            }
+        }
+        self.layer_cache.clear();
         self.project = Arc::new(p);
         self.history = History::default();
         self.state = EditorState { snapping: true, view_layout: 1, ..Default::default() };

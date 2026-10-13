@@ -60,6 +60,16 @@ fn timeline_outline_columns_scroll_horizontally() {
     assert!(h.state().auto.find("timeline.outlineScroll").is_none());
 }
 
+fn click(h: &mut Harness<'_, EffectcraftApp>, at: Pos2) {
+    for pressed in [true, false] {
+        h.input_mut().events.push(Event::PointerMoved(at));
+        h.step();
+        h.input_mut().events.push(Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+        h.step();
+    }
+    h.run_steps(2);
+}
+
 fn styles(h: &mut Harness<'_, EffectcraftApp>) -> Vec<String> {
     let v = h.state_mut().session.execute("layer.style.list", json!({})).unwrap();
     v["styles"].as_array().unwrap().iter().map(|s| s["style"].as_str().unwrap().to_string()).collect()
@@ -101,6 +111,36 @@ fn layer_style_dialog_adds_previews_and_cancels() {
     effectcraft_ui_egui::panels::layer_styles_dialog::finish(h.state_mut(), true);
     assert!(h.state().dialog.is_none());
     assert_eq!(styles(&mut h), ["stroke"]);
+}
+
+/// #1062: the Layer Style dialog's OK and Cancel stay in view, below the list and the style's
+/// controls (they were laid out past its bottom edge, under the fold of its scroll area, so a
+/// click on them did nothing until the dialog was scrolled), also at 200 % UI Scale.
+#[test]
+fn layer_style_buttons_stay_in_view() {
+    let mut h = harness(1400.0);
+    let lid = h.state().session.active_comp().unwrap().layers[0].id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [lid]})).unwrap();
+    let ctx = h.ctx.clone();
+    // Whole: inside the window, and painted with none of it clipped away.
+    let in_view = |h: &Harness<'_, EffectcraftApp>, id: &str| {
+        let r = rect(h, id);
+        let clip =
+            h.output().shapes.iter().find(|c| matches!(&c.shape, egui::Shape::Rect(s) if (s.rect.center() - r.center()).length() < 0.5)).map(|c| c.clip_rect);
+        assert!(h.ctx.content_rect().contains_rect(r) && clip.is_some_and(|c| c.contains_rect(r)), "{id} is cut off: {r:?} in {clip:?}");
+        r.center()
+    };
+    for (scale, button, kept) in [(100, "dialog.layerStyle.ok", 1), (200, "dialog.layerStyle.cancel", 1)] {
+        h.state_mut().set_pref("appearance.uiScale", json!(scale)).unwrap();
+        h.run_steps(3);
+        effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "layer.style.dropShadow", json!({})).unwrap();
+        h.run_steps(5);
+        in_view(&h, "dialog.layerStyle.cancel");
+        let at = in_view(&h, button);
+        click(&mut h, at);
+        assert_eq!(h.state().dialog, None, "{scale} %: {button} closed the dialog");
+        assert_eq!(styles(&mut h).len(), kept, "{scale} %: {button}");
+    }
 }
 
 #[test]

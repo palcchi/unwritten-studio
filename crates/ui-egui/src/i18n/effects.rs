@@ -408,9 +408,10 @@ const SIMPLIFIED_CHINESE: &[Row] = &[
 /// Traditional Chinese (`zh-hant`): no rows yet, so the language draws the English names.
 const TRADITIONAL_CHINESE: &[Row] = &[];
 
-/// The 21 category folder names the generated Effect menu and Effects & Presets draw. The wording
-/// follows the effect names above (channel → 通道, blur → 模糊, noise → 杂色, matte → 遮罩 …);
-/// Adobe's Chinese interface has not been read for these 21, so they are our wording.
+/// The 21 category folder names the generated Effect menu and Effects & Presets draw. Read from
+/// the installed After Effects 2026 (26.5.0.89) Simplified Chinese interface (the checklist's
+/// `07-类别` sheet); two of them are the interface's own wording where our first suggestion
+/// differed (`Keying` is 抠像, not 键控; `Obsolete` is 过时, not 已废弃).
 const CATEGORIES: &[(&str, &str)] = &[
     ("3D Channel", "3D 通道"),
     ("Audio", "音频"),
@@ -421,10 +422,10 @@ const CATEGORIES: &[(&str, &str)] = &[
     ("Expression Controls", "表达式控制"),
     ("Generate", "生成"),
     ("Immersive Video", "沉浸式视频"),
-    ("Keying", "键控"),
+    ("Keying", "抠像"),
     ("Matte", "遮罩"),
     ("Noise & Grain", "杂色和颗粒"),
-    ("Obsolete", "已废弃"),
+    ("Obsolete", "过时"),
     ("Paint", "绘画"),
     ("Perspective", "透视"),
     ("Simulation", "模拟"),

@@ -568,7 +568,13 @@ fn palette(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         .collect();
     modal(ctx, "Command Palette", vec2(560.0, 470.0), t, |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut q).hint_text(tr("Type a command or effect…")).desired_width(f32::INFINITY).font(Tokens::ui(14.0)));
-        r.request_focus();
+        // Take the keyboard when the palette opens (and if anything else takes it away), but not
+        // while the field already has it: egui's `request_focus` interrupts the IME composition,
+        // and asking on every frame cancelled the pinyin being typed, so no Chinese could be
+        // entered.
+        if !ctx.memory(|m| m.has_focus(r.id)) {
+            r.request_focus();
+        }
         ui.add_space(8.0);
         let sel = app.dialog_state.palette_sel.min(matches.len().saturating_sub(1));
         for (i, (label, id, params, sc)) in matches.iter().enumerate() {
@@ -633,6 +639,56 @@ mod tests {
             show(app, ui.ctx());
         });
         out.textures_delta.clear();
+    }
+
+    /// One frame with `events` in its input; returns what it asked the platform to do.
+    fn frame_with(app: &mut EffectcraftApp, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+        let input = egui::RawInput { events, ..Default::default() };
+        let mut out = ctx.run_ui(input, |ui| {
+            app.auto.begin_frame();
+            show(app, ui.ctx());
+        });
+        out.textures_delta.clear();
+        out
+    }
+
+    /// The IME composing `text` so far (what the platform sends as the user types pinyin).
+    fn composing(text: &str) -> egui::Event {
+        egui::Event::Ime(egui::ImeEvent::Preedit { text: text.to_string(), active_range_chars: None })
+    }
+
+    /// Whether the frame asked the platform to cancel the composition in progress. winit does
+    /// that whenever egui's focus is requested (`Memory::request_focus` interrupts the IME), and
+    /// on Windows the IME then drops what is being typed.
+    fn cancels_composition(out: &egui::FullOutput) -> bool {
+        out.platform_output.ime.as_ref().is_some_and(|i| i.should_interrupt_composition)
+    }
+
+    /// The palette's search field used to take the keyboard on every frame it was drawn, and
+    /// asking egui for the focus interrupts the IME composition: the pinyin being typed was
+    /// cancelled as it was typed, so no Chinese could be entered.
+    #[test]
+    fn the_palette_leaves_a_pinyin_composition_alone() {
+        let (mut app, ctx) = app();
+        crate::menus::invoke(&mut app, &ctx, "app.commandPalette", json!({})).unwrap();
+        assert_eq!(app.dialog, Some(Dialog::CommandPalette));
+        // The field takes the keyboard when the palette opens.
+        frame(&mut app, &ctx);
+        // Typing pinyin: the composition goes on and nothing cancels it.
+        let mut typed = String::new();
+        for k in "nihao".chars() {
+            typed.push(k);
+            let out = frame_with(&mut app, &ctx, vec![composing(&typed)]);
+            assert!(out.platform_output.ime.is_some(), "the field owns the IME");
+            assert!(!cancels_composition(&out), "typing `{typed}` cancelled the composition");
+        }
+        // The whole composition is in the field (and in the query the next frame filters with).
+        assert_eq!(app.dialog_state.palette_query, "nihao");
+        // Something else taking the keyboard takes it away for a frame; the field claims it back
+        // (a request is what gets the keys back, and there is no composition to interrupt then).
+        ctx.memory_mut(|m| m.request_focus(egui::Id::new("elsewhere")));
+        assert!(frame_with(&mut app, &ctx, vec![]).platform_output.ime.is_none(), "the field lost the keyboard");
+        assert!(frame_with(&mut app, &ctx, vec![]).platform_output.ime.is_some(), "and takes it back");
     }
 
     fn solid_item(app: &EffectcraftApp, l: u64) -> ItemId {

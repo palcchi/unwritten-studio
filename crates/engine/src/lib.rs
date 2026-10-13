@@ -194,6 +194,22 @@ pub struct VertexRef {
     pub index: usize,
 }
 
+/// One composition's selection. The active comp's copy lives in [`EditorState::selected_layers`]
+/// (and the property, key, and vertex lists); every other comp keeps its own here (#1001).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CompSelection {
+    pub layers: Vec<LayerId>,
+    pub props: Vec<(LayerId, Uid)>,
+    pub keys: Vec<KeyRef>,
+    pub vertices: Vec<VertexRef>,
+}
+
+impl CompSelection {
+    fn is_empty(&self) -> bool {
+        self.layers.is_empty() && self.props.is_empty() && self.keys.is_empty() && self.vertices.is_empty()
+    }
+}
+
 /// Editing state that commands depend on (headless-relevant, serde for agents).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct EditorState {
@@ -202,7 +218,11 @@ pub struct EditorState {
     pub open_comps: Vec<ItemId>,
     /// Current time per comp (the CTI).
     pub times: std::collections::BTreeMap<ItemId, Tick>,
+    /// Layer selection of the active comp. Other comps' selections are in [`Self::comp_selections`].
     pub selected_layers: Vec<LayerId>,
+    /// Selections of comps that are not active, keyed by comp id (#1001).
+    #[serde(default)]
+    pub comp_selections: std::collections::BTreeMap<ItemId, CompSelection>,
     /// Selected properties / groups (by uid) of selected layers.
     pub selected_props: Vec<(LayerId, Uid)>,
     pub selected_keys: Vec<KeyRef>,
@@ -757,17 +777,29 @@ impl Session {
         true
     }
 
-    /// Drop selections that no longer exist. Every comp keeps its own layer selection (After
-    /// Effects), so selections in comps that are not open survive; only ids that are gone from
-    /// every comp are dropped (#1001).
+    /// Drop selections that no longer exist. Each comp keeps its own selection (#1001); a layer id
+    /// counts only inside the comp that owns it, so the active comp never sees another comp's layers.
     pub fn sanitize_state(&mut self) {
         let p = self.project.clone();
         self.state.open_comps.retain(|c| p.comp(*c).is_some());
+        self.state.comp_selections.retain(|cid, sel| {
+            let Some(c) = p.comp(*cid) else { return false };
+            let ids: Vec<LayerId> = c.layers.iter().map(|l| l.id).collect();
+            sel.layers.retain(|l| ids.contains(l));
+            sel.props.retain(|(l, _)| ids.contains(l));
+            sel.keys.retain(|k| ids.contains(&k.layer));
+            sel.vertices.retain(|v| ids.contains(&v.layer));
+            !sel.is_empty()
+        });
         if self.state.active_comp.is_some_and(|c| p.comp(c).is_none()) {
+            self.clear_live_selection();
             self.state.active_comp = self.state.open_comps.first().copied();
+            if let Some(id) = self.state.active_comp {
+                self.recall_selection(id);
+            }
         }
-        {
-            let ids: Vec<LayerId> = p.comps().flat_map(|(_, c)| c.layers.iter().map(|l| l.id)).collect();
+        if let Some(c) = self.active_comp() {
+            let ids: Vec<LayerId> = c.layers.iter().map(|l| l.id).collect();
             self.state.selected_layers.retain(|l| ids.contains(l));
             self.state.selected_props.retain(|(l, _)| ids.contains(l));
             self.state.selected_keys.retain(|k| ids.contains(&k.layer));
@@ -872,6 +904,59 @@ impl Session {
         }
     }
 
+    /// Make `id` the active comp, parking the previous comp's selection and restoring this one's.
+    pub fn activate_comp(&mut self, id: ItemId) {
+        if self.project.comp(id).is_none() || self.state.active_comp == Some(id) {
+            return;
+        }
+        self.remember_selection();
+        self.state.active_comp = Some(id);
+        self.recall_selection(id);
+        self.state.current_track = None;
+    }
+
+    /// Leave no comp active, keeping the one that was active in [`EditorState::comp_selections`].
+    pub fn activate_comp_none(&mut self) {
+        self.remember_selection();
+        self.state.active_comp = None;
+        self.clear_live_selection();
+        self.state.current_track = None;
+    }
+
+    fn remember_selection(&mut self) {
+        let Some(id) = self.state.active_comp else { return };
+        let sel = CompSelection {
+            layers: self.state.selected_layers.clone(),
+            props: self.state.selected_props.clone(),
+            keys: self.state.selected_keys.clone(),
+            vertices: self.state.selected_vertices.clone(),
+        };
+        if sel.is_empty() {
+            self.state.comp_selections.remove(&id);
+        } else {
+            self.state.comp_selections.insert(id, sel);
+        }
+    }
+
+    fn recall_selection(&mut self, id: ItemId) {
+        match self.state.comp_selections.remove(&id) {
+            Some(sel) => {
+                self.state.selected_layers = sel.layers;
+                self.state.selected_props = sel.props;
+                self.state.selected_keys = sel.keys;
+                self.state.selected_vertices = sel.vertices;
+            }
+            None => self.clear_live_selection(),
+        }
+    }
+
+    fn clear_live_selection(&mut self) {
+        self.state.selected_layers.clear();
+        self.state.selected_props.clear();
+        self.state.selected_keys.clear();
+        self.state.selected_vertices.clear();
+    }
+
     /// Open a comp in the viewer/timeline and make it active.
     pub fn open_comp(&mut self, id: ItemId) {
         if self.project.comp(id).is_none() {
@@ -880,14 +965,7 @@ impl Session {
         if !self.state.open_comps.contains(&id) {
             self.state.open_comps.push(id);
         }
-        if self.state.active_comp != Some(id) {
-            self.state.active_comp = Some(id);
-            self.state.selected_layers.clear();
-            self.state.selected_props.clear();
-            self.state.selected_keys.clear();
-            self.state.selected_vertices.clear();
-            self.state.current_track = None;
-        }
+        self.activate_comp(id);
         self.events.push(Event::OpenComp(id));
     }
 

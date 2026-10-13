@@ -96,6 +96,27 @@ fn label_index(l: Label) -> usize {
 /// A comp's selected properties as `[layer, uid]`: the selected ones, then those with selected
 /// keyframes (selecting a keyframe selects its property in After Effects, so scripts find
 /// selected keys through `selectedProperties`).
+/// Layer ids selected in `comp`, including a comp that is not the active one (#1001).
+fn selected_layer_ids(s: &Session, comp: effectcraft_project::ItemId) -> Vec<u64> {
+    let layers = if s.active_comp_id() == Some(comp) {
+        &s.state.selected_layers
+    } else {
+        match s.state.comp_selections.get(&comp) {
+            Some(sel) => &sel.layers,
+            None => return Vec::new(),
+        }
+    };
+    let Some(c) = s.project.comp(comp) else { return Vec::new() };
+    layers.iter().filter(|l| c.layer(**l).is_some()).map(|l| l.0).collect()
+}
+
+fn layer_selected(s: &Session, comp: effectcraft_project::ItemId, layer: effectcraft_project::LayerId) -> bool {
+    if s.active_comp_id() == Some(comp) {
+        return s.state.selected_layers.contains(&layer);
+    }
+    s.state.comp_selections.get(&comp).is_some_and(|sel| sel.layers.contains(&layer))
+}
+
 fn selected_props(s: &Session, c: &effectcraft_project::Comp) -> Vec<J> {
     let mut v: Vec<(u64, u64)> = vec![];
     let keyed = s.state.selected_keys.iter().map(|k| (k.layer, k.prop));
@@ -129,7 +150,7 @@ fn item(s: &Session, a: &J) -> R {
         ItemKind::Comp(c) => {
             let cid = id;
             o["kind"] = json!("comp");
-            let sel: Vec<u64> = s.state.selected_layers.iter().filter(|l| c.layer(**l).is_some()).map(|l| l.0).collect();
+            let sel = selected_layer_ids(s, cid);
             let fps = c.frame_rate.as_f64();
             if let Some(m) = o.as_object_mut() {
                 m.extend(
@@ -237,7 +258,7 @@ fn layer(s: &Session, a: &J) -> R {
         "isTrackMatte": c.layers.iter().any(|x| x.track_matte.is_some_and(|m| m.layer == l.id)),
         "label": label_index(l.label),
         "comment": l.comment,
-        "selected": s.state.selected_layers.contains(&l.id),
+        "selected": layer_selected(s, cid, l.id),
         "autoOrient": format!("{:?}", l.auto_orient),
         "width": w, "height": h,
         "hasVideo": l.source.is_av(),

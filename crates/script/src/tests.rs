@@ -712,10 +712,10 @@ fn layer_selection_in_a_closed_comp_survives_to_the_next_script() {
         c.layers.addText("A");
         c.layers.addText("B");
         c.layer("B").selected = true;
-        c.selectedLayers.length + " " + c.layer("B").selected
+        c.selectedLayers.length + " " + c.layer("B").selected + " " + a.selectedLayers.length
         "#,
     );
-    assert_eq!(out.result, json!("1 true"));
+    assert_eq!(out.result, json!("1 true 0"));
     // A second script call, the way a panel talks to the app over the control channel.
     let out = ok(
         &mut s,

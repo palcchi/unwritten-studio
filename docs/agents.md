@@ -10,6 +10,15 @@ user can do, an agent can do too. There are three ways in:
 | **CLI** (`effectcraft-cli exec/get/set/...`) | one-shot scripting and CI; JSON output with `--json` | no |
 | **Control channel** (`effectcraft --control 9877`) | driving and seeing the live UI; see [control-protocol.md](control-protocol.md) | yes |
 
+## Find the presets folder
+
+The native Effects & Presets panel's options menu includes **Copy Presets Folder Path**. It copies
+the folder the panel scans: `EC_PRESETS_DIR` when set, otherwise `~/Documents/EffectCraft/Presets`
+using `HOME` or `USERPROFILE`. Relative paths are resolved to an absolute path. The folder may
+not exist yet; this action does not create it.
+Over the live UI control channel, `ui.menu.invoke {"id":"effects.copyPresetsFolderPath"}` copies
+the same path and returns `{path}`. The web app reports that it has no local presets folder.
+
 ## MCP setup
 
 Build once with `cargo build --release -p effectcraft-cli`, then register the server. For Claude

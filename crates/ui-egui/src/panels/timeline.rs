@@ -89,7 +89,7 @@ fn stripes(p: &egui::Painter, r: Rect, label: Color32) {
 /// Row height (expression editors grow with their text).
 fn row_height(row: &Row, rh: f32) -> f32 {
     match row.kind {
-        RowKind::Expr { lines, .. } => rh * lines as f32 + 6.0,
+        RowKind::Expr { lines, .. } => rh * lines as f32,
         RowKind::Waveform { .. } => rh * 3.0,
         _ => rh,
     }
@@ -2391,7 +2391,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
                 }
                 if let Some(py) = eresp.interact_pointer_pos().filter(|_| eresp.dragged()).map(|p| p.y) {
-                    let n = ((py - r.min.y - 6.0) / rh).round().clamp(1.0, EXPR_MAX_LINES as f32);
+                    let n = ((py - r.min.y) / rh).round().clamp(1.0, EXPR_MAX_LINES as f32);
                     app.ui.timeline.expr_lines.insert(*uid, n as usize);
                 }
                 let commit = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && (i.modifiers.command || i.modifiers.ctrl));

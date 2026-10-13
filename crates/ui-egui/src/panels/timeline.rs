@@ -69,6 +69,25 @@ pub(crate) fn bar_color(label: Color32, selected: bool) -> Color32 {
     Color32::from_rgb(mix(label.r()), mix(label.g()), mix(label.b()))
 }
 
+/// How far a layer bar's trim zones reach past its ends and into it, in points. After Effects'
+/// zones straddle each end, so the pointer needn't land inside the bar.
+const TRIM_OUTSIDE: f32 = 4.0;
+const TRIM_INSIDE: f32 = 5.0;
+
+/// A layer bar's body (drag to move) and its In/Out trim zones. Short bars keep their middle
+/// third as body; a bar too short for that is all trim zones (the Out one on top).
+fn trim_zones(bar: Rect) -> (Rect, Rect, Rect) {
+    let inside = TRIM_INSIDE.min(bar.width() / 3.0).max(0.0);
+    let in_r = Rect::from_min_max(pos2(bar.min.x - TRIM_OUTSIDE, bar.min.y), pos2(bar.min.x + inside, bar.max.y));
+    let out_r = Rect::from_min_max(pos2(bar.max.x - inside, bar.min.y), pos2(bar.max.x + TRIM_OUTSIDE, bar.max.y));
+    (bar.shrink2(vec2(inside, 0.0)), in_r, out_r)
+}
+
+/// The trim cursor over a layer bar's ends: the horizontal resize arrow.
+fn trim_cursor(ctx: &egui::Context) {
+    ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+}
+
 /// Darken part `r` of a layer bar and stripe it diagonally in its label colour (where the layer
 /// runs past its source). Only the visible part is drawn.
 fn stripes(p: &egui::Painter, r: Rect, label: Color32) {
@@ -1668,7 +1687,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         pr.line_segment([pos2(x, ruler.max.y - 10.0), pos2(x, ruler.max.y)], Stroke::new(1.0, t.tl_ruler_tick));
         let fno = (s / fd).round() as i64;
         let label = ruler_label(fno, fps_i, &app.session.project.settings);
-        pr.text(pos2(x + 3.0, ruler.max.y - 16.0), Align2::LEFT_CENTER, label, Tokens::ui(10.0), t.tl_ruler_text);
+        // A label that would run under the marker bin is left out rather than cut to a stray digit.
+        let g = pr.layout_no_wrap(label, Tokens::ui(10.0), t.tl_ruler_text);
+        if x + 3.0 + g.size().x <= bin.min.x {
+            pr.galley(pos2(x + 3.0, ruler.max.y - 16.0 - g.size().y / 2.0), g, t.tl_ruler_text);
+        }
         for k in 1..5 {
             let xx = tm.x(s + secs_per_label * k as f64 / 5.0);
             pr.line_segment([pos2(xx, ruler.max.y - 4.0), pos2(xx, ruler.max.y)], Stroke::new(1.0, t.tl_ruler_tick.gamma_multiply(0.6)));
@@ -2217,8 +2240,12 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                                 continue;
                             }
                             let gresp = ui
-                                .interact(gr, egui::Id::new(("ghost", side, layer.id.0)), Sense::drag())
+                                .interact(gr, egui::Id::new(("ghost", side, layer.id.0)), Sense::click_and_drag())
                                 .on_hover_text(crate::i18n::tr("Drag to slip the source"));
+                            // Outside the bar it is empty track area: a plain click deselects.
+                            if gresp.clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
+                                actions.push(("layer.select".into(), json!({"layers": []})));
+                            }
                             app.auto.add(&format!("timeline.layer.{}.source{}", layer.id.0, side), gr, "Slip");
                             if gresp.hovered() || gresp.dragged() {
                                 ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -2245,16 +2272,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                     }
                     app.auto.add(&format!("timeline.layer.{}.bar", layer.id.0), bar, &layer.name);
                     // Interactions: move body, trim edges.
-                    let edge_w = 6.0;
-                    let body = ui.interact(bar.shrink2(vec2(edge_w, 0.0)), egui::Id::new(("bar", layer.id.0)), Sense::click_and_drag());
-                    let (in_r, out_r) =
-                        (Rect::from_min_max(bar.min, pos2(bar.min.x + edge_w, bar.max.y)), Rect::from_min_max(pos2(bar.max.x - edge_w, bar.min.y), bar.max));
+                    let (body_r, in_r, out_r) = trim_zones(bar);
+                    let body = ui.interact(body_r, egui::Id::new(("bar", layer.id.0)), Sense::click_and_drag());
                     let lin = ui.interact(in_r, egui::Id::new(("bar-in", layer.id.0)), Sense::drag());
                     let lout = ui.interact(out_r, egui::Id::new(("bar-out", layer.id.0)), Sense::drag());
                     app.auto.add(&format!("timeline.layer.{}.bar.in", layer.id.0), in_r, "Trim In");
                     app.auto.add(&format!("timeline.layer.{}.bar.out", layer.id.0), out_r, "Trim Out");
                     if lin.hovered() || lout.hovered() || lin.dragged() || lout.dragged() {
-                        ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                        trim_cursor(&ctx);
                     }
                     if body.double_clicked()
                         && let Some(a) = double_click_action(layer)
@@ -3012,14 +3037,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if graph_on {
         super::graph::show(app, ui, &gp, &comp, &ectx, tm, Rect::from_min_max(pos2(graph_x0, rows_rect.min.y), rows_rect.max), &mut actions);
     }
-    // Empty-area click in the graph: deselect keys (below the last row, the layers too, as in
-    // After Effects); drag: box-select keys.
-    if empty.clicked() {
-        actions.push(("keys.select".into(), json!({"keys": []})));
-        let below = empty.interact_pointer_pos().is_some_and(|p| hit_rows.iter().all(|(r, _)| p.y > r.max.y));
-        if below && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
-            actions.push(("layer.select".into(), json!({"layers": []})));
-        }
+    // A plain click on empty track area (beside a layer's bar, on a property row's empty span or
+    // below the last row) deselects the layers and their keys and properties, as in After
+    // Effects; Shift / Cmd keep the selection. Drag: box-select keys.
+    if empty.clicked() && !ui.input(|i| i.modifiers.shift || i.modifiers.command) {
+        actions.push(("layer.select".into(), json!({"layers": []})));
     }
     if let (true, Some(origin), Some(cur)) =
         (empty.dragged(), empty.interact_pointer_pos().and_then(|_| ctx.input(|i| i.pointer.press_origin())), empty.interact_pointer_pos())
@@ -3147,7 +3169,13 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             }
         }
-        actions.push(("keys.select".into(), json!({"keys": keys, "add": ui.input(|i| i.modifiers.shift), "selectProperties": true})));
+        let mods = ui.input(|i| i.modifiers);
+        if keys.is_empty() && !(mods.shift || mods.command) {
+            // A marquee that catches nothing leaves nothing selected (layers included).
+            actions.push(("layer.select".into(), json!({"layers": []})));
+        } else {
+            actions.push(("keys.select".into(), json!({"keys": keys, "add": mods.shift, "selectProperties": true})));
+        }
     }
 
     // CTI.

@@ -77,7 +77,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                 let sel = get(key).as_str().unwrap_or("").to_string();
                 ui.horizontal(|ui| {
                     ui.add_sized(vec2(label_w, 18.0), egui::Label::new(tr("Default Output:")));
-                    let shown = if sel.is_empty() { "System Default".to_string() } else { sel.clone() };
+                    let shown = if sel.is_empty() { tr("System Default").to_string() } else { sel.clone() };
                     let r = egui::ComboBox::from_id_salt(("settings", key)).selected_text(shown).width(260.0).show_ui(ui, |ui| {
                         if ui.selectable_label(sel.is_empty(), tr("System Default")).clicked() {
                             acts.push(Act::Set(key.into(), json!("")));
@@ -101,7 +101,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
             Item::Setting { key, label, kind, live } => {
                 let v = get(key);
                 let id = format!("settings.{key}");
-                let tip = (!live).then_some("Stored, but not used by EffectCraft yet");
+                let tip = (!live).then(|| tr("Stored, but not used by EffectCraft yet"));
                 let mut resp: Option<egui::Response> = None;
                 match kind {
                     Kind::Bool => {
@@ -123,7 +123,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                     let drag = egui::DragValue::new(&mut x).range(lo..=hi).speed(0.25).update_while_editing(false);
                                     let r = ui.add(crate::widgets::drag_value(drag));
                                     if !unit.is_empty() {
-                                        ui.label(RichText::new(unit).color(t.text_dim));
+                                        ui.label(RichText::new(tr(unit)).color(t.text_dim));
                                     }
                                     if r.changed() {
                                         acts.push(Act::Set(key.into(), json!(x)));
@@ -134,7 +134,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                     let mut x = v.as_f64().unwrap_or(0.0);
                                     let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut x).range(lo..=hi).speed(0.1).max_decimals(3)));
                                     if !unit.is_empty() {
-                                        ui.label(RichText::new(unit).color(t.text_dim));
+                                        ui.label(RichText::new(tr(unit)).color(t.text_dim));
                                     }
                                     if r.changed() {
                                         acts.push(Act::Set(key.into(), json!(x)));
@@ -146,7 +146,7 @@ fn page_ui(app: &mut EffectcraftApp, ui: &mut egui::Ui, page: &Page, cur: &Value
                                     ui.label(RichText::new(tr("Darker")).color(t.text_dim));
                                     let r = ui.add(egui::Slider::new(&mut x, lo..=hi).show_value(false));
                                     ui.label(RichText::new(tr("Lighter")).color(t.text_dim));
-                                    if ui.small_button("Default").clicked() {
+                                    if ui.small_button(tr("Default")).clicked() {
                                         acts.push(Act::Set(key.into(), json!(0.0)));
                                     }
                                     if r.changed() {

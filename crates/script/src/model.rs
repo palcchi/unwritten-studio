@@ -122,6 +122,11 @@ fn item(s: &Session, a: &J) -> R {
     });
     let used_in: Vec<u64> = s.project.comps().filter(|(_, c)| c.layers.iter().any(|l| l.source.item() == Some(id))).map(|(cid, _)| cid.0).collect();
     o["usedIn"] = json!(used_in);
+    // The item's proxy (footage and comps): its file and whether Use Proxy is on (#813).
+    o["proxy"] = match &it.proxy {
+        Some(p) => json!({"file": p.footage.path, "isStill": p.footage.kind == effectcraft_project::FootageKind::Still, "enabled": p.enabled}),
+        None => J::Null,
+    };
     match &it.kind {
         ItemKind::Folder => {
             o["kind"] = json!("folder");
@@ -172,6 +177,9 @@ fn item(s: &Session, a: &J) -> R {
             o["footageMissing"] = json!(fo.missing);
             o["isStill"] = json!(fo.kind == effectcraft_project::FootageKind::Still);
             o["loop"] = json!(fo.loop_count);
+            // Interpret Footage ▸ Conform to frame rate: 0 when the file's own rate is used (#813).
+            o["conformFrameRate"] = json!(if fo.native_rate.is_some() { fo.frame_rate.as_f64() } else { 0.0 });
+            o["nativeFrameRate"] = json!(fo.native_rate.unwrap_or(fo.frame_rate).as_f64());
         }
         ItemKind::Solid(so) => {
             o["kind"] = json!("solid");

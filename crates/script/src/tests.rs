@@ -776,6 +776,43 @@ fn import_options_sequence_picks_one_still_or_the_run() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #813: FootageItem proxies, replaceWithSequence and mainSource.conformFrameRate.
+#[test]
+fn footage_proxies_sequences_and_conform_rate() {
+    use effectcraft_engine::project::ItemKind;
+    let dir = std::env::temp_dir().join(format!("ec-script-proxy-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for n in ["shot_0001.png", "shot_0002.png", "take_0001.png", "take_0002.png", "proxy.png"] {
+        std::fs::write(dir.join(n), b"").unwrap();
+    }
+    let p = |n: &str| dir.join(n).to_string_lossy().replace('\\', "/");
+    let mut s = session();
+    s.importer = Some(Arc::new(Stills));
+    let o = ok(
+        &mut s,
+        &format!(
+            "var io = new ImportOptions(new File('{}')); io.sequence = true; var item = app.project.importFile(io);\
+             var same = item.mainSource === item.mainSource;\
+             item.mainSource.conformFrameRate = 12; var c12 = item.mainSource.conformFrameRate, fr = item.frameRate;\
+             item.mainSource.conformFrameRate = 0; var c0 = item.mainSource.conformFrameRate;\
+             var before = [item.useProxy, item.proxySource];\
+             item.setProxy(new File('{}')); var set = [item.useProxy, item.proxySource.file.name];\
+             item.useProxy = false; var off = item.useProxy;\
+             item.setProxyToNone(); var none = item.proxySource;\
+             item.replaceWithSequence(new File('{}'), false);\
+             [same, c12, fr, c0, before[0], before[1], set[0], set[1], off, none]",
+            p("shot_0001.png"),
+            p("proxy.png"),
+            p("take_0001.png")
+        ),
+    );
+    assert_eq!(o.result, json!([true, 12, 12, 0, false, null, true, "proxy.png", false, null]));
+    let paths: Vec<String> =
+        s.project.items.values().filter_map(|i| if let ItemKind::Footage(f) = &i.kind { Some(f.path.replace('\\', "/")) } else { None }).collect();
+    assert!(paths.iter().any(|f| f.contains("take_")), "replaced with the take sequence: {paths:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn binary_file_io_preserves_all_byte_values() {
     let dir = std::env::temp_dir().join(format!("ec-script-binary-{}", std::process::id()));

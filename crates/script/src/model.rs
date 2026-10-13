@@ -626,6 +626,15 @@ fn resolve_add(s: &Session, a: &J) -> R {
             }
         }
         "animators" => json!({"kind": "animator"}),
+        // A stroke always holds Dash 1, Gap 1 and Offset (Dash 0 draws no dashes); adding one of
+        // them returns it, Dash/Gap 2 and 3 are added as a pair (`shape.dashes.add`) (#815).
+        "dashes" if in_group => match matchnames::stroke_dash(name) {
+            Some(id) => match g.children.iter().find(|n| n.match_id() == id) {
+                Some(n) => json!({"kind": "existing", "uid": n.uid()}),
+                None => json!({"kind": "dash", "id": id, "stroke": l.props.parent_of(g.uid).map(|p| p.uid)}),
+            },
+            None => json!({"error": format!("Can not add \"{name}\" to Dashes")}),
+        },
         _ if in_contents && in_group => match matchnames::shape_kind(name) {
             Some(k) => {
                 json!({"kind": "shape", "shape": k, "group": if l.props.sub("contents").is_some_and(|c| c.uid == g.uid) { J::Null } else { json!(g.uid) }})

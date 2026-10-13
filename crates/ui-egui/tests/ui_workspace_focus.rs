@@ -349,3 +349,92 @@ fn deleting_the_current_workspace_saves_immediately() {
     let text = store.read("workspaces.json").unwrap();
     assert!(!text.contains("Gone"), "the deleted workspace must be gone from the file: {text}");
 }
+
+/// A settings store whose writes fail while `full` is set (a full or read-only disk).
+#[derive(Default)]
+struct FullDisk {
+    inner: MemoryConfig,
+    full: std::sync::atomic::AtomicBool,
+}
+
+impl ConfigStore for FullDisk {
+    fn read(&self, name: &str) -> Option<String> {
+        self.inner.read(name)
+    }
+    fn write(&self, name: &str, data: &str) -> std::io::Result<()> {
+        if self.full.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(std::io::Error::other("synthetic full disk"));
+        }
+        self.inner.write(name, data)
+    }
+    fn remove(&self, name: &str) -> std::io::Result<()> {
+        self.inner.remove(name)
+    }
+}
+
+/// Issue #696: Save as New Workspace said nothing when the file couldn't be written, so the
+/// workspace was gone after a restart. The command fails, the layout stays usable, and saving
+/// again once the disk is writable keeps it.
+#[test]
+fn failed_workspace_save_is_reported_and_retryable() {
+    let store = Arc::new(FullDisk::default());
+    store.full.store(true, std::sync::atomic::Ordering::Relaxed);
+    let mut app = EffectcraftApp::new(Session { config: Some(store.clone()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let invoke = |app: &mut EffectcraftApp, id: &str, params| effectcraft_ui_egui::menus::invoke(app, &ctx, id, params);
+    let error = invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "caption craft"})).unwrap_err();
+    assert!(error.contains("synthetic full disk") && error.contains("won't be there after a restart"), "{error}");
+    assert_eq!(app.ui.status, error);
+    let storage_error = effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].clone();
+    assert!(storage_error.as_str().is_some_and(|e| e.contains("synthetic full disk")), "{storage_error}");
+    assert_eq!(app.ui.workspace, "caption craft");
+    assert_eq!(app.saved_workspace_names(), ["caption craft"]);
+    assert!(store.read("workspaces.json").is_none());
+    // Rename and Delete report the same way.
+    assert!(invoke(&mut app, "window.editWorkspaces", json!({"name": "caption craft", "rename": "Captions"})).is_err());
+    assert_eq!(app.saved_workspace_names(), ["Captions"]);
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Scratch"})).unwrap_err();
+    assert!(invoke(&mut app, "window.editWorkspaces", json!({"name": "Scratch", "delete": true})).is_err());
+    assert_eq!(app.saved_workspace_names(), ["Captions"]);
+    // Writable again: an explicit Save keeps it.
+    store.full.store(false, std::sync::atomic::Ordering::Relaxed);
+    invoke(&mut app, "window.workspace", json!({"name": "Captions"})).unwrap();
+    invoke(&mut app, "window.saveWorkspace", json!({})).unwrap();
+    assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_null());
+    let restarted = EffectcraftApp::new(Session { config: Some(store), ..Default::default() });
+    assert_eq!(restarted.saved_workspace_names(), ["Captions"]);
+}
+
+/// Without a settings folder there is nowhere to keep a workspace: saving says so.
+#[test]
+fn workspace_save_without_a_settings_folder_is_reported() {
+    let mut app = EffectcraftApp::new(Session::default());
+    let ctx = egui::Context::default();
+    let error = effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name": "Mine"})).unwrap_err();
+    assert!(error.contains("no settings folder"), "{error}");
+    assert_eq!(app.saved_workspace_names(), ["Mine"]);
+}
+
+/// Save as New Workspace, Rename and Delete reach the real settings folder straight away (no
+/// exit needed) and come back from it.
+#[test]
+fn saved_workspaces_reach_the_settings_folder_and_reload() {
+    let dir = scratch_dir("disk");
+    let launch = || EffectcraftApp::new(Session { config: Some(Arc::new(DirConfig::new(&dir))), ..Default::default() });
+    let mut app = launch();
+    let ctx = egui::Context::default();
+    let invoke = |app: &mut EffectcraftApp, id: &str, params| effectcraft_ui_egui::menus::invoke(app, &ctx, id, params).unwrap();
+    invoke(&mut app, "window.workspace", json!({"name": "Minimal"}));
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "caption craft"}));
+    let saved = app.ui.dock.clone();
+    assert!(std::fs::read_to_string(dir.join("workspaces.json")).unwrap().contains("caption craft"));
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Scratch"}));
+    invoke(&mut app, "window.editWorkspaces", json!({"name": "caption craft", "rename": "Captions"}));
+    invoke(&mut app, "window.editWorkspaces", json!({"name": "Scratch", "delete": true}));
+    drop(app);
+    let mut app = launch();
+    assert_eq!(app.saved_workspace_names(), ["Captions"]);
+    invoke(&mut app, "window.workspace", json!({"name": "Captions"}));
+    assert_eq!(app.ui.dock, saved);
+    std::fs::remove_dir_all(dir).unwrap();
+}

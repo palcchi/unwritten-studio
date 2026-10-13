@@ -330,3 +330,18 @@ fn unowned_tab_keeps_the_timeline_mini_flowchart_shortcut() {
     output.textures_delta.clear();
     assert!(app.ui.mini_flowchart.is_some(), "an unowned Tab still invokes the application binding");
 }
+
+/// Deleting the current workspace writes the file straight away (it used to be rejected for
+/// having no definition until the next frame retried).
+#[test]
+fn deleting_the_current_workspace_saves_immediately() {
+    let store = Arc::new(MemoryConfig::default());
+    let mut app = EffectcraftApp::new(Session { config: Some(store.clone()), ..Default::default() });
+    let ctx = egui::Context::default();
+    effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name": "Gone"})).unwrap();
+    effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.editWorkspaces", json!({"name": "Gone", "delete": true})).unwrap();
+    assert_eq!(app.ui.workspace, "Default");
+    assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_null());
+    let text = store.read("workspaces.json").unwrap();
+    assert!(!text.contains("Gone"), "the deleted workspace must be gone from the file: {text}");
+}

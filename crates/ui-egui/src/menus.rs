@@ -1054,10 +1054,11 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
                 if app.ui.saved_workspaces.remove(&name).is_none() && !builtin {
                     return Err(format!("no workspace `{name}`"));
                 }
-                app.store_saved_workspaces();
+                // Leave the deleted workspace first: a current workspace needs a definition.
                 if app.ui.workspace == name {
                     app.set_workspace("Default");
                 }
+                app.store_saved_workspaces();
                 return Ok(json!({"deleted": name}));
             }
             if let Some(new) = p.get("rename").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty() && *n != name) {

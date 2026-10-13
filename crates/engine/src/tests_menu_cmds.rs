@@ -1070,6 +1070,57 @@ fn new_comp_from_selection_is_one_undo_step_with_the_dialog_options() {
 }
 
 #[test]
+fn comps_made_from_the_same_footage_get_numbered_names_as_duplicate_does() {
+    let mut s = Session::default();
+    let add = |s: &mut Session, name: &str, kind: ItemKind| std::sync::Arc::make_mut(&mut s.project).add_item(name, effectcraft_color::Label::None, None, kind);
+    let still = || {
+        ItemKind::Footage(effectcraft_project::Footage {
+            kind: effectcraft_project::FootageKind::Still,
+            width: 200,
+            height: 100,
+            has_video: true,
+            ..Default::default()
+        })
+    };
+    let clip = add(&mut s, "clip.png", still());
+    let other = add(&mut s, "other.png", still());
+    let make = |s: &mut Session, sel: Vec<effectcraft_project::ItemId>, p: Value| -> Vec<String> {
+        s.state.project_selection = sel;
+        let r = s.execute("file.newCompFromSelection", p).unwrap();
+        r["comps"].as_array().unwrap().iter().map(|c| s.project.item(effectcraft_project::ItemId(c.as_u64().unwrap())).unwrap().name.clone()).collect()
+    };
+    // The same footage again and again: "clip", "clip 2", "clip 3".
+    assert_eq!(make(&mut s, vec![clip], json!({})), ["clip"]);
+    assert_eq!(make(&mut s, vec![clip], json!({})), ["clip 2"]);
+    assert_eq!(make(&mut s, vec![clip], json!({})), ["clip 3"]);
+    // Several items at once (one comp each): every new comp has a name of its own.
+    assert_eq!(make(&mut s, vec![clip, other, clip], json!({})), ["clip 4", "other", "clip 5"]);
+    // One comp for all, named after the item it takes its settings from.
+    assert_eq!(make(&mut s, vec![clip, other], json!({"single": true})), ["clip 6"]);
+    assert_eq!(make(&mut s, vec![clip, other], json!({"single": true, "dimensionsFrom": 1})), ["other 2"]);
+    // Undo removes the latest comp and frees its name for the next one.
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(s.project.find_by_name("other 2").is_none());
+    assert_eq!(make(&mut s, vec![other], json!({})), ["other 2"]);
+    // A solid or extensionless footage still names its own first comp; the second is numbered.
+    let red = add(&mut s, "Red Solid 1", ItemKind::Solid(effectcraft_project::Solid { color: [1.0, 0.0, 0.0], width: 100, height: 100, pixel_aspect: 1.0 }));
+    assert_eq!(make(&mut s, vec![red], json!({})), ["Red Solid 1"]);
+    assert_eq!(make(&mut s, vec![red], json!({})), ["Red Solid 2"]);
+    // Duplicate numbers its copies the same way, from the same helper.
+    let first = s.project.find_by_name("clip").unwrap().id;
+    s.state.project_selection = vec![first];
+    let r = s.execute("project.duplicate", json!({})).unwrap();
+    assert_eq!(s.project.item(effectcraft_project::ItemId(r["items"][0].as_u64().unwrap())).unwrap().name, "clip 7");
+    // A comp made from a comp doesn't take its source comp's name.
+    assert_eq!(make(&mut s, vec![first], json!({})), ["clip 8"]);
+    // Several comps at once are one undo step; undoing frees all their names.
+    assert_eq!(make(&mut s, vec![clip, other], json!({})), ["clip 9", "other 3"]);
+    s.execute("edit.undo", json!({})).unwrap();
+    assert!(s.project.find_by_name("clip 9").is_none() && s.project.find_by_name("other 3").is_none());
+    assert_eq!(make(&mut s, vec![other, clip], json!({})), ["other 3", "clip 9"]);
+}
+
+#[test]
 fn project_files_keep_their_format_warn_about_newer_versions_and_never_save_unreadable() {
     let mut s = comp();
     let a = solid(&mut s, "#ff0000");

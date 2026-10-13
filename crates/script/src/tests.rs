@@ -766,6 +766,36 @@ fn group_selected_false_deselects_masks_and_effects() {
     assert_eq!(out.result, json!([[true, true], [false, true], [false, false]]));
 }
 
+/// A layer selected by script in a comp that is not open stays selected for the next script:
+/// every comp keeps its own layer selection (#1001).
+#[test]
+fn layer_selection_in_a_closed_comp_survives_to_the_next_script() {
+    let mut s = session();
+    let out = ok(
+        &mut s,
+        r#"
+        var a = app.project.items.addComp("Active", 400, 300, 1, 2, 25);
+        a.openInViewer();
+        var c = app.project.items.addComp("Other", 400, 300, 1, 2, 25);
+        c.layers.addText("A");
+        c.layers.addText("B");
+        c.layer("B").selected = true;
+        c.selectedLayers.length + " " + c.layer("B").selected + " " + a.selectedLayers.length
+        "#,
+    );
+    assert_eq!(out.result, json!("1 true 0"));
+    // A second script call, the way a panel talks to the app over the control channel.
+    let out = ok(
+        &mut s,
+        r#"
+        var c = null;
+        for (var k = 1; k <= app.project.numItems; k++) { if (app.project.item(k).name === "Other") c = app.project.item(k); }
+        c.selectedLayers.length + " " + c.layer("B").selected
+        "#,
+    );
+    assert_eq!(out.result, json!("1 true"));
+}
+
 /// Probes every file as a 64x32 still (the media layer's single-file probe).
 struct Stills;
 impl effectcraft_engine::Importer for Stills {

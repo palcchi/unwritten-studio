@@ -154,10 +154,11 @@ fn close(s: &mut Session, p: &Value) -> Result<Value> {
     let id = comp_id(s, p)?;
     s.state.open_comps.retain(|c| *c != id);
     if s.state.active_comp == Some(id) {
-        s.state.active_comp = s.state.open_comps.last().copied();
-        s.state.selected_layers.clear();
-        s.state.selected_keys.clear();
-        s.state.selected_props.clear();
+        if let Some(next) = s.state.open_comps.last().copied() {
+            s.activate_comp(next);
+        } else {
+            s.activate_comp_none();
+        }
     }
     Ok(Value::Null)
 }

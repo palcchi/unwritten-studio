@@ -178,8 +178,8 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("time.forward10", "Forward 10 Frames", [], ["Shift+PageDown", "Cmd+Shift+ArrowRight"], "{}", has_comp, |s, _| step(s, &json!({"frames": 10}))),
         cmd!("time.back10", "Back 10 Frames", [], ["Shift+PageUp", "Cmd+Shift+ArrowLeft"], "{}", has_comp, |s, _| step(s, &json!({"frames": -10}))),
         cmd!("time.step", "Step Frames", [], None, "{frames}", has_comp, step),
-        cmd!("time.start", "Go to Start", [], Some("Home"), "{}", has_comp, |s, _| go(s, &json!({"to": "start"}))),
-        cmd!("time.end", "Go to End", [], Some("End"), "{}", has_comp, |s, _| go(s, &json!({"to": "end"}))),
+        cmd!("time.start", "Go to Start", [], ["Home", "Cmd+Alt+ArrowLeft"], "{}", has_comp, |s, _| go(s, &json!({"to": "start"}))),
+        cmd!("time.end", "Go to End", [], ["End", "Cmd+Alt+ArrowRight"], "{}", has_comp, |s, _| go(s, &json!({"to": "end"}))),
         cmd!("time.layerIn", "Go to Layer In Point", [], Some("I"), "{}", has_comp, |s, _| go(s, &json!({"to": "layerIn"}))),
         cmd!("time.layerOut", "Go to Layer Out Point", [], Some("O"), "{}", has_comp, |s, _| go(s, &json!({"to": "layerOut"}))),
         cmd!(

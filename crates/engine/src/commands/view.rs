@@ -136,7 +136,15 @@ pub fn specs() -> Vec<CommandSpec> {
         res!("view.res.half", "Half", ["View", "Resolution"], Some("Cmd+Shift+J"), Half),
         res!("view.res.third", "Third", ["View", "Resolution"], None, Third),
         res!("view.res.quarter", "Quarter", ["View", "Resolution"], Some("Cmd+Alt+Shift+J"), Quarter),
-        cmd!("view.res.custom", "Custom...", ["View", "Resolution"], None, "{factor?: 1..40 (render every n-th pixel), comp?}", has_comp, custom_resolution),
+        cmd!(
+            "view.res.custom",
+            "Custom...",
+            ["View", "Resolution"],
+            Some("Cmd+Alt+J"),
+            "{factor?: 1..40 (render every n-th pixel), comp?}",
+            has_comp,
+            custom_resolution
+        ),
         // The Composition panel's Resolution popup (not in the View menu).
         res!("view.res.auto", "Resolution: Auto", [], None, Auto),
         cmd!("view.layout", "Switch View Layout", [], None, "{views: 1|2|4}", has_comp, view_layout),

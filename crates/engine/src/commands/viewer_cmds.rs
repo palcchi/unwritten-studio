@@ -173,6 +173,20 @@ fn show_snapshot(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!(s.state.viewer.show_snapshot))
 }
 
+/// A `view.fastPreviews.*` command choosing one Fast Previews mode.
+macro_rules! fast {
+    ($id:literal, $label:literal, $sc:literal, $mode:literal) => {
+        cmd!($id, $label, [], Some($sc), "{}", always, |s, _| fast_previews(s, &json!({"mode": $mode})))
+    };
+}
+
+/// A `view.channel.*` command showing one channel (again: back to RGB), in grayscale or colorized.
+macro_rules! chan {
+    ($id:literal, $label:literal, $sc:literal, $channel:literal, $colorized:literal) => {
+        cmd!($id, $label, [], Some($sc), "{}", always, |s, _| channel(s, &json!({"channel": $channel, "colorized": $colorized, "toggle": true})))
+    };
+}
+
 fn fast_previews(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_p(p, "mode").unwrap_or("off");
     let m =
@@ -504,6 +518,22 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("view.takeSnapshot", "Take Snapshot", [], Some("Shift+F5"), "{comp?, scale?: 0.05..1}", has_comp, take_snapshot),
         cmd!("view.showSnapshot", "Show Snapshot", [], None, "{value?}", has_snapshot, show_snapshot),
         cmd!("view.fastPreviewMode", "Fast Previews", [], None, "{mode: off|adaptive|draft|fastDraft|wireframe}", always, fast_previews),
+        fast!("view.fastPreviews.off", "Fast Previews: Off (Final Quality)", "Cmd+Alt+1", "off"),
+        fast!("view.fastPreviews.adaptive", "Fast Previews: Adaptive Resolution", "Cmd+Alt+2", "adaptive"),
+        fast!("view.fastPreviews.draft", "Fast Previews: Draft", "Cmd+Alt+3", "draft"),
+        fast!("view.fastPreviews.fastDraft", "Fast Previews: Fast Draft", "Cmd+Alt+4", "fastDraft"),
+        fast!("view.fastPreviews.wireframe", "Fast Previews: Wireframe", "Cmd+Alt+5", "wireframe"),
+        chan!("view.channel.red", "Show Channel: Red", "Alt+1", "red", false),
+        chan!("view.channel.green", "Show Channel: Green", "Alt+2", "green", false),
+        chan!("view.channel.blue", "Show Channel: Blue", "Alt+3", "blue", false),
+        chan!("view.channel.alpha", "Show Channel: Alpha", "Alt+4", "alpha", false),
+        chan!("view.channel.redColorized", "Show Channel: Red, Colorized", "Alt+Shift+1", "red", true),
+        chan!("view.channel.greenColorized", "Show Channel: Green, Colorized", "Alt+Shift+2", "green", true),
+        chan!("view.channel.blueColorized", "Show Channel: Blue, Colorized", "Alt+Shift+3", "blue", true),
+        cmd!("view.channel.rgbStraight", "Show Channel: RGB Straight", [], Some("Alt+Shift+4"), "{}", always, |s, _| channel(
+            s,
+            &json!({"channel": "rgbStraight", "toggle": true})
+        )),
         cmd!("view.moveGuide", "Move Guide", [], None, "{comp?, index, position (comp px), merge?}", has_comp, move_guide),
         cmd!("view.removeGuide", "Remove Guide", [], None, "{comp?, index}", has_comp, remove_guide),
         cmd!(

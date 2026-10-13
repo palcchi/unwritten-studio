@@ -582,7 +582,15 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("edit.history", "History", [], None, "{steps?: n (undo n steps), redo?: n}", has_history, history),
         cmd!("file.importRecent", "Import Recent Footage", [], None, "{index? | path?}", has_recent_footage, import_recent),
         cmd!("file.clearRecentFootage", "Clear Recent Footage", ["File", "Import Recent Footage"], None, "{}", has_recent_footage, clear_recent_footage),
-        cmd!("anim.applyRecentPreset", "Recent Animation Presets", [], None, "{index? | path?, layers?}", has_recent_presets, apply_recent_preset),
+        cmd!(
+            "anim.applyRecentPreset",
+            "Recent Animation Presets",
+            [],
+            Some("Cmd+Alt+Shift+F"),
+            "{index? | path?, layers?}",
+            has_recent_presets,
+            apply_recent_preset
+        ),
         cmd!(
             "anim.clearRecentPresets",
             "Clear Recent Presets",

@@ -134,7 +134,9 @@ Viewer state that agents drive headless too: `view.snapping`, `view.snappingOpti
 `header.snappingOptions`: After Effects' Snap Edges Extended and Snap to Features in Collapsed
 Compositions and Text Layers), `view.channel {channel, colorized?}`,
 `view.exposure {stops | delta}`, `view.resetExposure`, `view.takeSnapshot`, `view.showSnapshot`,
-`view.fastPreviewMode {mode}`, `view.res.full|half|third|quarter|auto {comp?}` and
+`view.fastPreviewMode {mode}` (one mode each, for shortcuts:
+`view.fastPreviews.off|adaptive|draft|fastDraft|wireframe`, and for the channels
+`view.channel.red|green|blue|alpha|redColorized|greenColorized|blueColorized|rgbStraight`), `view.res.full|half|third|quarter|auto {comp?}` and
 `view.res.custom {factor, comp?}` (the comp's Resolution, saved with the project but no undo
 step; `ui.set {viewer: {res}}` sets the active comp's, and `ui.inspect` reports it as
 `ui.viewer.res`), `view.setRegionOfInterest {rect}`, `view.addGuide`,

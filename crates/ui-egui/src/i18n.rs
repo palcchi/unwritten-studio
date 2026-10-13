@@ -6591,7 +6591,8 @@ mod tests {
             assert_eq!(label(&app, "", source), translated);
         }
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
-        let panel = MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel": "layer"}), shortcut: None };
+        let panel =
+            MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel": "layer"}), shortcut: None, alt_shortcuts: vec![] };
         assert_eq!(entry(&app, &panel, "Layer: File Čeština".into()), "Vrstva: File Čeština");
         assert_eq!(
             submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “File Čeština” Workspace".into()),
@@ -6607,8 +6608,8 @@ mod tests {
     fn czech_undo_redo_keeps_history_labels_verbatim() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
         app.session.execute("prefs.set", json!({"key": "general.language", "value": "cs"})).unwrap();
-        let undo = MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None };
-        let redo = MenuEntry { label: "Redo".into(), command: "edit.redo".into(), params: json!({}), shortcut: None };
+        let undo = MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] };
+        let redo = MenuEntry { label: "Redo".into(), command: "edit.redo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] };
         assert_eq!(entry(&app, &undo, "Can't Undo".into()), "Není co vrátit");
         assert_eq!(entry(&app, &redo, "Can't Redo".into()), "Není co zopakovat");
         app.session.history.undo.push(("File Čeština".into(), app.session.project.clone()));
@@ -6627,7 +6628,7 @@ mod tests {
                 ("Reveal in Explorer", "Zobrazit v Průzkumníku"),
                 ("Reveal in File Manager", "Zobrazit ve správci souborů"),
             ] {
-                let e = MenuEntry { label: source.into(), command: command.into(), params: json!({}), shortcut: None };
+                let e = MenuEntry { label: source.into(), command: command.into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] };
                 assert_eq!(label(&app, command, source), translated);
                 assert_eq!(entry(&app, &e, source.into()), translated);
                 assert_eq!(label(&app, "file.openRecent", source), source);
@@ -6722,7 +6723,8 @@ mod tests {
                 ("Reveal in Explorer", "Показати у Провіднику"),
                 ("Reveal in File Manager", "Показати у файловому менеджері"),
             ] {
-                let e = MenuEntry { label: source.into(), command: command.into(), params: json!({"item": "My file.mp4"}), shortcut: None };
+                let e =
+                    MenuEntry { label: source.into(), command: command.into(), params: json!({"item": "My file.mp4"}), shortcut: None, alt_shortcuts: vec![] };
                 assert_eq!(label(&app, command, source), translated);
                 assert_eq!(entry(&app, &e, source.into()), translated);
                 assert_eq!(label(&app, "file.openRecent", source), source);
@@ -6751,7 +6753,7 @@ mod tests {
         assert_eq!(
             entry(
                 &app,
-                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] },
                 "Layer: File".into()
             ),
             "レイヤー: File"
@@ -6854,13 +6856,17 @@ mod tests {
         // Untranslated keys and dynamic labels stay verbatim.
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
         assert_eq!(
-            entry(&app, &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None }, "Undo Comp1".into()),
+            entry(
+                &app,
+                &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] },
+                "Undo Comp1".into()
+            ),
             "无可撤销的操作"
         );
         assert_eq!(
             entry(
                 &app,
-                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] },
                 "Layer: File".into()
             ),
             "图层: File"
@@ -6894,13 +6900,17 @@ mod tests {
         // Untranslated keys and dynamic labels stay verbatim.
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
         assert_eq!(
-            entry(&app, &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None }, "Undo Comp1".into()),
+            entry(
+                &app,
+                &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] },
+                "Undo Comp1".into()
+            ),
             "沒有可復原的操作"
         );
         assert_eq!(
             entry(
                 &app,
-                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] },
                 "Layer: File".into()
             ),
             "圖層: File"
@@ -6943,7 +6953,8 @@ mod tests {
         assert_eq!(label(&app, "layer.addTextAnimator", "Tracking"), "Міжлітерний інтервал");
         assert_eq!(label(&app, "edit.purgeUndo", "Undo"), "Історія скасувань");
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
-        let panel = MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None };
+        let panel =
+            MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] };
         assert_eq!(entry(&app, &panel, "Layer: File".into()), "Шар: File");
         assert_eq!(
             submenu(&app, "Assign Shortcut to Workspace", "Assign Shortcut to “File Україна” Workspace".into()),
@@ -6958,8 +6969,8 @@ mod tests {
     fn ukrainian_undo_redo_keeps_history_labels_verbatim() {
         let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
         app.session.execute("prefs.set", json!({"key":"general.language", "value":"uk"})).unwrap();
-        let undo = MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None };
-        let redo = MenuEntry { label: "Redo".into(), command: "edit.redo".into(), params: json!({}), shortcut: None };
+        let undo = MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] };
+        let redo = MenuEntry { label: "Redo".into(), command: "edit.redo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] };
         assert_eq!(entry(&app, &undo, "Can't Undo".into()), "Немає дій для скасування");
         assert_eq!(entry(&app, &redo, "Can't Redo".into()), "Немає дій для повторення");
         app.session.history.undo.push(("File Україна".into(), app.session.project.clone()));
@@ -6995,13 +7006,17 @@ mod tests {
         // Untranslated keys and dynamic labels stay verbatim.
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
         assert_eq!(
-            entry(&app, &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None }, "Undo Comp1".into()),
+            entry(
+                &app,
+                &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] },
+                "Undo Comp1".into()
+            ),
             "No se puede deshacer"
         );
         assert_eq!(
             entry(
                 &app,
-                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] },
                 "Layer: File".into()
             ),
             "Capa: File"
@@ -7036,13 +7051,17 @@ mod tests {
         // Untranslated keys and dynamic labels stay verbatim.
         assert_eq!(label(&app, "unknown.command", "Text"), "Text");
         assert_eq!(
-            entry(&app, &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None }, "Undo Comp1".into()),
+            entry(
+                &app,
+                &MenuEntry { label: "Undo".into(), command: "edit.undo".into(), params: json!({}), shortcut: None, alt_shortcuts: vec![] },
+                "Undo Comp1".into()
+            ),
             "Não há nada para desfazer"
         );
         assert_eq!(
             entry(
                 &app,
-                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None },
+                &MenuEntry { label: "Layer".into(), command: "window.panel".into(), params: json!({"panel":"layer"}), shortcut: None, alt_shortcuts: vec![] },
                 "Layer: File".into()
             ),
             "Camada: File"

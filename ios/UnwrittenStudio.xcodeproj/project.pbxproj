@@ -86,7 +86,7 @@
 /* Begin PBXNativeTarget section */
 		D10000000000000000000001 /* UnwrittenStudio */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = E10000000000000000000002 /* Build configuration list for PBXNativeTarget "UnwrittenStudio" */;
+			buildConfigurationList = E30000000000000000000002 /* Build configuration list for PBXNativeTarget */;
 			buildPhases = (
 				F10000000000000000000001 /* Build Rust core */,
 				B10000000000000000000002 /* Sources */,
@@ -110,7 +110,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {D10000000000000000000001 = {CreatedOnToolsVersion = 16.0; };};
 			};
-			buildConfigurationList = E10000000000000000000001 /* Build configuration list for PBXProject "UnwrittenStudio" */;
+			buildConfigurationList = E30000000000000000000001 /* Build configuration list for PBXProject */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			mainGroup = C10000000000000000000001;

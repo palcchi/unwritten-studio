@@ -438,3 +438,31 @@ fn saved_workspaces_reach_the_settings_folder_and_reload() {
     assert_eq!(app.ui.dock, saved);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A frontend event left queued by an earlier invocation (`engine.execute` defers them) only
+/// sets the status: its failure is not the result of a later command with the same id.
+#[test]
+fn an_earlier_queued_frontend_failure_is_not_a_later_commands_result() {
+    let store = Arc::new(MemoryConfig::default());
+    let mut app = EffectcraftApp::new(Session { config: Some(store.clone()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let invoke = |app: &mut EffectcraftApp, id: &str, params| effectcraft_ui_egui::menus::invoke(app, &ctx, id, params);
+    // An earlier failure, then a success.
+    app.session.execute("window.workspace", json!({"name": "missing-old"})).unwrap();
+    invoke(&mut app, "window.workspace", json!({"name": "Minimal"})).unwrap();
+    assert_eq!(app.ui.workspace, "Minimal");
+    // An earlier failing delete, then a rename that reaches the store.
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Original"})).unwrap();
+    app.session.execute("window.editWorkspaces", json!({"name": "missing-old", "delete": true})).unwrap();
+    invoke(&mut app, "window.editWorkspaces", json!({"name": "Original", "rename": "Renamed"})).unwrap();
+    assert!(store.read("workspaces.json").unwrap().contains("Renamed"));
+    // Both fail: the result is the current invocation's own failure.
+    app.session.execute("window.workspace", json!({"name": "missing-old"})).unwrap();
+    let error = invoke(&mut app, "window.workspace", json!({"name": "missing-new"})).unwrap_err();
+    assert!(error.contains("missing-new") && !error.contains("missing-old"), "{error}");
+    // An earlier failure of another command.
+    app.session.execute("window.workspace", json!({"name": "missing-old"})).unwrap();
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Fine"})).unwrap();
+    // Its own failure with nothing queued is still the result.
+    assert!(invoke(&mut app, "window.workspace", json!({"name": "missing"})).is_err());
+}

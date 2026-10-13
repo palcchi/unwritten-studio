@@ -752,6 +752,8 @@ fn clipboard_note(s: &effectcraft_engine::Session) -> String {
 }
 
 pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+    // Events already queued belong to earlier invocations (`engine.execute` defers them).
+    let queued = app.session.events.len();
     let mut r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
@@ -759,14 +761,15 @@ pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str
         ctx.copy_text(clipboard_note(&app.session));
     }
     let events = app.session.drain_events();
-    for ev in events {
+    for (index, ev) in events.into_iter().enumerate() {
         match ev {
             effectcraft_engine::Event::Frontend { command, params } => {
                 if let Err(e) = frontend(app, ctx, &command, params) {
                     app.ui.status = e.clone();
                     // A frontend-only command's own failure is the command's result (#696: a
-                    // workspace save that didn't reach disk reported success).
-                    if command == id && r.is_ok() {
+                    // workspace save that didn't reach disk reported success). An earlier
+                    // invocation's failure only sets the status.
+                    if index >= queued && command == id && r.is_ok() {
                         r = Err(e);
                     }
                 }

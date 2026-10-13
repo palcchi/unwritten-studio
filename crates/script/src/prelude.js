@@ -1600,6 +1600,14 @@ CompItem.prototype.constructor = CompItem;
     __call("essential.rename", { comp: this.__id, control: c[i - 1].id, name: String(name) });
     return String(name);
   };
+  // After Effects' CompItem.saveFrameToPng(time, file): Composition ▸ Save Frame As ▸ File at
+  // `time` (comp seconds), behind the scripting file gate like other writes (#816).
+  P.saveFrameToPng = function (time, file) {
+    var f = __str(file);
+    if (!f) throw __err("saveFrameToPng: missing file");
+    __file("write", f, "");
+    __call("comp.saveFrameAs", { comp: this.__id, path: f, time: __num(time, "time") });
+  };
   P.openInEssentialGraphics = function () { __call("comp.openInEssentialGraphics", { comp: this.__id }); };
   P.exportAsMotionGraphicsTemplate = function (overwrite, path) {
     var f = __str(path);

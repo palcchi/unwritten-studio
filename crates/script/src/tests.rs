@@ -362,6 +362,29 @@ fn security_gate_for_files() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #816: CompItem.saveFrameToPng writes the frame as a PNG, behind the file-write preference.
+#[test]
+fn save_frame_to_png_writes_behind_the_file_gate() {
+    let dir = std::env::temp_dir().join(format!("ec-save-frame-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = dir.join("frame.png");
+    let mut s = session();
+    let code = format!(
+        "var c = app.project.items.addComp('F', 40, 30, 1, 2, 25); c.layers.addSolid([1, 0, 0], 'S', 40, 30, 1); c.saveFrameToPng(1, new File({}))",
+        serde_json::to_string(&png.to_string_lossy()).unwrap()
+    );
+    let o = run_code(&mut s, &code, "frame.jsx");
+    assert!(o.error.expect("refused").message.contains("Allow Scripts to Write Files"));
+    assert!(!png.exists() || std::fs::metadata(&png).unwrap().len() == 0);
+    s.prefs.scripting.allow_scripts_write_files = true;
+    ok(&mut s, &code);
+    let bytes = std::fs::read(&png).unwrap();
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    // IHDR width and height.
+    assert_eq!((u32::from_be_bytes(bytes[16..20].try_into().unwrap()), u32::from_be_bytes(bytes[20..24].try_into().unwrap())), (40, 30));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// #590: a script can't give itself file and network access (or turn off the warning before
 /// executing files) by changing Settings ▸ Scripting & Expressions; the user still can.
 #[test]

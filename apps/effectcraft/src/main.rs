@@ -93,6 +93,9 @@ fn parse_args(args: impl IntoIterator<Item = String>, env_port: Result<String, s
             "--version" => return Ok(None),
             _ => match a.strip_prefix("--control=") {
                 Some(v) => out.control_port = Some(control_port("--control", Some(v))?),
+                // macOS LaunchServices may pass a process serial number (`-psn_0_1234`), notably on
+                // the first launch of a downloaded app; it is not an option of ours.
+                None if a.starts_with("-psn_") => {}
                 None if a.starts_with('-') && a != "-" => return Err(format!("unknown option `{a}`")),
                 None => out.files.push(a),
             },
@@ -494,7 +497,7 @@ mod tests {
         assert!(super::wayland_drop_notice(Some(OsStr::new("wayland-0")), Some(OsStr::new("x11"))).is_none());
     }
 
-    /// The window's device never asks for more than the adapter offers (#198).
+    /// The window's wgpu instance skips indirect-call validation (Intel Metal, #1153).
     #[test]
     fn the_window_instance_skips_indirect_call_validation() {
         if std::env::var_os("WGPU_VALIDATION_INDIRECT_CALL").is_some() {
@@ -507,6 +510,7 @@ mod tests {
         assert!(!setup.instance_descriptor.flags.contains(eframe::wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL));
     }
 
+    /// The window's device never asks for more than the adapter offers (#198).
     #[test]
     fn device_limits_fit_the_adapter() {
         use eframe::wgpu::Limits;
@@ -569,6 +573,8 @@ mod tests {
         }
         // Parsed left to right: an error before `--version` wins.
         assert_eq!(fails(&["--nope", "--version"]), "unknown option `--nope`");
+        // Finder's process serial number is ignored, not imported or refused.
+        assert_eq!(parse(&["-psn_0_12345"]).map(|a| a.files), Some(vec![]));
         let a = parse(&["clip.mov", "-", "--", "--demo", "-name.png"]).unwrap_or_default();
         assert_eq!(a.files, ["clip.mov", "-", "--demo", "-name.png"]);
         assert!(!a.demo);

@@ -557,7 +557,6 @@ fn add_marker(s: &mut Session, p: &Value) -> Result<Value> {
     if ids.is_empty() {
         s.edit("Add Marker", None, |proj, _| {
             let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
-            c.markers.retain(|m| m.time != t);
             c.markers.push(Marker { time: t, comment, ..Default::default() });
             c.markers.sort_by_key(|m| m.time);
             Ok(())

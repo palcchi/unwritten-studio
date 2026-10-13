@@ -386,7 +386,7 @@ type RankPlanes<'a> = [(&'a [f32], &'a [f32])];
 /// ranks (the Cryptomatte spec's matte), clamped to 0..1.
 #[inline]
 fn crypto_matte(planes: &RankPlanes, sel: &[u32], i: usize) -> f32 {
-    planes.iter().map(|(id, c)| (id[i], c[i])).filter(|(id, c)| *c > 0.0 && sel.contains(&id.to_bits())).map(|(_, c)| c).sum::<f32>().clamp(0.0, 1.0)
+    planes.iter().filter_map(|(id, c)| Some((*id.get(i)?, *c.get(i)?))).filter(|(id, c)| *c > 0.0 && sel.contains(&id.to_bits())).map(|(_, c)| c).sum::<f32>().clamp(0.0, 1.0)
 }
 
 /// The coverage-weighted ID colours at aux pixel `i` (the spec's preview).
@@ -394,7 +394,7 @@ fn crypto_matte(planes: &RankPlanes, sel: &[u32], i: usize) -> f32 {
 fn crypto_colors(planes: &RankPlanes, i: usize) -> [f32; 3] {
     let mut c = [0.0f32; 3];
     for (id, cov) in planes {
-        let (id, cov) = (id[i], cov[i]);
+        let (Some(&id), Some(&cov)) = (id.get(i), cov.get(i)) else { continue };
         let k = id_color(id);
         for j in 0..3 {
             c[j] += k[j] * cov;

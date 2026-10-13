@@ -94,9 +94,6 @@ fn label_index(l: Label) -> usize {
     Label::ALL.iter().position(|x| *x == l).unwrap_or(0)
 }
 
-/// A comp's selected properties as `[layer, uid]`: the selected ones, then those with selected
-/// keyframes (selecting a keyframe selects its property in After Effects, so scripts find
-/// selected keys through `selectedProperties`).
 /// Layer ids selected in `comp`, including a comp that is not the active one (#1001).
 fn selected_layer_ids(s: &Session, comp: effectcraft_project::ItemId) -> Vec<u64> {
     let layers = if s.active_comp_id() == Some(comp) {
@@ -118,6 +115,9 @@ fn layer_selected(s: &Session, comp: effectcraft_project::ItemId, layer: effectc
     s.state.comp_selections.get(&comp).is_some_and(|sel| sel.layers.contains(&layer))
 }
 
+/// A comp's selected properties as `[layer, uid]`: the selected ones, then those with selected
+/// keyframes (selecting a keyframe selects its property in After Effects, so scripts find
+/// selected keys through `selectedProperties`).
 fn selected_props(s: &Session, c: &effectcraft_project::Comp) -> Vec<J> {
     let mut v: Vec<(u64, u64)> = vec![];
     let keyed = s.state.selected_keys.iter().map(|k| (k.layer, k.prop));

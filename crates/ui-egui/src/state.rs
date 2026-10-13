@@ -310,6 +310,7 @@ impl TimelineState {
     /// reveal. Other layers keep theirs.
     pub fn apply_reveal(&mut self, layers: &[u64], kinds: Vec<String>) {
         for id in layers {
+            self.full_groups.remove(id);
             if kinds.is_empty() {
                 self.open_layers.remove(id);
                 self.layer_reveal.remove(id);
@@ -319,6 +320,18 @@ impl TimelineState {
             }
         }
         self.reveal = kinds;
+    }
+
+    /// Twirl group `uid` of `layer` by hand. Opened under a reveal, it shows all its properties
+    /// (collapse and expand an effect that shows only its revealed parameters to see them all).
+    pub fn toggle_group(&mut self, layer: u64, uid: u64) {
+        if self.open_groups.remove(&uid) {
+            return;
+        }
+        self.open_groups.insert(uid);
+        if self.layer_reveal.contains_key(&layer) {
+            self.full_groups.entry(layer).or_default().insert(uid);
+        }
     }
 }
 
@@ -361,6 +374,10 @@ pub struct TimelineState {
     /// Properties / groups (uids) shown by the `props` reveal (Animation ▸ Reveal Properties…).
     #[serde(default)]
     pub reveal_props: BTreeSet<u64>,
+    /// Groups of a revealed layer (by layer id) twirled open by hand since the reveal: they show
+    /// their whole contents, not just the revealed properties.
+    #[serde(default)]
+    pub full_groups: BTreeMap<u64, BTreeSet<u64>>,
     /// Graph Editor: `auto` (Auto-Select Graph Type, the default: the speed graph when every
     /// property shown is spatial, else the value graph), `value` or `speed`.
     #[serde(default = "auto_graph")]
@@ -435,6 +452,7 @@ impl Default for TimelineState {
             reveal: vec![],
             layer_reveal: BTreeMap::new(),
             reveal_props: BTreeSet::new(),
+            full_groups: BTreeMap::new(),
             graph_mode: auto_graph(),
             graph_show_selected: true,
             graph_auto_zoom: true,

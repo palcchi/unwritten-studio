@@ -1030,7 +1030,7 @@ fn reveal_rows(app: &EffectcraftApp, l: &Layer, kinds: &[String], rows: &mut Vec
         }
         wanted.extend(picked.iter().copied());
     }
-    revealed_rows(rows, l, &wanted, &shown_groups, &tl.open_groups);
+    revealed_rows(rows, l, &wanted, &shown_groups, &tl.open_groups, tl.full_groups.get(&l.id.0));
     if has("waveform")
         && let Some(item) = super::waveform::audio_item(&app.session.project, l)
     {
@@ -1041,13 +1041,22 @@ fn reveal_rows(app: &EffectcraftApp, l: &Layer, kinds: &[String], rows: &mut Vec
 /// Rows for the revealed properties `shown` of `l`, in tree order. Those inside an effect show
 /// under the effect and its groups, as in After Effects (Puppet ▸ Mesh 1 ▸ Deform ▸ Puppet
 /// Pin 1 ▸ Position: every pin's Position is told apart, #273); the others (Transform, masks…)
-/// on their own. Groups in `skip` already show with their contents.
-fn revealed_rows(rows: &mut Vec<Row>, l: &Layer, shown: &std::collections::BTreeSet<u64>, skip: &[u64], open: &std::collections::BTreeSet<u64>) {
+/// on their own. Groups in `skip` already show with their contents; those in `full` (twirled
+/// open by hand since the reveal) show all of theirs.
+fn revealed_rows(
+    rows: &mut Vec<Row>,
+    l: &Layer,
+    shown: &std::collections::BTreeSet<u64>,
+    skip: &[u64],
+    open: &std::collections::BTreeSet<u64>,
+    full: Option<&std::collections::BTreeSet<u64>>,
+) {
     struct Tree<'a> {
         l: &'a Layer,
         wanted: &'a dyn Fn(&Property) -> bool,
         skip: &'a [u64],
         open: &'a std::collections::BTreeSet<u64>,
+        full: Option<&'a std::collections::BTreeSet<u64>>,
     }
     fn holds(g: &PropGroup, wanted: &dyn Fn(&Property) -> bool) -> bool {
         g.children.iter().any(|c| match c {
@@ -1066,6 +1075,10 @@ fn revealed_rows(rows: &mut Vec<Row>, l: &Layer, shown: &std::collections::BTree
         if !o {
             return;
         }
+        if t.full.is_some_and(|f| f.contains(&g.uid)) {
+            push_group(rows, t.l, g, depth + 1, t.open);
+            return;
+        }
         for c in &g.children {
             match c {
                 Node::Prop(p) if (t.wanted)(p) => rows.push(Row { layer: t.l.id, depth: depth + 1, kind: RowKind::Prop { uid: p.uid } }),
@@ -1075,7 +1088,7 @@ fn revealed_rows(rows: &mut Vec<Row>, l: &Layer, shown: &std::collections::BTree
         }
     }
     let wanted = |p: &Property| shown.contains(&p.uid) && prop_visible(p, l);
-    let tree = Tree { l, wanted: &wanted, skip, open };
+    let tree = Tree { l, wanted: &wanted, skip, open, full };
     for c in &l.props.children {
         match c {
             Node::Group(fx) if fx.match_id == "effects" => {
@@ -3350,6 +3363,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 // Twirled by hand, the layer shows its whole tree again.
                 tl.reveal.clear();
                 tl.layer_reveal.remove(&id);
+                tl.full_groups.remove(&id);
                 let open = !tl.open_layers.contains(&id);
                 if open {
                     tl.open_layers.insert(id);
@@ -3370,10 +3384,8 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             }
             UiAct::ToggleGroup(layer, uid, all) => {
                 let tl = &mut app.ui.timeline;
-                let open = !tl.open_groups.remove(&uid);
-                if open {
-                    tl.open_groups.insert(uid);
-                }
+                tl.toggle_group(layer, uid);
+                let open = tl.open_groups.contains(&uid);
                 if all && let Some(g) = comp.layer(LayerId(layer)).and_then(|l| find_group(&l.props, uid)) {
                     let mut uids = vec![];
                     walk_groups(g, &mut uids);
@@ -4338,6 +4350,8 @@ mod tests {
         let n_keys = app.ui.timeline.reveal_props.len();
         assert_eq!(app.ui.timeline.reveal, vec!["props"]);
         assert!(n_keys >= 1);
+        let bx = app.session.state.selected_layers[0].0;
+        app.session.execute("prop.set", json!({"layer": bx, "path": "effects/#1/blurriness", "value": 12})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
         assert!(app.ui.timeline.reveal_props.len() > n_keys, "UU reveals modified properties too");
     }
@@ -4376,9 +4390,24 @@ mod tests {
         let at = |n: &str| rows.iter().position(|r| r == n).unwrap();
         assert_eq!(rows[at("Plate") + 1].trim(), "Scale", "{rows:?}");
         assert_eq!(rows[at("Box") + 1].trim(), "Position", "{rows:?}");
-        // UU (modified), then U later: Box shows its keyframed properties only again.
+        // UU (modified): the effect's changed parameter only, under the effect twirled open.
+        // Then U later: Box shows its keyframed properties only again.
+        app.session.execute("prop.set", json!({"layer": bx, "path": "effects/#1/blurriness", "value": 12})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
-        assert!(labels(&app).iter().any(|r| r.trim() == ">Gaussian Blur"), "UU shows the effect");
+        let rows = labels(&app);
+        let fx = rows.iter().position(|r| r.trim().ends_with("Gaussian Blur")).unwrap_or_else(|| panic!("UU shows the effect: {rows:?}"));
+        assert_eq!(rows[fx + 1].trim(), "Blurriness", "{rows:?}");
+        assert!(!rows.iter().any(|r| r.trim() == "Blur Dimensions"), "unchanged parameters stay hidden: {rows:?}");
+        // Collapsed and expanded by hand, the effect shows all its parameters; UU filters again.
+        let fx_uid = app.session.active_comp().unwrap().layer(LayerId(bx)).unwrap().effects().unwrap().groups().next().unwrap().uid;
+        app.ui.timeline.toggle_group(bx, fx_uid);
+        assert!(!labels(&app).iter().any(|r| r.trim() == "Blurriness"), "collapsed");
+        app.ui.timeline.toggle_group(bx, fx_uid);
+        let rows = labels(&app);
+        assert!(rows.iter().any(|r| r.trim() == "Blurriness") && rows.iter().any(|r| r.trim() == "Blur Dimensions"), "{rows:?}");
+        app.last_reveal = Some(("keyframes".into(), f64::MAX));
+        crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
+        assert!(!labels(&app).iter().any(|r| r.trim() == "Blur Dimensions"), "UU again shows the changed ones only");
         app.last_reveal = Some(("keyframes".into(), -10.0));
         crate::menus::invoke(&mut app, &ctx, "anim.reveal", json!({"kind": "keyframes"})).unwrap();
         app.last_reveal = Some(("keyframes".into(), -10.0));

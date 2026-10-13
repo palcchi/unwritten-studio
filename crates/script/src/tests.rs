@@ -1242,3 +1242,65 @@ fn light_options_accept_the_after_effects_casts_shadows_name() {
     );
     assert_ne!(o.result, json!("null"), "{:?}", o.result);
 }
+
+/// A Google Earth Studio camera export: transform and camera shortcuts on the camera layer, keys
+/// set through them, and Convert Expression to Keyframes run on the selected property (#1077).
+#[test]
+fn earth_studio_style_script_keys_the_camera() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Orbit", 1920, 1080, 1, 1, 10);
+        comp.openInViewer();
+        var cam = comp.layers.addCamera("Camera", ["960", "540"]);
+        cam.locked = true;
+        var pos = cam.position, rx = cam.xRotation, ry = cam.yRotation, rz = cam.zRotation, zoom = cam.zoom;
+        cam.autoOrient = AutoOrientType.NO_AUTO_ORIENT;
+        var ints = comp.layers.addNull();
+        ints.name = "ints";
+        ints.threeDLayer = true;
+        ints.position.setValuesAtTimes([0, 0.5], [[100, 200, 300], [110, 220, 330]]);
+        rx.setValuesAtTimes([0, 0.5], [181, 182]);
+        ry.setValuesAtTimes([0, 0.5], [39, 38]);
+        rz.setValuesAtTimes([0, 0.5], [87, 86]);
+        pos.expression = 'thisComp.layer("ints").transform.position';
+        var id = app.findMenuCommandId("Convert Expression to Keyframes");
+        if (id && pos.canSetExpression && pos.expressionEnabled) {
+          pos.selected = true;
+          app.executeCommand(id);
+          pos.selected = false;
+          ints.remove();
+        }
+        zoom.setValueAtTime(0, 1500);
+        zoom.setValueAtTime(0.5, 1600);
+        [pos.numKeys, rx.numKeys, ry.numKeys, rz.numKeys, zoom.numKeys, comp.numLayers,
+         cam.pointOfInterest.matchName, cam.orientation.matchName, cam.depthOfField.matchName,
+         cam.focusDistance.matchName, cam.aperture.matchName, cam.blurLevel.matchName]
+        "#,
+    );
+    assert_eq!(
+        o.result,
+        json!([
+            10,
+            2,
+            2,
+            2,
+            2,
+            1,
+            "ADBE Anchor Point",
+            "ADBE Orientation",
+            "ADBE Camera Depth of Field",
+            "ADBE Camera Focus Distance",
+            "ADBE Camera Aperture",
+            "ADBE Camera Blur Level"
+        ])
+    );
+    let (_, c) = comp_named(&s, "Orbit");
+    let cam = layer(c, "Camera");
+    let p = cam.props.prop("transform/position").unwrap();
+    assert_eq!(p.keys[5].value, KV::Vec3([110.0, 220.0, 330.0]));
+    assert!(!p.expr.as_ref().unwrap().enabled);
+    assert_eq!(cam.props.prop("transform/rotationX").unwrap().keys[1].value, KV::Scalar(182.0));
+    assert_eq!(cam.props.prop("cameraOptions/zoom").unwrap().keys[1].value, KV::Scalar(1600.0));
+}

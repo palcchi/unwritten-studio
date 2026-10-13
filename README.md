@@ -1,4 +1,4 @@
-# unwritten-studio
+# Unwritten Studio
 
 <p align="center">
   <a href="https://getartcraft.com/">
@@ -10,7 +10,7 @@
 </p>
 
 
-<h1 align="center">EffectCraft</h1>
+<h1 align="center">Unwritten Studio</h1>
 
 <p align="center">
   <b>Motion graphics and visual effects; an open-source, clean-room reimplementation of Adobe After Effects, rebuilt in pure Rust.</b>

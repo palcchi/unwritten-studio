@@ -700,8 +700,14 @@ mod tests {
         ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
         for family in [FontFamily::Proportional, FontFamily::Monospace, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
             let id = FontId::new(12.0, family);
+            // Not has_glyph: it compares face keys, so Inter's `•` reads as missing when no face in
+            // the stack has egui's `◻` and Inter's `?` becomes the replacement, as happens once
+            // another test has loaded a system face without `◻` (the fallback tries loaded faces first).
+            let uv = |s: String| ctx.fonts_mut(|f| f.layout_no_wrap(s, id.clone(), egui::Color32::WHITE).rows[0].glyphs[0].uv_rect);
+            let missing = uv("\u{10ffff}".into());
             for c in "▸•›·▶◀●○⚠…×".chars() {
-                assert!(ctx.fonts_mut(|f| f.has_glyph(&id, c)), "{c} has no glyph in {id:?}");
+                let drawn = uv(c.to_string());
+                assert_ne!((drawn.min, drawn.max), (missing.min, missing.max), "{c} has no glyph in {id:?}");
             }
         }
     }

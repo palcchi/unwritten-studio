@@ -6,7 +6,7 @@ use effectcraft_project::{FrameBlend, GroupKind, ItemId, LayerId, LayerSource, M
 use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
-use super::{CommandSpec, b_p, bad, comp_id, f_p, frontend, has_comp, has_layers, layer_mut, layer_p, layers_p, merge_p, str_p};
+use super::{CommandSpec, b_p, bad, comp_id, f_p, frontend, has_comp, has_layers, layer_mut, layer_p, layers_p, merge_p, str_p, time_p};
 use crate::{EngineError, Result, Session, cmd};
 
 // ---------------------------------------------------------------- enablement
@@ -552,11 +552,18 @@ fn mask_lock_others(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn add_marker(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, ids) = layers_p(s, p)?;
-    if ids.is_empty() {
-        return Err(bad("layer.addMarker", "no layer"));
-    }
-    let t = f_p(p, "time").map(Tick::from_seconds_f64).unwrap_or(s.time());
+    let t = time_p(s, p, s.project.comp(cid));
     let comment = str_p(p, "comment").unwrap_or_default().to_string();
+    if ids.is_empty() {
+        s.edit("Add Marker", None, |proj, _| {
+            let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
+            c.markers.retain(|m| m.time != t);
+            c.markers.push(Marker { time: t, comment, ..Default::default() });
+            c.markers.sort_by_key(|m| m.time);
+            Ok(())
+        })?;
+        return Ok(json!({"time": t.seconds()}));
+    }
     s.edit("Add Marker", None, |proj, _| {
         for lid in &ids {
             let l = layer_mut(proj, cid, *lid)?;
@@ -849,7 +856,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("layer.mask.lock", "Locked", ["Layer", "Mask"], None, "{layer?, mask?, value?}", has_masks, mask_lock),
         cmd!("layer.mask.unlockAll", "Unlock All Masks", ["Layer", "Mask"], None, "{layers?}", has_masks, mask_unlock_all),
         cmd!("layer.mask.lockOthers", "Lock Other Masks", ["Layer", "Mask"], None, "{layer?, mask?}", has_masks, mask_lock_others),
-        cmd!("layer.addMarker", "Add Marker", ["Layer", "Markers"], None, "{layers?, time?, comment?}", has_layers, add_marker),
+        cmd!("layer.addMarker", "Add Marker", ["Layer", "Markers"], None, "{layers?, time?, comment?}", has_comp, add_marker),
         cmd!("layer.markersLock", "Lock Markers", ["Layer", "Markers"], None, "{layers?, value?}", has_layers, markers_lock),
         cmd!("layer.deleteAllMarkers", "Delete All Markers", ["Layer", "Markers"], None, "{layers?}", has_markers, delete_all_markers),
         cmd!("layer.trackMatte", "Track Matte", [], None, "{layers?, op: none|alpha|alphaInverted|luma|lumaInverted|above|below}", has_layers, track_matte_op),

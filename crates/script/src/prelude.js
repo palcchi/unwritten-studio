@@ -1490,8 +1490,14 @@ AVItem.prototype = Object.create(Item.prototype);
   def("hasVideo", function () { return this.__info().hasVideo; });
   def("hasAudio", function () { return this.__info().hasAudio; });
   def("footageMissing", function () { return !!this.__info().footageMissing; });
-  def("useProxy", function () { return false; });
-  def("proxySource", function () { return null; });
+  def("useProxy", function () { var p = this.__info().proxy; return !!(p && p.enabled); }, function (v) {
+    if (!this.__info().proxy) throw __err("\"" + this.name + "\" has no proxy");
+    __call("file.useProxy", { item: this.__id, on: !!v });
+  });
+  def("proxySource", function () {
+    var p = this.__info().proxy;
+    return p ? { isStill: !!p.isStill, file: p.file ? new File(p.file) : null, hasAlpha: false, toString: function () { return "[object FileSource]"; } } : null;
+  });
   def("isMediaReplacementCompatible", function () { return false; });
   def("time", function () { return 0; });
 })();
@@ -1623,14 +1629,42 @@ FootageItem.prototype.constructor = FootageItem;
 Object.defineProperty(FootageItem.prototype, "file", {
   get: function () { var f = this.__info().file; return f ? new File(f) : null; },
 });
+// The item's FootageSource: one live object per FootageItem, as in After Effects (#813).
+function FootageSource(item) { this.__item = item; }
+FootageSource.prototype = {
+  constructor: FootageSource,
+  __info: function () { return this.__item.__info(); },
+  get isStill() { return !!this.__info().isStill; },
+  get color() { return this.__info().color; },
+  get file() { var i = this.__info(); return i.kind !== "solid" && i.file ? new File(i.file) : null; },
+  get missingFootagePath() { var i = this.__info(); return i.footageMissing ? i.file : ""; },
+  get loop() { return this.__info().loop; },
+  get hasAlpha() { return false; },
+  get nativeFrameRate() { return this.__info().nativeFrameRate || 0; },
+  get displayFrameRate() { return this.__info().frameRate; },
+  // Interpret Footage ▸ Conform to frame rate; 0 uses the file's own rate.
+  get conformFrameRate() { return this.__info().conformFrameRate || 0; },
+  set conformFrameRate(v) {
+    v = __num(v, "conformFrameRate");
+    if (v < 0) throw __err("conformFrameRate must be 0 or a frame rate");
+    __call("file.interpretFootage", { items: [this.__item.__id], frameRate: v === 0 ? "file" : v });
+  },
+  toString: function () { return this.__info().kind === "solid" ? "[object SolidSource]" : "[object FileSource]"; },
+};
 Object.defineProperty(FootageItem.prototype, "mainSource", {
   get: function () {
-    var i = this.__info();
-    if (i.kind === "solid") return { isStill: true, color: i.color, hasAlpha: false, toString: function () { return "[object SolidSource]"; } };
-    return { isStill: !!i.isStill, file: i.file ? new File(i.file) : null, missingFootagePath: i.footageMissing ? i.file : "", loop: i.loop, hasAlpha: false, toString: function () { return "[object FileSource]"; } };
+    if (!this.__mainSource) Object.defineProperty(this, "__mainSource", { value: new FootageSource(this) });
+    return this.__mainSource;
   },
 });
 FootageItem.prototype.replace = function (f) { __call("file.replaceFootage", { item: this.__id, path: __str(f) }); };
+FootageItem.prototype.replaceWithSequence = function (f, forceAlphabetical) {
+  __call("file.replaceFootage", { item: this.__id, path: __str(f), sequence: true, alphabetical: !!forceAlphabetical });
+};
+// Proxies (footage and comps). A numbered still brings its sequence, so the two setters agree.
+AVItem.prototype.setProxy = function (f) { __call("file.setProxy", { item: this.__id, path: __str(f) }); };
+AVItem.prototype.setProxyWithSequence = function (f) { __call("file.setProxy", { item: this.__id, path: __str(f) }); };
+AVItem.prototype.setProxyToNone = function () { __call("file.setProxyNone", { item: this.__id }); };
 FootageItem.prototype.replaceWithSolid = function (color, name, w, h) {
   __call("file.replaceWithSolid", { item: this.__id, color: [color[0], color[1], color[2]], width: w, height: h });
   if (name !== undefined) this.name = name;

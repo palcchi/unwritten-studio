@@ -17,13 +17,17 @@ for target in aarch64-apple-ios aarch64-apple-ios-sim; do
   rustup target add "$target"
 done
 
+xcodebuild -project "$IOS_DIR/UnwrittenStudio.xcodeproj" -list
+
 xcodebuild \
   -project "$IOS_DIR/UnwrittenStudio.xcodeproj" \
   -scheme UnwrittenStudio \
   -configuration Release \
+  -sdk iphoneos \
   -destination 'generic/platform=iOS' \
   -derivedDataPath "$DERIVED_DATA" \
   CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
   build
 
 APP_PATH="$DERIVED_DATA/Build/Products/Release-iphoneos/UnwrittenStudio.app"

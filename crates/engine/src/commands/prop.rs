@@ -631,11 +631,12 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, lid, uid) = prop_ref(s, p, "prop.reset")?;
     let def = p.get("default").cloned();
     let own = default_value(s, cid, lid, uid);
-    with_prop(s, "Reset Property", None, cid, lid, uid, |pr, _| {
-        pr.keys.clear();
+    with_prop(s, "Reset Property", None, cid, lid, uid, |pr, t| {
         pr.expr = None;
+        // An animated property keeps its keyframes and gets the default as a key at the
+        // current time, as in After Effects (#1078).
         if let Some(d) = def.as_ref().and_then(|d| pr.value.coerce_json(d)).or(own) {
-            pr.value = d;
+            pr.set_value_at(t, d);
         }
         Ok(Value::Null)
     })
@@ -1238,7 +1239,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Reset Property",
             [],
             None,
-            "{layer?, path|prop, default?} → removes keyframes and expression; the value becomes `default`, else the property's own (an effect parameter's, a Transform property's)",
+            "{layer?, path|prop, default?} → removes the expression; the value becomes `default`, else the property's own (an effect parameter's, a Transform property's), as a keyframe at the current time when the property is animated",
             has_layers,
             reset
         ),

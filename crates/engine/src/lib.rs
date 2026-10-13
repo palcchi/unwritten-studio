@@ -1158,6 +1158,8 @@ mod tests_frame_export;
 #[cfg(test)]
 mod tests_fuzz_open;
 #[cfg(test)]
+mod tests_import_project;
+#[cfg(test)]
 mod tests_key_metadata_order;
 #[cfg(test)]
 mod tests_keylight;

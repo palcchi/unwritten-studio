@@ -49,6 +49,7 @@ mod prop_groups;
 mod proxy;
 pub mod puppet;
 mod query;
+mod quick_offset;
 mod relink;
 mod render_queue;
 pub(crate) mod rig3d;
@@ -190,6 +191,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(focus::specs());
         v.extend(key_labels::specs());
         v.extend(key_transform::specs());
+        v.extend(quick_offset::specs());
         v.extend(file_more::specs());
         v.extend(relink::specs());
         v.extend(lottie::specs());

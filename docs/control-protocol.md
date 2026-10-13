@@ -118,7 +118,8 @@ one), `panel.tab.Viewer(<n>)` and `viewers.<n>` (View ▸ New Viewer's other Com
 renames it), `viewer.comp`, `viewer.handle.<layer>.<i>`,
 `timeline.layer.<id>.bar`, `timeline.layer.<id>.nestedMarker.<i>` (a precomp's comp markers), `timeline.layer.<id>.twirl`, `timeline.layer.<id>.row` (click selects,
 Enter or a double-click renames, drag reorders), `timeline.prop.<uid>.stopwatch`,
-`timeline.key.<uid>.<frame>`, `timeline.cti`, `effectControls.prop.<uid>.value` (an angle's
+`timeline.key.<uid>.<frame>` (and `timeline.keyAt.<uid>.<ticks>`, exact in layer-time ticks, for
+keys on subframes), `timeline.cti`, `effectControls.prop.<uid>.value` (an angle's
 revolutions are `timeline.prop.<uid>.revolutions`, `effectControls.prop.<uid>.revolutions` and
 `properties.prop.<uid>.revolutions`) and `effects.item.<name>`. The Composition viewer adds `viewer.magnification`, `viewer.resolution`,
 `viewer.roi`, `viewer.grid`, `viewer.channel`, `viewer.exposure`, `viewer.snapshot`,

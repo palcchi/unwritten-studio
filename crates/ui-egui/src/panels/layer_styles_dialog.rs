@@ -162,7 +162,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             // Style list.
             ui.vertical(|ui| {
                 ui.set_width(200.0);
-                egui::ScrollArea::vertical().id_salt("ls-list").max_height(body_h).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("ls-list").max_height(body_h).min_scrolled_height(0.0).show(ui, |ui| {
                     let mut entries = vec![(BLENDING, "Blending Options")];
                     entries.extend(STYLES.iter().copied());
                     for (id, name) in entries {
@@ -201,26 +201,37 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                     ui.label(egui::RichText::new(tr("Not applied: tick it in the list to add it.")).weak());
                     return;
                 };
-                egui::ScrollArea::vertical().max_height((body_h - 30.0).max(0.0)).show(ui, |ui| {
-                    egui::Grid::new("ls-grid").num_columns(2).spacing(vec2(12.0, 6.0)).show(ui, |ui| {
-                        g.walk("", &mut |_, p| {
-                            if matches!(p.ui, ParamUi::Hidden) {
-                                return;
-                            }
-                            let lbl = ui.label(&p.name);
-                            let v = p.value_at(lt);
-                            if let Some(nv) = control(ui, p, &v) {
-                                actions.push((
-                                    "prop.set".into(),
-                                    json!({"layer": lid, "prop": p.uid, "value": nv, "merge": format!("layer-style-dialog-{}", p.uid)}),
-                                ));
-                            }
-                            let path = g.match_path_of(p.uid).unwrap_or_default();
-                            app.auto.add(&format!("dialog.layerStyle.prop.{sel}/{path}"), lbl.rect, &p.name);
-                            ui.end_row();
+                // Both ways, in the room left under the heading: in a narrow window (or at a high UI
+                // Scale) the controls scroll sideways rather than being cut off.
+                egui::ScrollArea::both()
+                    .id_salt("ls-controls")
+                    .max_width(ui.available_width().max(0.0))
+                    .max_height(ui.available_height().max(0.0))
+                    .min_scrolled_width(0.0)
+                    .min_scrolled_height(0.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        egui::Grid::new("ls-grid").num_columns(2).spacing(vec2(12.0, 6.0)).show(ui, |ui| {
+                            g.walk("", &mut |_, p| {
+                                if matches!(p.ui, ParamUi::Hidden) {
+                                    return;
+                                }
+                                let lbl = ui.label(&p.name);
+                                let v = p.value_at(lt);
+                                let edit = ui.scope(|ui| control(ui, p, &v));
+                                if let Some(nv) = edit.inner {
+                                    actions.push((
+                                        "prop.set".into(),
+                                        json!({"layer": lid, "prop": p.uid, "value": nv, "merge": format!("layer-style-dialog-{}", p.uid)}),
+                                    ));
+                                }
+                                let path = g.match_path_of(p.uid).unwrap_or_default();
+                                app.auto.add(&format!("dialog.layerStyle.prop.{sel}/{path}"), lbl.rect, &p.name);
+                                app.auto.add(&format!("dialog.layerStyle.value.{sel}/{path}"), edit.response.rect, &p.name);
+                                ui.end_row();
+                            });
                         });
                     });
-                });
             });
         }
     });

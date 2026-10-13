@@ -1,7 +1,8 @@
 //! Effect menu and Effect Controls gestures.
 
 use effectcraft_project::build::Ids;
-use effectcraft_project::{GroupKind, LayerId, PropGroup, Uid};
+use effectcraft_project::{GroupKind, Layer, LayerId, PropGroup, Uid};
+use effectcraft_time::Tick;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, b_p, bad, f_p, has_layers, layer_mut, layers_p, str_p};
@@ -319,12 +320,108 @@ fn effects_p(s: &Session, p: &Value, cmd: &str) -> Result<Vec<(LayerId, Uid)>> {
     Ok(sel)
 }
 
-/// Edit ▸ Copy with effects selected: puts the effect instances on the effect clipboard.
+fn effect_time_error(cmd: &str) -> EngineError {
+    bad(cmd, "an effect keyframe converts outside the supported time range")
+}
+
+/// Validate before Layer's saturating conversions, so a bad stretch or time never silently
+/// moves a copied key to another frame. Normal-speed layers keep their exact integer ticks.
+fn effect_time(layer: &Layer, time: Tick, to_comp: bool, cmd: &str) -> Result<Tick> {
+    if !layer.stretch.is_finite() || layer.stretch == 0.0 {
+        return Err(bad(cmd, "the layer has an invalid time stretch"));
+    }
+    let in_range = |t: i64| (Tick::MIN.0..=Tick::MAX.0).contains(&t);
+    if !in_range(time.0) {
+        return Err(effect_time_error(cmd));
+    }
+    let offset = if to_comp { time.0 } else { time.0.checked_sub(layer.start_time.0).ok_or_else(|| effect_time_error(cmd))? };
+    let scaled = if (layer.stretch - 100.0).abs() < 1e-9 {
+        offset
+    } else {
+        let scaled = if to_comp { offset as f64 * layer.stretch / 100.0 } else { offset as f64 * 100.0 / layer.stretch };
+        if !scaled.is_finite() || scaled < Tick::MIN.0 as f64 || scaled > Tick::MAX.0 as f64 {
+            return Err(effect_time_error(cmd));
+        }
+        scaled as i64
+    };
+    if !in_range(scaled) {
+        return Err(effect_time_error(cmd));
+    }
+    let time = if to_comp { layer.start_time.0.checked_add(scaled).ok_or_else(|| effect_time_error(cmd))? } else { scaled };
+    if !in_range(time) {
+        return Err(effect_time_error(cmd));
+    }
+    Ok(Tick(time))
+}
+
+/// Change the key time coordinate system throughout an effect, including nested controls.
+/// Ease speeds are per second in that coordinate system; reversed time swaps the key sides.
+fn retime_effect(group: &mut PropGroup, scale: f64, cmd: &str, mut time: impl FnMut(Tick) -> Result<Tick>) -> Result<()> {
+    let mut result = Ok(());
+    group.walk_mut(&mut |pr| {
+        if result.is_err() {
+            return;
+        }
+        for key in &mut pr.keys {
+            let mapped = time(key.time).and_then(|t| {
+                if !scale.is_finite() || scale == 0.0 {
+                    return Err(effect_time_error(cmd));
+                }
+                // Spatial paths and non-numeric values ease along positive progress;
+                // numeric components instead store a signed value derivative.
+                let speed_scale = if pr.spatial || key.value.dims() == 0 { scale.abs() } else { scale };
+                for ease in key.in_ease.iter_mut().chain(&mut key.out_ease) {
+                    ease.speed /= speed_scale;
+                    if !ease.speed.is_finite() {
+                        return Err(bad(cmd, "an effect keyframe ease converts outside the supported range"));
+                    }
+                }
+                if scale < 0.0 {
+                    std::mem::swap(&mut key.in_interp, &mut key.out_interp);
+                    std::mem::swap(&mut key.in_ease, &mut key.out_ease);
+                    std::mem::swap(&mut key.spatial_in, &mut key.spatial_out);
+                }
+                Ok(t)
+            });
+            match mapped {
+                Ok(t) => key.time = t,
+                Err(e) => {
+                    result = Err(e);
+                    return;
+                }
+            }
+        }
+        pr.keys.sort_by_key(|key| key.time);
+        if pr.keys.windows(2).any(|pair| pair[0].time == pair[1].time) {
+            result = Err(bad(cmd, "the layer's time stretch maps effect keyframes to the same tick"));
+        }
+    });
+    result
+}
+
+/// Edit ▸ Copy with effects selected: times on the clipboard are comp-time offsets from the
+/// earliest copied key, shared by all copied effects and their parameters (#989).
 fn copy(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "effect.copy";
     let fx = effects_p(s, p, "effect.copy")?;
     let comp = s.active_comp().ok_or(EngineError::NoComp)?;
-    let groups: Vec<PropGroup> =
-        fx.iter().filter_map(|(l, u)| comp.layer(*l).and_then(|l| l.effects()).and_then(|e| e.groups().find(|g| g.uid == *u)).cloned()).collect();
+    let mut groups = Vec::new();
+    let mut earliest: Option<Tick> = None;
+    for (lid, uid) in fx {
+        let layer = comp.layer(lid).ok_or(EngineError::NoComp)?;
+        let mut group = layer.effects().and_then(|fx| fx.groups().find(|g| g.uid == uid)).cloned().ok_or_else(|| bad(CMD, "the effect no longer exists"))?;
+        retime_effect(&mut group, layer.stretch / 100.0, CMD, |t| {
+            let t = effect_time(layer, t, true, CMD)?;
+            earliest = Some(earliest.map_or(t, |first| first.min(t)));
+            Ok(t)
+        })?;
+        groups.push(group);
+    }
+    if let Some(first) = earliest {
+        for group in &mut groups {
+            retime_effect(group, 1.0, CMD, |t| Ok(Tick(t.0.checked_sub(first.0).ok_or_else(|| effect_time_error(CMD))?)))?;
+        }
+    }
     s.state.clipboard.clear();
     s.state.key_clipboard.clear();
     s.state.contents_clipboard.clear();
@@ -345,8 +442,10 @@ pub(crate) fn unique_name(fx: &PropGroup, base: &str) -> String {
 }
 
 /// Edit ▸ Paste with effects on the clipboard: adds copies to every target layer, after the
-/// layer's selected effect when it has one, else at the end of its stack.
+/// layer's selected effect when it has one, else at the end of its stack. The earliest copied
+/// key lands at the destination comp's CTI; all other keys keep their comp-time offsets.
 fn paste(s: &mut Session, p: &Value) -> Result<Value> {
+    const CMD: &str = "effect.paste";
     let clip = s.state.effect_clipboard.clone();
     if clip.is_empty() {
         return Err(bad("effect.paste", "no effects on the clipboard"));
@@ -356,6 +455,7 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad("effect.paste", "select a layer to paste effects onto"));
     }
     let sel = selected_effects(s);
+    let cti = s.time_of(cid);
     let label = if clip.len() == 1 { format!("Paste {}", clip[0].name) } else { "Paste Effects".to_string() };
     let uids = s.edit(&label, None, |proj, st| {
         let mut out = vec![];
@@ -363,6 +463,13 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
         let mut new_sel = vec![];
         for lid in &ids {
             let l = layer_mut(proj, cid, *lid)?;
+            let mut groups = clip.clone();
+            for group in &mut groups {
+                retime_effect(group, 100.0 / l.stretch, CMD, |offset| {
+                    let t = Tick(cti.0.checked_add(offset.0).ok_or_else(|| effect_time_error(CMD))?);
+                    effect_time(l, t, false, CMD)
+                })?;
+            }
             let Some(fx) = l.props.sub_mut("effects") else { continue };
             let at = sel
                 .iter()
@@ -371,8 +478,7 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
                 .max()
                 .map(|i| i + 1)
                 .unwrap_or(fx.children.len());
-            for (k, g) in clip.iter().enumerate() {
-                let mut g = g.clone();
+            for (k, mut g) in groups.into_iter().enumerate() {
                 g.reassign_uids(&mut next);
                 g.name = unique_name(fx, &g.name);
                 out.push(g.uid);

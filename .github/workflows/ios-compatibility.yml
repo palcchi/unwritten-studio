@@ -1,4 +1,4 @@
-name: iOS Compatibility Probe
+name: iPadOS Native Build
 
 on:
   workflow_dispatch:
@@ -9,50 +9,54 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-probe-${{ github.ref }}
+  group: ios-native-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  probe:
-    name: Check whether EffectCraft compiles for iPadOS
+  unsigned-device-ipa:
+    name: Build unsigned native iPadOS IPA
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
-      - name: Checkout Unwritten Studio source
+      - name: Checkout Unwritten Studio
         uses: actions/checkout@v4
 
-      - name: Install Rust and iOS target
+      - name: Install Rust and Apple targets
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-ios
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
-      - name: Record toolchain
+      - name: Record build environment
         run: |
           rustc --version
           cargo --version
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
-      - name: Probe native app for iOS
-        shell: bash
-        run: |
-          set +e
-          cargo check --locked -p effectcraft --target aarch64-apple-ios 2>&1 | tee ios-compatibility.log
-          result=${PIPESTATUS[0]}
-          echo "" | tee -a ios-compatibility.log
-          echo "cargo_check_exit_code=${result}" | tee -a ios-compatibility.log
-          if [ "${result}" -eq 0 ]; then
-            echo "iOS Rust compile check passed."
-          else
-            echo "iOS Rust compile check failed. The log is retained as an artifact so the missing platform adaptations can be identified."
-          fi
-          exit 0
+      - name: Check Rust core for iOS device
+        run: cargo check --locked -p unwritten-studio-core --target aarch64-apple-ios
 
-      - name: Upload compatibility report
-        if: always()
+      - name: Check Rust core for iOS Simulator
+        run: cargo check --locked -p unwritten-studio-core --target aarch64-apple-ios-sim
+
+      - name: Build native app and package unsigned IPA
+        run: ./scripts/build-unsigned-ipa.sh
+
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: unwritten-studio-ios-compatibility
-          path: ios-compatibility.log
-          if-no-files-found: warn
+          name: unwritten-studio-unsigned-ipa
+          path: build/ios/unsigned/UnwrittenStudio-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Xcode build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unwritten-studio-ios-build-logs
+          path: |
+            build/ios/DerivedData-unsigned/Logs/**
+            build/ios/iphoneos/**
+          if-no-files-found: ignore
           retention-days: 14

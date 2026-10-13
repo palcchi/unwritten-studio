@@ -208,6 +208,24 @@ fn layer_style_controls_stay_reachable_in_a_small_window() {
 }
 
 #[test]
+fn layer_style_dialog_moves_by_its_title() {
+    let mut h = harness(1400.0);
+    let lid = h.state().session.active_comp().unwrap().layers[0].id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [lid]})).unwrap();
+    let ctx = h.ctx.clone();
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "layer.style.dropShadow", json!({})).unwrap();
+    h.run_steps(3);
+    let list0 = rect(&h, "dialog.layerStyle.list.blendingOptions");
+    // The title row sits just above the style list.
+    let grab = pos2(list0.center().x, list0.min.y - 20.0);
+    drag(&mut h, grab, grab + vec2(-150.0, 60.0));
+    h.run_steps(2);
+    let list1 = rect(&h, "dialog.layerStyle.list.blendingOptions");
+    assert!((list1.min - list0.min - vec2(-150.0, 60.0)).length() < 2.0, "the dialog followed the drag: {:?} → {:?}", list0.min, list1.min);
+    assert_eq!(h.state().dialog, Some(effectcraft_ui_egui::Dialog::LayerStyles), "dragging does not close it");
+}
+
+#[test]
 fn project_panel_columns_scroll_horizontally() {
     let mut h = harness(1400.0);
     for c in ["type", "size", "duration", "fps", "path", "comment"] {

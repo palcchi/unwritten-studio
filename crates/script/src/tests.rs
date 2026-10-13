@@ -928,6 +928,37 @@ fn script_key_lookup_fetches_only_that_key() {
     assert_eq!(o.result, json!([2000, 0.08, null, 1998, 0.04, 1998, "keyIndex 1999 is out of range 1..1998"]));
 }
 
+/// #815: a stroke's Dashes use After Effects' match names, and addProperty with them returns
+/// Dash 1 / Gap 1 / Offset or adds the Dash 2 / Gap 2 pair.
+#[test]
+fn script_stroke_dashes_use_after_effects_match_names() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        "function names(g) { var a = []; for (var i = 1; i <= g.numProperties; i++) a.push(g.property(i).matchName); return a.join(','); }\
+         var comp = app.project.items.addComp('Names', 100, 100, 1, 10, 25);\
+         var contents = comp.layers.addShape().property('ADBE Root Vectors Group'); contents.addProperty('ADBE Vector Shape - Rect');\
+         var d = contents.addProperty('ADBE Vector Graphic - Stroke').property('ADBE Vector Stroke Dashes');\
+         var before = names(d);\
+         var dash1 = d.addProperty('ADBE Vector Stroke Dash 1'); dash1.setValue(12);\
+         var gap2 = d.addProperty('ADBE Vector Stroke Gap 2');\
+         var err = ''; try { d.addProperty('ADBE Vector Stroke Dash 9'); } catch (e) { err = e.message; }\
+         [before, dash1.matchName, d.property('ADBE Vector Stroke Dash 1').value, d.property('ADBE Vector Stroke Offset').matchName, gap2.matchName, names(d), err]",
+    );
+    assert_eq!(
+        o.result,
+        json!([
+            "ADBE Vector Stroke Dash 1,ADBE Vector Stroke Gap 1,ADBE Vector Stroke Offset",
+            "ADBE Vector Stroke Dash 1",
+            12,
+            "ADBE Vector Stroke Offset",
+            "ADBE Vector Stroke Gap 2",
+            "ADBE Vector Stroke Dash 1,ADBE Vector Stroke Gap 1,ADBE Vector Stroke Dash 2,ADBE Vector Stroke Gap 2,ADBE Vector Stroke Offset",
+            "Can not add \"ADBE Vector Stroke Dash 9\" to Dashes"
+        ])
+    );
+}
+
 #[test]
 fn script_layer_comment_and_unnamed_marker_params_round_trip() {
     let mut s = session();

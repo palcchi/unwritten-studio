@@ -715,6 +715,15 @@ PropertyGroup.prototype.addProperty = function (name) {
     var p = { comp: L.__comp, layer: L.__id, kind: r.shape };
     if (r.group !== null && r.group !== undefined) p.group = r.group;
     uid = __call("layer.addShapeItem", p).uid;
+  } else if (r.kind === "existing") {
+    uid = r.uid;
+  } else if (r.kind === "dash") {
+    // Dash/Gap 2 and 3 come as a pair: add pairs until the one asked for exists.
+    var dp = { comp: L.__comp, layer: L.__id, prop: r.stroke };
+    for (var n = 0; n < 3 && !this.property(name); n++) __call("shape.dashes.add", dp);
+    var added = this.property(name);
+    if (!added) throw __err("Can not add \"" + name + "\" to Dashes");
+    return added;
   } else if (r.kind === "animator") {
     uid = __call("layer.addTextAnimator", { comp: L.__comp, layer: L.__id, properties: [] }).animator;
   } else if (r.kind === "animatorProperty") {

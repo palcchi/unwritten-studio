@@ -647,6 +647,28 @@ impl ParentFix {
                     }
                 }
             }
+            // Cameras and lights aim with Point of Interest: move it by the same parent-space
+            // change, so a two-node rig keeps its world frame (#1010, #1020).
+            if let Some(pr) = tr.get_mut("poi") {
+                pr.value = map_position(&pr.value);
+                for key in &mut pr.keys {
+                    key.value = map_position(&key.value);
+                    for tangent in [&mut key.spatial_in, &mut key.spatial_out] {
+                        let v = m.apply_vec(effectcraft_geom::Vec3::from(*tangent));
+                        *tangent = [v.x, v.y, v.z];
+                    }
+                }
+                if let Some(factor) = position_speed
+                    .filter(|_| pr.spatial)
+                    .filter(|factor| pr.keys.iter().flat_map(|key| key.in_ease.iter().chain(&key.out_ease)).all(|ease| (ease.speed * *factor).is_finite()))
+                {
+                    for key in &mut pr.keys {
+                        for ease in key.in_ease.iter_mut().chain(&mut key.out_ease) {
+                            ease.speed *= factor;
+                        }
+                    }
+                }
+            }
             if let Some((orientation, factor)) = self.pose_3d {
                 if let Some(pr) = tr.get_mut("orientation") {
                     pr.value = KV::Vec3(orientation);
@@ -749,7 +771,8 @@ fn uniform_parent_pose(m: effectcraft_geom::Mat4, orientation: [f64; 3]) -> Opti
     Some(([x.to_degrees(), y.to_degrees(), z.to_degrees()], factor))
 }
 
-/// A parent change retains 2D transforms and the world-space anchor of 3D AV layers. Position is
+/// A parent change retains 2D transforms and the world-space anchor of 3D layers (Position,
+/// and Point of Interest for two-node cameras and lights). Position is
 /// re-expressed in the new parent's space (`None`: the composition), evaluated at the current
 /// time.
 pub(crate) fn parent_fixes(s: &Session, cid: ItemId, ids: &[LayerId], parent: Option<LayerId>) -> Vec<ParentFix> {
@@ -793,7 +816,10 @@ pub(crate) fn parent_fixes(s: &Session, cid: ItemId, ids: &[LayerId], parent: Op
         })
     };
     if let Some(inv) = space_3d(parent).inverse().filter(|m| m.0.iter().flatten().all(|v| v.is_finite())) {
-        for layer in comp.layers.iter().filter(|l| ids.contains(&l.id) && l.is_3d() && !l.is_camera() && !l.is_light() && l.parent != parent) {
+        // Cameras and lights compensate like 3D layers (Position, and Point of Interest for
+        // two-node rigs), so parenting keeps the world frame (#1010, #1020). They have no
+        // Scale, so `pose_3d` below stays `None` and Orientation is kept as authored.
+        for layer in comp.layers.iter().filter(|l| ids.contains(&l.id) && l.is_3d() && l.parent != parent) {
             let m = inv * space_3d(layer.parent);
             if m.0.iter().flatten().all(|v| v.is_finite()) {
                 let pose_3d = layer.transform().and_then(|tr| {

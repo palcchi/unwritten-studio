@@ -752,7 +752,7 @@ fn clipboard_note(s: &effectcraft_engine::Session) -> String {
 }
 
 pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
-    let r = app.session.execute(id, params).map_err(|e| e.to_string());
+    let mut r = app.session.execute(id, params).map_err(|e| e.to_string());
     if let Err(e) = &r {
         app.ui.status = e.clone();
     } else if COPY_COMMANDS.contains(&id) && app.session.state.text_edit.is_none() {
@@ -763,7 +763,12 @@ pub(crate) fn run_engine(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str
         match ev {
             effectcraft_engine::Event::Frontend { command, params } => {
                 if let Err(e) = frontend(app, ctx, &command, params) {
-                    app.ui.status = e;
+                    app.ui.status = e.clone();
+                    // A frontend-only command's own failure is the command's result (#696: a
+                    // workspace save that didn't reach disk reported success).
+                    if command == id && r.is_ok() {
+                        r = Err(e);
+                    }
                 }
             }
             other => app.session.events.push(other),

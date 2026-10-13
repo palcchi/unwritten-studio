@@ -273,6 +273,9 @@ fn no_params(p: &Value) -> bool {
 
 /// Execute a UI or engine command by id.
 pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
+    if id == "effects.copyPresetsFolderPath" {
+        return frontend(app, ctx, id, params);
+    }
     // Layer ▸ New ▸ Text (menu, shortcut, context menus) puts an insertion point in the centre of
     // the comp, as After Effects does, so typing goes into Source Text rather than running
     // shortcuts (#866). `engine.execute` keeps the headless default.
@@ -782,6 +785,16 @@ pub fn frontend(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, p: Valu
     let now = ctx.input(|i| i.time);
     let v = &mut app.ui.viewer;
     Ok(match id {
+        "effects.copyPresetsFolderPath" => {
+            if cfg!(target_arch = "wasm32") {
+                return Err("The web app has no local presets folder".into());
+            }
+            let path = crate::panels::effects_presets::presets_dir().filter(|path| !path.as_os_str().is_empty()).ok_or("No presets folder is configured")?;
+            let path = std::path::absolute(path).map_err(|e| format!("Cannot resolve the presets folder path: {e}"))?;
+            let path = path.to_str().ok_or("The presets folder path is not valid UTF-8")?;
+            ctx.copy_text(path.to_string());
+            json!({"path": path})
+        }
         "app.about" => {
             app.dialog = Some(crate::Dialog::About);
             Value::Null

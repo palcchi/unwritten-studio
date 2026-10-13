@@ -297,9 +297,34 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         "-".into(),
         "    Refresh List".into(),
         "    Clear Recently Used".into(),
+        "-".into(),
+        format!("    {}", tr("Copy Presets Folder Path")),
     ];
     let mut force_scan = false;
-    if let Some(i) = widgets::popup_menu(ui, mpop, mr.left_bottom() - vec2(220.0, 0.0), &menu, None) {
+    let separators = menu.iter().filter(|label| *label == "-").count();
+    let choice = if widgets::popup_is_open(ui, mpop) {
+        widgets::popup_list(ui, mpop, mr.left_bottom() - vec2(220.0, 0.0), Rect::NOTHING, menu.len().saturating_sub(separators), separators, |ui| {
+            ui.set_min_width(160.0);
+            let mut chosen = None;
+            for (i, label) in menu.iter().enumerate() {
+                if label == "-" {
+                    ui.separator();
+                } else {
+                    let resp = ui.selectable_label(false, label);
+                    if i == 12 {
+                        app.auto.add("effects.copyPresetsFolderPath", resp.rect, "Copy Presets Folder Path");
+                    }
+                    if resp.clicked() {
+                        chosen = Some(i);
+                    }
+                }
+            }
+            chosen
+        })
+    } else {
+        None
+    };
+    if let Some(i) = choice {
         let v = &mut app.ui.effects_view;
         match i {
             0 => v.depth = "all".into(),
@@ -310,6 +335,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             7 => v.alphabetical = true,
             9 => force_scan = true,
             10 => app.ui.effects_recent.clear(),
+            12 => {
+                if let Err(e) = crate::menus::invoke(app, &ctx, "effects.copyPresetsFolderPath", json!({})) {
+                    app.ui.status = e;
+                }
+            }
             _ => {}
         }
     }

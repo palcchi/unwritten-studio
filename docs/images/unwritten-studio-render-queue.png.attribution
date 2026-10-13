@@ -1,0 +1,8 @@
+asset:        unwritten-studio-render-queue.png
+title:        Unwritten Studio Render Queue panel with the demo compositions queued for H.264 and ProRes export
+author:       Unwritten Studio contributors
+source:       original work (headless render of the Unwritten Studio UI via crates/ui-egui/examples/snapshot.rs)
+license:      MIT OR Apache-2.0
+license-file:
+added:        2026-10-01 by Claude (agent) for Brandon Thomas
+notes:        Screenshot of Unwritten Studio only, showing procedurally generated demo content from crates/engine/src/demo.rs and built-in effects. Unwritten Studio Render Queue panel with the demo compositions queued for H.264 and ProRes export.

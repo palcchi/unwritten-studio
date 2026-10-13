@@ -9,11 +9,11 @@ Expressions) with OK, Cancel, Previous and Next. Older page names still open the
 (`prefs.open {"page": "Auto-Save"}` opens Project, `Media & Disk Cache` opens Disk, `Memory &
 Performance` opens Memory & CPU).
 
-The model is `effectcraft_engine::prefs::Prefs`: serde, versioned (`version`), addressed by dotted
+The model is `unwritten_studio_engine::prefs::Prefs`: serde, versioned (`version`), addressed by dotted
 keys (`general.undoLevels`, `autoSave.intervalMinutes`, `labels.3.name`). It is stored as
 `prefs.json` through the session's `ConfigStore` (the desktop app uses the platform config
 directory: `~/Library/Application Support/Unwritten Studio` on macOS, `%APPDATA%\Unwritten Studio` on
-Windows, `$XDG_CONFIG_HOME/effectcraft` on Linux, or `Unwritten StudioData` beside the executable when a
+Windows, `$XDG_CONFIG_HOME/unwritten-studio` on Linux, or `Unwritten StudioData` beside the executable when a
 `portable.txt` sits there, as in the Windows portable zip; the web app keeps it in browser storage: the
 Origin Private File System, or IndexedDB where OPFS can't write, see [web.md](web.md)). Loading migrates older layouts, keeps unknown keys (from newer versions) and
 falls back to defaults for values that don't parse.
@@ -209,7 +209,7 @@ from?, newName?}`, `shortcuts.export {preset?, path?}`, `shortcuts.import {path?
 
 - Every *n* minutes (Settings ▸ Project ▸ Auto-Save) a project with unsaved changes is written
   to an `Unwritten Studio Auto-Save` folder next to it (or the custom folder) as
-  `<name> auto-save N.ecproj`. Slots rotate through 1…maximum versions, overwriting the oldest.
+  `<name> auto-save N.uwproj`. Slots rotate through 1…maximum versions, overwriting the oldest.
   Untitled projects go to the custom folder, or to `Unwritten Studio Auto-Save` in the config directory.
 - Every project and auto-save write is atomic: a temporary file is written and flushed, then
   renamed over the target, so a crash mid-write leaves the previous file intact.
@@ -217,9 +217,9 @@ from?, newName?}`, `shortcuts.export {preset?, path?}`, `shortcuts.import {path?
   latest auto-save. A clean quit removes it. If it is still there at the next launch, the app
   offers to open the latest auto-save (Settings ▸ Startup & Repair can turn this off).
 - File ▸ Open Recent lists recent projects (stored in the settings), File ▸ Revert reloads the
-  saved project, File ▸ Increment and Save saves `Intro.ecproj` as `Intro 2.ecproj`.
+  saved project, File ▸ Increment and Save saves `Intro.uwproj` as `Intro 2.uwproj`.
 
-Headless MCP clients can opt in with `effectcraft-cli mcp --autosave`. Unlike the desktop's
+Headless MCP clients can opt in with `unwritten-studio-cli mcp --autosave`. Unlike the desktop's
 interval, this writes changed dirty projects before sending each tool reply, with separate
 version slots per server under `Unwritten Studio Auto-Save/MCP/` (or the custom folder's `MCP/`).
 It reads settings without sharing the desktop's writable settings store or `session.lock`.
@@ -231,9 +231,9 @@ Commands: `file.autoSave` (now), `file.recoveryInfo`, `file.openRecent {index? |
 
 ## Logs
 
-The desktop app writes its log records to standard error and to `Logs/effectcraft.log` in the
-config directory. Each launch moves the previous log to `effectcraft.1.log` (and that one to
-`effectcraft.2.log`), so the log of a run that crashed survives the next start; a log stops
+The desktop app writes its log records to standard error and to `Logs/unwritten-studio.log` in the
+config directory. Each launch moves the previous log to `unwritten-studio.1.log` (and that one to
+`unwritten-studio.2.log`), so the log of a run that crashed survives the next start; a log stops
 growing at 16 MiB. A launch from the Dock, the Start menu or a launcher has no terminal, so
 attach these files to a bug report. Help ▸ Reveal Logging File shows this run's log (or Help ▸
 Enable Logging's `Unwritten Studio Log.txt` while that is on, which keeps every Unwritten Studio record
@@ -241,4 +241,4 @@ across launches).
 
 By default the log has `info` records from Unwritten Studio and warnings and errors from everything
 else. `RUST_LOG` replaces that with env_logger-style directives: `debug`,
-`warn,effectcraft_render=trace`, `wgpu_core=info`. The control-channel token is never logged.
+`warn,unwritten_studio_render=trace`, `wgpu_core=info`. The control-channel token is never logged.

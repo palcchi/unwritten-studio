@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build, sign and (optionally) notarize the macOS release artifacts:
 #
-#   $DIST/effectcraft-<version>-macos-<arch>.dmg          Unwritten Studio.app on a drag-to-Applications DMG
-#   $DIST/effectcraft-cli-<version>-macos-<arch>.zip      the headless CLI
+#   $DIST/unwritten-studio-<version>-macos-<arch>.dmg          Unwritten Studio.app on a drag-to-Applications DMG
+#   $DIST/unwritten-studio-cli-<version>-macos-<arch>.zip      the headless CLI
 #
 # Usage: packaging/macos/package.sh [--arch universal|aarch64|x86_64] [--skip-build]
 #
@@ -40,8 +40,8 @@ IDENTITY="${MACOS_SIGN_IDENTITY:--}"
 SHORT_VERSION="${VERSION%%-*}"
 WORK="$CARGO_TARGET_DIR/macos-package"
 APP="$WORK/Unwritten Studio.app"
-DMG="$DIST/effectcraft-$VERSION-macos-$ARCH.dmg"
-CLI_ZIP="$DIST/effectcraft-cli-$VERSION-macos-$ARCH.zip"
+DMG="$DIST/unwritten-studio-$VERSION-macos-$ARCH.dmg"
+CLI_ZIP="$DIST/unwritten-studio-cli-$VERSION-macos-$ARCH.zip"
 
 NOTARIZE=0
 if [ "$IDENTITY" = "-" ]; then
@@ -58,12 +58,12 @@ echo "==> Unwritten Studio $VERSION for macOS ($ARCH), identity: $IDENTITY, nota
 if [ "$SKIP_BUILD" = 0 ]; then
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
-  (cd "$ROOT" && cargo build --release --locked -p effectcraft -p effectcraft-cli "${args[@]}")
+  (cd "$ROOT" && cargo build --release --locked -p unwritten-studio -p unwritten-studio-cli "${args[@]}")
 fi
 
 rm -rf "$WORK"
 mkdir -p "$WORK/bin"
-for bin in effectcraft effectcraft-cli; do
+for bin in unwritten-studio unwritten-studio-cli; do
   inputs=()
   for t in "${TARGETS[@]}"; do inputs+=("$CARGO_TARGET_DIR/$t/release/$bin"); done
   lipo -create -output "$WORK/bin/$bin" "${inputs[@]}"
@@ -101,10 +101,10 @@ notarize() {
 echo "==> assembling $APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable and icon carry the display name (CFBundleExecutable / CFBundleIconFile).
-cp "$WORK/bin/effectcraft" "$APP/Contents/MacOS/Unwritten Studio"
-cp "$ROOT/assets/app-icon/effectcraft.icns" "$APP/Contents/Resources/Unwritten Studio.icns"
+cp "$WORK/bin/unwritten-studio" "$APP/Contents/MacOS/Unwritten Studio"
+cp "$ROOT/assets/app-icon/unwritten-studio.icns" "$APP/Contents/Resources/Unwritten Studio.icns"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" \
-  -e "s/@BUILD_SHA@/${EFFECTCRAFT_BUILD_SHA:-unknown}/g" \
+  -e "s/@BUILD_SHA@/${UNWRITTEN_STUDIO_BUILD_SHA:-unknown}/g" \
   "$HERE/Info.plist.in" >"$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
 printf 'APPL????' >"$APP/Contents/PkgInfo"
@@ -156,17 +156,17 @@ fi
 
 # ---- CLI ---------------------------------------------------------------------------------------
 echo "==> building $CLI_ZIP"
-CLI_DIR="$WORK/effectcraft-cli-$VERSION-macos-$ARCH"
+CLI_DIR="$WORK/unwritten-studio-cli-$VERSION-macos-$ARCH"
 mkdir -p "$CLI_DIR"
-cp "$WORK/bin/effectcraft-cli" "$CLI_DIR/"
+cp "$WORK/bin/unwritten-studio-cli" "$CLI_DIR/"
 copy_docs "$CLI_DIR"
-sign --options runtime "$CLI_DIR/effectcraft-cli"
-codesign --verify --strict --verbose=2 "$CLI_DIR/effectcraft-cli"
+sign --options runtime "$CLI_DIR/unwritten-studio-cli"
+codesign --verify --strict --verbose=2 "$CLI_DIR/unwritten-studio-cli"
 rm -f "$CLI_ZIP"
 ditto -c -k --keepParent "$CLI_DIR" "$CLI_ZIP"
 # A bare Mach-O can't carry a stapled ticket; Gatekeeper looks the notarization up online.
 if [ "$NOTARIZE" = 1 ]; then notarize "$CLI_ZIP"; fi
 
-"$WORK/bin/effectcraft-cli" --version
+"$WORK/bin/unwritten-studio-cli" --version
 echo "==> done"
 ls -lh "$DMG" "$CLI_ZIP"

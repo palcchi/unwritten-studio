@@ -1,8 +1,8 @@
-# effectcraft-pdf
+# unwritten-studio-pdf
 
 Vector footage from PDF files, PDF-compatible Adobe Illustrator files (`.ai`, which are PDF
 documents) and Encapsulated PostScript (`.eps`). Files parse into the same render tree as SVG
-(`effectcraft_svg::Doc`), so they rasterise at any scale (Continuously Rasterize), convert to shape
+(`unwritten_studio_svg::Doc`), so they rasterise at any scale (Continuously Rasterize), convert to shape
 layers (Layer ▸ Create ▸ Create Shapes from Vector Layer) and import as compositions with one
 layer per file layer (File ▸ Import ▸ Composition).
 

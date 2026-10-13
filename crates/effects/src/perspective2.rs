@@ -4,10 +4,10 @@
 
 use std::f64::consts::PI;
 
-use effectcraft_color::luminance;
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
-use effectcraft_raster::{Image, Px};
+use unwritten_studio_color::luminance;
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
+use unwritten_studio_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::util::{Plane, fit_layer, gauss_plane, premul, unpremul};
@@ -54,7 +54,7 @@ fn cc_environment(ctx: &EffectCtx, mut b: Buf) -> Buf {
     let env = ctx.layer_param("environment", true).unwrap_or_else(|| LayerPixels { buf: b.clone(), size: ctx.layer_size });
     let env_img = if ctx.params.b("filterEnvironment") {
         let s = 2.0 * env.buf.scale;
-        effectcraft_raster::gaussian_blur(&env.buf.img, s, s, true)
+        unwritten_studio_raster::gaussian_blur(&env.buf.img, s, s, true)
     } else {
         env.buf.img.clone()
     };

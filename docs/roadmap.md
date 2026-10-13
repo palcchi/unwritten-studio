@@ -34,7 +34,7 @@ none blocks the workflow.
 | 3. Motion graphics: text layers with animators, shape layers with operators | yes | `ui_text_edit`, `ui_timeline_shapes`, text and shape engine tests; rough: paragraph alignment inverted (#316), CJK text in comps (#453) | 3–6 |
 | 4. Composite: masks, track mattes, blend modes, keying and effects | yes | Compositor and mask tests, 306 effects with CPU/GPU agreement; rough: mask bugs (#510, #513, #527), 32-bpc blend differences (#494), effect bugs (#580 crash, #514) | 6–12 |
 | 5. Preview with audio (RAM preview, cache) | yes | `ui_ram_preview`, `ui_live_preview`; rough: stutter on cached frames (#595, #304), late audio (#554, #504) | 10–20 |
-| 6. Save, reopen and deliver: `.ecproj`, auto-save, Render Queue to H.264 / ProRes / sequences | yes | Versioned-schema reopen tests, crash recovery, render-queue and encoder tests; rough: the macOS default output folder is `/`, so a render fails until an output path is chosen (#446), ProRes 4444 colour tag (#340), projects don't relink when moved | 1–3 |
+| 6. Save, reopen and deliver: `.uwproj`, auto-save, Render Queue to H.264 / ProRes / sequences | yes | Versioned-schema reopen tests, crash recovery, render-queue and encoder tests; rough: the macOS default output folder is `/`, so a render fails until an output path is chosen (#446), ProRes 4444 colour tag (#340), projects don't relink when moved | 1–3 |
 
 The gate is not beta: beta also needs After Effects' own `.aep` projects to open (gap 1) and
 ≈ 75% ready for real work.
@@ -49,7 +49,7 @@ against After Effects in [gaps.md](gaps.md), not as milestones.
 | M0 | Skeleton: crates, compositor, the After Effects style shell, control channel, `cargo xtask` | Done (web build: [web.md](web.md)) |
 | M1 | Keyframes: temporal and spatial interpolation, Easy Ease, roving, velocity | Done |
 | M2 | Compositing: 38 blend modes, track mattes, parenting, adjustment layers | Done |
-| M3 | Project operations: settings dialogs, layer commands, `.ecproj`, undo, After Effects menu bar | Done |
+| M3 | Project operations: settings dialogs, layer commands, `.uwproj`, undo, After Effects menu bar | Done |
 | M4 | Preview: precomps, motion blur, cached playback | Done |
 | M5 | Timeline depth: graph editor, keyframe clipboard and dialogs, time remapping, pick-whips, expression editor | Done |
 | M6 | Shapes, masks and footage: shape operators, masks and the pen tool, video and image import | Done |

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Unwritten Studio
+GenericName=Motion Graphics Editor
+Comment=Motion graphics and visual effects compositor
+Exec=unwritten-studio %F
+TryExec=unwritten-studio
+Icon=com.unwrittenstudio.app
+Terminal=false
+StartupNotify=true
+StartupWMClass=com.unwrittenstudio.app
+Categories=AudioVideo;Video;Graphics;2DGraphics;
+Keywords=motion;graphics;animation;compositor;effects;keyframe;vfx;

@@ -1,8 +1,0 @@
-asset:        effectcraft.svg
-title:        Unwritten Studio app icon, master vector
-author:       Unwritten Studio contributors (original illustration by the project owner)
-source:       original work
-license:      MIT OR Apache-2.0
-license-file: assets/app-icon/LICENSE.txt
-added:        2026-10-02 by Unwritten Studio contributors (Claude agent, app icon)
-notes:        The project owner's original drawing of an engraved unicorn bust, vectorised at 2048 px with craftrules assets/logo-options/_tools/vectorize_tile.py (potrace; three colours). Canonical artwork; the other icon files derive from it.

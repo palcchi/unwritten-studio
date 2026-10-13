@@ -1,7 +1,7 @@
 //! The output side shared by the PDF and PostScript interpreters: an open-group stack (clipping
 //! groups, optional-content layers) that collects shapes into the SVG render tree.
 
-use effectcraft_svg::{Affine, BezPath, FillRule, Geom, Group, Node, Paint, Shape, Stroke};
+use unwritten_studio_svg::{Affine, BezPath, FillRule, Geom, Group, Node, Paint, Shape, Stroke};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {

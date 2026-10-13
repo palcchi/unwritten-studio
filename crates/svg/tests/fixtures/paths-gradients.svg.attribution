@@ -4,4 +4,4 @@ author:       Unwritten Studio contributors
 source:       original work
 license:      MIT OR Apache-2.0
 added:        2026-10-02 by Unwritten Studio contributors (Claude agent, SVG import)
-notes:        Hand-written for the effectcraft-svg parser and Create Shapes from Vector Layer tests.
+notes:        Hand-written for the unwritten-studio-svg parser and Create Shapes from Vector Layer tests.

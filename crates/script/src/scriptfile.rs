@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use effectcraft_engine::Session;
+use unwritten_studio_engine::Session;
 
 use crate::runtime::{GATE, normalize, project_dir};
 

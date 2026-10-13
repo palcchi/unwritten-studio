@@ -168,14 +168,14 @@ BridgeTalk.prototype.send = function () {
 };
 BridgeTalk.prototype.sendResult = BridgeTalk.prototype.send;
 BridgeTalk.prototype.toString = function () { return "[object BridgeTalk]"; };
-BridgeTalk.appName = "effectcraft";
+BridgeTalk.appName = "unwritten-studio";
 Object.defineProperty(BridgeTalk, "appVersion", { get: function () { return __get("app").buildName; } });
-Object.defineProperty(BridgeTalk, "appSpecifier", { get: function () { return "effectcraft-" + BridgeTalk.appVersion; } });
+Object.defineProperty(BridgeTalk, "appSpecifier", { get: function () { return "unwritten-studio-" + BridgeTalk.appVersion; } });
 BridgeTalk.appLocale = "en_US";
 BridgeTalk.appInstance = "";
 BridgeTalk.appStatus = "idle";
 BridgeTalk.onReceive = null;
-BridgeTalk.__isSelf = function (spec) { return String(spec === undefined || spec === null ? "" : spec).split("-")[0].toLowerCase() === "effectcraft"; };
+BridgeTalk.__isSelf = function (spec) { return String(spec === undefined || spec === null ? "" : spec).split("-")[0].toLowerCase() === "unwritten-studio"; };
 BridgeTalk.isRunning = function (spec) { return BridgeTalk.__isSelf(spec); };
 BridgeTalk.launch = function (spec) { return BridgeTalk.__isSelf(spec); };
 BridgeTalk.getSpecifier = function (name) { return BridgeTalk.__isSelf(name) ? BridgeTalk.appSpecifier : null; };
@@ -1599,7 +1599,7 @@ CompItem.prototype.constructor = CompItem;
   };
   P.openInViewer = function () { __call("comp.open", { comp: this.__id }); return null; };
   P.duplicate = function () { return __item(__call("project.duplicate", { items: [this.__id] }).items[0]); };
-  // Essential Graphics (templates are Unwritten Studio's open .ectemplate files).
+  // Essential Graphics (templates are Unwritten Studio's open .uwtemplate files).
   P.__eg = function () { return __call("essential.list", { comp: this.__id }); };
   P.__controllers = function () {
     var out = [];
@@ -1640,7 +1640,7 @@ CompItem.prototype.constructor = CompItem;
   P.exportAsMotionGraphicsTemplate = function (overwrite, path) {
     var f = __str(path);
     if (!f) return false;
-    if (!/\.[A-Za-z0-9]+$/.test(f)) f += ".ectemplate";
+    if (!/\.[A-Za-z0-9]+$/.test(f)) f += ".uwtemplate";
     if (!overwrite && JSON.parse(__file("exists", f)) === true) return false;
     if (this.__controllers().length === 0) return false;
     // The file gate applies to templates too.

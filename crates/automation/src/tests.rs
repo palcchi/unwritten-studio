@@ -62,7 +62,7 @@ fn initialize_and_list_tools() {
     let mut s = server();
     let r = rpc(&mut s, 1, "initialize", json!({"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}));
     assert_eq!(r["protocolVersion"], "2025-03-26");
-    assert_eq!(r["serverInfo"]["name"], "effectcraft");
+    assert_eq!(r["serverInfo"]["name"], "unwritten-studio");
     assert!(r["capabilities"]["tools"].is_object());
     // Unknown revision: we answer with our latest.
     let r = rpc(&mut s, 2, "initialize", json!({"protocolVersion": "1999-01-01"}));
@@ -202,7 +202,7 @@ fn headless_workflow() {
     // Save + reopen.
     let dir = std::env::temp_dir().join(format!("ec-mcp-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("t.ecproj").to_string_lossy().into_owned();
+    let path = dir.join("t.uwproj").to_string_lossy().into_owned();
     let saved = call_json(&mut s, "save_project", json!({"path": path}));
     assert_eq!(saved["dirty"], false);
     call_json(&mut s, "open_project", json!({"new": true}));
@@ -218,7 +218,7 @@ fn headless_workflow() {
 /// its error, and `evaluated` is the static value that renders (#163).
 #[test]
 fn expression_syntax_errors_reach_the_reply() {
-    let mut s = McpServer::new(Backend::headless(effectcraft_host::session()));
+    let mut s = McpServer::new(Backend::headless(unwritten_studio_host::session()));
     call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "A", "width": 64, "height": 64}}));
     call_json(&mut s, "execute_command", json!({"command": "layer.newSolid", "params": {"name": "S", "color": "#ff0000", "width": 32, "height": 8}}));
     let at = |expr: &str| json!({"layer": "S", "path": "transform/rotation", "expression": expr});
@@ -286,7 +286,7 @@ fn autosave_test_dir(name: &str) -> std::path::PathBuf {
 }
 
 fn autosave_status(s: &mut McpServer) -> Value {
-    rpc(s, 1, "initialize", json!({}))["_meta"]["effectcraftAutoSave"].clone()
+    rpc(s, 1, "initialize", json!({}))["_meta"]["unwrittenStudioAutoSave"].clone()
 }
 
 #[test]
@@ -309,7 +309,7 @@ fn autosave_is_durable_before_reply_and_queries_do_not_rotate() {
     // The instructions carry the auto-save state as JSON, where a Windows path's backslashes
     // are escaped.
     assert!(init["instructions"].as_str().unwrap().contains(&Value::from(path).to_string()));
-    assert_eq!(init["_meta"]["effectcraftAutoSave"]["previousSessions"][0]["autosave"], path);
+    assert_eq!(init["_meta"]["unwrittenStudioAutoSave"]["previousSessions"][0]["autosave"], path);
     call_json(&mut restarted, "open_project", json!({"path": path}));
     assert_eq!(call_json(&mut restarted, "get_project", json!({}))["items"][0]["name"], "Durable");
     std::fs::remove_dir_all(dir).unwrap();
@@ -342,7 +342,7 @@ fn autosave_errors_preserve_tool_success_retry_and_fail_shutdown() {
 #[test]
 fn autosave_keeps_sessions_and_desktop_recovery_separate() {
     let dir = autosave_test_dir("isolated");
-    let desktop_save = dir.join(effectcraft_engine::autosave::AUTOSAVE_FOLDER).join("Untitled Project auto-save 1.ecproj");
+    let desktop_save = dir.join(unwritten_studio_engine::autosave::AUTOSAVE_FOLDER).join("Untitled Project auto-save 1.uwproj");
     std::fs::create_dir_all(desktop_save.parent().unwrap()).unwrap();
     std::fs::write(&desktop_save, "desktop backup").unwrap();
     std::fs::write(dir.join("session.lock"), "desktop sentinel").unwrap();
@@ -360,7 +360,7 @@ fn autosave_keeps_sessions_and_desktop_recovery_separate() {
         assert!(json.contains(mine));
         assert!(!json.contains(other));
         let folder = std::path::Path::new(status["folder"].as_str().unwrap());
-        assert_eq!(effectcraft_engine::autosave::existing(folder, "Untitled Project").len(), 5);
+        assert_eq!(unwritten_studio_engine::autosave::existing(folder, "Untitled Project").len(), 5);
     }
     assert_eq!(std::fs::read_to_string(desktop_save).unwrap(), "desktop backup");
     assert_eq!(std::fs::read_to_string(dir.join("session.lock")).unwrap(), "desktop sentinel");
@@ -381,7 +381,7 @@ fn autosave_marks_saved_or_undone_work_clean_without_losing_its_path() {
     assert_eq!(manifest["dirty"], false);
     call_json(&mut s, "redo", json!({}));
     let path = autosave_status(&mut s)["latestPath"].clone();
-    call_json(&mut s, "save_project", json!({"path": dir.join("Saved.ecproj")}));
+    call_json(&mut s, "save_project", json!({"path": dir.join("Saved.uwproj")}));
     assert_eq!(autosave_status(&mut s)["latestPath"], path, "save resets the engine bookkeeping but the server remembers the recovery file");
     let manifest: Value = serde_json::from_str(&std::fs::read_to_string(folder.join("session.json")).unwrap()).unwrap();
     assert_eq!(manifest["dirty"], false);
@@ -514,7 +514,7 @@ fn bridge_rejects_non_loopback() {
 #[test]
 fn script_ui_and_history_tools() {
     let mut sess = Session::default();
-    effectcraft_script::install(&mut sess);
+    unwritten_studio_script::install(&mut sess);
     let mut s = McpServer::new(Backend::headless(sess));
     let code = "var d = new Window('dialog', 'Ask'); var g = d.add('group'); g.add('button', undefined, 'OK', {name: 'ok'}); \
                 if (d.show() == 1) app.project.items.addComp('Answered', 64, 64, 1, 1, 24); 'done'";
@@ -540,7 +540,7 @@ fn script_ui_and_history_tools() {
 #[test]
 fn run_script_round_trip() {
     let mut sess = Session::default();
-    effectcraft_script::install(&mut sess);
+    unwritten_studio_script::install(&mut sess);
     let mut s = McpServer::new(Backend::headless(sess));
     let r = call_json(
         &mut s,
@@ -600,7 +600,7 @@ fn every_engine_command_is_reachable_over_mcp() {
     }
     let listed = call_json(&mut s, "list_commands", json!({"schemas": true}));
     let listed: std::collections::HashMap<&str, &Value> = listed.as_array().unwrap().iter().map(|c| (c["id"].as_str().unwrap(), c)).collect();
-    let specs = effectcraft_engine::command_specs();
+    let specs = unwritten_studio_engine::command_specs();
     assert_eq!(listed.len(), specs.len());
     for spec in specs {
         let c = listed.get(spec.id).unwrap_or_else(|| panic!("{} not listed", spec.id));
@@ -764,7 +764,7 @@ fn autosave_isolation_also_applies_to_engine_autosaves_and_preference_changes() 
     let dir = autosave_test_dir("engine-save");
     let desktop = dir.join("DesktopCustom");
     std::fs::create_dir_all(&desktop).unwrap();
-    std::fs::write(desktop.join("Untitled Project auto-save 1.ecproj"), "desktop backup").unwrap();
+    std::fs::write(desktop.join("Untitled Project auto-save 1.uwproj"), "desktop backup").unwrap();
     let mut session = Session::default();
     session.prefs.auto_save.location = "custom".into();
     session.prefs.auto_save.folder = desktop.to_string_lossy().into_owned();
@@ -783,14 +783,14 @@ fn autosave_isolation_also_applies_to_engine_autosaves_and_preference_changes() 
             {"command":"file.autoSave","params":{}}
         ]}),
     );
-    call_json(&mut s, "save_project", json!({"path":dir.join("Named.ecproj")}));
+    call_json(&mut s, "save_project", json!({"path":dir.join("Named.uwproj")}));
     call_json(&mut s, "execute_command", json!({"command":"layer.newText","params":{"text":"Latest isolated edit"}}));
     let current = autosave_status(&mut s);
     assert!(std::path::Path::new(current["latestPath"].as_str().unwrap()).starts_with(status["folder"].as_str().unwrap()));
     assert!(std::fs::read_to_string(current["latestPath"].as_str().unwrap()).unwrap().contains("Latest isolated edit"));
     let recovery = call_json(&mut s, "execute_command", json!({"command":"file.recoveryInfo"}));
     assert_eq!(recovery["folder"], status["folder"]);
-    assert_eq!(std::fs::read_to_string(desktop.join("Untitled Project auto-save 1.ecproj")).unwrap(), "desktop backup");
+    assert_eq!(std::fs::read_to_string(desktop.join("Untitled Project auto-save 1.uwproj")).unwrap(), "desktop backup");
     assert_eq!(std::fs::read_dir(&desktop).unwrap().count(), 2, "only the original desktop file and the MCP subfolder");
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -847,7 +847,7 @@ fn resources_match_tools_and_recover_after_parse_error() {
     assert!(bad["id"].is_null());
     assert_eq!(rpc(&mut s, 1, "ping", json!({})), json!({}));
     let list = rpc(&mut s, 2, "resources/list", json!({}));
-    for (uri, tool) in [("effectcraft://document", "doc_inspect"), ("effectcraft://commands", "command_list")] {
+    for (uri, tool) in [("unwritten-studio://document", "doc_inspect"), ("unwritten-studio://commands", "command_list")] {
         assert!(list["resources"].as_array().unwrap().iter().any(|r| r["uri"] == uri));
         let r = rpc(&mut s, 3, "resources/read", json!({"uri":uri}));
         assert_eq!(r["contents"][0]["mimeType"], "application/json");
@@ -859,7 +859,7 @@ fn resources_match_tools_and_recover_after_parse_error() {
 /// Rendering is a direct tool call, outside Session::execute's existing panic guard.
 #[test]
 fn render_panic_is_an_error_and_session_remains_usable() {
-    use effectcraft_engine::{
+    use unwritten_studio_engine::{
         color::Label,
         project::{Footage, FootageKind, ItemId, ItemKind},
         raster::Image,
@@ -910,7 +910,7 @@ fn modern_clients_get_result_type() {
         (1, "tools/list", json!({"_meta": meta})),
         (2, "resources/list", json!({"_meta": meta})),
         (3, "resources/templates/list", json!({"_meta": meta})),
-        (4, "resources/read", json!({"_meta": meta, "uri": "effectcraft://document"})),
+        (4, "resources/read", json!({"_meta": meta, "uri": "unwritten-studio://document"})),
         (5, "tools/call", json!({"_meta": meta, "name": "command_list", "arguments": {}})),
     ] {
         let r = rpc(&mut s, id, method, params);
@@ -923,7 +923,7 @@ fn modern_clients_get_result_type() {
     let mut s = server();
     rpc(&mut s, 1, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}));
     for (id, method, params) in
-        [(2, "tools/list", json!({})), (3, "resources/list", json!({})), (4, "resources/read", json!({"uri": "effectcraft://document"}))]
+        [(2, "tools/list", json!({})), (3, "resources/list", json!({})), (4, "resources/read", json!({"uri": "unwritten-studio://document"}))]
     {
         let r = rpc(&mut s, id, method, params);
         let res = r.as_object().unwrap();
@@ -933,7 +933,7 @@ fn modern_clients_get_result_type() {
 
 #[test]
 fn render_job_state_recovers_a_poisoned_lock() {
-    let shared = std::sync::Arc::new(effectcraft_engine::render_queue::JobShared::default());
+    let shared = std::sync::Arc::new(unwritten_studio_engine::render_queue::JobShared::default());
     let worker = shared.clone();
     let _ = std::thread::spawn(move || {
         let mut state = worker.state.lock().unwrap();
@@ -948,21 +948,21 @@ fn render_job_state_recovers_a_poisoned_lock() {
 /// one to clean up).
 struct SlowExporter;
 
-impl effectcraft_engine::Exporter for SlowExporter {
-    fn formats(&self) -> Vec<effectcraft_engine::project::render_queue::OutputFormat> {
-        effectcraft_engine::project::render_queue::OutputFormat::ALL.to_vec()
+impl unwritten_studio_engine::Exporter for SlowExporter {
+    fn formats(&self) -> Vec<unwritten_studio_engine::project::render_queue::OutputFormat> {
+        unwritten_studio_engine::project::render_queue::OutputFormat::ALL.to_vec()
     }
-    fn export(&self, job: &effectcraft_engine::ExportJob, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<effectcraft_engine::ExportResult, String> {
+    fn export(&self, job: &unwritten_studio_engine::ExportJob, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<unwritten_studio_engine::ExportResult, String> {
         std::fs::write(job.path, b"partial").map_err(|e| e.to_string())?;
         let n = 2000;
         for k in 0..=n {
             if !progress(k, n) {
                 std::fs::remove_file(job.path).map_err(|e| e.to_string())?;
-                return Err(effectcraft_engine::render_queue::CANCELLED.into());
+                return Err(unwritten_studio_engine::render_queue::CANCELLED.into());
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
-        Ok(effectcraft_engine::ExportResult { path: job.path.to_string(), frames: n, ..Default::default() })
+        Ok(unwritten_studio_engine::ExportResult { path: job.path.to_string(), frames: n, ..Default::default() })
     }
 }
 
@@ -971,7 +971,7 @@ impl effectcraft_engine::Exporter for SlowExporter {
 /// the project without changing the running job, which renders the snapshot it started with.
 #[test]
 fn second_render_is_refused_and_edits_apply_during_a_render() {
-    let dir = std::env::temp_dir().join(format!("effectcraft-mcp-busy-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("unwritten-studio-mcp-busy-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let (in_r, mut in_w) = std::io::pipe().unwrap();
     let (out_r, out_w) = std::io::pipe().unwrap();
@@ -1026,7 +1026,7 @@ fn second_render_is_refused_and_edits_apply_during_a_render() {
 /// and `notifications/cancelled` stops it, deletes the partial file and sends no response.
 #[test]
 fn render_progress_and_cancel() {
-    let dir = std::env::temp_dir().join(format!("effectcraft-mcp-progress-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("unwritten-studio-mcp-progress-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let (in_r, mut in_w) = std::io::pipe().unwrap();
     let (out_r, out_w) = std::io::pipe().unwrap();
@@ -1147,11 +1147,11 @@ fn render_without_token_finishes_after_stdin_closes() {
 #[test]
 fn panicked_render_worker_finishes_with_an_error() {
     struct BrokenExporter;
-    impl effectcraft_engine::Exporter for BrokenExporter {
-        fn formats(&self) -> Vec<effectcraft_engine::project::render_queue::OutputFormat> {
-            effectcraft_engine::project::render_queue::OutputFormat::ALL.to_vec()
+    impl unwritten_studio_engine::Exporter for BrokenExporter {
+        fn formats(&self) -> Vec<unwritten_studio_engine::project::render_queue::OutputFormat> {
+            unwritten_studio_engine::project::render_queue::OutputFormat::ALL.to_vec()
         }
-        fn export(&self, _: &effectcraft_engine::ExportJob, _: &mut dyn FnMut(u64, u64) -> bool) -> Result<effectcraft_engine::ExportResult, String> {
+        fn export(&self, _: &unwritten_studio_engine::ExportJob, _: &mut dyn FnMut(u64, u64) -> bool) -> Result<unwritten_studio_engine::ExportResult, String> {
             panic!("synthetic exporter failure");
         }
     }
@@ -1204,8 +1204,8 @@ fn automation_roots_confine_file_access() {
     // Unconfined (the default): anywhere.
     let mut s = server();
     call_json(&mut s, "execute_command", json!({"command": "comp.new", "params": {"name": "A", "width": 64, "height": 64}}));
-    call_json(&mut s, "save_project", json!({"path": p(&outside, "free.ecproj")}));
-    call_json(&mut s, "save_project", json!({"path": p(&read, "source.ecproj")}));
+    call_json(&mut s, "save_project", json!({"path": p(&outside, "free.uwproj")}));
+    call_json(&mut s, "save_project", json!({"path": p(&read, "source.uwproj")}));
 
     let mut s = server();
     s.backend().confine(Confinement::new(std::slice::from_ref(&read), std::slice::from_ref(&write)).unwrap());
@@ -1215,25 +1215,25 @@ fn automation_roots_confine_file_access() {
         c[0]["text"].as_str().unwrap_or_default().to_string()
     };
     // Reading: inside a read root, not outside.
-    call_json(&mut s, "open_project", json!({"path": p(&read, "source.ecproj")}));
-    let msg = denied(&mut s, "open_project", json!({"path": p(&outside, "free.ecproj")}));
+    call_json(&mut s, "open_project", json!({"path": p(&read, "source.uwproj")}));
+    let msg = denied(&mut s, "open_project", json!({"path": p(&outside, "free.uwproj")}));
     assert!(msg.contains("outside the automation roots"), "{msg}");
     // Writing: inside a write root only; not into a read root, not relative, not with `..`.
-    call_json(&mut s, "save_project", json!({"path": p(&write, "saved.ecproj")}));
-    assert!(write.join("saved.ecproj").is_file());
-    denied(&mut s, "save_project", json!({"path": p(&read, "copy.ecproj")}));
-    denied(&mut s, "save_project", json!({"path": "relative.ecproj"}));
-    denied(&mut s, "save_project", json!({"path": p(&write, "../elsewhere/up.ecproj")}));
+    call_json(&mut s, "save_project", json!({"path": p(&write, "saved.uwproj")}));
+    assert!(write.join("saved.uwproj").is_file());
+    denied(&mut s, "save_project", json!({"path": p(&read, "copy.uwproj")}));
+    denied(&mut s, "save_project", json!({"path": "relative.uwproj"}));
+    denied(&mut s, "save_project", json!({"path": p(&write, "../elsewhere/up.uwproj")}));
     denied(&mut s, "execute_command", json!({"command": "comp.saveFrameAs", "params": {"path": p(&outside, "f.png")}}));
     // Any other absolute path a command is given.
     denied(&mut s, "execute_command", json!({"command": "renderQueue.add", "params": {"output": p(&outside, "movie.mp4")}}));
     // A batch step.
-    let steps = json!([{"command": "comp.new", "params": {"name": "B"}}, {"command": "file.saveAs", "params": {"path": p(&outside, "b.ecproj")}}]);
+    let steps = json!([{"command": "comp.new", "params": {"name": "B"}}, {"command": "file.saveAs", "params": {"path": p(&outside, "b.uwproj")}}]);
     denied(&mut s, "batch", json!({"steps": steps}));
     let steps = json!([{"command": "file.saveAs", "params": {"path": "$1.path"}}]);
     denied(&mut s, "batch", json!({"steps": steps}));
     // Save (and Increment and Save) write the open project's own file: it must be writable.
-    call_json(&mut s, "open_project", json!({"path": p(&read, "source.ecproj")}));
+    call_json(&mut s, "open_project", json!({"path": p(&read, "source.uwproj")}));
     denied(&mut s, "save_project", json!({}));
     denied(&mut s, "execute_command", json!({"command": "file.incrementAndSave"}));
     // Rendering the queue writes its items' outputs (by default beside the project).
@@ -1242,14 +1242,14 @@ fn automation_roots_confine_file_access() {
     assert!(queue["items"][0]["outputPath"].as_str().is_some_and(|o| o.starts_with(&*read.to_string_lossy())), "{queue}");
     let msg = denied(&mut s, "execute_command", json!({"command": "renderQueue.render"}));
     assert!(msg.contains("cannot write"), "{msg}");
-    call_json(&mut s, "open_project", json!({"path": p(&write, "saved.ecproj")}));
+    call_json(&mut s, "open_project", json!({"path": p(&write, "saved.uwproj")}));
     call_json(&mut s, "save_project", json!({}));
     // Through a symbolic link out of a root.
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(&outside, write.join("link")).unwrap();
-        denied(&mut s, "save_project", json!({"path": p(&write.join("link"), "escaped.ecproj")}));
-        assert!(!outside.join("escaped.ecproj").exists());
+        denied(&mut s, "save_project", json!({"path": p(&write.join("link"), "escaped.uwproj")}));
+        assert!(!outside.join("escaped.uwproj").exists());
     }
     // Scripts can read and write anything: refused.
     denied(&mut s, "run_script", json!({"code": "1 + 1"}));

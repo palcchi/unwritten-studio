@@ -1,5 +1,5 @@
 [package]
-name = "effectcraft-expr"
+name = "unwritten-studio-expr"
 description = "After Effects-compatible expressions: a boa JavaScript runtime with the AE object model (thisComp, thisLayer, wiggle, loopOut, valueAtTime…) and array maths"
 version.workspace = true
 edition.workspace = true
@@ -10,13 +10,13 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-effectcraft-time = { workspace = true }
-effectcraft-geom = { workspace = true }
-effectcraft-keyframe = { workspace = true }
+unwritten-studio-time = { workspace = true }
+unwritten-studio-geom = { workspace = true }
+unwritten-studio-keyframe = { workspace = true }
 serde_json = { workspace = true }
-effectcraft-project = { workspace = true }
-effectcraft-path = { workspace = true }
-effectcraft-render = { workspace = true }
+unwritten-studio-project = { workspace = true }
+unwritten-studio-path = { workspace = true }
+unwritten-studio-render = { workspace = true }
 boa_engine = { workspace = true }
 
 # On the web, boa's clock and Math.random need the browser (getrandom `wasm_js`, web-time).
@@ -24,6 +24,6 @@ boa_engine = { workspace = true }
 boa_engine = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
-effectcraft-color = { workspace = true }
-effectcraft-effects = { workspace = true }
-effectcraft-text = { workspace = true }
+unwritten-studio-color = { workspace = true }
+unwritten-studio-effects = { workspace = true }
+unwritten-studio-text = { workspace = true }

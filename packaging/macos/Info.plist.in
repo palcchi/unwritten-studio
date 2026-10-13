@@ -13,7 +13,7 @@
   <key>CFBundleExecutable</key>
   <string>Unwritten Studio</string>
   <key>CFBundleIdentifier</key>
-  <string>ai.storyteller.effectcraft</string>
+  <string>com.unwrittenstudio.app</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundlePackageType</key>
@@ -58,15 +58,15 @@
       <key>CFBundleTypeIconFile</key>
       <string>Unwritten Studio</string>
       <key>LSItemContentTypes</key>
-      <array><string>ai.storyteller.effectcraft.document</string></array>
+      <array><string>com.unwrittenstudio.app.document</string></array>
     </dict>
   </array>
-  <!-- Unwritten Studio's own format: the project (.ecproj) and its XML copy (.ecprojx). -->
+  <!-- Unwritten Studio's own format: the project (.uwproj) and its XML copy (.uwprojx). -->
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>ai.storyteller.effectcraft.document</string>
+      <string>com.unwrittenstudio.app.document</string>
       <key>UTTypeDescription</key>
       <string>Unwritten Studio Project</string>
       <key>UTTypeConformsTo</key>
@@ -80,11 +80,11 @@
       <dict>
         <key>public.filename-extension</key>
         <array>
-          <string>ecproj</string>
-          <string>ecprojx</string>
+          <string>uwproj</string>
+          <string>uwprojx</string>
         </array>
         <key>public.mime-type</key>
-        <array><string>application/x-effectcraft</string></array>
+        <array><string>application/x-unwritten-studio</string></array>
       </dict>
     </dict>
   </array>
@@ -109,7 +109,7 @@
     </dict>
     <dict>
       <key>UTTypeIdentifier</key>
-      <string>ai.storyteller.effectcraft.qoi</string>
+      <string>com.unwrittenstudio.app.qoi</string>
       <key>UTTypeDescription</key>
       <string>QOI Image</string>
       <key>UTTypeConformsTo</key>

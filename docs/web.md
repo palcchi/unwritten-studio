@@ -1,6 +1,6 @@
 # Unwritten Studio on the web
 
-`apps/effectcraft-web` runs the same engine and egui UI as the desktop app in the browser: the
+`apps/unwritten-studio-web` runs the same engine and egui UI as the desktop app in the browser: the
 workspace compiled to `wasm32-unknown-unknown`, started by eframe's web runner on WebGPU (WebGL2
 fallback). It is a static site: one `.wasm`, its `wasm-bindgen` JavaScript glue, `index.html`, a
 few small scripts (worker, audio worklet, service worker), a web manifest and icons. Nothing is
@@ -21,8 +21,8 @@ cargo xtask web --dev           # unoptimised build (faster to compile, slow to 
 cargo xtask web --serve 8765    # build, then serve dist on http://127.0.0.1:8765/
 ```
 
-`<target>` is `$CARGO_TARGET_DIR` or `target`. `dist` holds `index.html`, `effectcraft_web.js` +
-`effectcraft_web_bg.wasm` (+ `snippets/`, the browser glue `js/host.js`), `worker.js`,
+`<target>` is `$CARGO_TARGET_DIR` or `target`. `dist` holds `index.html`, `unwritten_studio_web.js` +
+`unwritten_studio_web_bg.wasm` (+ `snippets/`, the browser glue `js/host.js`), `worker.js`,
 `audio-worklet.js`, `sw.js` (its precache list and version filled in by the build),
 `manifest.webmanifest`, `favicon.svg` and `icon-256.png` / `icon-512.png` (copied from
 `assets/app-icon`). `--serve` is a tiny localhost-only static server that sends
@@ -39,7 +39,7 @@ revalidate it rather than caching it for long (`packaging/web/README.md`).
 
 On other targets the web crate holds only its portable storage model (`store.rs`, unit-tested by
 `cargo test --workspace`); `cargo xtask wasm` (part of `cargo xtask ci`) checks the whole crate,
-with every L0–L4 crate and `effectcraft-ui-egui`, for `wasm32-unknown-unknown`.
+with every L0–L4 crate and `unwritten-studio-ui-egui`, for `wasm32-unknown-unknown`.
 
 URL flags: `?empty` (a blank project; the session is not restored or recorded), `?demo` (the demo
 project instead of the last session), `?home` (show the start screen), `?storage=indexeddb` /
@@ -57,16 +57,16 @@ device of their own), `?nosw` (don't register the service worker).
 | tracker / mask tracker / Warp Stabilizer / 3D Camera Tracker / Roto Brush Freeze threads, Content-Aware Fill tasks | the same workers; the analysed property group (or the fill layer) comes back as one undo step |
 | `rayon` parallel loops (raster, effects, export batches) | rayon's global pool falls back to the calling thread when threads are unavailable: same code, serial |
 | `std::time::Instant` / `SystemTime` (panic on wasm32) | `web-time` (re-exports `std::time` on native) |
-| `std::fs` project reads/writes (`FsServices`) | `files::WebServices`: the virtual file table, persisted (below); saving also downloads the `.ecproj` |
+| `std::fs` project reads/writes (`FsServices`) | `files::WebServices`: the virtual file table, persisted (below); saving also downloads the `.uwproj` |
 | config directory: settings, shortcut presets, recent projects, the recovery sentinel | `store::WebConfig` in browser storage |
 | auto-save folder | `/Unwritten Studio Auto-Save/` in browser storage (`ConfigStore::files`) |
 | media reads (`MediaPool`, `probe`) | `files::WebImporter`: bytes from the file table, handed to `MediaPool::add_bytes` / `probe_bytes` |
 | Memory & CPU cache budgets, scaled to the system's RAM | the page's memory, at most 4 GiB (wasm32), which the caches share with the decoders' own decoded frames (FilmCraft keeps up to 384 MB per open movie): the Layer Cache stays within 512 MB and the Footage Frame Cache within 256 MB (`Prefs::cache_budgets`) |
-| export writes (`effectcraft-export`) | the job's `sink` (`effectcraft_host::FileExporter { sink }`): files land in the table and download after the render; several files (an image sequence) download as one stored `.zip` |
-| rfd file dialogs | `<input type=file>` for File ▸ Open / Import; drop files anywhere on the page (`.ecproj` opens, everything else imports); "Save As" / "Output To" pick a download name |
+| export writes (`unwritten-studio-export`) | the job's `sink` (`unwritten_studio_host::FileExporter { sink }`): files land in the table and download after the render; several files (an image sequence) download as one stored `.zip` |
+| rfd file dialogs | `<input type=file>` for File ▸ Open / Import; drop files anywhere on the page (`.uwproj` opens, everything else imports); "Save As" / "Output To" pick a download name |
 | Media Browser on the file system | browser storage and folders opened with the File System Access API (below) |
 | system fonts | not scanned; the bundled fonts (Inter, Noto Serif, JetBrains Mono) are always there |
-| TCP control channel / MCP | `window.effectcraft` (below) |
+| TCP control channel / MCP | `window.unwrittenStudio` (below) |
 | cpal audio output | Web Audio (below) |
 | GPU compositor on the desktop's wgpu device | the same compositor on eframe's WebGPU device, and GPU effects on each frame worker's own WebGPU device (below) |
 | disk cache folder (Settings ▸ Disk ▸ Disk Cache) | viewer frames and slow layer buffers in the Origin Private File System, written by the frame workers (below) |
@@ -76,7 +76,7 @@ device of their own), `?nosw` (don't register the service worker).
 
 Everything that lives in files on the desktop lives in the browser's **Origin Private File
 System** (OPFS); where OPFS can't be written from the page (older Safari), **IndexedDB**; with
-neither (some private windows), memory only. `effectcraft.info().storage.backend` says which.
+neither (some private windows), memory only. `unwritten-studio.info().storage.backend` says which.
 The page asks for persistent storage (`navigator.storage.persist()`), which browsers grant to
 installed apps, so the store isn't evicted under storage pressure.
 
@@ -89,7 +89,7 @@ writes are atomic: a swap file replaced on close). Keys:
 |---|---|
 | `config/prefs.json`, `config/shortcuts.json` | Settings (with File ▸ Open Recent's list) and keyboard shortcut presets |
 | `config/session.lock` | the crash-recovery sentinel |
-| `config/session.ecproj`, `config/session.json` | the session snapshot: the open project and editor state (active comp, time, selection), written at most once a second while they change |
+| `config/session.uwproj`, `config/session.json` | the session snapshot: the open project and editor state (active comp, time, selection), written at most once a second while they change |
 | `files/<path>` | the file table: imported media, projects saved with File ▸ Save / Save As or `saveToBrowser`, auto-saves |
 
 On the next visit the app reopens the snapshot (unsaved changes stay unsaved: the project is
@@ -131,7 +131,7 @@ segmentation cache and relays them to the frame workers. Stopping it keeps the f
 so far.
 
 **`wait: true`** (the default of `renderQueue.render` for agents, and an option of the analysis
-and Roto Brush commands) no longer blocks the page: over `window.effectcraft` (the control
+and Roto Brush commands) no longer blocks the page: over `window.unwrittenStudio` (the control
 channel) such a command runs with `wait: false`, and the promise resolves when the job it started
 ends, with what the blocking command returns (final render item statuses, the analysis status)
 or rejects with the job's error (`ui-egui/src/control.rs`, `JobWaiter`). Engine commands executed
@@ -157,20 +157,20 @@ of the project:
 Frames without effects that the WebGPU compositor can finish alone still render on the page
 (they stay on the GPU, no readback); everything else (frames with effects, 3D runs, the Software
 Only renderer, WebGL2) goes to the workers. If no worker is usable, frames render on the page's
-thread as before. `effectcraft.info().frameWorkers` reports `{workers, alive, busy, rendered,
+thread as before. `unwritten-studio.info().frameWorkers` reports `{workers, alive, busy, rendered,
 failed, lastMs, syncs, syncBytes, gpu, gpuFrames, lastPasses, diskHits}` (`gpu`: each worker's
 adapter, `{cpu: why}` without one, `null` until it reported).
 
 **GPU in job workers (M13.30).** Each job worker opens its own WebGPU device too
 (`workerJobInit`; `?nogpuworkers`: their CPU) and makes it the session's accelerator. A job
 can't block on a readback either, so the job loops are futures rather than blocking loops:
-`effectcraft_engine::offload::run_request_async` runs the request, and every frame it renders
-goes through `effectcraft_render::passes` (`in_passes`, `comp_frame`): render a pass, and while
+`unwritten_studio_engine::offload::run_request_async` runs the request, and every frame it renders
+goes through `unwritten_studio_render::passes` (`in_passes`, `comp_frame`): render a pass, and while
 it missed, await the device (`Accelerator::settle`, the browser's event loop delivers the
 readbacks) and render again, as `FrameServer::resume` does for viewer frames (the desktop drives
 the same futures with `passes::block_on`; they never wait there).
 
-- **Render Queue**: `effectcraft_export::export_async` renders each frame in passes (frames
+- **Render Queue**: `unwritten_studio_export::export_async` renders each frame in passes (frames
   with deferred readbacks render one by one instead of in parallel batches) and encodes as
   before (`Exporter::export_async`). As on the desktop, a job renders every frame on the
   project's renderer (the worker's GPU with Mercury GPU Acceleration), not on whichever
@@ -189,7 +189,7 @@ the same futures with `passes::block_on`; they never wait there).
   each of its scenes still rasterised on the GPU. So frames with particles or Advanced 3D
   render on the device in frame workers and job workers alike.
 
-`effectcraft.info().workers` reports `{running, idle, gpu: {adapter} | {cpu: why}, jobs:
+`unwritten-studio.info().workers` reports `{running, idle, gpu: {adapter} | {cpu: why}, jobs:
 [{kind, gpu, passes, readbacks, ms}]}` (the last jobs).
 
 **Warp Stabilizer plans off the page (M13.32).** Solving a stabilization plan (Subspace Warp:
@@ -258,17 +258,17 @@ key press.
 ### GPU
 
 eframe starts on WebGPU where the browser has it (WebGL2 otherwise), and the GPU compositor
-(`effectcraft-gpu`) runs on the same device: viewer frames are composited by compute shaders and
+(`unwritten-studio-gpu`) runs on the same device: viewer frames are composited by compute shaders and
 drawn straight from their texture, with no readback. The Info panel's pixel readout and the
 eyedroppers read GPU frames back asynchronously (`Gpu::read_display_async`: the pixels arrive a
 frame later). On WebGL2, or without a usable adapter, everything renders on the CPU.
-`effectcraft.info().gpu` reports `{compositor, viewerOnGpu}`.
+`unwritten-studio.info().gpu` reports `{compositor, viewerOnGpu}`.
 
 If the page's WebGPU device is lost (a driver reset, the browser reclaiming the GPU), the canvas
 can't show anything new, while the project stays open and commands keep working. The page then
 covers the canvas with a notice (`showDeviceLost` in `js/host.js`) offering **Save Project** (a
 download) and **Reload**, which first writes pending changes to browser storage
-(`effectcraft.flush()`) so the session comes back after the reload; when the write fails it says
+(`unwritten-studio.flush()`) so the session comes back after the reload; when the write fails it says
 so and offers **Reload Anyway**.
 
 **GPU effects run in the frame workers.** A browser never lets JavaScript (or wasm) wait for a GPU
@@ -303,7 +303,7 @@ workers (Firefox, older Safari) or with `?nogpuworkers`, the workers render on t
 before. A frame with effects goes to a worker when the workers have a GPU, so the page never runs
 an effect on its thread. Particles and Advanced 3D read back under keys too (M13.30, above).
 
-`effectcraft.workerFrameCheck({time?, scale?, backend?})` renders the active comp's frame in a
+`unwritten-studio.workerFrameCheck({time?, scale?, backend?})` renders the active comp's frame in a
 worker (its GPU by default) and on the page's CPU and reports the differences (`{maxDiff,
 meanDiff, over4, workerMs}` in 8-bit levels): the smoke test uses it to check the GPU workers'
 pixels.
@@ -311,7 +311,7 @@ pixels.
 ### Disk cache
 
 Settings ▸ Disk ▸ Disk Cache works in the browser, backed by the **Origin Private File System**
-(`src/diskcache.rs`): viewer frames are kept under `effectcraft-cache/v1/frames/<32 hex>.ecc`
+(`src/diskcache.rs`): viewer frames are kept under `unwritten-studio-cache/v1/frames/<32 hex>.ecc`
 between visits, in the desktop cache's format (`disk_cache::frame_entry`: 8-bit premultiplied
 RGBA, LZ4, a checksum), keyed by the same content hash (the comp and everything it uses, frame,
 scale, view, render options).
@@ -329,14 +329,14 @@ scale, view, render options).
   shows the frames on disk.
 - `cache.diskStats` reports the browser's cache (`{enabled, available, loaded, entries, frames,
   layers, bytes, maxBytes, hits, misses, writes, evictions, layerHits, layerWrites}`); Empty Disk
-  Cache / `edit.purge {what: "disk"}` clears it. `effectcraft.info().diskCache` has the same.
+  Cache / `edit.purge {what: "disk"}` clears it. `unwritten-studio.info().diskCache` has the same.
 
 **Layer buffers (M13.30).** Slow layer buffers (≥ 20 ms to render) go to the disk cache too
-(`effectcraft-cache/v1/layers/<32 hex>.ecc`, `disk_cache::layer_entry`, keys salted per project
+(`unwritten-studio-cache/v1/layers/<32 hex>.ecc`, `disk_cache::layer_entry`, keys salted per project
 and footage as on the desktop). A layer lookup happens in the middle of a synchronous render,
 where the browser's file system can't be read, so it is made synchronous by fetching first:
 
-1. Each frame worker backs its layer cache with a `PrefetchStore` (`effectcraft_render::cache`):
+1. Each frame worker backs its layer cache with a `PrefetchStore` (`unwritten_studio_render::cache`):
    lookups are served from buffers fetched before the request; a lookup that finds nothing is
    recorded, and buffers to keep queue up as sealed entries.
 2. The reply lists the frame's layer misses and the buffers served from the store
@@ -376,39 +376,39 @@ cache-first (the cached responses keep the server's COOP/COEP headers, so the pa
 cross-origin isolated offline), and drops older caches when a new build activates. After the
 first visit the app loads without a network.
 
-## `window.effectcraft`: the agent / test API
+## `window.unwrittenStudio`: the agent / test API
 
 The control channel of the desktop app (`docs/control-protocol.md`) as promises. Results resolve
 with the method's `result`, errors reject with the message.
 
 | Call | |
 |---|---|
-| `effectcraft.request(method, params)` | any control method: `ui.inspect`, `ui.click`, `ui.key`, `ui.playback`, `ui.menu.invoke`, `render.frame`… |
-| `effectcraft.execute(command, params)` | `engine.execute`: an engine command (same ids and params as MCP / `effectcraft-cli`) |
-| `effectcraft.commands()` / `effectcraft.inspect()` | `engine.commands` / `ui.inspect` |
-| `effectcraft.renderFrame(params)` | `render.frame` with `base64: true`: `{comp, time, width, height, png}` |
-| `effectcraft.screenshot(params)` | `ui.screenshot`; without `path` the PNG comes back inline as `png` (base64) |
-| `effectcraft.addFile(fileOrUrl, name?)` | put a `File`/`Blob` (or fetched URL) into the file table (stored) and open (`.ecproj`) or import it; resolves with its path |
-| `effectcraft.files()` / `effectcraft.readFile(path)` | the file table `[{path, size}]` / a file's bytes (`Uint8Array`), e.g. a render |
-| `effectcraft.saveToBrowser(path?)` | save the project to browser storage without downloading it (default: its path, or `/<name>.ecproj`); resolves with `{path, bytes}` |
-| `effectcraft.listStored()` | `{backend, usage, quota, persisted, pending, files: [{path, size, modified}], config: [name]}` |
-| `effectcraft.removeStored(path)` | delete a stored file |
-| `effectcraft.flush()` | resolves once every change is written to browser storage; rejects when a write failed (quota exceeded…: the change stays pending and is retried) |
-| `effectcraft.info()` | graphics backend, `gpu`, `storage`, `audio` (`{state, sampleRate, backend, posted, played, underruns}`), `workers`, `frameWorkers`, `diskCache`, `restored`, `webgpu`, `serviceWorker`, version, `crossOriginIsolated`, load timings |
-| `effectcraft.workerFrameCheck(params)` | a frame rendered in a frame worker (its GPU by default) against the page's CPU render: `{width, height, maxDiff, meanDiff, over4, workerMs}` |
+| `unwritten-studio.request(method, params)` | any control method: `ui.inspect`, `ui.click`, `ui.key`, `ui.playback`, `ui.menu.invoke`, `render.frame`… |
+| `unwritten-studio.execute(command, params)` | `engine.execute`: an engine command (same ids and params as MCP / `unwritten-studio-cli`) |
+| `unwritten-studio.commands()` / `unwritten-studio.inspect()` | `engine.commands` / `ui.inspect` |
+| `unwritten-studio.renderFrame(params)` | `render.frame` with `base64: true`: `{comp, time, width, height, png}` |
+| `unwritten-studio.screenshot(params)` | `ui.screenshot`; without `path` the PNG comes back inline as `png` (base64) |
+| `unwritten-studio.addFile(fileOrUrl, name?)` | put a `File`/`Blob` (or fetched URL) into the file table (stored) and open (`.uwproj`) or import it; resolves with its path |
+| `unwritten-studio.files()` / `unwritten-studio.readFile(path)` | the file table `[{path, size}]` / a file's bytes (`Uint8Array`), e.g. a render |
+| `unwritten-studio.saveToBrowser(path?)` | save the project to browser storage without downloading it (default: its path, or `/<name>.uwproj`); resolves with `{path, bytes}` |
+| `unwritten-studio.listStored()` | `{backend, usage, quota, persisted, pending, files: [{path, size, modified}], config: [name]}` |
+| `unwritten-studio.removeStored(path)` | delete a stored file |
+| `unwritten-studio.flush()` | resolves once every change is written to browser storage; rejects when a write failed (quota exceeded…: the change stays pending and is retried) |
+| `unwritten-studio.info()` | graphics backend, `gpu`, `storage`, `audio` (`{state, sampleRate, backend, posted, played, underruns}`), `workers`, `frameWorkers`, `diskCache`, `restored`, `webgpu`, `serviceWorker`, version, `crossOriginIsolated`, load timings |
+| `unwritten-studio.workerFrameCheck(params)` | a frame rendered in a frame worker (its GPU by default) against the page's CPU render: `{width, height, maxDiff, meanDiff, over4, workerMs}` |
 
-`window.effectcraftLoad` holds `{wasmMs, readyMs}` (module fetch + compile, and until the app runs).
+`window.unwrittenStudioLoad` holds `{wasmMs, readyMs}` (module fetch + compile, and until the app runs).
 
 ```js
-await effectcraft.execute("layer.newSolid", {color: "#ff8800"});
-await effectcraft.request("ui.menu.invoke", {id: "renderQueue.add", params: {format: "gif", resolution: 0.25}});
-await effectcraft.execute("renderQueue.render", {wait: false});  // renders in a worker; the GIF downloads
-await effectcraft.saveToBrowser("/my-project.ecproj");            // File ▸ Open Recent has it after a reload
+await unwritten-studio.execute("layer.newSolid", {color: "#ff8800"});
+await unwritten-studio.request("ui.menu.invoke", {id: "renderQueue.add", params: {format: "gif", resolution: 0.25}});
+await unwritten-studio.execute("renderQueue.render", {wait: false});  // renders in a worker; the GIF downloads
+await unwritten-studio.saveToBrowser("/my-project.uwproj");            // File ▸ Open Recent has it after a reload
 ```
 
 ## Browser test
 
-`apps/effectcraft-web/tests/smoke.mjs` drives headless Chrome over the DevTools protocol (Node ≥ 22,
+`apps/unwritten-studio-web/tests/smoke.mjs` drives headless Chrome over the DevTools protocol (Node ≥ 22,
 no npm packages): load, the GPU path (WebGPU → GPU compositor, viewer on the GPU), the demo comp
 in the viewer, `render.frame`, Render Queue GIF and PNG sequence (`.zip`) downloads, a background
 render in a worker while measuring the page's event-loop gaps (must stay under 400 ms) and its
@@ -419,18 +419,18 @@ reload through the service worker. It writes screenshots and `report.json`:
 
 ```sh
 cargo xtask web --serve 8765 &
-node apps/effectcraft-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --out target/web/smoke
+node apps/unwritten-studio-web/tests/smoke.mjs --url http://127.0.0.1:8765/ --out target/web/smoke
 ```
 
-`apps/effectcraft-web/tests/workers.mjs` checks the job-worker plumbing (`js/host.js`,
+`apps/unwritten-studio-web/tests/workers.mjs` checks the job-worker plumbing (`js/host.js`,
 `web/worker.js`) under Node with a fake `Worker`, without a build: a replaced file is sent to a
 reused worker again even at the same size, and a worker that fails to start fails its job and is
-terminated (`node apps/effectcraft-web/tests/workers.mjs`).
+terminated (`node apps/unwritten-studio-web/tests/workers.mjs`).
 
-`apps/effectcraft-web/tests/page.mjs` checks page-side helpers of `js/host.js` the same way with
+`apps/unwritten-studio-web/tests/page.mjs` checks page-side helpers of `js/host.js` the same way with
 a fake DOM: a picked file that can't be read is reported while the others are added, and the
 device-lost notice saves, flushes before reloading and reports a failed flush
-(`node apps/effectcraft-web/tests/page.mjs`).
+(`node apps/unwritten-studio-web/tests/page.mjs`).
 
 It also checks the M13.10 paths: viewer frames rendered in frame workers while scrubbing with the
 CPU renderer (project synced as diffs, event-loop gaps under 400 ms), a `wait: true` render that
@@ -446,7 +446,7 @@ responsive, and layer buffers written to the disk cache and served from it after
 purge (`layerHits`); M13.32: editing after the Warp Stabilizer analysis (removing it,
 pre-composing, a mask) keeps the page's event-loop gaps under 50 ms.
 
-Native unit tests cover the storage model (`apps/effectcraft-web/src/store.rs`: write
+Native unit tests cover the storage model (`apps/unwritten-studio-web/src/store.rs`: write
 coalescing, file table, `ConfigStore` / `FileOps`, auto-save and crash recovery through the
 browser store) and the worker protocol (`crates/engine/src/offload.rs`: serde round trips of
 every request and reply, a render through an in-process offload; `tests_roto.rs`: Roto Brush

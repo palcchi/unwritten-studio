@@ -2,10 +2,10 @@
 //! (Auto Levels / Contrast / Color, Equalize), Shadow/Highlight, Selective Color, Color Balance
 //! (HLS), Color Link, Broadcast Colors and the CC toners/offsets/kernel.
 
-use effectcraft_color::{BlendMode, blend_pixel, hsl_to_rgb, luminance, rgb_to_hsl};
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
-use effectcraft_raster::Image;
+use unwritten_studio_color::{BlendMode, blend_pixel, hsl_to_rgb, luminance, rgb_to_hsl};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
+use unwritten_studio_raster::Image;
 use rayon::prelude::*;
 
 use crate::util::{Plane, gauss_plane, lerp3, premul, unpremul};

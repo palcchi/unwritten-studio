@@ -53,7 +53,7 @@ fn project_lifecycle() {
     assert_eq!(op, 100.0, "and the other branch's edit is not on this line");
 
     // Save, reopen, compare.
-    let proj = qa.path("show.ecproj");
+    let proj = qa.path("show.uwproj");
     let saved = qa.tool("save_project", json!({"path": proj}));
     assert_eq!(saved["dirty"], false);
     let before = qa.frame(Some(main.clone()), 0.0);
@@ -64,7 +64,7 @@ fn project_lifecycle() {
     assert!(mean_diff(&before, &qa.frame(Some(main2.clone()), 0.0)) < 1e-9, "the reopened project renders the same");
 
     // Save a Copy As XML: reopens to the same frame and leaves the session's path alone.
-    let xml = qa.path("show.ecprojx");
+    let xml = qa.path("show.uwprojx");
     qa.exec("file.saveCopyAsXml", json!({"path": xml}));
     assert!(std::fs::read_to_string(&xml).unwrap().trim_start().starts_with('<'));
     assert_eq!(qa.tool("get_project", json!({}))["path"], json!(proj));
@@ -77,9 +77,9 @@ fn project_lifecycle() {
     let c = qa.exec("file.collectFiles", json!({"folder": collected}));
     assert_eq!((c["copied"].clone(), c["errors"].clone()), (json!(1), json!([])), "Collect Files makes its folder: {c}");
     let files: Vec<String> = walk(&qa.dir.join("collected"));
-    assert!(files.iter().any(|f| f.ends_with(".ecproj")) && files.iter().any(|f| f.ends_with("logo.png")), "{files:?}");
+    assert!(files.iter().any(|f| f.ends_with(".uwproj")) && files.iter().any(|f| f.ends_with("logo.png")), "{files:?}");
     std::fs::remove_file(qa.dir.join("media/logo.png")).unwrap();
-    let cproj = files.iter().find(|f| f.ends_with(".ecproj")).unwrap().clone();
+    let cproj = files.iter().find(|f| f.ends_with(".uwproj")).unwrap().clone();
     let reo = qa.tool("open_project", json!({"path": cproj}));
     let cm = reo["items"].as_array().unwrap().iter().find(|i| i["name"] == "Main").unwrap()["id"].clone();
     assert!(mean_diff(&before, &qa.frame(Some(cm), 0.0)) < 1e-9, "the collected project finds its footage");
@@ -109,13 +109,13 @@ fn project_lifecycle() {
     std::fs::create_dir_all(&watch).unwrap();
     qa.exec("renderQueue.setRender", json!({"index": 1, "render": true}));
     qa.exec("renderQueue.setOutput", json!({"index": 1, "path": watch.join("w_[##].png").to_string_lossy()}));
-    qa.tool("save_project", json!({"path": watch.join("job.ecproj").to_string_lossy()}));
+    qa.tool("save_project", json!({"path": watch.join("job.uwproj").to_string_lossy()}));
     // Starting the watch renders what is already there; a poll then finds nothing new.
     let started = qa.exec("file.watchFolder", json!({"folder": watch.to_string_lossy()}));
     assert_eq!(started["rendered"][0]["state"], "done", "{started}");
     let polled = qa.exec("file.watchFolder.poll", json!({}));
     assert_eq!(polled["rendered"], json!([]), "{polled}");
-    assert!(watch.join("job.ecproj.status.json").exists() || walk(&watch).iter().any(|f| f.ends_with(".status.json")));
+    assert!(watch.join("job.uwproj.status.json").exists() || walk(&watch).iter().any(|f| f.ends_with(".status.json")));
     assert_eq!(walk(&watch).iter().filter(|f| f.ends_with(".png")).count(), 12, "{:?}", walk(&watch));
     qa.exec("file.watchFolder", json!({"folder": watch.to_string_lossy(), "stop": true}));
 }

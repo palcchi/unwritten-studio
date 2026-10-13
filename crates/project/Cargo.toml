@@ -1,5 +1,5 @@
 [package]
-name = "effectcraft-project"
+name = "unwritten-studio-project"
 description = "The Unwritten Studio document: project items, compositions, layers and the After-Effects-style property tree"
 version.workspace = true
 edition.workspace = true
@@ -10,10 +10,10 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-effectcraft-time = { workspace = true }
-effectcraft-geom = { workspace = true }
-effectcraft-color = { workspace = true }
-effectcraft-keyframe = { workspace = true }
+unwritten-studio-time = { workspace = true }
+unwritten-studio-geom = { workspace = true }
+unwritten-studio-color = { workspace = true }
+unwritten-studio-keyframe = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

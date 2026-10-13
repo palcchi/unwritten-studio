@@ -2,31 +2,31 @@
 //! play from, resolution, overlays, full screen, move time), the preview shortcuts pick their
 //! options, and the Align panel runs `layer.align` / `layer.distribute`.
 
-use effectcraft_engine::Session;
-use effectcraft_engine::preview::PreviewShortcut;
-use effectcraft_engine::time::Tick;
-use effectcraft_ui_egui::EffectcraftApp;
-use effectcraft_ui_egui::dock::PanelKind;
+use unwritten_studio_engine::Session;
+use unwritten_studio_engine::preview::PreviewShortcut;
+use unwritten_studio_engine::time::Tick;
+use unwritten_studio_ui_egui::UnwrittenStudioApp;
+use unwritten_studio_ui_egui::dock::PanelKind;
 use egui::{Event, Pos2, pos2};
 use egui_kittest::Harness;
 use serde_json::json;
 
-fn harness() -> Harness<'static, EffectcraftApp> {
+fn harness() -> Harness<'static, UnwrittenStudioApp> {
     let mut s = Session::default();
     s.execute("comp.new", json!({"name": "Preview", "width": 320, "height": 180, "frameRate": 24, "duration": 10})).unwrap();
     s.execute("layer.newSolid", json!({"name": "A", "color": "#406080", "width": 40, "height": 30})).unwrap();
     s.execute("layer.newSolid", json!({"name": "B", "color": "#806040", "width": 60, "height": 20})).unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| EffectcraftApp::new(s));
+    let mut h = Harness::builder().with_size(egui::vec2(1600.0, 1000.0)).build_eframe(|_| UnwrittenStudioApp::new(s));
     h.run_steps(3);
     h
 }
 
-fn invoke(h: &mut Harness<'_, EffectcraftApp>, id: &str, p: serde_json::Value) -> serde_json::Value {
+fn invoke(h: &mut Harness<'_, UnwrittenStudioApp>, id: &str, p: serde_json::Value) -> serde_json::Value {
     let ctx = h.ctx.clone();
-    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, id, p).unwrap()
+    unwritten_studio_ui_egui::menus::invoke(h.state_mut(), &ctx, id, p).unwrap()
 }
 
-fn click(h: &mut Harness<'_, EffectcraftApp>, id: &str) {
+fn click(h: &mut Harness<'_, UnwrittenStudioApp>, id: &str) {
     let e = h.state().auto.find(id).unwrap_or_else(|| panic!("no {id}")).clone();
     let p: Pos2 = pos2(e.rect[0] + e.rect[2] / 2.0, e.rect[1] + e.rect[3] / 2.0);
     h.input_mut().events.push(Event::PointerMoved(p));
@@ -36,7 +36,7 @@ fn click(h: &mut Harness<'_, EffectcraftApp>, id: &str) {
     h.run_steps(2);
 }
 
-fn set(h: &mut Harness<'_, EffectcraftApp>, p: serde_json::Value) {
+fn set(h: &mut Harness<'_, UnwrittenStudioApp>, p: serde_json::Value) {
     h.state_mut().session.execute("playback.settings.set", p).unwrap();
 }
 
@@ -153,7 +153,7 @@ fn align_panel_runs_align_and_distribute() {
     h.state_mut().session.execute("layer.select", json!({"layers": ids})).unwrap();
     h.run_steps(2);
     // (x position, width) of A and B (anchors in the middle of the solids).
-    let pos = |h: &Harness<'_, EffectcraftApp>| -> Vec<(f64, f64)> {
+    let pos = |h: &Harness<'_, UnwrittenStudioApp>| -> Vec<(f64, f64)> {
         let c = h.state().session.active_comp().unwrap();
         ["A", "B"]
             .iter()
@@ -218,14 +218,14 @@ fn auto_resolution_is_the_same_playing_and_paused() {
 
 #[test]
 fn achieved_frame_rate_and_real_time() {
-    let mut p = effectcraft_ui_egui::Playback { playing: true, fps: 24.0, ..Default::default() };
+    let mut p = unwritten_studio_ui_egui::Playback { playing: true, fps: 24.0, ..Default::default() };
     assert_eq!(p.achieved_fps(), None);
     for i in 0..25 {
         p.frame_shown(i as f64 / 24.0);
     }
     assert!((p.achieved_fps().unwrap() - 24.0).abs() < 1e-9);
     assert_eq!(p.real_time(), Some(true));
-    let mut slow = effectcraft_ui_egui::Playback { playing: true, fps: 24.0, ..Default::default() };
+    let mut slow = unwritten_studio_ui_egui::Playback { playing: true, fps: 24.0, ..Default::default() };
     for i in 0..13 {
         slow.frame_shown(i as f64 / 12.0);
     }
@@ -237,7 +237,7 @@ fn achieved_frame_rate_and_real_time() {
 fn cache_frames_when_idle_fills_the_work_area() {
     let mut h = harness();
     let cid = h.state().session.active_comp_id().unwrap();
-    let cached = |h: &Harness<'_, EffectcraftApp>| h.state().frames.cached_frames(&h.state().shown_series(cid)).len();
+    let cached = |h: &Harness<'_, UnwrittenStudioApp>| h.state().frames.cached_frames(&h.state().shown_series(cid)).len();
     // Off: only a few frames ahead of the current time are prefetched (the work area is the
     // whole 240 frames).
     for _ in 0..120 {

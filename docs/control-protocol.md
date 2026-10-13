@@ -3,7 +3,7 @@
 The desktop app exposes a control channel for agents, tests and the MCP bridge:
 
 ```sh
-effectcraft --control 9877        # or EFFECTCRAFT_CONTROL_PORT=9877
+unwritten-studio --control 9877        # or UNWRITTEN_STUDIO_CONTROL_PORT=9877
 ```
 
 The port must be a number from 1 to 65535, and `--control` overrides the variable. A bad port or an
@@ -35,7 +35,7 @@ printf '{"id":1,"method":"engine.execute","params":{"command":"comp.new","params
 
 | Method | Params | Result |
 |---|---|---|
-| `engine.execute` | `{command, params?}` | The command's result. Every engine command (`effectcraft-cli commands`) runs exactly as it does headless, so it never opens a dialog: `comp.new {}` creates a default comp. UI-only ids (`tool.*`, `view.*`, `window.*`, `playback.*`, `timeline.*`, `app.*`) fall through to the menu dispatcher. Unknown top-level params are rejected, and the error lists the accepted keys. |
+| `engine.execute` | `{command, params?}` | The command's result. Every engine command (`unwritten-studio-cli commands`) runs exactly as it does headless, so it never opens a dialog: `comp.new {}` creates a default comp. UI-only ids (`tool.*`, `view.*`, `window.*`, `playback.*`, `timeline.*`, `app.*`) fall through to the menu dispatcher. Unknown top-level params are rejected, and the error lists the accepted keys. |
 | `ui.menu.invoke` | `{id, params?}` | Like a menu click: commands with empty params may open their dialog (New Composition, Solid Settings, file pickers). |
 | UI commands (via either) | | `timeline.column {column, visible?}` (av, keys, label, num, comment, switches, modes, parent, in, out, duration, stretch), `timeline.sourceName {value?}`, `timeline.search {query}`, `timeline.reveal.<kind>` / `timeline.revealAdd.<kind>` (the property shortcuts and Shift+shortcut: position, scale, rotation, opacity, anchor, effects, masks, feather, levels, animated, and the double-press sets maskPath, maskOpacity, timeRemap, expressions, material, paint, selected, missingEffects, waveform), `timeline.keyAt.<anchor\|position\|scale\|rotation\|opacity>` (Alt+Shift+A/P/S/R/T), `timeline.twirlSelected` (Ctrl/Cmd+`), `timeline.collapseAll`, `flowchart.options {layers?, effects?, solids?, direction?: lr\|tb, comp?}`, `flowchart.graph {comp?}` → `{nodes, edges}`, `window.workspace {name}` (all After Effects workspaces). |
 | `engine.commands` | `{filter?, enabledOnly?}` | `[{id, label, menu, shortcut, params, enabled, why}]` |
@@ -165,7 +165,7 @@ step; `ui.set {viewer: {res}}` sets the active comp's, and `ui.inspect` reports 
 shape paths by uid), `keys.setSpatialTangents` (motion-path handles) and `keys.transform` (Graph
 Editor transform box, timeline Alt-drag scaling).
 
-The MCP server's bridge mode (`effectcraft-cli mcp --bridge 9877`) is a thin client of this protocol;
+The MCP server's bridge mode (`unwritten-studio-cli mcp --bridge 9877`) is a thin client of this protocol;
 see [agents.md](agents.md).
 
 Keyframe command times (`prop.set`, `prop.addKey`, `keys.set`, `keys.select`) default to layer

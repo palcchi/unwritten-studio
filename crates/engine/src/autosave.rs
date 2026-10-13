@@ -1,7 +1,7 @@
 //! Auto-save and crash recovery (PRJ-7).
 //!
 //! - **Auto-save**: every *n* minutes a dirty project is written to an "Unwritten Studio Auto-Save"
-//!   folder next to it (or a custom folder) as `<name> auto-save N.ecproj`, the After Effects
+//!   folder next to it (or a custom folder) as `<name> auto-save N.uwproj`, the After Effects
 //!   naming. Slots rotate through 1…max versions, overwriting the oldest. Writes are atomic
 //!   (temporary file + rename), so a crash mid-write never damages the previous auto-save.
 //! - **Crash recovery**: while the app runs, a sentinel (`session.lock` in the config store)
@@ -20,7 +20,8 @@ use crate::prefs::Prefs;
 pub const AUTOSAVE_FOLDER: &str = "Unwritten Studio Auto-Save";
 /// Crash-recovery sentinel in the config store.
 pub const SENTINEL: &str = "session.lock";
-const EXT: &str = "ecproj";
+const EXT: &str = "uwproj";
+const LEGACY_EXT: &str = "ecproj";
 
 /// Auto-save bookkeeping of a session.
 #[derive(Clone, Debug, Default)]
@@ -74,12 +75,12 @@ impl PendingWrite {
     }
 }
 
-/// File-name stem of a project (`/a/Intro.ecproj` → `Intro`; untitled → `Untitled Project`).
+/// File-name stem of a project (`/a/Intro.uwproj` → `Intro`; untitled → `Untitled Project`).
 pub fn project_stem(path: Option<&str>) -> String {
     path.and_then(|p| Path::new(p).file_stem()).map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Untitled Project".into())
 }
 
-/// `<stem> auto-save N.ecproj`.
+/// `<stem> auto-save N.uwproj`.
 pub fn file_name(stem: &str, n: u32) -> String {
     format!("{stem} auto-save {n}.{EXT}")
 }
@@ -87,7 +88,7 @@ pub fn file_name(stem: &str, n: u32) -> String {
 /// The slot number of an auto-save file name for `stem`.
 pub fn slot_of(stem: &str, name: &str) -> Option<u32> {
     let rest = name.strip_prefix(stem)?.strip_prefix(" auto-save ")?;
-    rest.strip_suffix(&format!(".{EXT}"))?.parse().ok()
+    rest.strip_suffix(&format!(".{EXT}")).or_else(|| rest.strip_suffix(&format!(".{LEGACY_EXT}")))?.parse().ok()
 }
 
 /// Where a project's auto-saves go: next to the project, or the custom folder; untitled projects
@@ -244,8 +245,8 @@ pub fn end(store: &dyn ConfigStore) {
     let _ = store.remove(SENTINEL);
 }
 
-/// After Effects' Increment and Save name: `Intro.ecproj` → `Intro 2.ecproj`, `Intro 2.ecproj`
-/// → `Intro 3.ecproj` (skipping names that exist; the extension, `.ecprojx` too, is kept).
+/// After Effects' Increment and Save name: `Intro.uwproj` → `Intro 2.uwproj`, `Intro 2.uwproj`
+/// → `Intro 3.uwproj` (skipping names that exist; the extension, `.uwprojx` too, is kept).
 pub fn increment_path(path: &str, exists: impl Fn(&str) -> bool) -> String {
     let p = Path::new(path);
     let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
@@ -260,5 +261,16 @@ pub fn increment_path(path: &str, exists: impl Fn(&str) -> bool) -> String {
             return cand;
         }
         n += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slot_of;
+
+    #[test]
+    fn recognizes_auto_saves_from_the_previous_project_extension() {
+        assert_eq!(slot_of("Intro", "Intro auto-save 3.ecproj"), Some(3));
+        assert_eq!(slot_of("Intro", "Intro auto-save 3.uwproj"), Some(3));
     }
 }

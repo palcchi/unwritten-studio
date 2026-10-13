@@ -4,9 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use effectcraft_color::Label;
-use effectcraft_project::{AlphaMode, Comp, Footage, FootageKind, ItemId, ItemKind, LayerSource, Project, Solid, limits};
-use effectcraft_time::{FrameRate, Tick};
+use unwritten_studio_color::Label;
+use unwritten_studio_project::{AlphaMode, Comp, Footage, FootageKind, ItemId, ItemKind, LayerSource, Project, Solid, limits};
+use unwritten_studio_time::{FrameRate, Tick};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, b_p, bad, f_p, has_comp, has_project_selection, str_p};
@@ -126,7 +126,7 @@ fn import_placeholder(s: &mut Session, p: &Value) -> Result<Value> {
 fn solid_from(p: &Value, s: &Session) -> Solid {
     let (cw, ch) = s.active_comp().map(|c| (c.width, c.height)).unwrap_or((1920, 1080));
     let color = match p.get("color") {
-        Some(Value::String(h)) => effectcraft_color::Rgba::from_hex(h).map(|c| [c.r, c.g, c.b]),
+        Some(Value::String(h)) => unwritten_studio_color::Rgba::from_hex(h).map(|c| [c.r, c.g, c.b]),
         Some(Value::Array(a)) => Some([0, 1, 2].map(|i| a.get(i).and_then(Value::as_f64).unwrap_or(0.0) as f32)),
         _ => None,
     }
@@ -344,7 +344,7 @@ fn find_missing(s: &mut Session, p: &Value) -> Result<Value> {
             for (cid, c) in s.project.comps() {
                 for l in &c.layers {
                     for g in l.effects().into_iter().flat_map(|fx| fx.groups()) {
-                        if let effectcraft_project::GroupKind::Effect { effect } = &g.kind
+                        if let unwritten_studio_project::GroupKind::Effect { effect } = &g.kind
                             && crate::effects::find(effect).is_none()
                         {
                             found.push(json!({"comp": cid.0, "layer": l.id.0, "effect": effect}));
@@ -418,7 +418,7 @@ fn collect_files(s: &mut Session, p: &Value) -> Result<Value> {
         .and_then(|p| std::path::Path::new(p).file_stem())
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "Untitled Project".into());
-    let out = format!("{folder}/{stem}.ecproj");
+    let out = format!("{folder}/{stem}.uwproj");
     s.services.write_file(&out, proj.to_json().as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {out}: {e}")))?;
     s.toast(format!("Collected {copied} file(s) into {folder}"));
     Ok(json!({"project": out, "copied": copied, "errors": errors}))
@@ -557,8 +557,8 @@ pub(crate) struct Interpretation {
     invert_alpha: Option<bool>,
     loops: Option<u32>,
     par: Option<f64>,
-    fields: Option<effectcraft_project::FieldOrder>,
-    profile: Option<Option<effectcraft_project::ColorSpace>>,
+    fields: Option<unwritten_studio_project::FieldOrder>,
+    profile: Option<Option<unwritten_studio_project::ColorSpace>>,
     linear: Option<bool>,
     /// Color ▸ Preserve RGB.
     preserve_rgb: Option<bool>,
@@ -592,7 +592,7 @@ impl StartTimecode {
     }
 
     fn read(t: &str, rate: FrameRate) -> Option<i64> {
-        effectcraft_time::parse_timecode(t, rate, false, 0).ok().filter(|n| (0..=Self::MAX).contains(n))
+        unwritten_studio_time::parse_timecode(t, rate, false, 0).ok().filter(|n| (0..=Self::MAX).contains(n))
     }
 }
 
@@ -614,7 +614,7 @@ impl Interpretation {
         it.matte = match p.get("matteColor").or(p.get("premulColor")) {
             None => None,
             Some(v) => Some(
-                effectcraft_keyframe::Value::Color([0.0, 0.0, 0.0, 1.0])
+                unwritten_studio_keyframe::Value::Color([0.0, 0.0, 0.0, 1.0])
                     .coerce_json(v)
                     .map(|c| {
                         let c = c.as_color();
@@ -628,13 +628,13 @@ impl Interpretation {
         it.loops = f_p(p, "loop").filter(|x| x.is_finite()).map(|v| v.round().clamp(1.0, 9999.0) as u32);
         it.par = f_p(p, "pixelAspect").filter(|x| *x > 0.0);
         it.fields = match str_p(p, "fields") {
-            Some(f) => Some(effectcraft_project::FieldOrder::parse(f).ok_or_else(|| bad(cmd, "fields: off|upper|lower"))?),
+            Some(f) => Some(unwritten_studio_project::FieldOrder::parse(f).ok_or_else(|| bad(cmd, "fields: off|upper|lower"))?),
             None => None,
         };
         // Color ▸ Assign Profile: a colour space id, or "auto"/"none" for the file's own (sRGB).
         it.profile = match str_p(p, "colorProfile") {
             Some("auto" | "none" | "") => Some(None),
-            Some(c) => match effectcraft_project::ColorSpace::parse(c) {
+            Some(c) => match unwritten_studio_project::ColorSpace::parse(c) {
                 Some(cs) => Some(Some(cs)),
                 None => return Err(bad(cmd, format!("colorProfile: srgb|rec709|rec2020|p3|auto, not `{c}`"))),
             },

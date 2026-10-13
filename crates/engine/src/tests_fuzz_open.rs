@@ -2,7 +2,7 @@
 //! error, never a panic, an abort or a hang (AGENTS.md "Never crash").
 //!
 //! Dependency-free, deterministic and seeded: seed projects (empty, and the demo cut down to one
-//! layer at a time, each as `.ecproj` JSON and as `.ecprojx` XML) are mutated byte-wise (flips,
+//! layer at a time, each as `.uwproj` JSON and as `.uwprojx` XML) are mutated byte-wise (flips,
 //! deletions, splices, truncation, interesting tokens, deep nesting) and structurally (a JSON
 //! node replaced by an extreme number, another type or another subtree; members dropped,
 //! elements duplicated), then opened through the real `file.open` path, followed by the queries
@@ -12,8 +12,8 @@
 //! overflow can't be caught and aborts the run, which fails it all the same.
 //!
 //! The default run is bounded (iterations and seconds) to stay fast in `cargo test`; a longer run:
-//! `EFFECTCRAFT_FUZZ_ITERS=200000 EFFECTCRAFT_FUZZ_SECS=600 cargo test -p effectcraft-engine fuzz_`
-//! (`EFFECTCRAFT_FUZZ_SEED` picks another sequence, `EFFECTCRAFT_FUZZ_START` the first iteration).
+//! `UNWRITTEN_STUDIO_FUZZ_ITERS=200000 UNWRITTEN_STUDIO_FUZZ_SECS=600 cargo test -p unwritten-studio-engine fuzz_`
+//! (`UNWRITTEN_STUDIO_FUZZ_SEED` picks another sequence, `UNWRITTEN_STUDIO_FUZZ_START` the first iteration).
 //! The `mutate` + `open_input` pair is what a cargo-fuzz target would call.
 
 use std::sync::Arc;
@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 
 use crate::{Services, Session};
 
-const PATH: &str = "/fuzz/input.ecproj";
+const PATH: &str = "/fuzz/input.uwproj";
 
 /// splitmix64: tiny, good enough for picking mutations.
 struct Rng(u64);
@@ -94,7 +94,7 @@ fn open_input(bytes: Vec<u8>) -> Result<bool, String> {
         && let Some(c) = s.project.comp(id)
     {
         let scale = (32.0 / f64::from(c.width.max(c.height).max(1))).min(1.0);
-        effectcraft_render::render_frame(&s.project, id, effectcraft_time::Tick::from_seconds_f64(1.0), scale);
+        unwritten_studio_render::render_frame(&s.project, id, unwritten_studio_time::Tick::from_seconds_f64(1.0), scale);
     }
     Ok(true)
 }
@@ -124,12 +124,12 @@ fn run_guarded(bytes: Vec<u8>, deadline: Duration) -> Result<bool, String> {
 /// demo (700 kB) would make every input slow.
 fn seeds() -> Vec<Vec<u8>> {
     let demo = crate::demo::demo_project();
-    let mut projects = vec![effectcraft_project::Project::default()];
+    let mut projects = vec![unwritten_studio_project::Project::default()];
     for (cid, c) in demo.comps() {
         for i in 0..c.layers.len() {
             let mut p = demo.clone();
             for (id, item) in p.items.iter_mut() {
-                if let effectcraft_project::ItemKind::Comp(c) = &mut item.kind {
+                if let unwritten_studio_project::ItemKind::Comp(c) = &mut item.kind {
                     let keep = if id == cid { i } else { 0 };
                     let layers = &mut Arc::make_mut(c).layers;
                     *layers = layers.get(keep).cloned().into_iter().collect();
@@ -307,10 +307,10 @@ fn env_u64(name: &str, default: u64) -> u64 {
 
 #[test]
 fn fuzz_file_open_never_crashes() {
-    let seed = env_u64("EFFECTCRAFT_FUZZ_SEED", 0x00EC_F022);
-    let start = env_u64("EFFECTCRAFT_FUZZ_START", 0);
-    let iters = env_u64("EFFECTCRAFT_FUZZ_ITERS", 3_000);
-    let budget = Duration::from_secs(env_u64("EFFECTCRAFT_FUZZ_SECS", 6));
+    let seed = env_u64("UNWRITTEN_STUDIO_FUZZ_SEED", 0x00EC_F022);
+    let start = env_u64("UNWRITTEN_STUDIO_FUZZ_START", 0);
+    let iters = env_u64("UNWRITTEN_STUDIO_FUZZ_ITERS", 3_000);
+    let budget = Duration::from_secs(env_u64("UNWRITTEN_STUDIO_FUZZ_SECS", 6));
     let seeds = seeds();
     // The unmutated seeds open.
     for s in &seeds {

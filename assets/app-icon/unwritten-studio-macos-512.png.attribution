@@ -1,0 +1,8 @@
+asset:        unwritten-studio-macos-512.png
+title:        Unwritten Studio runtime Dock icon (macOS)
+author:       Unwritten Studio contributors (original illustration by the project owner)
+source:       original work
+license:      MIT OR Apache-2.0
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-02 by Unwritten Studio contributors (Claude agent, app icon)
+notes:        Rendered from unwritten-studio.svg on Apple's 824/1024 icon grid with resvg by packaging/icons.sh; embedded by apps/unwritten-studio/src/main.rs.

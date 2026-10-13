@@ -46,7 +46,7 @@ aggregate results file (like `keyframe-ease.json`) and the comparison script may
 ## Metrics (per frame, then mean / worst)
 
 - **IoU against After Effects**: binarize both mattes at alpha 0.5, then intersection over
-  union. This is the headline number. `effectcraft_track::roto::iou` computes it, and
+  union. This is the headline number. `unwritten_studio_track::roto::iou` computes it, and
   `roto.status` already reports it for Roto Brush through `compareTo`; Object Matte needs the
   same for exported mattes.
 - **IoU against ground truth** for the synthetic clips, for both applications. It tells
@@ -68,6 +68,6 @@ are reported but not gated.
 ## Reproduce (to write)
 
 The script does not exist yet. It should: generate the synthetic clips; run Unwritten Studio
-headless (`effectcraft-cli run … objectMatte.apply … objectMatte.propagate {"wait":true}`, then
+headless (`unwritten-studio-cli run … objectMatte.apply … objectMatte.propagate {"wait":true}`, then
 render the matte); drive After Effects through ExtendScript or AEsync to apply Object Matte with
 the same prompt and render its alpha; then compute the metrics above into a JSON results file.

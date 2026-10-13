@@ -10,11 +10,11 @@ rust-version.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-effectcraft-engine = { workspace = true }
-effectcraft-host = { workspace = true }
-effectcraft-gpu = { workspace = true }
-effectcraft-project = { workspace = true }
-effectcraft-time = { workspace = true }
+unwritten-studio-engine = { workspace = true }
+unwritten-studio-host = { workspace = true }
+unwritten-studio-gpu = { workspace = true }
+unwritten-studio-project = { workspace = true }
+unwritten-studio-time = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

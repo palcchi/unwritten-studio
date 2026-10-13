@@ -235,7 +235,7 @@ fn add_effect(b: &mut Backend, a: &Value) -> Result<Reply> {
         }
     }
     // The undo step is named like effect.apply's own ("Apply Gaussian Blur").
-    let name = effect.as_str().map(|e| effectcraft_engine::effects::lookup(e).map_or(e, |s| s.name));
+    let name = effect.as_str().map(|e| unwritten_studio_engine::effects::lookup(e).map_or(e, |s| s.name));
     let label = name.map(|n| json!(format!("Apply {n}")));
     b.exec("engine.batch", obj(&[("steps", Some(&json!(steps))), ("label", label.as_ref())]))?;
     let tree = b.exec("layer.tree", obj(&[("layer", Some(layer)), ("comp", comp)]))?;
@@ -416,7 +416,7 @@ fn open_project(b: &mut Backend, a: &Value) -> Result<Reply> {
     } else if get(a, "new").and_then(Value::as_bool) == Some(true) {
         b.exec("file.newProject", json!({}))?;
     } else {
-        return Err(Error::BadArgs("give `path` (.ecproj), `demo: true` or `new: true`".into()));
+        return Err(Error::BadArgs("give `path` (.uwproj), `demo: true` or `new: true`".into()));
     }
     get_project(b, &json!({}))
 }
@@ -496,7 +496,7 @@ fn screenshot(b: &mut Backend, a: &Value) -> Result<Reply> {
         c.check(p, crate::confine::Access::Write)?;
     }
     let path =
-        keep.clone().unwrap_or_else(|| std::env::temp_dir().join(format!("effectcraft-mcp-shot-{}.png", std::process::id())).to_string_lossy().into_owned());
+        keep.clone().unwrap_or_else(|| std::env::temp_dir().join(format!("unwritten-studio-mcp-shot-{}.png", std::process::id())).to_string_lossy().into_owned());
     b.control("ui.screenshot", obj(&[("path", Some(&json!(path))), ("panel", get(a, "panel")), ("id", get(a, "id"))]))?;
     let bytes = std::fs::read(&path).map_err(|e| Error::Other(format!("screenshot: {e}")))?;
     if keep.is_none() {
@@ -745,18 +745,18 @@ static TOOLS: &[ToolDef] = &[
     },
     ToolDef {
         name: "open_project",
-        description: "Open a project: `path` to an .ecproj file, `demo: true` for the built-in demo project, or `new: true` for an empty project. Returns the project overview.",
+        description: "Open a project: `path` to an .uwproj file, `demo: true` for the built-in demo project, or `new: true` for an empty project. Returns the project overview.",
         bridge_only: false,
         schema: || {
-            schema(json!({"path": {"type": "string", "description": "Path of an .ecproj file."}, "demo": {"type": "boolean"}, "new": {"type": "boolean"}}), &[])
+            schema(json!({"path": {"type": "string", "description": "Path of an .uwproj file."}, "demo": {"type": "boolean"}, "new": {"type": "boolean"}}), &[])
         },
         run: open_project,
     },
     ToolDef {
         name: "save_project",
-        description: "Save the project to its current file, or to `path` (Save As, .ecproj).",
+        description: "Save the project to its current file, or to `path` (Save As, .uwproj).",
         bridge_only: false,
-        schema: || schema(json!({"path": {"type": "string", "description": "Destination .ecproj path (Save As)."}}), &[]),
+        schema: || schema(json!({"path": {"type": "string", "description": "Destination .uwproj path (Save As)."}}), &[]),
         run: save_project,
     },
     ToolDef {

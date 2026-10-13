@@ -1,10 +1,10 @@
-//! Compositing primitives: each mirrors a CPU operation in `effectcraft-raster` /
-//! `effectcraft-render` and returns a new image (GPU images are immutable).
+//! Compositing primitives: each mirrors a CPU operation in `unwritten-studio-raster` /
+//! `unwritten-studio-render` and returns a new image (GPU images are immutable).
 
-use effectcraft_color::{BlendMode, Conversion};
-use effectcraft_geom::{Mat3, Rect, vec2};
-use effectcraft_project::MatteKind;
-use effectcraft_raster::Sampling;
+use unwritten_studio_color::{BlendMode, Conversion};
+use unwritten_studio_geom::{Mat3, Rect, vec2};
+use unwritten_studio_project::MatteKind;
+use unwritten_studio_raster::Sampling;
 
 use crate::context::{Enc, GpuImage, Params};
 
@@ -181,8 +181,8 @@ pub fn quantize(e: &mut Enc, img: &GpuImage, levels: f32) -> GpuImage {
     out
 }
 
-fn curve_id(s: Option<effectcraft_color::ColorSpace>) -> u32 {
-    use effectcraft_color::space::Curve;
+fn curve_id(s: Option<unwritten_studio_color::ColorSpace>) -> u32 {
+    use unwritten_studio_color::space::Curve;
     match s.map(|s| s.curve()) {
         None | Some(Curve::Linear) => 0,
         Some(Curve::Srgb) => 1,

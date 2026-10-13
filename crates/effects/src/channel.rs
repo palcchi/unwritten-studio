@@ -1,9 +1,9 @@
 //! Channel effects: channel routing (Set/Shift Channels, Channel Combiner, Set Matte), morphology
 //! (Minimax), per-channel arithmetic, solid compositing and un-matting.
 
-use effectcraft_color::{BlendMode, blend_pixel, hsl_to_rgb, luminance, rgb_to_hsl};
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
+use unwritten_studio_color::{BlendMode, blend_pixel, hsl_to_rgb, luminance, rgb_to_hsl};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{Plane, SRC_NAMES, Src, join, layer_or_self, morph_plane, pick, premul, src_at, unpremul};
@@ -506,7 +506,7 @@ pub fn specs() -> Vec<EffectSpec> {
 mod tests {
     use super::*;
     use crate::{Params, apply, find};
-    use effectcraft_raster::Image;
+    use unwritten_studio_raster::Image;
 
     fn run(id: &str, over: &[(&str, Value)], img: Image) -> Image {
         let s = find(id).unwrap();

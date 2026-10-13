@@ -1,11 +1,11 @@
 //! Render-level tests for shape-layer path operators and paint items.
 
-use effectcraft_color::Label;
-use effectcraft_keyframe::{Gradient, Value};
-use effectcraft_project::build::{self, Ids};
-use effectcraft_project::{Comp, ItemId, ItemKind, LayerSource, Project, PropGroup};
-use effectcraft_raster::Image;
-use effectcraft_time::{FrameRate, Tick};
+use unwritten_studio_color::Label;
+use unwritten_studio_keyframe::{Gradient, Value};
+use unwritten_studio_project::build::{self, Ids};
+use unwritten_studio_project::{Comp, ItemId, ItemKind, LayerSource, Project, PropGroup};
+use unwritten_studio_raster::Image;
+use unwritten_studio_time::{FrameRate, Tick};
 
 use crate::render_frame;
 
@@ -209,7 +209,7 @@ fn fill_blend_mode_multiply() {
         set(
             &mut top,
             "blend",
-            Value::Enum(effectcraft_color::BlendMode::ALL.iter().position(|m| *m == effectcraft_color::BlendMode::Multiply).unwrap() as u32),
+            Value::Enum(unwritten_studio_color::BlendMode::ALL.iter().position(|m| *m == unwritten_studio_color::BlendMode::Multiply).unwrap() as u32),
         );
         vec![build::shape_rect(ids, [40.0, 40.0], [0.0, 0.0], 0.0), top, build::shape_fill(ids, [1.0, 0.0, 0.0, 1.0])]
     });
@@ -291,7 +291,7 @@ fn repeater_draws_match_per_copy_bounds() {
 }
 
 /// Performance probe: 60-copy repeater of a small rounded rect at 1920×1080.
-/// Run with `cargo test -p effectcraft-render --release -- --ignored --nocapture shape_perf`.
+/// Run with `cargo test -p unwritten-studio-render --release -- --ignored --nocapture shape_perf`.
 #[test]
 #[ignore]
 fn shape_perf_repeater_60_copies_1080p() {
@@ -342,7 +342,7 @@ fn shape_perf_repeater_60_copies_1080p() {
 }
 
 fn line_path(ids: &mut Ids, from: [f64; 2], to: [f64; 2]) -> PropGroup {
-    let sp = effectcraft_keyframe::ShapePath {
+    let sp = unwritten_studio_keyframe::ShapePath {
         vertices: vec![from, to],
         in_tangents: vec![[0.0; 2]; 2],
         out_tangents: vec![[0.0; 2]; 2],

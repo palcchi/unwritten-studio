@@ -3,14 +3,14 @@
 
 use std::sync::Arc;
 
-use effectcraft_engine::Session;
-use effectcraft_engine::keyframe::Value as KV;
+use unwritten_studio_engine::Session;
+use unwritten_studio_engine::keyframe::Value as KV;
 use serde_json::json;
 
 use crate::{Outcome, run_code};
 
 fn session() -> Session {
-    let mut s = Session { expr: Some(Arc::new(effectcraft_expr::Expressions)), expr_check: Some(effectcraft_expr::check_syntax), ..Default::default() };
+    let mut s = Session { expr: Some(Arc::new(unwritten_studio_expr::Expressions)), expr_check: Some(unwritten_studio_expr::check_syntax), ..Default::default() };
     crate::install(&mut s);
     s
 }

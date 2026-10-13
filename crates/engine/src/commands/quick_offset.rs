@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use effectcraft_project::LayerId;
-use effectcraft_time::{TICKS_PER_SECOND, Tick};
+use unwritten_studio_project::LayerId;
+use unwritten_studio_time::{TICKS_PER_SECOND, Tick};
 use serde_json::{Value, json};
 
 use super::prop::{key_gesture, layer_shift, move_key_refs};

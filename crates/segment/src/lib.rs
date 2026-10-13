@@ -3,7 +3,7 @@
 //! - [`MaskModel`]: what Roto Brush asks of a model, the foreground probability of each pixel of a
 //!   frame given prompts (foreground / background points from the strokes, a box, a prior mask).
 //!   Anything implementing it can be plugged in; the classical graph-cut segmenter in
-//!   `effectcraft-track` stays the built-in fallback when no model is chosen.
+//!   `unwritten-studio-track` stays the built-in fallback when no model is chosen.
 //! - [`face::FaceModel`]: what face tracking asks of a model: find a face in a region, follow it
 //!   from frame to frame. The classical face tracker stays the built-in fallback.
 //! - [`MODELS`]: the registry. Every entry is open source under a licence compatible with

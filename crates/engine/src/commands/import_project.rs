@@ -1,11 +1,11 @@
-//! File ▸ Import ▸ Unwritten Studio Project: merge another `.ecproj` (or its XML copy) into the
+//! File ▸ Import ▸ Unwritten Studio Project: merge another `.uwproj` (or its XML copy) into the
 //! current project, as After Effects imports an `.aep` into the open project. The imported
 //! items land in a folder named after the file; every id is shifted past the current project's
 //! so nothing collides, and the whole import is one undo step.
 
-use effectcraft_color::Label;
-use effectcraft_project::{ItemId, ItemKind, LayerSource, Project, essential};
 use serde_json::{Value, json};
+use unwritten_studio_color::Label;
+use unwritten_studio_project::{ItemId, ItemKind, LayerSource, Project, essential};
 
 use super::{CommandSpec, always, bad, str_p};
 use crate::{EngineError, Result, Session, cmd};
@@ -15,7 +15,7 @@ const C: &str = "file.importProject";
 /// Whether `path` names a project Unwritten Studio imports as a project (not as footage).
 pub(crate) fn is_project_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    lower.ends_with(".ecproj") || lower.ends_with(".ecprojx")
+    [".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext))
 }
 
 /// Read a project file (JSON or its XML copy), as File ▸ Open does.
@@ -24,7 +24,7 @@ fn read_project(s: &Session, path: &str) -> Result<(Project, Option<String>)> {
     let text = String::from_utf8(bytes).map_err(|_| bad(C, format!("{path} is not a text project file")))?;
     let text = if crate::xml_project::is_xml(&text) { crate::xml_project::from_xml(&text).map_err(EngineError::Other)? } else { text };
     let project = Project::from_json(&text).map_err(|e| bad(C, format!("{path} is not a project Unwritten Studio can open: {e}")))?;
-    Ok((project, effectcraft_project::saved_by(&text)))
+    Ok((project, unwritten_studio_project::saved_by(&text)))
 }
 
 /// Footage paths relative to the imported project's folder become absolute when the file is
@@ -75,7 +75,7 @@ fn root_comps(project: &Project) -> Vec<ItemId> {
 }
 
 fn import_project(s: &mut Session, p: &Value) -> Result<Value> {
-    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.ecproj)"))?.to_string();
+    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.uwproj)"))?.to_string();
     let (mut sub, saved_by) = read_project(s, &path)?;
     crate::upgrade_effects(&mut sub);
     let file = std::path::Path::new(&path);
@@ -112,8 +112,8 @@ fn import_project(s: &mut Session, p: &Value) -> Result<Value> {
         .collect();
     let primary = if let [one] = roots.as_slice() { Some(one.0) } else { None };
     let mut warnings = vec![];
-    if let Some(v) = saved_by.as_deref().filter(|v| effectcraft_project::is_newer_version(v, effectcraft_project::APP_VERSION)) {
-        warnings.push(format!("saved by Unwritten Studio {v}, newer than this version ({})", effectcraft_project::APP_VERSION));
+    if let Some(v) = saved_by.as_deref().filter(|v| unwritten_studio_project::is_newer_version(v, unwritten_studio_project::APP_VERSION)) {
+        warnings.push(format!("saved by Unwritten Studio {v}, newer than this version ({})", unwritten_studio_project::APP_VERSION));
     }
     if !missing.is_empty() {
         warnings.push(format!("{} footage file{} missing", missing.len(), if missing.len() == 1 { " is" } else { "s are" }));
@@ -136,7 +136,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "Unwritten Studio Project...",
         ["File", "Import"],
         None,
-        "{path (.ecproj or .ecprojx)} — merges the project into a folder named after the file; returns {folder, items, comps, rootComps, primaryComp (the only root comp, else null), missingMedia, warnings}",
+        "{path (.uwproj/.uwprojx; legacy .ecproj/.ecprojx supported)} — merges the project into a folder named after the file; returns {folder, items, comps, rootComps, primaryComp (the only root comp, else null), missingMedia, warnings}",
         always,
         import_project
     )]

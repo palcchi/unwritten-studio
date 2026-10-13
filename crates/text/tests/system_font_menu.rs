@@ -2,7 +2,7 @@
 //! offered only Inter, JetBrains Mono and Noto Serif). Its own test binary, so the system font
 //! scan has not run yet when it starts.
 
-use effectcraft_text::fonts::{DirectorySource, FontSource, families, system_scanned};
+use unwritten_studio_text::fonts::{DirectorySource, FontSource, families, system_scanned};
 
 #[test]
 fn families_include_installed_fonts_without_a_prior_scan() {

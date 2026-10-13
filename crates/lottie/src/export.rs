@@ -2,8 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use effectcraft_keyframe::Value;
-use effectcraft_project::{Comp, FootageKind, GroupKind, ItemId, ItemKind, Layer, LayerSource, MaskMode, MatteKind, Project, PropGroup};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::{Comp, FootageKind, GroupKind, ItemId, ItemKind, Layer, LayerSource, MaskMode, MatteKind, Project, PropGroup};
 use serde_json::{Map, Value as Json, json};
 
 use crate::anim::{self, Ex, export_prop};
@@ -159,7 +159,7 @@ fn mime_of(path: &str) -> &'static str {
 }
 
 impl Doc<'_> {
-    fn frame(&self, t: effectcraft_time::Tick) -> f64 {
+    fn frame(&self, t: unwritten_studio_time::Tick) -> f64 {
         self.ex.tb.frame(t)
     }
 
@@ -415,7 +415,7 @@ impl Doc<'_> {
         }
         let ks = self.transform(l);
         o.insert("ks".into(), ks);
-        o.insert("ao".into(), json!((l.auto_orient == effectcraft_project::AutoOrient::AlongPath) as u8));
+        o.insert("ao".into(), json!((l.auto_orient == unwritten_studio_project::AutoOrient::AlongPath) as u8));
         o.insert("ip".into(), json!(self.frame(l.in_point)));
         o.insert("op".into(), json!(self.frame(l.out_point)));
         o.insert("st".into(), json!(self.frame(l.start_time)));
@@ -456,7 +456,7 @@ impl Doc<'_> {
         if !l.markers.is_empty() {
             self.ex.warn(format!("{name}: layer markers are not part of Lottie (composition markers are exported)"));
         }
-        if l.props.sub(effectcraft_project::styles::GROUP).is_some_and(|g| g.groups().any(|s| s.enabled && s.match_id != effectcraft_project::styles::BLENDING))
+        if l.props.sub(unwritten_studio_project::styles::GROUP).is_some_and(|g| g.groups().any(|s| s.enabled && s.match_id != unwritten_studio_project::styles::BLENDING))
         {
             self.ex.warn(format!("{name}: layer styles are not exported"));
         }

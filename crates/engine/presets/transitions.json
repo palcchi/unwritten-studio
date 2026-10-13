@@ -1,5 +1,5 @@
 {
-  "format": "effectcraft.animationPresets/1",
+  "format": "unwritten-studio.animationPresets/1",
   "notes": "Original Unwritten Studio transition presets (MIT OR Apache-2.0), written from scratch on Unwritten Studio's own Transition effects. Key times are seconds from the current time (layer time); effect paths are the effect's parameter ids; layer paths are property paths such as transform/opacity.",
   "presets": [
     {

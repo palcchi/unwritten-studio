@@ -1,6 +1,6 @@
 // Original behavior probe: the spatial tangents a host gives auto-Bezier Position keys.
 // Runs unchanged in After Effects (File > Scripts > Run Script File, or AfterFX.exe -r) and in
-// Unwritten Studio (effectcraft-cli script examples/ae-spatial-tangents.jsx --empty). Builds three
+// Unwritten Studio (unwritten-studio-cli script examples/ae-spatial-tangents.jsx --empty). Builds three
 // original comps with one solid each; run it in a scratch project. Unwritten Studio prints one JSON line
 // per key; After Effects writes them to ae-spatial-tangents.jsonl next to this script.
 // No Adobe assets, presets, application internals or implementation code are read.

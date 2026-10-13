@@ -7,22 +7,23 @@
 //!   Properties**; changing one overrides it for that instance only (`essential.set`, or any
 //!   property edit of the master property); Push to Comp writes the override into the source
 //!   comp, Revert drops it.
-//! - **Templates**: `essential.exportTemplate` writes an open `.ectemplate` (a ZIP holding
-//!   `manifest.json` with the exposed controls, `project.ecproj` with the comp and everything it
+//! - **Templates**: `essential.exportTemplate` writes an open `.uwtemplate` (a ZIP holding
+//!   `manifest.json` with the exposed controls, `project.uwproj` with the comp and everything it
 //!   uses, the media files and a poster frame); `essential.importTemplate` merges one into the
 //!   project and adds an instance to the active comp.
 
-use effectcraft_keyframe::Value as KV;
-use effectcraft_project::essential::{self, ControlType, EgControl, EgKind, EssentialGraphics};
-use effectcraft_project::{GroupKind, ItemId, ItemKind, LayerId, LayerSource, ParamUi, Project, Uid};
-use effectcraft_time::Tick;
 use serde_json::{Value, json};
+use unwritten_studio_keyframe::Value as KV;
+use unwritten_studio_project::essential::{self, ControlType, EgControl, EgKind, EssentialGraphics};
+use unwritten_studio_project::{GroupKind, ItemId, ItemKind, LayerId, LayerSource, ParamUi, Project, Uid};
+use unwritten_studio_time::Tick;
 
 use super::{CommandSpec, b_p, bad, comp_id, has_comp, layer_p, selected_leaf_props, str_p};
 use crate::{EngineError, Result, Session, cmd, query};
 
 /// Format id written into template manifests.
-pub const TEMPLATE_FORMAT: &str = "effectcraft-template";
+pub const TEMPLATE_FORMAT: &str = "unwritten-studio-template";
+const LEGACY_TEMPLATE_FORMAT: &str = "effectcraft-template";
 pub const TEMPLATE_VERSION: u32 = 1;
 
 /// `control`: a control id, or its name in the comp's Essential Graphics (`"Title"`).
@@ -243,7 +244,7 @@ fn unlink_property(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"control": id, "layer": lid.0, "prop": uid}))
 }
 
-fn control_type(pr: &effectcraft_project::Property) -> Option<ControlType> {
+fn control_type(pr: &unwritten_studio_project::Property) -> Option<ControlType> {
     essential::control_type(pr)
 }
 
@@ -806,7 +807,7 @@ fn manifest_controls(project: &Project, cid: ItemId, eg: &EssentialGraphics) -> 
 fn export_template(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "essential.exportTemplate";
     let cid = eg_comp(s, p)?;
-    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.ectemplate)"))?.to_string();
+    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.uwtemplate)"))?.to_string();
     let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?.clone();
     let eg = comp.essential.clone().filter(|e| !e.controls.is_empty()).ok_or_else(|| bad(C, "the composition has no Essential Graphics controls"))?;
     let comp_name = s.project.item(cid).map(|i| i.name.clone()).unwrap_or_default();
@@ -865,9 +866,9 @@ fn export_template(s: &mut Session, p: &Value) -> Result<Value> {
     {
         entries.push(("poster.png".into(), png));
     }
-    entries.insert(0, ("project.ecproj".into(), sub.to_json().into_bytes()));
+    entries.insert(0, ("project.uwproj".into(), sub.to_json().into_bytes()));
     entries.insert(0, ("manifest.json".into(), serde_json::to_vec_pretty(&manifest).unwrap_or_default()));
-    let bytes = effectcraft_lottie::zip::store(&entries);
+    let bytes = unwritten_studio_lottie::zip::store(&entries);
     s.services.write_file(&path, &bytes).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
     s.toast(format!("Exported template “{name}” to {path}"));
     Ok(json!({"path": path, "name": name, "bytes": bytes.len(), "controls": eg.flat().len(), "items": deps.len()}))
@@ -875,17 +876,19 @@ fn export_template(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Read a template's manifest and project (with media paths still archive-relative).
 pub fn read_template(bytes: &[u8]) -> std::result::Result<(Value, Project, Vec<(String, Vec<u8>)>), String> {
-    let entries = effectcraft_lottie::zip::read_stored(bytes);
+    let entries = unwritten_studio_lottie::zip::read_stored(bytes);
     let get = |n: &str| entries.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone());
     let manifest: Value = serde_json::from_slice(&get("manifest.json").ok_or("not an Unwritten Studio template (no manifest.json)")?)
         .map_err(|e| format!("manifest.json: {e}"))?;
-    if manifest.get("format").and_then(Value::as_str) != Some(TEMPLATE_FORMAT) {
+    let format = manifest.get("format").and_then(Value::as_str);
+    if format != Some(TEMPLATE_FORMAT) && format != Some(LEGACY_TEMPLATE_FORMAT) {
         return Err("not an Unwritten Studio template".into());
     }
     if manifest.get("version").and_then(Value::as_u64).unwrap_or(0) > TEMPLATE_VERSION as u64 {
         return Err("the template was made by a newer Unwritten Studio".into());
     }
-    let text = String::from_utf8(get("project.ecproj").ok_or("template has no project.ecproj")?).map_err(|e| e.to_string())?;
+    let project_file = get("project.uwproj").or_else(|| get("project.ecproj")).ok_or("template has no project file")?;
+    let text = String::from_utf8(project_file).map_err(|e| e.to_string())?;
     let mut project = Project::from_json(&text).map_err(|e| e.to_string())?;
     crate::upgrade_effects(&mut project);
     Ok((manifest, project, entries))
@@ -893,7 +896,7 @@ pub fn read_template(bytes: &[u8]) -> std::result::Result<(Value, Project, Vec<(
 
 fn import_template(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "essential.importTemplate";
-    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.ectemplate)"))?.to_string();
+    let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.uwtemplate)"))?.to_string();
     let bytes = s.services.read_file(&path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
     let (manifest, mut sub, entries) = read_template(&bytes).map_err(|e| bad(C, e))?;
     let name = manifest.get("name").and_then(Value::as_str).unwrap_or("Template").to_string();
@@ -932,7 +935,7 @@ fn import_template(s: &mut Session, p: &Value) -> Result<Value> {
     essential::offset_ids(&mut sub, base);
     let new_comp = ItemId(tcomp.0 + base);
     let ids = s.edit("Import Template", None, |proj, st| {
-        let folder = proj.add_item(&name, effectcraft_color::Label::Yellow, None, ItemKind::Folder);
+        let folder = proj.add_item(&name, unwritten_studio_color::Label::Yellow, None, ItemKind::Folder);
         let mut ids = vec![];
         for (id, mut it) in std::mem::take(&mut sub.items) {
             if it.parent.is_none() {
@@ -1029,7 +1032,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Essential Graphics Template...",
             ["File", "Export"],
             None,
-            "{comp?, path (.ectemplate), name?}",
+            "{comp?, path (.uwtemplate), name?}",
             has_eg,
             export_template
         ),
@@ -1038,7 +1041,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Essential Graphics Template...",
             ["File", "Import"],
             None,
-            "{path (.ectemplate), comp?, addToComp?: bool}",
+            "{path (.uwtemplate), comp?, addToComp?: bool}",
             super::always,
             import_template
         ),

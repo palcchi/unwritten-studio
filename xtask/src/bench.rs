@@ -1,6 +1,6 @@
 //! `cargo xtask bench`: a repeatable render benchmark (docs/testing.md "Render benchmark", gaps.md G5).
 //!
-//! Generates deterministic projects into `target/bench/projects` with `effectcraft-cli` (engine
+//! Generates deterministic projects into `target/bench/projects` with `unwritten-studio-cli` (engine
 //! commands, no committed media), renders each at Full and Half plus one single frame, and measures
 //! every run with `/usr/bin/time` (macOS `-l`: peak memory footprint, max RSS, instructions
 //! retired; Linux `-v`: max RSS; elsewhere wall time only). Prints a table and appends one JSON
@@ -15,10 +15,10 @@ use serde_json::{Value, json};
 
 const HELP: &str = "usage: cargo xtask bench [options]
 
-Renders generated scenarios with effectcraft-cli and records memory, CPU and wall time.
+Renders generated scenarios with unwritten-studio-cli and records memory, CPU and wall time.
 Run it under `nice -n 10` on a busy machine; the table notes the load average of every run.
 
-  --bin PATH            use this effectcraft-cli binary. Without it, effectcraft-cli is built once
+  --bin PATH            use this unwritten-studio-cli binary. Without it, unwritten-studio-cli is built once
                         with `cargo build --release` into target/bench (its own target dir:
                         the first build compiles everything, later ones are incremental)
   --scenario a,b        only these scenarios: demo, layers, precomps, footage (default: all)
@@ -151,19 +151,19 @@ pub fn run(root: &Path, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `cargo build -p effectcraft-cli --release` into `target/bench`.
+/// `cargo build -p unwritten-studio-cli --release` into `target/bench`.
 fn build_cli(root: &Path, dir: &Path) -> Result<PathBuf, String> {
-    eprintln!("bench: building effectcraft-cli (--release) into {} (one build; pass --bin to skip)", dir.display());
+    eprintln!("bench: building unwritten-studio-cli (--release) into {} (one build; pass --bin to skip)", dir.display());
     let st = Command::new(env!("CARGO"))
         .current_dir(root)
         .env("CARGO_TARGET_DIR", dir)
-        .args(["build", "-p", "effectcraft-cli", "--release"])
+        .args(["build", "-p", "unwritten-studio-cli", "--release"])
         .status()
         .map_err(|e| e.to_string())?;
     if !st.success() {
-        return Err("building effectcraft-cli failed".into());
+        return Err("building unwritten-studio-cli failed".into());
     }
-    Ok(dir.join("release").join(format!("effectcraft-cli{}", std::env::consts::EXE_SUFFIX)))
+    Ok(dir.join("release").join(format!("unwritten-studio-cli{}", std::env::consts::EXE_SUFFIX)))
 }
 
 // -------------------------------------------------------------------------------------- scenarios
@@ -400,7 +400,7 @@ fn footage_cmds(seq_first: &Path, clip: &Path, still: &Path) -> Cmds {
     c
 }
 
-/// Run `cmds` with `effectcraft-cli --empty run … --save-as out`.
+/// Run `cmds` with `unwritten-studio-cli --empty run … --save-as out`.
 fn build_project(bin: &Path, cmds: &Cmds, out: &Path) -> Result<(), String> {
     let mut cmd = Command::new(bin);
     cmd.arg("--empty").arg("run");
@@ -419,7 +419,7 @@ fn cli(cmd: &mut Command) -> Result<(), String> {
     }
     let err = String::from_utf8_lossy(&out.stderr);
     let tail: Vec<&str> = err.lines().rev().take(8).collect();
-    Err(format!("effectcraft-cli failed ({}):\n{}", out.status, tail.into_iter().rev().collect::<Vec<_>>().join("\n")))
+    Err(format!("unwritten-studio-cli failed ({}):\n{}", out.status, tail.into_iter().rev().collect::<Vec<_>>().join("\n")))
 }
 
 fn generate(bin: &Path, dir: &Path, name: &str, regen: bool) -> Result<Scenario, String> {
@@ -434,12 +434,12 @@ fn generate(bin: &Path, dir: &Path, name: &str, regen: bool) -> Result<Scenario,
     match name {
         "demo" => Ok(Scenario { name: name.into(), source: vec!["--demo".into()], comp: "Unwritten Studio Intro".into(), fps: 30_000.0 / 1001.0, start: 0.0 }),
         "layers" => {
-            build_project(bin, &layers_cmds(), &projects.join("layers.ecproj"))?;
-            Ok(project("layers.ecproj", "Layers"))
+            build_project(bin, &layers_cmds(), &projects.join("layers.uwproj"))?;
+            Ok(project("layers.uwproj", "Layers"))
         }
         "precomps" => {
-            build_project(bin, &precomps_cmds(), &projects.join("precomps.ecproj"))?;
-            Ok(project("precomps.ecproj", "Main"))
+            build_project(bin, &precomps_cmds(), &projects.join("precomps.uwproj"))?;
+            Ok(project("precomps.uwproj", "Main"))
         }
         "footage" => {
             let media = projects.join("media");
@@ -448,7 +448,7 @@ fn generate(bin: &Path, dir: &Path, name: &str, regen: bool) -> Result<Scenario,
             if regen || !seq_first.exists() || !clip.exists() || !still.exists() {
                 let _ = std::fs::remove_dir_all(&media);
                 std::fs::create_dir_all(&seq_dir).map_err(|e| e.to_string())?;
-                let src = projects.join("footage-source.ecproj");
+                let src = projects.join("footage-source.uwproj");
                 build_project(bin, &footage_source_cmds(), &src)?;
                 let render = |args: &[&str], out: &Path| cli(Command::new(bin).arg("--project").arg(&src).args(args).arg("--out").arg(out));
                 render(&["render", "--comp", "Source", "--format", "png", "--start", "0", "--end", "2"], &seq_dir.join("src.png"))?;
@@ -458,8 +458,8 @@ fn generate(bin: &Path, dir: &Path, name: &str, regen: bool) -> Result<Scenario,
                     return Err(format!("{}: the sequence render wrote no first frame", seq_first.display()));
                 }
             }
-            build_project(bin, &footage_cmds(&seq_first, &clip, &still), &projects.join("footage.ecproj"))?;
-            Ok(project("footage.ecproj", "Footage"))
+            build_project(bin, &footage_cmds(&seq_first, &clip, &still), &projects.join("footage.uwproj"))?;
+            Ok(project("footage.uwproj", "Footage"))
         }
         other => Err(format!("unknown scenario `{other}` (demo, layers, precomps, footage)")),
     }
@@ -907,7 +907,7 @@ mod tests {
            728548408  peak memory footprint
 ";
 
-    const GNU: &str = "\tCommand being timed: \"effectcraft-cli --demo info\"
+    const GNU: &str = "\tCommand being timed: \"unwritten-studio-cli --demo info\"
 \tUser time (seconds): 1.25
 \tSystem time (seconds): 0.30
 \tPercent of CPU this job got: 150%
@@ -1014,7 +1014,7 @@ mod tests {
         assert_eq!(o.bin.as_deref(), Some(Path::new("/x/cli")));
         assert!(o.quick);
         assert_eq!(o.scenarios, Some(vec!["demo".to_string(), "layers".to_string()]));
-        assert!(parse_opts(&a("--project p.ecproj")).is_err(), "--project needs --comp");
+        assert!(parse_opts(&a("--project p.uwproj")).is_err(), "--project needs --comp");
         assert!(parse_opts(&a("--with new.jsonl")).is_err(), "--with needs --compare");
         assert!(parse_opts(&a("--frames 0")).is_err());
         assert!(parse_opts(&a("--bogus")).is_err());

@@ -3,16 +3,16 @@
 //! layer, and `footage.reloadChanged` (Settings ▸ Import ▸ Automatically Reload Footage) finds
 //! changed files by itself.
 
-use effectcraft_engine::render::RenderOpts;
-use effectcraft_engine::{Session, footage_reload};
-use effectcraft_project::{Footage, ItemId, ItemKind};
-use effectcraft_psd::Rect;
-use effectcraft_psd::write::*;
-use effectcraft_time::Tick;
+use unwritten_studio_engine::render::RenderOpts;
+use unwritten_studio_engine::{Session, footage_reload};
+use unwritten_studio_project::{Footage, ItemId, ItemKind};
+use unwritten_studio_psd::Rect;
+use unwritten_studio_psd::write::*;
+use unwritten_studio_time::Tick;
 use serde_json::json;
 
 fn tmp(name: &str) -> String {
-    let d = std::env::temp_dir().join(format!("effectcraft-host-reload-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("unwritten-studio-host-reload-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d.join(name).to_string_lossy().to_string()
 }
@@ -60,7 +60,7 @@ fn near(a: [f32; 3], b: [f32; 4]) -> bool {
 
 /// A flat file as footage in a comp of its size: (session, footage item, comp).
 fn flat_in_comp(path: &str) -> (Session, ItemId, ItemId) {
-    let mut s = effectcraft_host::session();
+    let mut s = unwritten_studio_host::session();
     let r = s.execute_checked("file.import", json!({"paths": [path]})).unwrap();
     let item = ItemId(r["items"][0].as_u64().unwrap());
     s.execute_checked("comp.new", json!({"name": "C", "width": 64, "height": 48, "frameRate": 30, "duration": 1})).unwrap();
@@ -88,7 +88,7 @@ fn reload_keeps_a_photoshop_layer_item_on_its_layer() {
     let mut d = WDoc::new(64, 48);
     d.layers = vec![WLayer::solid("Background", Rect::new(0, 0, 64, 48), RED), WLayer::solid("Patch", Rect::new(0, 0, 32, 48), BLUE)];
     std::fs::write(&path, write(&d)).unwrap();
-    let mut s = effectcraft_host::session();
+    let mut s = unwritten_studio_host::session();
     let r = s.execute_checked("file.import", json!({"paths": [path], "importAs": "compositionLayerSizes"})).unwrap();
     let cid = ItemId(r["comps"][0].as_u64().unwrap());
     let items: Vec<ItemId> = r["items"].as_array().unwrap().iter().filter_map(|v| v.as_u64()).map(ItemId).collect();
@@ -178,7 +178,7 @@ fn image_sequences_reload_by_themselves_only_with_all_footage() {
     let (a, b) = (tmp("seq_0001.png"), tmp("seq_0002.png"));
     png(&a, 255);
     png(&b, 255);
-    let mut s = effectcraft_host::session();
+    let mut s = unwritten_studio_host::session();
     let r = s.execute_checked("file.import", json!({"paths": [&a], "sequence": true})).unwrap();
     let item = ItemId(r["items"][0].as_u64().unwrap());
     assert_eq!(footage(&s, item).sequence.len(), 2, "imported as a sequence");

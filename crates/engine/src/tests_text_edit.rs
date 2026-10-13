@@ -2,7 +2,7 @@
 //! `layer.setText`, text.insert / delete / setSelection / moveCaret, the text clipboard and the
 //! paste-formatting commands, with undo / redo.
 
-use effectcraft_keyframe::{BaselineOption, Justify, Kerning, TextDoc};
+use unwritten_studio_keyframe::{BaselineOption, Justify, Kerning, TextDoc};
 use serde_json::json;
 
 use crate::Session;
@@ -16,7 +16,7 @@ fn session(text: &str) -> (Session, u64) {
 }
 
 fn doc(s: &Session, t: u64) -> TextDoc {
-    layer_doc(s, effectcraft_project::LayerId(t)).unwrap()
+    layer_doc(s, unwritten_studio_project::LayerId(t)).unwrap()
 }
 
 fn sel(s: &Session) -> (usize, usize) {
@@ -211,9 +211,9 @@ fn opentype_features_per_range_render_and_query() {
     assert!(!d.style_at(0).opentype.fractions);
     assert!(d.style_at(8).opentype.fractions && d.style_at(8).opentype.stylistic_set(1));
     // The laid-out glyphs change (frac turns 1/2 into a fraction).
-    let plain = effectcraft_text::layout_doc(&TextDoc { text: "1/2".into(), ..Default::default() });
-    let frac = effectcraft_text::layout_doc(&d.slice(7..10));
-    let ids = |l: &effectcraft_text::TextLayout| l.glyphs.iter().map(|g| g.gid).collect::<Vec<_>>();
+    let plain = unwritten_studio_text::layout_doc(&TextDoc { text: "1/2".into(), ..Default::default() });
+    let frac = unwritten_studio_text::layout_doc(&d.slice(7..10));
+    let ids = |l: &unwritten_studio_text::TextLayout| l.glyphs.iter().map(|g| g.gid).collect::<Vec<_>>();
     assert_ne!(ids(&plain), ids(&frac));
     // Undo restores the uniform style.
     s.execute("edit.undo", json!({})).unwrap();
@@ -238,8 +238,8 @@ fn fonts_lists_bundled_and_installed_families() {
     assert_eq!(inter["origin"], "bundled");
     assert!(inter["styles"].as_array().unwrap().contains(&json!("Bold")));
     // Installed fonts are listed without any layer having asked for one.
-    use effectcraft_text::fonts::FontSource as _;
-    let installed = effectcraft_text::fonts::DirectorySource::system().faces();
+    use unwritten_studio_text::fonts::FontSource as _;
+    let installed = unwritten_studio_text::fonts::DirectorySource::system().faces();
     for face in &installed {
         assert!(fams.iter().any(|f| f["family"].as_str().unwrap().eq_ignore_ascii_case(&face.family)), "{} not listed", face.family);
     }
@@ -293,7 +293,7 @@ fn pinned_variable_font(family: &str) -> Vec<u8> {
 #[test]
 fn fonts_filter_variable_families() {
     const FAMILY: &str = "Unwritten Studio Variable Filter Test";
-    assert_eq!(effectcraft_text::fonts::add_font_data(pinned_variable_font(FAMILY)).len(), 1);
+    assert_eq!(unwritten_studio_text::fonts::add_font_data(pinned_variable_font(FAMILY)).len(), 1);
     let mut s = Session::default();
     let all = s.execute("text.fonts", json!({})).unwrap();
     let fams = all["families"].as_array().unwrap();

@@ -7,7 +7,7 @@
   change are (no App Paths "Path" value), then as 0.0.2 and 0.0.3, validates them (ICE), and, silently and per-machine:
     1. installs 0.0.1 into a folder with spaces and a non-ASCII name (INSTALLFOLDER=...),
     2. upgrades to 0.0.2 without naming a folder: it must stay in that folder (found from the
-       installed effectcraft.exe, as there is no Path value yet),
+       installed unwritten-studio.exe, as there is no Path value yet),
     3. upgrades to 0.0.3 the same way (found from the Path value 0.0.2 wrote),
     4. repairs a damaged (unversioned) CLI there with the wizard's Repair mode,
     5. uninstalls: files, the App Paths registration and the desktop shortcut go,
@@ -21,11 +21,11 @@
 .EXAMPLE
   pwsh packaging/windows/test-msi.ps1
 #>
-param([string] $Work = (Join-Path ([IO.Path]::GetTempPath()) 'effectcraft-msi-test'))
+param([string] $Work = (Join-Path ([IO.Path]::GetTempPath()) 'unwritten-studio-msi-test'))
 $ErrorActionPreference = 'Stop'
 trap { Write-Output "FAILED: $_"; exit 1 }
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$AppPaths = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\effectcraft.exe'
+$AppPaths = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\unwritten-studio.exe'
 # A per-machine install's desktop is the Public one.
 $DesktopLink = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Unwritten Studio.lnk'
 
@@ -41,11 +41,11 @@ function Invoke-Msiexec([string] $What, [string[]] $Arguments) {
   Write-Output "ok $What"
 }
 function Assert-InstalledIn([string] $Dir, [switch] $NoPathValue) {
-  foreach ($exe in 'effectcraft.exe', 'effectcraft-cli.exe') {
+  foreach ($exe in 'unwritten-studio.exe', 'unwritten-studio-cli.exe') {
     if (-not (Test-Path -LiteralPath (Join-Path $Dir $exe))) { throw "$exe is not in $Dir" }
   }
   $key = Get-ItemProperty -LiteralPath $AppPaths
-  $want = Join-Path $Dir 'effectcraft.exe'
+  $want = Join-Path $Dir 'unwritten-studio.exe'
   if ($key.'(default)' -ne $want) { throw "App Paths points at '$($key.'(default)')', expected '$want'" }
   if ($NoPathValue) {
     if ($null -ne $key.Path) { throw "the legacy package wrote an App Paths Path value" }
@@ -65,13 +65,13 @@ New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 # The MSI only copies these. The app is versioned (it embeds VERSIONINFO); the real CLI has no
 # version resource, so its stand-in is an unversioned file too: Windows Installer keeps a changed
 # unversioned file on repair unless the repair mode forces it.
-Copy-Item (Join-Path $env:SystemRoot 'System32\notepad.exe') (Join-Path $Bin 'effectcraft.exe')
-[IO.File]::WriteAllText((Join-Path $Bin 'effectcraft-cli.exe'), 'effectcraft-cli stand-in')
+Copy-Item (Join-Path $env:SystemRoot 'System32\notepad.exe') (Join-Path $Bin 'unwritten-studio.exe')
+[IO.File]::WriteAllText((Join-Path $Bin 'unwritten-studio-cli.exe'), 'unwritten-studio-cli stand-in')
 
 # 0.0.1 stands in for releases before this installer change: the same package without the App
 # Paths "Path" value.
-$Wxs = Join-Path $PSScriptRoot 'effectcraft.wxs'
-$LegacyWxs = Join-Path $Work 'effectcraft-legacy.wxs'
+$Wxs = Join-Path $PSScriptRoot 'unwritten-studio.wxs'
+$LegacyWxs = Join-Path $Work 'unwritten-studio-legacy.wxs'
 $pathValue = '(?m)^.*<RegistryValue [^>]*Name="Path"[^>]*/>\r?\n'
 $text = Get-Content -Raw $Wxs
 if ($text -notmatch $pathValue) { throw "no App Paths Path value in $Wxs to leave out" }
@@ -79,11 +79,11 @@ if ($text -notmatch $pathValue) { throw "no App Paths Path value in $Wxs to leav
 
 $Msi = @{}
 foreach ($v in '0.0.1', '0.0.2', '0.0.3') {
-  $Msi[$v] = Join-Path $Work "effectcraft-$v.msi"
+  $Msi[$v] = Join-Path $Work "unwritten-studio-$v.msi"
   $src = if ($v -eq '0.0.1') { $LegacyWxs } else { $Wxs }
   Invoke-Native "wix build $v" {
     wix build $src (Join-Path $PSScriptRoot 'installer-ui.wxs') -arch x64 `
-      -d "Version=$v" -d "BinDir=$Bin" -d "IconPath=$(Join-Path $Root 'assets\app-icon\effectcraft.ico')" -o $Msi[$v]
+      -d "Version=$v" -d "BinDir=$Bin" -d "IconPath=$(Join-Path $Root 'assets\app-icon\unwritten-studio.ico')" -o $Msi[$v]
   }
   Invoke-Native "wix msi validate $v" { wix msi validate $Msi[$v] }
 }
@@ -114,18 +114,18 @@ if ($arp.Count -ne 1 -or $arp[0] -ne '0.0.3') { throw "expected one Unwritten St
 # user edit or corruption would have), repair with the wizard's REINSTALLMODE, compare contents.
 $mode = [regex]::Match((Get-Content -Raw (Join-Path $PSScriptRoot 'installer-ui.wxs')), 'Event="ReinstallMode" Value="([^"]+)"').Groups[1].Value
 if (-not $mode) { throw 'no ReinstallMode in installer-ui.wxs' }
-$cli = Join-Path $Custom 'effectcraft-cli.exe'
+$cli = Join-Path $Custom 'unwritten-studio-cli.exe'
 Start-Sleep -Seconds 2
 [IO.File]::WriteAllText($cli, 'damaged')
 Invoke-Msiexec "repair ($mode)" @('/i', "`"$($Msi['0.0.3'])`"", 'REINSTALL=ALL', "REINSTALLMODE=$mode")
 Assert-InstalledIn $Custom
-if ((Get-FileHash -LiteralPath $cli).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Bin 'effectcraft-cli.exe')).Hash) {
-  throw "repair ($mode) left the damaged effectcraft-cli.exe in place"
+if ((Get-FileHash -LiteralPath $cli).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Bin 'unwritten-studio-cli.exe')).Hash) {
+  throw "repair ($mode) left the damaged unwritten-studio-cli.exe in place"
 }
-Write-Output "ok repair ($mode) restored effectcraft-cli.exe"
+Write-Output "ok repair ($mode) restored unwritten-studio-cli.exe"
 
 Invoke-Msiexec 'uninstall the custom install' @('/x', "`"$($Msi['0.0.3'])`"")
-if (Test-Path -LiteralPath (Join-Path $Custom 'effectcraft.exe')) { throw 'uninstall left effectcraft.exe behind' }
+if (Test-Path -LiteralPath (Join-Path $Custom 'unwritten-studio.exe')) { throw 'uninstall left unwritten-studio.exe behind' }
 if (Test-Path -LiteralPath $AppPaths) { throw 'uninstall left the App Paths registration behind' }
 Assert-DesktopShortcut $false
 
@@ -133,5 +133,5 @@ Invoke-Msiexec 'install to the default folder without a desktop shortcut' @('/i'
 Assert-InstalledIn $Default
 Assert-DesktopShortcut $false
 Invoke-Msiexec 'uninstall the default install' @('/x', "`"$($Msi['0.0.3'])`"")
-if (Test-Path -LiteralPath (Join-Path $Default 'effectcraft.exe')) { throw 'uninstall left effectcraft.exe behind' }
+if (Test-Path -LiteralPath (Join-Path $Default 'unwritten-studio.exe')) { throw 'uninstall left unwritten-studio.exe behind' }
 Write-Output 'MSI folder handling ok'

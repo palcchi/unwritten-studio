@@ -1,4 +1,4 @@
-# effectcraft-opusenc
+# unwritten-studio-opusenc
 
 Clean-room, pure-Rust Opus encoder for Unwritten Studio's WebM export audio (layer L0, `std` only,
 no `unsafe`, builds for `wasm32-unknown-unknown`).
@@ -12,7 +12,7 @@ All three Opus modes, 20 ms packets (one frame per packet), 48 kHz float input, 
   up (8 kHz and above) in the same range-coded frame; constant packet size.
 
 ```rust
-use effectcraft_opusenc::{Application, OpusEncoder};
+use unwritten_studio_opusenc::{Application, OpusEncoder};
 let mut enc = OpusEncoder::with_application(2, 48_000, Application::Voip);
 let packet = enc.encode_float(&vec![0.0; OpusEncoder::FRAME_SIZE * 2]);
 // enc.mode(), enc.bandwidth(), enc.pre_skip(), enc.opus_head() ...

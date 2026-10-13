@@ -1,0 +1,25 @@
+[package]
+name = "unwritten-studio-cli"
+description = "Unwritten Studio headless CLI: render frames and sequences, run commands, MCP server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "unwritten-studio-cli"
+path = "src/main.rs"
+
+[dependencies]
+unwritten-studio-engine = { workspace = true }
+unwritten-studio-host = { workspace = true }
+unwritten-studio-automation = { workspace = true }
+unwritten-studio-ui-egui = { workspace = true }
+unwritten-studio-render = { workspace = true }
+unwritten-studio-gpu = { workspace = true }
+unwritten-studio-time = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true }
+cpu-time = "1"

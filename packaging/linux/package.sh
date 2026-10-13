@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build and package Unwritten Studio for Linux (<arch> is x86_64 or aarch64, or riscv64 when cross-compiling):
 #
-#   $DIST/effectcraft-<version>-linux-<arch>.AppImage  any distro with glibc >= the build host's
-#   $DIST/effectcraft-<version>-linux-<arch>.AppImage.zsync  delta updates (needs zsyncmake)
-#   $DIST/effectcraft-<version>-linux-<arch>.deb       Debian, Ubuntu, Mint, Pop!_OS, ...
-#   $DIST/effectcraft-<version>-linux-<arch>.rpm       Fedora, openSUSE, RHEL, ...
-#   $DIST/effectcraft-<version>-linux-<arch>.tar.gz    plain FHS-style tree (bin/, share/)
+#   $DIST/unwritten-studio-<version>-linux-<arch>.AppImage  any distro with glibc >= the build host's
+#   $DIST/unwritten-studio-<version>-linux-<arch>.AppImage.zsync  delta updates (needs zsyncmake)
+#   $DIST/unwritten-studio-<version>-linux-<arch>.deb       Debian, Ubuntu, Mint, Pop!_OS, ...
+#   $DIST/unwritten-studio-<version>-linux-<arch>.rpm       Fedora, openSUSE, RHEL, ...
+#   $DIST/unwritten-studio-<version>-linux-<arch>.tar.gz    plain FHS-style tree (bin/, share/)
 #
 # Usage: packaging/linux/package.sh [--skip-build] [--formats "appimage deb rpm tar"]
 #
@@ -21,7 +21,7 @@ set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
 HERE="$ROOT/packaging/linux"
-APP_ID=ai.storyteller.effectcraft
+APP_ID=com.unwrittenstudio.app
 
 SKIP_BUILD=0
 FORMATS="appimage deb rpm tar"
@@ -41,16 +41,16 @@ case "$ARCH" in
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
 esac
-export EFFECTCRAFT_MAINTAINER="${EFFECTCRAFT_MAINTAINER:-Unwritten Studio maintainers <effectcraft@storyteller.ai>}"
-BASENAME="effectcraft-$VERSION-linux-$ARCH"
+export UNWRITTEN_STUDIO_MAINTAINER="${UNWRITTEN_STUDIO_MAINTAINER:-Unwritten Studio maintainers <unwritten-studio@storyteller.ai>}"
+BASENAME="unwritten-studio-$VERSION-linux-$ARCH"
 
 echo "==> Unwritten Studio $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
   if [ -n "${CROSS_TARGET:-}" ]; then
-    (cd "$ROOT" && cargo build --release --locked -p effectcraft -p effectcraft-cli --target "$CROSS_TARGET")
+    (cd "$ROOT" && cargo build --release --locked -p unwritten-studio -p unwritten-studio-cli --target "$CROSS_TARGET")
   else
-    (cd "$ROOT" && cargo build --release --locked -p effectcraft -p effectcraft-cli)
+    (cd "$ROOT" && cargo build --release --locked -p unwritten-studio -p unwritten-studio-cli)
   fi
 fi
 BIN="$CARGO_TARGET_DIR/${CROSS_TARGET:+$CROSS_TARGET/}release"
@@ -59,18 +59,18 @@ STAGE="$WORK/root"
 rm -rf "$WORK"
 
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
-install -Dm755 "$BIN/effectcraft" "$STAGE/usr/bin/effectcraft"
-install -Dm755 "$BIN/effectcraft-cli" "$STAGE/usr/bin/effectcraft-cli"
-"${CROSS_COMPILE:-}strip" "$STAGE/usr/bin/effectcraft" "$STAGE/usr/bin/effectcraft-cli" 2>/dev/null || true
+install -Dm755 "$BIN/unwritten-studio" "$STAGE/usr/bin/unwritten-studio"
+install -Dm755 "$BIN/unwritten-studio-cli" "$STAGE/usr/bin/unwritten-studio-cli"
+"${CROSS_COMPILE:-}strip" "$STAGE/usr/bin/unwritten-studio" "$STAGE/usr/bin/unwritten-studio-cli" 2>/dev/null || true
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 install -Dm644 "$HERE/$APP_ID.mime.xml" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
 mkdir -p "$STAGE/usr/share/metainfo"
-sed -e "s/@VERSION@/$VERSION/g" -e "s/@DATE@/$EFFECTCRAFT_BUILD_DATE/g" \
+sed -e "s/@VERSION@/$VERSION/g" -e "s/@DATE@/$UNWRITTEN_STUDIO_BUILD_DATE/g" \
   "$HERE/$APP_ID.metainfo.xml.in" >"$STAGE/usr/share/metainfo/$APP_ID.metainfo.xml"
 mkdir -p "$STAGE/usr/share/icons"
 cp -R "$ROOT/assets/app-icon/hicolor" "$STAGE/usr/share/icons/"
-mkdir -p "$STAGE/usr/share/doc/effectcraft"
-copy_docs "$STAGE/usr/share/doc/effectcraft"
+mkdir -p "$STAGE/usr/share/doc/unwritten-studio"
+copy_docs "$STAGE/usr/share/doc/unwritten-studio"
 
 if command -v desktop-file-validate >/dev/null; then
   desktop-file-validate "$STAGE/usr/share/applications/$APP_ID.desktop"
@@ -106,7 +106,7 @@ if has appimage; then
   APPDIR="$WORK/Unwritten Studio.AppDir"
   cp -R "$STAGE" "$APPDIR"
   mv "$APPDIR/usr/share/doc" "$WORK/doc-unused"
-  ln -s usr/bin/effectcraft "$APPDIR/AppRun"
+  ln -s usr/bin/unwritten-studio "$APPDIR/AppRun"
   cp "$HERE/$APP_ID.desktop" "$APPDIR/$APP_ID.desktop"
   cp "$ROOT/assets/app-icon/hicolor/256x256/apps/$APP_ID.png" "$APPDIR/$APP_ID.png"
   ln -s "$APP_ID.png" "$APPDIR/.DirIcon"
@@ -131,7 +131,7 @@ if has appimage; then
   # each AppImage on GitHub Releases. `latest` is the newest published release that is not a
   # pre-release. A fork's builds point at its own releases through GITHUB_REPOSITORY.
   REPO="${GITHUB_REPOSITORY:-palcchi/unwritten-studio}"
-  UPDATE_INFO="gh-releases-zsync|${REPO%%/*}|${REPO#*/}|latest|effectcraft-*-linux-$ARCH.AppImage.zsync"
+  UPDATE_INFO="gh-releases-zsync|${REPO%%/*}|${REPO#*/}|latest|unwritten-studio-*-linux-$ARCH.AppImage.zsync"
   # Extract-and-run: works without FUSE (containers, CI). The output embeds the static runtime,
   # so users don't need libfuse2 either. With zsyncmake on the host (CI installs the zsync
   # package) appimagetool also writes the .zsync, into its working directory, hence the cd.
@@ -145,9 +145,9 @@ if has appimage; then
 fi
 
 if [ -z "${CROSS_TARGET:-}" ]; then
-  "$STAGE/usr/bin/effectcraft-cli" --version
+  "$STAGE/usr/bin/unwritten-studio-cli" --version
 elif [ -n "${EMULATOR:-}" ]; then
-  "$EMULATOR" "$STAGE/usr/bin/effectcraft-cli" --version
+  "$EMULATOR" "$STAGE/usr/bin/unwritten-studio-cli" --version
 fi
 echo "==> done"
 ls -lh "$DIST"

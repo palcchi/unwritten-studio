@@ -1,8 +1,0 @@
-asset:        ai.storyteller.effectcraft.png
-title:        Unwritten Studio app icon, Linux hicolor 16x16
-author:       Unwritten Studio contributors (original illustration by the project owner)
-source:       original work
-license:      MIT OR Apache-2.0
-license-file: assets/app-icon/LICENSE.txt
-added:        2026-10-02 by Unwritten Studio contributors (Claude agent, app icon)
-notes:        Rendered from effectcraft.svg with resvg by packaging/icons.sh.

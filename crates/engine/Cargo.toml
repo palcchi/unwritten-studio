@@ -1,5 +1,5 @@
 [package]
-name = "effectcraft-engine"
+name = "unwritten-studio-engine"
 description = "The Unwritten Studio engine: session, undo history, editor state and the command registry every frontend (UI, CLI, control channel, MCP) dispatches through"
 version.workspace = true
 edition.workspace = true
@@ -10,25 +10,25 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-effectcraft-time = { workspace = true }
-effectcraft-geom = { workspace = true }
-effectcraft-color = { workspace = true }
-effectcraft-keyframe = { workspace = true }
-effectcraft-project = { workspace = true }
-effectcraft-raster = { workspace = true }
-effectcraft-path = { workspace = true }
-effectcraft-text = { workspace = true }
-effectcraft-effects = { workspace = true }
-effectcraft-render = { workspace = true }
-effectcraft-segment = { workspace = true }
-effectcraft-track = { workspace = true }
-effectcraft-model = { workspace = true }
-effectcraft-lottie = { workspace = true }
-effectcraft-interchange = { workspace = true }
-effectcraft-psd = { workspace = true }
+unwritten-studio-time = { workspace = true }
+unwritten-studio-geom = { workspace = true }
+unwritten-studio-color = { workspace = true }
+unwritten-studio-keyframe = { workspace = true }
+unwritten-studio-project = { workspace = true }
+unwritten-studio-raster = { workspace = true }
+unwritten-studio-path = { workspace = true }
+unwritten-studio-text = { workspace = true }
+unwritten-studio-effects = { workspace = true }
+unwritten-studio-render = { workspace = true }
+unwritten-studio-segment = { workspace = true }
+unwritten-studio-track = { workspace = true }
+unwritten-studio-model = { workspace = true }
+unwritten-studio-lottie = { workspace = true }
+unwritten-studio-interchange = { workspace = true }
+unwritten-studio-psd = { workspace = true }
 kurbo = { workspace = true }
-effectcraft-svg = { workspace = true }
-effectcraft-pdf = { workspace = true }
+unwritten-studio-svg = { workspace = true }
+unwritten-studio-pdf = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

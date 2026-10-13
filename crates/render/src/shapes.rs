@@ -10,13 +10,13 @@
 //! - surface items (Front, Bevel, Side, Back) colour those surfaces of the Advanced 3D
 //!   extrusion of every paint in their group and its nested groups (the innermost wins).
 
-use effectcraft_color::{BlendMode, blend_pixel};
-use effectcraft_effects::Buf;
-use effectcraft_geom::{Mat3, vec2};
-use effectcraft_keyframe::{Gradient, Value};
-use effectcraft_path::{BezPath, Cap, FillRule, Join, StrokeStyle, ops, varstroke};
-use effectcraft_project::{Layer, Node, PropGroup};
-use effectcraft_raster::{Image, Mask};
+use unwritten_studio_color::{BlendMode, blend_pixel};
+use unwritten_studio_effects::Buf;
+use unwritten_studio_geom::{Mat3, vec2};
+use unwritten_studio_keyframe::{Gradient, Value};
+use unwritten_studio_path::{BezPath, Cap, FillRule, Join, StrokeStyle, ops, varstroke};
+use unwritten_studio_project::{Layer, Node, PropGroup};
+use unwritten_studio_raster::{Image, Mask};
 use rayon::prelude::*;
 
 use crate::eval::EvalCtx;
@@ -59,12 +59,12 @@ struct Draw {
     surfaces: SurfaceColors,
 }
 
-/// Straight RGB colours of an extrusion's surfaces, by [`effectcraft_model::extrude::Surface`]
+/// Straight RGB colours of an extrusion's surfaces, by [`unwritten_studio_model::extrude::Surface`]
 /// index (Front, Bevel, Side, Back); `None` keeps the paint's colour.
 pub type SurfaceColors = [Option<[f32; 3]>; 4];
 
 fn mat_path(path: &BezPath, m: &Mat3) -> BezPath {
-    effectcraft_path::transform(std::slice::from_ref(path), m).pop().unwrap_or_default()
+    unwritten_studio_path::transform(std::slice::from_ref(path), m).pop().unwrap_or_default()
 }
 
 fn group_matrix(ctx: &EvalCtx, layer: &Layer, tr: &PropGroup) -> (Mat3, f32) {
@@ -117,7 +117,7 @@ fn stroke_style(ctx: &EvalCtx, layer: &Layer, g: &PropGroup) -> StrokeStyle {
         }
         let mut pat = vec![dash, if gap > 0.0 { gap } else { dash }];
         // Dash 2 / Gap 2, Dash 3 / Gap 3 (added with the Dashes "+" button).
-        for (dm, gm) in effectcraft_project::build::EXTRA_DASHES {
+        for (dm, gm) in unwritten_studio_project::build::EXTRA_DASHES {
             if d.get(dm).is_none() {
                 break;
             }
@@ -197,17 +197,17 @@ fn collect(ctx: &EvalCtx, layer: &Layer, contents: &PropGroup, arena: &mut Vec<B
             "rect" => {
                 let size = ctx.v2(layer, g, "size", [100.0; 2]);
                 let pos = ctx.v2(layer, g, "position", [0.0; 2]);
-                let p = effectcraft_path::rect(size, pos, ctx.f(layer, g, "roundness", 0.0));
+                let p = unwritten_studio_path::rect(size, pos, ctx.f(layer, g, "roundness", 0.0));
                 push_shape(ctx, layer, g, p, arena, &mut live);
             }
             "ellipse" => {
                 let size = ctx.v2(layer, g, "size", [100.0; 2]);
                 let pos = ctx.v2(layer, g, "position", [0.0; 2]);
-                push_shape(ctx, layer, g, effectcraft_path::ellipse(size, pos), arena, &mut live);
+                push_shape(ctx, layer, g, unwritten_studio_path::ellipse(size, pos), arena, &mut live);
             }
             "star" => {
                 let star = ctx.e(layer, g, "type") == 0;
-                let p = effectcraft_path::polystar(
+                let p = unwritten_studio_path::polystar(
                     star,
                     ctx.f(layer, g, "points", 5.0),
                     ctx.v2(layer, g, "position", [0.0; 2]),
@@ -221,7 +221,7 @@ fn collect(ctx: &EvalCtx, layer: &Layer, contents: &PropGroup, arena: &mut Vec<B
             }
             "path" => {
                 if let Some(Value::Path(p)) = ctx.group_value(layer, g, "path") {
-                    push_shape(ctx, layer, g, effectcraft_path::to_kurbo(&p), arena, &mut live);
+                    push_shape(ctx, layer, g, unwritten_studio_path::to_kurbo(&p), arena, &mut live);
                 }
             }
             "fill" => {
@@ -399,7 +399,7 @@ fn collect(ctx: &EvalCtx, layer: &Layer, contents: &PropGroup, arena: &mut Vec<B
                 }
             }
             m => {
-                if let Some(i) = effectcraft_project::build::SHAPE_SURFACES.iter().position(|(s, _)| *s == m)
+                if let Some(i) = unwritten_studio_project::build::SHAPE_SURFACES.iter().position(|(s, _)| *s == m)
                     && g.get("color").is_some()
                     && let Some(slot) = surfaces.get_mut(i)
                 {
@@ -524,19 +524,19 @@ fn draw_coverage(d: &Draw, paths: &[BezPath], m: &Mat3, r: PxRect) -> Mask {
         // Strokes scale with their group transform.
         let mut st = style.clone();
         st.width *= d.xf.mean_scale();
-        effectcraft_path::stroke_coverage(paths, &st, &sub, r.w, r.h)
+        unwritten_studio_path::stroke_coverage(paths, &st, &sub, r.w, r.h)
     };
     match &d.paint {
-        Paint::Fill { rule, .. } => effectcraft_path::fill_coverage(paths, &sub, r.w, r.h, *rule),
+        Paint::Fill { rule, .. } => unwritten_studio_path::fill_coverage(paths, &sub, r.w, r.h, *rule),
         Paint::Stroke { style, .. } => stroke(style),
         Paint::Gradient { stroke: Some(style), .. } => stroke(style),
-        Paint::Gradient { rule, .. } => effectcraft_path::fill_coverage(paths, &sub, r.w, r.h, *rule),
+        Paint::Gradient { rule, .. } => unwritten_studio_path::fill_coverage(paths, &sub, r.w, r.h, *rule),
     }
 }
 
 /// Local-space bounds of what a draw can touch (stroke width, miters and anti-aliasing included).
 fn draw_bounds(d: &Draw, paths: &[BezPath]) -> Option<kurbo::Rect> {
-    let b = effectcraft_path::bounds(paths)?;
+    let b = unwritten_studio_path::bounds(paths)?;
     let stroke = match &d.paint {
         Paint::Stroke { style, .. } => Some(style),
         Paint::Gradient { stroke: Some(style), .. } => Some(style),
@@ -550,7 +550,7 @@ fn draw_bounds(d: &Draw, paths: &[BezPath]) -> Option<kurbo::Rect> {
 /// extents): the path bounds, plus half the stroke width for strokes. No anti-aliasing or miter
 /// padding, so snapping and Align put edges exactly together (#352).
 fn visual_bounds(d: &Draw, paths: &[BezPath]) -> Option<kurbo::Rect> {
-    let b = effectcraft_path::bounds(paths)?;
+    let b = unwritten_studio_path::bounds(paths)?;
     let stroke = match &d.paint {
         Paint::Stroke { style, .. } => Some(style),
         Paint::Gradient { stroke: Some(style), .. } => Some(style),
@@ -678,8 +678,8 @@ pub fn extrusion_outlines(ctx: &EvalCtx, layer: &Layer, contents: &PropGroup) ->
 
 /// The filled region a stroke covers: its outline with self-overlaps resolved (non-zero).
 pub fn stroke_region(paths: &[BezPath], style: &StrokeStyle) -> Option<BezPath> {
-    let o = effectcraft_path::stroke_outline(paths, style, 1.0)?;
-    let r = effectcraft_path::boolean::normalize(&o, FillRule::NonZero);
+    let o = unwritten_studio_path::stroke_outline(paths, style, 1.0)?;
+    let r = unwritten_studio_path::boolean::normalize(&o, FillRule::NonZero);
     (!r.elements().is_empty()).then_some(r)
 }
 

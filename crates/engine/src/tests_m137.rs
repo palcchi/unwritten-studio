@@ -23,12 +23,12 @@ fn watch_folder_renders_queued_projects_and_writes_status() {
     let mut a = Session { exporter: Some(ex.clone()), ..Default::default() };
     a.execute("comp.new", json!({"name": "Shot", "width": 32, "height": 32, "frameRate": 10, "duration": 0.5})).unwrap();
     a.execute("renderQueue.add", json!({})).unwrap();
-    let pa = dir.join("a.ecproj");
+    let pa = dir.join("a.uwproj");
     a.execute("file.saveAs", json!({"path": pa.to_string_lossy()})).unwrap();
     std::fs::create_dir_all(dir.join("collected")).unwrap();
     let mut b = Session::default();
     b.execute("comp.new", json!({"name": "Idle", "width": 32, "height": 32, "duration": 1})).unwrap();
-    let pb = dir.join("collected/b.ecproj");
+    let pb = dir.join("collected/b.uwproj");
     b.execute("file.saveAs", json!({"path": pb.to_string_lossy()})).unwrap();
 
     let mut host = Session { exporter: Some(ex.clone()), ..Default::default() };
@@ -37,20 +37,20 @@ fn watch_folder_renders_queued_projects_and_writes_status() {
     let done = r["rendered"].as_array().unwrap();
     assert_eq!(done.len(), 2, "{r}");
     assert_eq!(host.state.watch_folder.as_deref(), Some(dir.to_string_lossy().as_ref()));
-    let st: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("a.ecproj.status.json")).unwrap()).unwrap();
+    let st: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("a.uwproj.status.json")).unwrap()).unwrap();
     assert_eq!(st["state"], "done", "{st}");
     assert_eq!(st["items"][0]["comp"], "Shot");
     assert_eq!(st["items"][0]["status"], "Done");
     assert_eq!(ex.log.lock().unwrap().len(), 1);
-    let st: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("collected/b.ecproj.status.json")).unwrap()).unwrap();
+    let st: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("collected/b.uwproj.status.json")).unwrap()).unwrap();
     assert_eq!(st["note"], "nothing queued");
     // Rendered projects are not picked up again; deleting the status file re-renders.
     assert!(host.execute("file.watchFolder.poll", json!({})).unwrap()["rendered"].as_array().unwrap().is_empty());
-    std::fs::remove_file(dir.join("a.ecproj.status.json")).unwrap();
+    std::fs::remove_file(dir.join("a.uwproj.status.json")).unwrap();
     assert_eq!(host.execute("file.watchFolder.poll", json!({})).unwrap()["rendered"].as_array().unwrap().len(), 1);
     assert_eq!(ex.log.lock().unwrap().len(), 2);
     // A broken project fails with a status, not an error.
-    std::fs::write(dir.join("broken.ecproj"), b"not a project").unwrap();
+    std::fs::write(dir.join("broken.uwproj"), b"not a project").unwrap();
     let r = host.execute("file.watchFolder.poll", json!({})).unwrap();
     assert_eq!(r["rendered"][0]["state"], "failed");
     host.execute("file.watchFolder", json!({"stop": true})).unwrap();
@@ -95,7 +95,7 @@ fn nulls_follow_points_and_points_follow_nulls() {
     let nulls: Vec<u64> = r["nulls"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect();
     assert_eq!(nulls.len(), 4);
     let comp = s.active_comp().unwrap().clone();
-    let n2 = comp.layer(effectcraft_project::LayerId(nulls[2])).unwrap();
+    let n2 = comp.layer(unwritten_studio_project::LayerId(nulls[2])).unwrap();
     assert_eq!(n2.name, "Plate: Mask 1 [3]");
     // Placed on the vertex in comp space (the 40×40 solid is centred at (50, 40)).
     let pos = n2.props.prop("transform/position").unwrap();
@@ -109,7 +109,7 @@ fn nulls_follow_points_and_points_follow_nulls() {
     let r = s.execute("paths.pointsFollowNulls", json!({"layer": l, "path": "masks/#1/path"})).unwrap();
     assert_eq!(r["nulls"].as_array().unwrap().len(), 4);
     let comp = s.active_comp().unwrap().clone();
-    let plate = comp.layer(effectcraft_project::LayerId(l)).unwrap();
+    let plate = comp.layer(unwritten_studio_project::LayerId(l)).unwrap();
     let e = plate.props.prop("masks/#1/path").unwrap().expr.as_ref().unwrap().text.clone();
     assert!(e.contains("createPath(pts") && e.contains("\"Plate: Mask 1 [1]\"") && e.contains("fromComp"), "{e}");
     // Not a path → error.
@@ -122,7 +122,7 @@ fn trace_path_adds_a_progress_null() {
     let r = s.execute("paths.tracePath", json!({"layer": l, "loop": true})).unwrap();
     let n = r["null"].as_u64().unwrap();
     let comp = s.active_comp().unwrap().clone();
-    let null = comp.layer(effectcraft_project::LayerId(n)).unwrap();
+    let null = comp.layer(unwritten_studio_project::LayerId(n)).unwrap();
     let slider = null.props.prop("effects/#1/slider").unwrap();
     assert_eq!(slider.keys.len(), 2);
     assert_eq!(slider.keys[1].value.as_f64(), 100.0);
@@ -150,8 +150,8 @@ fn vr_comp_editor_turns_the_face_cameras_together() {
     assert!((v[1] - 30.0).abs() < 1e-6 && v[0].abs() < 1e-6 && v[2].abs() < 1e-6, "{v:?}");
     // Every face camera turned: Front by 30° about Y.
     let front = &env["faces"][4];
-    let fc = s.project.comp(effectcraft_project::ItemId(front["comp"].as_u64().unwrap())).unwrap();
-    let cam = fc.layer(effectcraft_project::LayerId(front["camera"].as_u64().unwrap())).unwrap();
+    let fc = s.project.comp(unwritten_studio_project::ItemId(front["comp"].as_u64().unwrap())).unwrap();
+    let cam = fc.layer(unwritten_studio_project::LayerId(front["camera"].as_u64().unwrap())).unwrap();
     let o = cam.props.prop("transform/orientation").unwrap().value.components();
     assert!((o[1] - 30.0).abs() < 1e-6, "{o:?}");
     // One undo step back to the start.
@@ -160,7 +160,7 @@ fn vr_comp_editor_turns_the_face_cameras_together() {
     assert!(envs[0]["view"][1].as_f64().unwrap().abs() < 1e-6);
     // Round trip of the Euler decomposition.
     for o in [[10.0, 20.0, 30.0], [350.0, 45.0, 5.0], [0.0, 0.0, 270.0]] {
-        let m = effectcraft_geom::Mat4::orientation(effectcraft_geom::vec3(o[0], o[1], o[2]));
+        let m = unwritten_studio_geom::Mat4::orientation(unwritten_studio_geom::vec3(o[0], o[1], o[2]));
         let e = crate::commands::vr_editor::euler(m);
         assert!(e.iter().zip(o).all(|(a, b)| (a - b).abs() < 1e-6), "{o:?} → {e:?}");
     }

@@ -12,7 +12,7 @@ use serde_json::json;
 use crate::icons::{self, Icon};
 use crate::panels::DragPayload;
 use crate::theme::Tokens;
-use crate::{EffectcraftApp, widgets};
+use crate::{UnwrittenStudioApp, widgets};
 
 const ROW_H: f32 = 21.0;
 const RECENT_MAX: usize = 8;
@@ -66,7 +66,7 @@ pub fn push_recent(recent: &mut Vec<String>, id: &str) {
 }
 
 /// Does the contents-menu depth filter (`all`, `32`, `gpu`) keep effect `e`?
-pub fn depth_keeps(depth: &str, e: &effectcraft_engine::effects::EffectSpec) -> bool {
+pub fn depth_keeps(depth: &str, e: &unwritten_studio_engine::effects::EffectSpec) -> bool {
     match depth {
         "32" => e.float,
         "gpu" => e.gpu,
@@ -116,7 +116,7 @@ enum Apply {
 /// A folder row; returns whether it is open.
 #[allow(clippy::too_many_arguments)]
 fn folder_row(
-    app: &mut EffectcraftApp,
+    app: &mut UnwrittenStudioApp,
     ui: &mut egui::Ui,
     lp: &egui::Painter,
     list: Rect,
@@ -161,12 +161,12 @@ fn folder_row(
 /// An effect row (fx icon, highlighted name, favourite star, 32 bpc badge).
 #[allow(clippy::too_many_arguments)]
 fn effect_row(
-    app: &mut EffectcraftApp,
+    app: &mut UnwrittenStudioApp,
     ui: &mut egui::Ui,
     lp: &egui::Painter,
     list: Rect,
     y: &mut f32,
-    e: &'static effectcraft_engine::effects::EffectSpec,
+    e: &'static unwritten_studio_engine::effects::EffectSpec,
     indent: f32,
     query: &str,
     auto_prefix: &str,
@@ -220,7 +220,7 @@ fn effect_row(
 /// A preset row (no drag; double-click applies).
 #[allow(clippy::too_many_arguments)]
 fn preset_row(
-    app: &mut EffectcraftApp,
+    app: &mut UnwrittenStudioApp,
     ui: &mut egui::Ui,
     lp: &egui::Painter,
     list: Rect,
@@ -264,7 +264,7 @@ fn user_presets(ctx: &egui::Context, force: bool) -> Vec<PresetFile> {
     v
 }
 
-pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+pub fn show(app: &mut UnwrittenStudioApp, ui: &mut egui::Ui, rect: Rect) {
     let t = app.tokens;
     let ctx = ui.ctx().clone();
     let p = ui.painter().clone();
@@ -354,10 +354,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let searching = !query.is_empty();
     let mut y = list.min.y - scroll.offset;
     let mut apply: Option<Apply> = None;
-    let reg = effectcraft_engine::effects::all();
-    let keep = |e: &effectcraft_engine::effects::EffectSpec| {
+    let reg = unwritten_studio_engine::effects::all();
+    let keep = |e: &unwritten_studio_engine::effects::EffectSpec| {
         depth_keeps(&view.depth, e)
-            && (query.is_empty() || effectcraft_engine::effects::name_matches(e, &query) || crate::i18n::effects::matches(e.id, e.name, &query))
+            && (query.is_empty() || unwritten_studio_engine::effects::name_matches(e, &query) || crate::i18n::effects::matches(e.id, e.name, &query))
     };
     let lookup = |id: &str| reg.iter().find(|e| e.id == id);
 
@@ -380,9 +380,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     // * Animation Presets: our own presets (Text, Transitions…) and the user's .ecpreset files.
     if view.presets {
         let text: Vec<(String, String)> =
-            effectcraft_engine::text_presets().into_iter().filter(|(_, n)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
+            unwritten_studio_engine::text_presets().into_iter().filter(|(_, n)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
         let builtin: Vec<(String, String, String)> =
-            effectcraft_engine::animation_presets().into_iter().filter(|(_, n, _)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
+            unwritten_studio_engine::animation_presets().into_iter().filter(|(_, n, _)| query.is_empty() || n.to_lowercase().contains(&query)).collect();
         let mut categories: Vec<&str> = Vec::new();
         for (_, _, c) in &builtin {
             if !categories.contains(&c.as_str()) {
@@ -433,7 +433,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             effect_row(app, ui, &lp, list, &mut y, e, -16.0, &query, "effects.item", &mut apply);
         }
     } else {
-        let mut cats: Vec<&str> = effectcraft_engine::effects::categories();
+        let mut cats: Vec<&str> = unwritten_studio_engine::effects::categories();
         cats.retain(|c| reg.iter().any(|e| e.category == *c));
         for cat in cats {
             let items: Vec<_> = reg.iter().filter(|e| e.category == cat && keep(e)).collect();
@@ -458,7 +458,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if let Some(DragPayload::Effect(id)) = egui::DragAndDrop::payload::<DragPayload>(&ctx).as_deref()
         && let Some(pos) = ctx.pointer_hover_pos()
     {
-        let name = effectcraft_engine::effects::find(id).map(|e| crate::i18n::effects::name(e.id, e.name)).unwrap_or_default();
+        let name = unwritten_studio_engine::effects::find(id).map(|e| crate::i18n::effects::name(e.id, e.name)).unwrap_or_default();
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("dnd-fx")));
         let g = painter.layout_no_wrap(name, Tokens::ui(12.0), t.text);
         let r = Rect::from_min_size(pos + vec2(12.0, 8.0), g.size() + vec2(16.0, 8.0));
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn depth_filter() {
-        let reg = effectcraft_engine::effects::registry();
+        let reg = unwritten_studio_engine::effects::registry();
         let all = reg.iter().filter(|e| depth_keeps("all", e)).count();
         let f32s = reg.iter().filter(|e| depth_keeps("32", e)).count();
         assert_eq!(all, reg.len());

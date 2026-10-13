@@ -117,23 +117,13 @@ as PhotoCraft does with `cargo xtask corpus`.
 - [docs/testing.md](docs/testing.md): oracle tests, criteria, benchmarks
 - [docs/agents.md](docs/agents.md): driving Unwritten Studio over MCP / the control channel, and the agent work loop
 - [docs/control-protocol.md](docs/control-protocol.md): control-channel method reference
-- [docs/contributors.md](docs/contributors.md): the About window's contributor and model credits
+- [docs/migration.md](docs/migration.md): legacy project formats, settings migration and compatibility aliases
 - [ATTRIBUTION.md](ATTRIBUTION.md): asset index
 
-## Contributor credits (About window)
+## Legal notices and asset attribution
 
-- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
-  (commit stats; generated, never hand-edit) and `contributors/people.toml` (names people chose for
-  themselves). See `docs/contributors.md`.
-- **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
-  username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
-  whether they want to be credited by more than their username: a real name, a display name, and/or
-  their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
-  (copy the template at the top of the file, or run
-  `python3 ../../craftrules/scripts/contributors.py --add-me . --real-name "…" --sync-github-name`)
-  and include it in their PR, committed as them. If no, change nothing: they are credited as
-  `@username` anyway.
-- Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
-  GitHub profiles). Never hand-edit `contributors.json`.
-- Maintainers refresh the stats with `python3 ../../craftrules/scripts/contributors.py .` (it also
-  re-verifies who wrote each `people.toml` entry; `--check` only verifies).
+- Preserve `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE` verbatim; they contain required original
+  copyright and permission notices.
+- Preserve `ATTRIBUTION.md`, asset sidecars and third-party license files. Keep each asset's source,
+  license and any legally required attribution intact when renaming an asset path.
+- The About window may show historical model credits, but do not add a personal contributor roster.

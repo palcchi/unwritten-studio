@@ -1,5 +1,5 @@
 [package]
-name = "effectcraft-plugin"
+name = "unwritten-studio-plugin"
 description = "Unwritten Studio effect plug-ins: loads sandboxed WebAssembly effect modules (plug-in API v1) into the effect registry"
 version.workspace = true
 edition.workspace = true
@@ -15,11 +15,11 @@ workspace = true
 wasm = ["dep:wasmi"]
 
 [dependencies]
-effectcraft-effects = { workspace = true }
+unwritten-studio-effects = { workspace = true }
 serde_json = { workspace = true }
 wasmi = { workspace = true, optional = true }
 
 [dev-dependencies]
-effectcraft-keyframe = { workspace = true }
-effectcraft-project = { workspace = true }
-effectcraft-raster = { workspace = true }
+unwritten-studio-keyframe = { workspace = true }
+unwritten-studio-project = { workspace = true }
+unwritten-studio-raster = { workspace = true }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Unwritten Studio installer wizard: original dialogs built from Windows Installer's own controls and
-  events (no WixUI library), included by effectcraft.wxs with <UIRef Id="EffectcraftUI" />.
+  events (no WixUI library), included by unwritten-studio.wxs with <UIRef Id="UnwrittenStudioUI" />.
 
     fresh install:  DestDlg (folder, Change... opens BrowseDlg, desktop shortcut) -> ReadyDlg -> ProgressDlg -> ExitDlg
     upgrade:        ReadyDlg (the installed copy's folder, not editable) -> ProgressDlg -> ExitDlg
@@ -13,7 +13,7 @@
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Fragment>
-    <UI Id="EffectcraftUI">
+    <UI Id="UnwrittenStudioUI">
       <TextStyle Id="EcText" FaceName="Segoe UI" Size="9" />
       <TextStyle Id="EcTitle" FaceName="Segoe UI" Size="12" Bold="yes" />
       <Property Id="DefaultUIFont" Value="EcText" />
@@ -92,7 +92,7 @@
         <Control Id="Description" Type="Text" X="20" Y="45" Width="330" Height="24" NoPrefix="yes" Text="Repair puts back missing or damaged files in its folder. Remove uninstalls it; your projects are not touched." />
         <Control Id="Repair" Type="PushButton" X="20" Y="80" Width="80" Height="20" Default="yes" ElevationShield="yes" Text="&amp;Repair">
           <!-- "a": put back every file, whatever its version or date. With "e"/"o" a changed
-               unversioned file (effectcraft-cli.exe has no version resource) counts as a user edit
+               unversioned file (unwritten-studio-cli.exe has no version resource) counts as a user edit
                and is kept, and "c" only checks files that carry an MSI checksum. -->
           <Publish Event="ReinstallMode" Value="amus" Order="1" />
           <Publish Event="Reinstall" Value="ALL" Order="2" />

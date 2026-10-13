@@ -8,14 +8,14 @@
 //! [`Inbox`] that the session drains every frame ([`Session::poll_render`],
 //! [`Session::poll_offload`]). The worker side is [`run_request_async`]: a plain session fed the
 //! project runs the job and reports through a callback. With a WebGPU device of the worker's
-//! own (deferred readbacks, `effectcraft_render::passes`) the job's frames render on the GPU in
+//! own (deferred readbacks, `unwritten_studio_render::passes`) the job's frames render on the GPU in
 //! passes, the job awaiting the device between them; [`run_request`] runs it blocking.
 //!
 //! | Job | Worker runs | Reply applied on the UI thread |
 //! |---|---|---|
 //! | Render Queue | the export of every queued item | item status, progress; files arrive through the host |
 //! | Warp Stabilizer analysis | [`Session::start_warp`], then the stabilization plan | the effect's property group (one undo step); the plan's summary ([`WorkerReply::WarpPlan`]) |
-//! | Warp Stabilizer stabilization (settings changed after the analysis) | the plan ([`effectcraft_effects::warp_stab::summary_at`]) | its summary, for `warp.status` |
+//! | Warp Stabilizer stabilization (settings changed after the analysis) | the plan ([`unwritten_studio_effects::warp_stab::summary_at`]) | its summary, for `warp.status` |
 //! | Track Motion / Stabilize Motion | the tracker analysis | the tracker group |
 //! | Mask tracking | the mask track | the mask group |
 //! | Roto Brush Freeze | the freeze | the effect group |
@@ -36,12 +36,12 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use effectcraft_keyframe::ShapePath;
-use effectcraft_project::render_queue::{RenderQueueItem, RenderStatus};
-use effectcraft_project::tracking::TrackerSettings;
-use effectcraft_project::{ItemId, ItemKind, LayerId, Project, PropGroup, Uid};
-use effectcraft_render::{Accelerator, Backend, RenderOpts};
-use effectcraft_time::Tick;
+use unwritten_studio_keyframe::ShapePath;
+use unwritten_studio_project::render_queue::{RenderQueueItem, RenderStatus};
+use unwritten_studio_project::tracking::TrackerSettings;
+use unwritten_studio_project::{ItemId, ItemKind, LayerId, Project, PropGroup, Uid};
+use unwritten_studio_render::{Accelerator, Backend, RenderOpts};
+use unwritten_studio_time::Tick;
 use serde::{Deserialize, Serialize};
 
 use crate::mask_track::MaskMethod;
@@ -211,11 +211,11 @@ pub enum WorkerReply {
         group: Box<PropGroup>,
         message: String,
     },
-    /// A Warp Stabilizer plan's summary ([`effectcraft_effects::warp_stab::summary_key`]): the
+    /// A Warp Stabilizer plan's summary ([`unwritten_studio_effects::warp_stab::summary_key`]): the
     /// page keeps it for `warp.status` instead of solving the plan itself.
     WarpPlan {
         key: [u64; 2],
-        summary: Box<effectcraft_effects::warp_stab::PlanSummary>,
+        summary: Box<unwritten_studio_effects::warp_stab::PlanSummary>,
     },
     /// Roto Brush segmentations computed so far (propagation), not sent before.
     Segs {
@@ -235,7 +235,7 @@ pub enum WorkerReply {
 }
 
 /// One full-resolution Roto Brush segmentation: its chain key and the base64 of
-/// [`effectcraft_track::roto::FrameSeg::to_bytes`].
+/// [`unwritten_studio_track::roto::FrameSeg::to_bytes`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SegData {
     pub key: u64,
@@ -243,24 +243,24 @@ pub struct SegData {
 }
 
 impl SegData {
-    pub fn new(key: u64, seg: &effectcraft_track::roto::FrameSeg) -> SegData {
-        SegData { key, data: effectcraft_track::roto::rle::base64_encode(&seg.to_bytes()) }
+    pub fn new(key: u64, seg: &unwritten_studio_track::roto::FrameSeg) -> SegData {
+        SegData { key, data: unwritten_studio_track::roto::rle::base64_encode(&seg.to_bytes()) }
     }
 
     /// Put the segmentation into this instance's cache (what the Roto Brush effect renders from).
     pub fn store(&self) -> bool {
-        let Some(seg) = effectcraft_track::roto::rle::base64_decode(&self.data).and_then(|b| effectcraft_track::roto::FrameSeg::from_bytes(&b)) else {
+        let Some(seg) = unwritten_studio_track::roto::rle::base64_decode(&self.data).and_then(|b| unwritten_studio_track::roto::FrameSeg::from_bytes(&b)) else {
             return false;
         };
-        effectcraft_effects::roto::store(self.key, 1.0, Arc::new(seg));
+        unwritten_studio_effects::roto::store(self.key, 1.0, Arc::new(seg));
         true
     }
 }
 
 /// The full-resolution segmentations of `keys` that are cached here and not in `sent` yet.
 pub fn segs_to_send(keys: &[u64], sent: &mut std::collections::HashSet<u64>) -> Vec<SegData> {
-    let new: Vec<(u64, Arc<effectcraft_track::roto::FrameSeg>)> =
-        keys.iter().filter(|k| !sent.contains(k)).filter_map(|k| effectcraft_effects::roto::cached(*k, 1.0).map(|s| (*k, s))).collect();
+    let new: Vec<(u64, Arc<unwritten_studio_track::roto::FrameSeg>)> =
+        keys.iter().filter(|k| !sent.contains(k)).filter_map(|k| unwritten_studio_effects::roto::cached(*k, 1.0).map(|s| (*k, s))).collect();
     new.into_iter()
         .map(|(k, s)| {
             sent.insert(k);
@@ -364,9 +364,9 @@ pub(crate) fn analysis_opts(accel: Option<&dyn Accelerator>) -> RenderOpts {
     RenderOpts { scale: 1.0, backend: if accel.is_some() { Backend::Auto } else { Backend::Cpu }, ..Default::default() }
 }
 
-/// A render in passes ([`effectcraft_render::passes::in_passes`]): its value.
+/// A render in passes ([`unwritten_studio_render::passes::in_passes`]): its value.
 pub(crate) async fn in_passes<'a, T>(accel: Option<&'a dyn Accelerator>, render: impl FnMut(Option<&'a dyn Accelerator>) -> T) -> T {
-    effectcraft_render::passes::in_passes(accel, render).await.value
+    unwritten_studio_render::passes::in_passes(accel, render).await.value
 }
 
 /// `work()` while the next frame renders (`fetch`): side by side on the thread pool, or — with
@@ -380,7 +380,7 @@ pub(crate) async fn join_fetch<R: Send, F: Send, Fut: Future<Output = F>>(
         let r = work();
         return (r, fetch().await);
     }
-    rayon::join(work, || effectcraft_render::passes::block_on(fetch()))
+    rayon::join(work, || unwritten_studio_render::passes::block_on(fetch()))
 }
 
 /// Run an analysis started with `wait`: inside [`run_request_async`] it is queued and awaited
@@ -395,7 +395,7 @@ pub(crate) fn run_or_queue(f: impl Future<Output = ()> + 'static) {
         None => Some(f),
     });
     if let Some(f) = now {
-        effectcraft_render::passes::block_on(f);
+        unwritten_studio_render::passes::block_on(f);
     }
 }
 
@@ -423,7 +423,7 @@ pub type Post = Rc<dyn Fn(WorkerReply)>;
 /// Run `req` on `s` (a session with footage, expressions and an exporter, but no project yet),
 /// blocking, reporting through `post`. Always ends with [`WorkerReply::Done`].
 pub fn run_request(s: &mut Session, req: WorkerRequest, post: &Post) {
-    effectcraft_render::passes::block_on(run_request_async(s, req, post));
+    unwritten_studio_render::passes::block_on(run_request_async(s, req, post));
 }
 
 /// [`run_request`] as a future: with an accelerator whose readbacks are deferred
@@ -656,9 +656,9 @@ fn warp_plan(s: &Session, comp: ItemId, layer: LayerId, effect: Uid, t: Tick) ->
     let c = s.project.comp(comp)?;
     let l = c.layer(layer)?;
     let g = l.props.find_group(effect)?;
-    let ctx = effectcraft_render::EvalCtx::new(&s.project, comp, c, t);
-    let params = effectcraft_effects::flatten_params(g, &mut |pr| ctx.value(l, pr));
-    let (key, summary) = effectcraft_effects::warp_stab::summary(&params)?;
+    let ctx = unwritten_studio_render::EvalCtx::new(&s.project, comp, c, t);
+    let params = unwritten_studio_effects::flatten_params(g, &mut |pr| ctx.value(l, pr));
+    let (key, summary) = unwritten_studio_effects::warp_stab::summary(&params)?;
     Some(WorkerReply::WarpPlan { key, summary: Box::new((*summary).clone()) })
 }
 
@@ -781,7 +781,7 @@ impl Session {
                     }
                     WorkerReply::Group { comp, layer, group, message } => results.push((j.kind, comp, layer, group, message)),
                     WorkerReply::Fill { plan, files } => fills.push((plan, files)),
-                    WorkerReply::WarpPlan { key, summary } => effectcraft_effects::warp_stab::store_summary(key, *summary),
+                    WorkerReply::WarpPlan { key, summary } => unwritten_studio_effects::warp_stab::store_summary(key, *summary),
                     WorkerReply::Segs { segs } => {
                         for sd in &segs {
                             sd.store();
@@ -914,7 +914,7 @@ mod tests {
                 settings: TrackerSettings::default(),
                 points: vec![PointValues {
                     uid: 5,
-                    spec: effectcraft_track::PointSpec { center: [1.0, 2.0], feature_size: [3.0, 4.0], search_offset: [0.5, 0.0], search_size: [9.0, 9.0] },
+                    spec: unwritten_studio_track::PointSpec { center: [1.0, 2.0], feature_size: [3.0, 4.0], search_offset: [0.5, 0.0], search_size: [9.0, 9.0] },
                     attach_offset: [0.25, -1.0],
                 }],
                 times: vec![Tick::ZERO, Tick::from_seconds_f64(0.5)],
@@ -961,7 +961,7 @@ mod tests {
             WorkerReply::Progress { done: 1, total: 2 },
             WorkerReply::WarpPlan {
                 key: [1, u64::MAX],
-                summary: Box::new(effectcraft_effects::warp_stab::PlanSummary {
+                summary: Box::new(unwritten_studio_effects::warp_stab::PlanSummary {
                     warps: vec![[[1.0, 0.0, 2.5], [0.0, 1.0, -1.0], [0.0, 0.0, 1.0]]],
                     auto_scale: 1.08,
                     crop: Some([1.0, 2.0, 300.0, 200.0]),
@@ -969,7 +969,7 @@ mod tests {
                 }),
             },
             WorkerReply::Group { comp, layer: LayerId(1), group: Box::new(g), message: "ok".into() },
-            WorkerReply::Segs { segs: vec![SegData::new(5, &effectcraft_track::roto::FrameSeg::empty(4, 3))] },
+            WorkerReply::Segs { segs: vec![SegData::new(5, &unwritten_studio_track::roto::FrameSeg::empty(4, 3))] },
             WorkerReply::Fill {
                 plan: Box::new(crate::commands::content_fill::FillPlan {
                     comp,
@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     /// Runs jobs in a session sharing `footage` (the synthetic clip of the tracking tests).
-    struct InlineWith(Arc<dyn effectcraft_render::FootageSource>);
+    struct InlineWith(Arc<dyn unwritten_studio_render::FootageSource>);
     impl Offload for InlineWith {
         fn start(&self, req: WorkerRequest, inbox: Arc<Inbox>) -> Result<(), String> {
             let req: WorkerRequest = serde_json::from_str(&serde_json::to_string(&req).unwrap()).unwrap();
@@ -1124,7 +1124,7 @@ mod tests {
         report(1, 2); // no hook: nothing happens
         let seen = Rc::new(RefCell::new(vec![]));
         let s2 = seen.clone();
-        effectcraft_render::passes::block_on(with_hook(Box::new(move |d, t| s2.borrow_mut().push((d, t))), async {
+        unwritten_studio_render::passes::block_on(with_hook(Box::new(move |d, t| s2.borrow_mut().push((d, t))), async {
             report(1, 3);
             report(2, 3);
         }));

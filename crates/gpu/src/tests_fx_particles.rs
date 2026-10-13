@@ -2,10 +2,10 @@
 //! plan is shared, the raster runs on each side. Direct on a buffer (full and half resolution)
 //! and composited at 8 and 32 bpc (`tests_fx_sim`'s harness).
 
-use effectcraft_keyframe::Value;
-use effectcraft_project::{BitDepth, LayerSource, build};
-use effectcraft_render::RenderOpts;
-use effectcraft_time::Tick;
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::{BitDepth, LayerSource, build};
+use unwritten_studio_render::RenderOpts;
+use unwritten_studio_time::Tick;
 
 use crate::tests::{Scene, check, compare_at, n, opts, set};
 use crate::tests_fx_sim::{case, composited, e, off, on};

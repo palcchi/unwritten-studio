@@ -4296,8 +4296,8 @@ mod tests {
         assert_eq!(tr_args("Template: {}\n{}", &[&"Title", &"My description"]), "Šablona: Title\nMy description");
         assert_eq!(tr_args("Leave all attributes in \"{}\"", &[&"File Čeština"]), "Ponechat všechny atributy v „File Čeština“");
         assert_eq!(
-            tr_args("{} — double-click to open, {}-click to reveal", &[&"File.ecproj", &"Alt"]),
-            "File.ecproj — dvojklikem otevřete, kliknutím s Alt zobrazíte umístění"
+            tr_args("{} — double-click to open, {}-click to reveal", &[&"File.uwproj", &"Alt"]),
+            "File.uwproj — dvojklikem otevřete, kliknutím s Alt zobrazíte umístění"
         );
         assert_eq!(tr_args("Proxy Use: {}", &[]), "Použití zástupných souborů: ");
         set_current("en");
@@ -4450,7 +4450,7 @@ mod tests {
     /// everywhere.
     #[test]
     fn settings_pages_are_translated() {
-        use effectcraft_engine::prefs::{Item, Kind, LANGUAGES, pages};
+        use unwritten_studio_engine::prefs::{Item, Kind, LANGUAGES, pages};
         const VERBATIM: &[&str] = &["", "3D", "1/2", "1/4", "1/8", "sRGB", "Display P3", "px", "s", "%", "MB", "GB", "Hz", "pt"];
         let mut drawn = Vec::new();
         for page in pages() {

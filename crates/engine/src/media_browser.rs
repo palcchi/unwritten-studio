@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use effectcraft_project::{Footage, FootageKind, Item, ItemKind, Project};
+use unwritten_studio_project::{Footage, FootageKind, Item, ItemKind, Project};
 
 /// Media Browser state (in [`crate::EditorState`], serde for agents).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -213,7 +213,7 @@ pub fn kind_of(path: &str) -> Option<&'static str> {
         Some("data")
     } else if MODEL.contains(&e) {
         Some("model")
-    } else if matches!(e, "ecproj" | "ectemplate" | "json5") {
+    } else if matches!(e, "uwproj" | "uwtemplate" | "json5") {
         Some("project")
     } else {
         None

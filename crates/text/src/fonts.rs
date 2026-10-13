@@ -94,12 +94,12 @@ impl DirectorySource {
         // folders (/run/host/…) and the folders the fontconfig configuration names.
         #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "wasm32")))]
         dirs.extend(crate::font_dirs::unix_font_dirs(&crate::font_dirs::FontEnv::from_process()));
-        dirs.extend(extra_dirs(std::env::var_os("EFFECTCRAFT_FONT_DIRS").as_deref()));
+        dirs.extend(extra_dirs(std::env::var_os("UNWRITTEN_STUDIO_FONT_DIRS").as_deref()));
         Self { dirs }
     }
 }
 
-/// Extra font folders from `EFFECTCRAFT_FONT_DIRS` (a path list, `:`-separated, `;` on Windows), so a
+/// Extra font folders from `UNWRITTEN_STUDIO_FONT_DIRS` (a path list, `:`-separated, `;` on Windows), so a
 /// tool can hand Unwritten Studio its own font library without installing the fonts system-wide.
 fn extra_dirs(var: Option<&std::ffi::OsStr>) -> Vec<PathBuf> {
     var.map(|v| std::env::split_paths(v).filter(|p| !p.as_os_str().is_empty()).collect()).unwrap_or_default()
@@ -660,10 +660,10 @@ fn requested_cjk_locale() -> Option<String> {
 }
 
 /// The CJK locale to use: [`set_cjk_locale`] when the host asked for one, otherwise the locale
-/// environment (`LANG`, `LC_ALL`, `LC_CTYPE`; `EFFECTCRAFT_CJK_LOCALE` overrides them).
+/// environment (`LANG`, `LC_ALL`, `LC_CTYPE`; `UNWRITTEN_STUDIO_CJK_LOCALE` overrides them).
 fn active_cjk_locale() -> String {
     requested_cjk_locale().unwrap_or_else(|| {
-        ["EFFECTCRAFT_CJK_LOCALE", "LC_ALL", "LC_CTYPE", "LANG"]
+        ["UNWRITTEN_STUDIO_CJK_LOCALE", "LC_ALL", "LC_CTYPE", "LANG"]
             .iter()
             .filter_map(|k| std::env::var(k).ok())
             .map(|v| v.trim().to_ascii_lowercase())

@@ -9,11 +9,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use effectcraft_engine::Session;
-use effectcraft_engine::commands::expr_tools::{self, ExprError};
-use effectcraft_engine::project::{ItemId, Project};
-use effectcraft_engine::render::{EvalCtx, ExprHost, FootageSource};
-use effectcraft_engine::time::Tick;
+use unwritten_studio_engine::Session;
+use unwritten_studio_engine::commands::expr_tools::{self, ExprError};
+use unwritten_studio_engine::project::{ItemId, Project};
+use unwritten_studio_engine::render::{EvalCtx, ExprHost, FootageSource};
+use unwritten_studio_engine::time::Tick;
 use web_time::Instant;
 
 const QUIET: Duration = Duration::from_millis(150);
@@ -277,11 +277,11 @@ impl Drop for Worker {
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::*;
-    use effectcraft_engine::keyframe::Value;
-    use effectcraft_engine::project::{Layer, Property};
     use serde_json::json;
     use std::sync::atomic::AtomicUsize;
     use std::sync::mpsc;
+    use unwritten_studio_engine::keyframe::Value;
+    use unwritten_studio_engine::project::{Layer, Property};
 
     struct Host {
         main: std::thread::ThreadId,
@@ -436,9 +436,9 @@ mod tests {
 
     #[test]
     fn viewer_edits_do_not_wait_for_hidden_diagnostics_with_or_without_warnings() {
-        use crate::{EffectcraftApp, bench::Driver};
+        use crate::{UnwrittenStudioApp, bench::Driver};
         let (s, host, entered) = fixture(false, true);
-        let mut d = Driver::new(EffectcraftApp::new(s), egui::vec2(1680., 1020.));
+        let mut d = Driver::new(UnwrittenStudioApp::new(s), egui::vec2(1680., 1020.));
         for _ in 0..3 {
             d.step();
         }

@@ -1,0 +1,45 @@
+{
+  "total_commits": 656,
+  "models": [
+    {
+      "company": "Anthropic",
+      "model": "Claude Opus",
+      "version": "5.5",
+      "commits": 603,
+      "lines_added": 362122,
+      "lines_deleted": 21289
+    },
+    {
+      "company": "Anthropic",
+      "model": "Claude",
+      "version": "",
+      "commits": 16,
+      "lines_added": 1577,
+      "lines_deleted": 146
+    },
+    {
+      "company": "OpenAI",
+      "model": "Codex",
+      "version": "",
+      "commits": 5,
+      "lines_added": 1046,
+      "lines_deleted": 40
+    },
+    {
+      "company": "Anthropic",
+      "model": "Claude Opus",
+      "version": "4.8",
+      "commits": 1,
+      "lines_added": 1632,
+      "lines_deleted": 3
+    },
+    {
+      "company": "Anthropic",
+      "model": "Claude Sonnet",
+      "version": "5.5",
+      "commits": 1,
+      "lines_added": 59,
+      "lines_deleted": 0
+    }
+  ]
+}

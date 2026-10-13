@@ -1142,545 +1142,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "effectcraft"
-version = "0.9.2"
-dependencies = [
- "cpal",
- "effectcraft-engine",
- "effectcraft-host",
- "effectcraft-ui-egui",
- "eframe",
- "egui",
- "fmv-macos-events",
- "log",
- "muda",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "pollster 0.4.0",
- "rfd",
- "serde",
- "serde_json",
- "winit",
- "winresource",
- "zbus",
-]
-
-[[package]]
-name = "effectcraft-automation"
-version = "0.9.2"
-dependencies = [
- "effectcraft-engine",
- "effectcraft-host",
- "effectcraft-script",
- "image",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-av1enc"
-version = "0.9.2"
-dependencies = [
- "filmcraft-av1",
-]
-
-[[package]]
-name = "effectcraft-cli"
-version = "0.9.2"
-dependencies = [
- "cpu-time",
- "effectcraft-automation",
- "effectcraft-engine",
- "effectcraft-gpu",
- "effectcraft-host",
- "effectcraft-render",
- "effectcraft-time",
- "effectcraft-ui-egui",
- "image",
- "serde_json",
-]
-
-[[package]]
-name = "effectcraft-color"
-version = "0.9.2"
-dependencies = [
- "proptest",
- "serde",
-]
-
-[[package]]
-name = "effectcraft-effects"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-project",
- "effectcraft-raster",
- "effectcraft-segment",
- "effectcraft-track",
- "log",
- "rayon",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "effectcraft-engine"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-geom",
- "effectcraft-interchange",
- "effectcraft-keyframe",
- "effectcraft-lottie",
- "effectcraft-model",
- "effectcraft-path",
- "effectcraft-pdf",
- "effectcraft-project",
- "effectcraft-psd",
- "effectcraft-raster",
- "effectcraft-render",
- "effectcraft-segment",
- "effectcraft-svg",
- "effectcraft-text",
- "effectcraft-time",
- "effectcraft-track",
- "exr",
- "image",
- "kurbo",
- "log",
- "rayon",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-export"
-version = "0.9.2"
-dependencies = [
- "effectcraft-av1enc",
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-hevcenc",
- "effectcraft-keyframe",
- "effectcraft-media",
- "effectcraft-opusenc",
- "effectcraft-project",
- "effectcraft-raster",
- "effectcraft-render",
- "effectcraft-time",
- "effectcraft-vp9enc",
- "filmcraft-aac",
- "filmcraft-h264enc",
- "filmcraft-isobmff",
- "filmcraft-opus",
- "filmcraft-prores",
- "filmcraft-vp9",
- "gif",
- "image",
- "log",
- "rayon",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-expr"
-version = "0.9.2"
-dependencies = [
- "boa_engine",
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-path",
- "effectcraft-project",
- "effectcraft-render",
- "effectcraft-text",
- "effectcraft-time",
- "serde_json",
-]
-
-[[package]]
-name = "effectcraft-geom"
-version = "0.9.2"
-dependencies = [
- "proptest",
- "serde",
-]
-
-[[package]]
-name = "effectcraft-gpu"
-version = "0.9.2"
-dependencies = [
- "bytemuck",
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-project",
- "effectcraft-raster",
- "effectcraft-render",
- "effectcraft-text",
- "effectcraft-time",
- "js-sys",
- "log",
- "pollster 0.4.0",
- "wasm-bindgen",
- "web-time",
- "wgpu",
-]
-
-[[package]]
-name = "effectcraft-hevcenc"
-version = "0.9.2"
-dependencies = [
- "filmcraft-hevc",
-]
-
-[[package]]
-name = "effectcraft-host"
-version = "0.9.2"
-dependencies = [
- "effectcraft-engine",
- "effectcraft-export",
- "effectcraft-expr",
- "effectcraft-interchange",
- "effectcraft-media",
- "effectcraft-pdf",
- "effectcraft-plugin",
- "effectcraft-project",
- "effectcraft-psd",
- "effectcraft-raster",
- "effectcraft-script",
- "effectcraft-svg",
- "effectcraft-time",
- "exr",
- "gif",
- "image",
- "log",
- "rayon",
- "serde_json",
-]
-
-[[package]]
-name = "effectcraft-interchange"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-keyframe",
- "effectcraft-project",
- "effectcraft-time",
- "filmcraft-color",
- "filmcraft-geom",
- "filmcraft-interchange",
- "filmcraft-media",
- "filmcraft-project",
- "filmcraft-time",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-keyframe"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-geom",
- "effectcraft-time",
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "effectcraft-lottie"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-keyframe",
- "effectcraft-path",
- "effectcraft-project",
- "effectcraft-render",
- "effectcraft-text",
- "effectcraft-time",
- "kurbo",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-media"
-version = "0.9.2"
-dependencies = [
- "effectcraft-model",
- "effectcraft-pdf",
- "effectcraft-project",
- "effectcraft-psd",
- "effectcraft-raster",
- "effectcraft-render",
- "effectcraft-svg",
- "effectcraft-time",
- "exr",
- "filmcraft-codecs",
- "filmcraft-color",
- "filmcraft-frame",
- "filmcraft-isobmff",
- "filmcraft-media",
- "filmcraft-time",
- "gif",
- "image",
- "log",
- "rayon",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-model"
-version = "0.9.2"
-dependencies = [
- "effectcraft-geom",
- "image",
- "miniz_oxide 0.8.9",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-opusenc"
-version = "0.9.2"
-dependencies = [
- "filmcraft-opus",
-]
-
-[[package]]
-name = "effectcraft-path"
-version = "0.9.2"
-dependencies = [
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-raster",
- "kurbo",
- "linesweeper",
- "tiny-skia",
-]
-
-[[package]]
-name = "effectcraft-pdf"
-version = "0.9.2"
-dependencies = [
- "effectcraft-raster",
- "effectcraft-svg",
- "effectcraft-text",
- "image",
- "kurbo",
- "miniz_oxide 0.8.9",
- "skrifa",
- "zune-jpeg",
-]
-
-[[package]]
-name = "effectcraft-plugin"
-version = "0.9.2"
-dependencies = [
- "effectcraft-effects",
- "effectcraft-keyframe",
- "effectcraft-project",
- "effectcraft-raster",
- "serde_json",
- "wasmi",
-]
-
-[[package]]
-name = "effectcraft-project"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-time",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "effectcraft-psd"
-version = "0.9.2"
-dependencies = [
- "miniz_oxide 0.8.9",
-]
-
-[[package]]
-name = "effectcraft-raster"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-geom",
- "rayon",
-]
-
-[[package]]
-name = "effectcraft-render"
-version = "0.9.2"
-dependencies = [
- "effectcraft-color",
- "effectcraft-effects",
- "effectcraft-geom",
- "effectcraft-keyframe",
- "effectcraft-model",
- "effectcraft-path",
- "effectcraft-project",
- "effectcraft-raster",
- "effectcraft-text",
- "effectcraft-time",
- "kurbo",
- "log",
- "lz4_flex",
- "rayon",
- "serde",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-script"
-version = "0.9.2"
-dependencies = [
- "boa_engine",
- "effectcraft-engine",
- "effectcraft-expr",
- "effectcraft-keyframe",
- "effectcraft-path",
- "effectcraft-project",
- "effectcraft-psd",
- "effectcraft-render",
- "effectcraft-time",
- "serde_json",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-segment"
-version = "0.9.2"
-dependencies = [
- "miniz_oxide 0.8.9",
- "ndarray",
- "rayon",
-]
-
-[[package]]
-name = "effectcraft-svg"
-version = "0.9.2"
-dependencies = [
- "effectcraft-geom",
- "effectcraft-path",
- "effectcraft-raster",
- "kurbo",
- "rayon",
- "roxmltree",
-]
-
-[[package]]
-name = "effectcraft-text"
-version = "0.9.2"
-dependencies = [
- "effectcraft-keyframe",
- "harfrust",
- "kurbo",
- "skrifa",
- "unicode-bidi",
- "unicode-linebreak",
-]
-
-[[package]]
-name = "effectcraft-time"
-version = "0.9.2"
-dependencies = [
- "proptest",
- "serde",
-]
-
-[[package]]
-name = "effectcraft-track"
-version = "0.9.2"
-dependencies = [
- "effectcraft-raster",
- "effectcraft-segment",
- "rayon",
- "serde",
- "serde_json",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-ui-egui"
-version = "0.9.2"
-dependencies = [
- "craft-ui",
- "effectcraft-color",
- "effectcraft-engine",
- "effectcraft-geom",
- "effectcraft-gpu",
- "effectcraft-host",
- "effectcraft-keyframe",
- "effectcraft-path",
- "effectcraft-project",
- "effectcraft-render",
- "effectcraft-text",
- "effectcraft-time",
- "eframe",
- "egui",
- "egui_kittest",
- "exr",
- "image",
- "kurbo",
- "log",
- "pollster 0.4.0",
- "rayon",
- "serde",
- "serde_json",
- "sys-locale",
- "toml",
- "web-time",
-]
-
-[[package]]
-name = "effectcraft-vp9enc"
-version = "0.9.2"
-
-[[package]]
-name = "effectcraft-web"
-version = "0.9.2"
-dependencies = [
- "effectcraft-engine",
- "effectcraft-export",
- "effectcraft-expr",
- "effectcraft-gpu",
- "effectcraft-host",
- "effectcraft-media",
- "effectcraft-ui-egui",
- "eframe",
- "egui",
- "js-sys",
- "log",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
-]
-
-[[package]]
 name = "eframe"
 version = "0.36.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5311,16 +4772,554 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
 
 [[package]]
+name = "unwritten-studio"
+version = "0.9.2"
+dependencies = [
+ "cpal",
+ "eframe",
+ "egui",
+ "fmv-macos-events",
+ "log",
+ "muda",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "pollster 0.4.0",
+ "rfd",
+ "serde",
+ "serde_json",
+ "unwritten-studio-engine",
+ "unwritten-studio-host",
+ "unwritten-studio-ui-egui",
+ "winit",
+ "winresource",
+ "zbus",
+]
+
+[[package]]
+name = "unwritten-studio-automation"
+version = "0.9.2"
+dependencies = [
+ "image",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-engine",
+ "unwritten-studio-host",
+ "unwritten-studio-script",
+]
+
+[[package]]
+name = "unwritten-studio-av1enc"
+version = "0.9.2"
+dependencies = [
+ "filmcraft-av1",
+]
+
+[[package]]
+name = "unwritten-studio-cli"
+version = "0.9.2"
+dependencies = [
+ "cpu-time",
+ "image",
+ "serde_json",
+ "unwritten-studio-automation",
+ "unwritten-studio-engine",
+ "unwritten-studio-gpu",
+ "unwritten-studio-host",
+ "unwritten-studio-render",
+ "unwritten-studio-time",
+ "unwritten-studio-ui-egui",
+]
+
+[[package]]
+name = "unwritten-studio-color"
+version = "0.9.2"
+dependencies = [
+ "proptest",
+ "serde",
+]
+
+[[package]]
 name = "unwritten-studio-core"
 version = "0.9.2"
 dependencies = [
- "effectcraft-engine",
- "effectcraft-gpu",
- "effectcraft-host",
- "effectcraft-project",
- "effectcraft-time",
  "serde",
  "serde_json",
+ "unwritten-studio-engine",
+ "unwritten-studio-gpu",
+ "unwritten-studio-host",
+ "unwritten-studio-project",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-effects"
+version = "0.9.2"
+dependencies = [
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "unwritten-studio-color",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-raster",
+ "unwritten-studio-segment",
+ "unwritten-studio-track",
+]
+
+[[package]]
+name = "unwritten-studio-engine"
+version = "0.9.2"
+dependencies = [
+ "exr",
+ "image",
+ "kurbo",
+ "log",
+ "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-geom",
+ "unwritten-studio-interchange",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-lottie",
+ "unwritten-studio-model",
+ "unwritten-studio-path",
+ "unwritten-studio-pdf",
+ "unwritten-studio-project",
+ "unwritten-studio-psd",
+ "unwritten-studio-raster",
+ "unwritten-studio-render",
+ "unwritten-studio-segment",
+ "unwritten-studio-svg",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+ "unwritten-studio-track",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-export"
+version = "0.9.2"
+dependencies = [
+ "filmcraft-aac",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "filmcraft-opus",
+ "filmcraft-prores",
+ "filmcraft-vp9",
+ "gif",
+ "image",
+ "log",
+ "rayon",
+ "thiserror 2.0.21",
+ "unwritten-studio-av1enc",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-hevcenc",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-media",
+ "unwritten-studio-opusenc",
+ "unwritten-studio-project",
+ "unwritten-studio-raster",
+ "unwritten-studio-render",
+ "unwritten-studio-time",
+ "unwritten-studio-vp9enc",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-expr"
+version = "0.9.2"
+dependencies = [
+ "boa_engine",
+ "serde_json",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-path",
+ "unwritten-studio-project",
+ "unwritten-studio-render",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-geom"
+version = "0.9.2"
+dependencies = [
+ "proptest",
+ "serde",
+]
+
+[[package]]
+name = "unwritten-studio-gpu"
+version = "0.9.2"
+dependencies = [
+ "bytemuck",
+ "js-sys",
+ "log",
+ "pollster 0.4.0",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-raster",
+ "unwritten-studio-render",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+ "wasm-bindgen",
+ "web-time",
+ "wgpu",
+]
+
+[[package]]
+name = "unwritten-studio-hevcenc"
+version = "0.9.2"
+dependencies = [
+ "filmcraft-hevc",
+]
+
+[[package]]
+name = "unwritten-studio-host"
+version = "0.9.2"
+dependencies = [
+ "exr",
+ "gif",
+ "image",
+ "log",
+ "rayon",
+ "serde_json",
+ "unwritten-studio-engine",
+ "unwritten-studio-export",
+ "unwritten-studio-expr",
+ "unwritten-studio-interchange",
+ "unwritten-studio-media",
+ "unwritten-studio-pdf",
+ "unwritten-studio-plugin",
+ "unwritten-studio-project",
+ "unwritten-studio-psd",
+ "unwritten-studio-raster",
+ "unwritten-studio-script",
+ "unwritten-studio-svg",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-interchange"
+version = "0.9.2"
+dependencies = [
+ "filmcraft-color",
+ "filmcraft-geom",
+ "filmcraft-interchange",
+ "filmcraft-media",
+ "filmcraft-project",
+ "filmcraft-time",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-color",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-keyframe"
+version = "0.9.2"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "unwritten-studio-color",
+ "unwritten-studio-geom",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-lottie"
+version = "0.9.2"
+dependencies = [
+ "kurbo",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-path",
+ "unwritten-studio-project",
+ "unwritten-studio-render",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-media"
+version = "0.9.2"
+dependencies = [
+ "exr",
+ "filmcraft-codecs",
+ "filmcraft-color",
+ "filmcraft-frame",
+ "filmcraft-isobmff",
+ "filmcraft-media",
+ "filmcraft-time",
+ "gif",
+ "image",
+ "log",
+ "rayon",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-model",
+ "unwritten-studio-pdf",
+ "unwritten-studio-project",
+ "unwritten-studio-psd",
+ "unwritten-studio-raster",
+ "unwritten-studio-render",
+ "unwritten-studio-svg",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-model"
+version = "0.9.2"
+dependencies = [
+ "image",
+ "miniz_oxide 0.8.9",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-geom",
+]
+
+[[package]]
+name = "unwritten-studio-opusenc"
+version = "0.9.2"
+dependencies = [
+ "filmcraft-opus",
+]
+
+[[package]]
+name = "unwritten-studio-path"
+version = "0.9.2"
+dependencies = [
+ "kurbo",
+ "linesweeper",
+ "tiny-skia",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-raster",
+]
+
+[[package]]
+name = "unwritten-studio-pdf"
+version = "0.9.2"
+dependencies = [
+ "image",
+ "kurbo",
+ "miniz_oxide 0.8.9",
+ "skrifa",
+ "unwritten-studio-raster",
+ "unwritten-studio-svg",
+ "unwritten-studio-text",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "unwritten-studio-plugin"
+version = "0.9.2"
+dependencies = [
+ "serde_json",
+ "unwritten-studio-effects",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-raster",
+ "wasmi",
+]
+
+[[package]]
+name = "unwritten-studio-project"
+version = "0.9.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-color",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-time",
+]
+
+[[package]]
+name = "unwritten-studio-psd"
+version = "0.9.2"
+dependencies = [
+ "miniz_oxide 0.8.9",
+]
+
+[[package]]
+name = "unwritten-studio-raster"
+version = "0.9.2"
+dependencies = [
+ "rayon",
+ "unwritten-studio-color",
+ "unwritten-studio-geom",
+]
+
+[[package]]
+name = "unwritten-studio-render"
+version = "0.9.2"
+dependencies = [
+ "kurbo",
+ "log",
+ "lz4_flex",
+ "rayon",
+ "serde",
+ "unwritten-studio-color",
+ "unwritten-studio-effects",
+ "unwritten-studio-geom",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-model",
+ "unwritten-studio-path",
+ "unwritten-studio-project",
+ "unwritten-studio-raster",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-script"
+version = "0.9.2"
+dependencies = [
+ "boa_engine",
+ "serde_json",
+ "unwritten-studio-engine",
+ "unwritten-studio-expr",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-path",
+ "unwritten-studio-project",
+ "unwritten-studio-psd",
+ "unwritten-studio-render",
+ "unwritten-studio-time",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-segment"
+version = "0.9.2"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "ndarray",
+ "rayon",
+]
+
+[[package]]
+name = "unwritten-studio-svg"
+version = "0.9.2"
+dependencies = [
+ "kurbo",
+ "rayon",
+ "roxmltree",
+ "unwritten-studio-geom",
+ "unwritten-studio-path",
+ "unwritten-studio-raster",
+]
+
+[[package]]
+name = "unwritten-studio-text"
+version = "0.9.2"
+dependencies = [
+ "harfrust",
+ "kurbo",
+ "skrifa",
+ "unicode-bidi",
+ "unicode-linebreak",
+ "unwritten-studio-keyframe",
+]
+
+[[package]]
+name = "unwritten-studio-time"
+version = "0.9.2"
+dependencies = [
+ "proptest",
+ "serde",
+]
+
+[[package]]
+name = "unwritten-studio-track"
+version = "0.9.2"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde_json",
+ "unwritten-studio-raster",
+ "unwritten-studio-segment",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-ui-egui"
+version = "0.9.2"
+dependencies = [
+ "craft-ui",
+ "eframe",
+ "egui",
+ "egui_kittest",
+ "exr",
+ "image",
+ "kurbo",
+ "log",
+ "pollster 0.4.0",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "unwritten-studio-color",
+ "unwritten-studio-engine",
+ "unwritten-studio-geom",
+ "unwritten-studio-gpu",
+ "unwritten-studio-host",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-path",
+ "unwritten-studio-project",
+ "unwritten-studio-render",
+ "unwritten-studio-text",
+ "unwritten-studio-time",
+ "web-time",
+]
+
+[[package]]
+name = "unwritten-studio-vp9enc"
+version = "0.9.2"
+
+[[package]]
+name = "unwritten-studio-web"
+version = "0.9.2"
+dependencies = [
+ "eframe",
+ "egui",
+ "js-sys",
+ "log",
+ "serde",
+ "serde_json",
+ "unwritten-studio-engine",
+ "unwritten-studio-export",
+ "unwritten-studio-expr",
+ "unwritten-studio-gpu",
+ "unwritten-studio-host",
+ "unwritten-studio-media",
+ "unwritten-studio-ui-egui",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]

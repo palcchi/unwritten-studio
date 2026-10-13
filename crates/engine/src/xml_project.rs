@@ -1,22 +1,23 @@
-//! File ▸ Save a Copy As XML…: the project as an XML document (`.ecprojx`), the counterpart of
-//! After Effects' `.aepx`. It is a lossless, element-per-value encoding of the `.ecproj` JSON, so
-//! File ▸ Open reads it back (and saving to a `.ecprojx` path writes XML again):
+//! File ▸ Save a Copy As XML…: the project as an XML document (`.uwprojx`), the counterpart of
+//! After Effects' `.aepx`. It is a lossless, element-per-value encoding of the `.uwproj` JSON, so
+//! File ▸ Open reads it back (and saving to a `.uwprojx` path writes XML again):
 //!
 //! ```xml
 //! <?xml version="1.0" encoding="UTF-8"?>
-//! <Unwritten StudioProject encoding="json" version="1">
+//! <UnwrittenStudioProject encoding="json" version="1">
 //!   <obj>
 //!     <m n="version"><num>3</num></m>
 //!     <m n="items"><arr>…</arr></m>
 //!   </obj>
-//! </Unwritten StudioProject>
+//! </UnwrittenStudioProject>
 //! ```
 //!
 //! `obj`/`m n="key"` (object members), `arr`, `str`, `num`, `bool`, `null`.
 
 use serde_json::{Map, Value};
 
-const ROOT: &str = "Unwritten StudioProject";
+const ROOT: &str = "UnwrittenStudioProject";
+const LEGACY_ROOT: &str = "Unwritten StudioProject";
 
 /// How deep `arr`/`obj` elements may nest: the JSON reader's own limit (`serde_json` stops at
 /// 128), so every project the JSON form can hold reads from XML too. Without a limit a deeply
@@ -26,13 +27,13 @@ const MAX_DEPTH: usize = 128;
 /// Whether `text` looks like an XML project.
 pub fn is_xml(text: &str) -> bool {
     let t = text.trim_start_matches('\u{feff}').trim_start();
-    t.starts_with("<?xml") || t.starts_with(&format!("<{ROOT}"))
+    t.starts_with("<?xml") || t.starts_with(&format!("<{ROOT}")) || t.starts_with(&format!("<{LEGACY_ROOT}"))
 }
 
 /// Whether a path names an XML project copy.
 pub fn is_xml_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
-    p.ends_with(".ecprojx") || p.ends_with(".xml")
+    p.ends_with(".uwprojx") || p.ends_with(".ecprojx") || p.ends_with(".xml")
 }
 
 fn esc(s: &str, out: &mut String) {
@@ -246,7 +247,10 @@ fn unesc(s: &str) -> String {
 
 /// The project JSON of an XML project document.
 pub fn from_xml(text: &str) -> Result<String, String> {
-    let mut p = P { s: text.trim_start_matches('\u{feff}'), i: 0 };
+    // Previous exports used a space in the root tag. It is not a valid XML name; normalize that
+    // exact root spelling on read while every new export uses the valid, namespaced identifier.
+    let normalized = text.replace("<Unwritten StudioProject ", "<UnwrittenStudioProject ").replace("</Unwritten StudioProject>", "</UnwrittenStudioProject>");
+    let mut p = P { s: normalized.trim_start_matches('\u{feff}'), i: 0 };
     let (root, _, _) = p.open()?;
     if root != ROOT {
         return Err(format!("not an Unwritten Studio XML project (root <{root}>)"));
@@ -265,8 +269,12 @@ mod tests {
         let j = serde_json::json!({"a": [1, 2.5, -3e-7, true, null, "x<y & \"z\"\n\tq"], "b": {}, "c": [], "d": "", "é": {"n": "ünï"}});
         let xml = to_xml(&j.to_string()).unwrap();
         assert!(is_xml(&xml));
+        assert!(xml.contains("<UnwrittenStudioProject encoding=\"json\" version=\"1\">"));
         assert!(xml.contains("<m n=\"a\">"));
         let back: Value = serde_json::from_str(&from_xml(&xml).unwrap()).unwrap();
+        assert_eq!(back, j);
+        let legacy = xml.replace("<UnwrittenStudioProject ", "<Unwritten StudioProject ").replace("</UnwrittenStudioProject>", "</Unwritten StudioProject>");
+        let back: Value = serde_json::from_str(&from_xml(&legacy).unwrap()).unwrap();
         assert_eq!(back, j);
         assert!(from_xml("<Other/>").is_err());
     }

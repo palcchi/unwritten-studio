@@ -3,14 +3,14 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use effectcraft_color::Label;
-use effectcraft_keyframe::{ShapePath, Value};
-use effectcraft_project::build::{self, Ids};
-use effectcraft_project::{
+use unwritten_studio_color::Label;
+use unwritten_studio_keyframe::{ShapePath, Value};
+use unwritten_studio_project::build::{self, Ids};
+use unwritten_studio_project::{
     AlphaMode, AutoOrient, Comp, Footage, FootageKind, GroupKind, ItemId, ItemKind, Layer, LayerId, LayerSource, Marker, MatteKind, Node, ParamUi, Project,
     PropGroup, Property, Solid, TrackMatte,
 };
-use effectcraft_time::{FrameRate, Tick};
+use unwritten_studio_time::{FrameRate, Tick};
 use serde_json::Value as Json;
 
 use crate::anim::{self, Im, import_prop};
@@ -285,8 +285,8 @@ fn effects(im: &mut Im, ids: &mut Ids, list: &[Json], g: &mut PropGroup, size: [
             im.warn(format!("effect `{nm}` (type {ty}) is not supported (skipped)"));
             continue;
         };
-        let Some(spec) = effectcraft_effects::find(map.id) else { continue };
-        let mut fg = effectcraft_effects::instantiate(spec, ids, nm, size);
+        let Some(spec) = unwritten_studio_effects::find(map.id) else { continue };
+        let mut fg = unwritten_studio_effects::instantiate(spec, ids, nm, size);
         if e.get("en").and_then(Json::as_u64) == Some(0) {
             fg.enabled = false;
         }

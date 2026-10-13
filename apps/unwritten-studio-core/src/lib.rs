@@ -6,9 +6,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use effectcraft_engine::Session;
-use effectcraft_project::{ItemId, ItemKind, Project, SavedView};
-use effectcraft_time::Tick;
+use unwritten_studio_engine::Session;
+use unwritten_studio_project::{ItemId, ItemKind, Project, SavedView};
+use unwritten_studio_time::Tick;
 use serde_json::{Value, json};
 
 pub struct UnwrittenStudioCore {
@@ -16,12 +16,12 @@ pub struct UnwrittenStudioCore {
 }
 
 fn make_session() -> Session {
-    let mut session = effectcraft_host::session();
+    let mut session = unwritten_studio_host::session();
     #[cfg(target_os = "ios")]
     {
-        match effectcraft_gpu::Gpu::headless() {
+        match unwritten_studio_gpu::Gpu::headless() {
             Some(gpu) => {
-                session.window_adapter = Some(effectcraft_engine::render::Accelerator::name(&gpu));
+                session.window_adapter = Some(unwritten_studio_engine::render::Accelerator::name(&gpu));
                 session.accel = Some(Arc::new(gpu));
                 session.accel_note = None;
             }
@@ -244,9 +244,9 @@ mod ffi {
                 Err(e) => return result_json::<Value>(Err(e)),
             };
             result_json(with_session(core, |session| {
-                let json_text = if effectcraft_engine::xml_project::is_xml(&text) { effectcraft_engine::xml_project::from_xml(&text)? } else { text };
+                let json_text = if unwritten_studio_engine::xml_project::is_xml(&text) { unwritten_studio_engine::xml_project::from_xml(&text)? } else { text };
                 let (project, repaired) = Project::from_json_repaired(&json_text).map_err(|e| e.to_string())?;
-                let view: SavedView = effectcraft_project::saved_view(&json_text);
+                let view: SavedView = unwritten_studio_project::saved_view(&json_text);
                 session.replace_project(project, None);
                 session.restore_view(&view);
                 Ok(json!({"repaired":repaired}))

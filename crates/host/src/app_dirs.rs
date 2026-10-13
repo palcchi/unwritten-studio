@@ -2,14 +2,14 @@
 //! plug-ins): the one directory [`config_dir`](crate::config_dir) returns.
 //!
 //! In order:
-//! 1. `EFFECTCRAFT_CONFIG_DIR`, when set (tests, agents, custom setups).
+//! 1. `UNWRITTEN_STUDIO_CONFIG_DIR`, when set (tests, agents, custom setups).
 //! 2. **Portable mode** (#993): a marker file ([`PORTABLE_MARKERS`]) beside the executable puts
 //!    everything in `<exe dir>/Unwritten StudioData`, so a portable copy on a USB stick leaves nothing in
 //!    `%APPDATA%`. The Windows portable zip ships with `portable.txt`; the MSI doesn't. If that
 //!    folder can't be written (read-only medium, Program Files), a warning is logged and the
 //!    platform folder is used.
 //! 3. The platform convention: macOS `~/Library/Application Support/Unwritten Studio`, Windows
-//!    `%APPDATA%\Unwritten Studio`, Linux `$XDG_CONFIG_HOME/effectcraft` or `~/.config/effectcraft`.
+//!    `%APPDATA%\Unwritten Studio`, Linux `$XDG_CONFIG_HOME/unwritten-studio` or `~/.config/unwritten-studio`.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ pub const PORTABLE_DATA_DIR: &str = "Unwritten StudioData";
 /// How [`DataDir::dir`] was chosen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// `EFFECTCRAFT_CONFIG_DIR`.
+    /// `UNWRITTEN_STUDIO_CONFIG_DIR`.
     Override,
     /// `<exe dir>/Unwritten StudioData`.
     Portable,
@@ -41,12 +41,32 @@ pub struct DataDir {
     pub warning: Option<String>,
 }
 
+fn process_env(key: &str) -> Option<OsString> {
+    std::env::var_os(key)
+}
+
 /// The data directory for this process, resolved once (the portable check probes the disk).
 pub fn current() -> &'static DataDir {
     static DIR: OnceLock<DataDir> = OnceLock::new();
     DIR.get_or_init(|| {
         let exe = std::env::current_exe().ok();
-        let d = resolve(|k| std::env::var_os(k), exe.as_deref().and_then(Path::parent));
+        let env = process_env;
+        let mut d = resolve(&env, exe.as_deref().and_then(Path::parent));
+        if d.mode == Mode::Platform
+            && let Some(target) = d.dir.as_deref()
+            && let Some(source) = legacy_linux_dir(&env)
+            && source != target
+            && source.is_dir()
+            && !target.exists()
+            && let Err(e) = migrate_dir(&source, target)
+        {
+            let message = format!("could not migrate settings from {} to {}: {e}; the original data was left untouched", source.display(), target.display());
+            if d.warning.is_some() {
+                log::warn!("{message}");
+            } else {
+                d.warning = Some(message);
+            }
+        }
         if let Some(w) = &d.warning {
             log::warn!("{w}");
         }
@@ -56,7 +76,7 @@ pub fn current() -> &'static DataDir {
 
 /// Resolve the data directory from the environment (`env`) and the executable's folder.
 pub fn resolve(env: impl Fn(&str) -> Option<OsString>, exe_dir: Option<&Path>) -> DataDir {
-    if let Some(d) = env("EFFECTCRAFT_CONFIG_DIR") {
+    if let Some(d) = env("UNWRITTEN_STUDIO_CONFIG_DIR").or_else(|| env("EFFECTCRAFT_CONFIG_DIR")) {
         return DataDir { dir: Some(PathBuf::from(d)), mode: Mode::Override, warning: None };
     }
     let platform = platform_dir(&env);
@@ -84,7 +104,57 @@ pub fn platform_dir(env: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> 
     if cfg!(target_os = "windows") {
         return env("APPDATA").map(|a| PathBuf::from(a).join("Unwritten Studio"));
     }
-    env("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| home().map(|h| h.join(".config"))).map(|c| c.join("effectcraft"))
+    env("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| home().map(|h| h.join(".config"))).map(|c| c.join("unwritten-studio"))
+}
+
+/// The prior Linux settings folder. Its contents are copied on first launch, never moved or deleted.
+fn legacy_linux_dir(env: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    env("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| env("HOME").map(|h| PathBuf::from(h).join(".config"))).map(|c| c.join("effectcraft"))
+}
+
+/// Copy a prior config tree to a staged sibling and atomically publish it; the source is retained.
+fn migrate_dir(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    if target.exists() || !source.is_dir() || source == target {
+        return Ok(());
+    }
+    let parent = target.parent().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "config target has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    static NEXT_STAGE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let stage = parent.join(format!(".unwritten-studio-migration-{}-{}", std::process::id(), NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    std::fs::create_dir(&stage)?;
+    let result = (|| {
+        copy_tree(source, &stage)?;
+        if target.exists() {
+            return Ok(());
+        }
+        std::fs::rename(&stage, target)
+    })();
+    if stage.exists() {
+        let _ = std::fs::remove_dir_all(&stage);
+    }
+    result
+}
+
+fn copy_tree(source: &Path, target: &Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        let dest = target.join(entry.file_name());
+        if kind.is_dir() {
+            std::fs::create_dir(&dest)?;
+            copy_tree(&entry.path(), &dest)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), dest)?;
+        } else {
+            return Err(Error::new(ErrorKind::InvalidInput, format!("cannot safely copy non-regular config entry {}", entry.path().display())));
+        }
+    }
+    Ok(())
 }
 
 /// The first portable marker file in `exe_dir`, if any.
@@ -110,7 +180,7 @@ mod tests {
 
     fn temp(tag: &str) -> PathBuf {
         static N: AtomicUsize = AtomicUsize::new(0);
-        let d = std::env::temp_dir().join(format!("effectcraft-app-dirs-{tag}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let d = std::env::temp_dir().join(format!("unwritten-studio-app-dirs-{tag}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -142,7 +212,7 @@ mod tests {
         } else if cfg!(target_os = "windows") {
             assert_eq!(dir, root.join("appdata").join("Unwritten Studio"));
         } else {
-            assert_eq!(dir, root.join("home/.config/effectcraft"));
+            assert_eq!(dir, root.join("home/.config/unwritten-studio"));
         }
         assert!(!exe.join(PORTABLE_DATA_DIR).exists(), "no portable folder without a marker");
         let _ = std::fs::remove_dir_all(&root);
@@ -205,9 +275,36 @@ mod tests {
         std::fs::create_dir_all(&exe).unwrap();
         std::fs::write(exe.join("portable.txt"), b"").unwrap();
         let custom = root.join("custom");
-        let d = resolve(env_of(&[("EFFECTCRAFT_CONFIG_DIR", &custom)]), Some(&exe));
+        let d = resolve(env_of(&[("UNWRITTEN_STUDIO_CONFIG_DIR", &custom)]), Some(&exe));
         assert_eq!((d.mode, d.dir), (Mode::Override, Some(custom)));
         assert!(!exe.join(PORTABLE_DATA_DIR).exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn new_override_wins_and_legacy_override_remains_supported() {
+        let root = temp("env-alias");
+        let old = root.join("old");
+        let new = root.join("new");
+        let old_only = resolve(env_of(&[("EFFECTCRAFT_CONFIG_DIR", &old)]), None);
+        assert_eq!((old_only.mode, old_only.dir), (Mode::Override, Some(old)));
+        let both = resolve(env_of(&[("UNWRITTEN_STUDIO_CONFIG_DIR", &new), ("EFFECTCRAFT_CONFIG_DIR", &root)]), None);
+        assert_eq!((both.mode, both.dir), (Mode::Override, Some(new)));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn migration_copies_nested_data_without_removing_the_source() {
+        let root = temp("migration");
+        let old = root.join("old");
+        let new = root.join("new");
+        std::fs::create_dir_all(old.join("Plug-ins")).unwrap();
+        std::fs::write(old.join("prefs.json"), b"settings").unwrap();
+        std::fs::write(old.join("Plug-ins/example.wasm"), b"plugin").unwrap();
+        migrate_dir(&old, &new).unwrap();
+        assert_eq!(std::fs::read(new.join("prefs.json")).unwrap(), b"settings");
+        assert_eq!(std::fs::read(new.join("Plug-ins/example.wasm")).unwrap(), b"plugin");
+        assert_eq!(std::fs::read(old.join("prefs.json")).unwrap(), b"settings");
         let _ = std::fs::remove_dir_all(&root);
     }
 

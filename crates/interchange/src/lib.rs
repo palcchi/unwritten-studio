@@ -166,22 +166,22 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // ---------------------------------------------------------------- shared conversions
 
-pub(crate) fn rate_in(r: filmcraft_time::FrameRate) -> effectcraft_time::FrameRate {
-    if r.num <= 0 || r.den <= 0 { effectcraft_time::FrameRate::new(30, 1) } else { effectcraft_time::FrameRate::new(r.num, r.den) }
+pub(crate) fn rate_in(r: filmcraft_time::FrameRate) -> unwritten_studio_time::FrameRate {
+    if r.num <= 0 || r.den <= 0 { unwritten_studio_time::FrameRate::new(30, 1) } else { unwritten_studio_time::FrameRate::new(r.num, r.den) }
 }
 
-pub(crate) fn rate_out(r: effectcraft_time::FrameRate) -> filmcraft_time::FrameRate {
+pub(crate) fn rate_out(r: unwritten_studio_time::FrameRate) -> filmcraft_time::FrameRate {
     filmcraft_time::FrameRate { num: r.num, den: r.den }
 }
 
 // Both projects count time in the same ticks (254 016 000 000 per second).
-const _: () = assert!(filmcraft_time::TICKS_PER_SECOND == effectcraft_time::TICKS_PER_SECOND);
+const _: () = assert!(filmcraft_time::TICKS_PER_SECOND == unwritten_studio_time::TICKS_PER_SECOND);
 
-pub(crate) fn tick_in(t: filmcraft_time::Tick) -> effectcraft_time::Tick {
-    effectcraft_time::Tick(t.0)
+pub(crate) fn tick_in(t: filmcraft_time::Tick) -> unwritten_studio_time::Tick {
+    unwritten_studio_time::Tick(t.0)
 }
 
-pub(crate) fn tick_out(t: effectcraft_time::Tick) -> filmcraft_time::Tick {
+pub(crate) fn tick_out(t: unwritten_studio_time::Tick) -> filmcraft_time::Tick {
     filmcraft_time::Tick(t.0)
 }
 

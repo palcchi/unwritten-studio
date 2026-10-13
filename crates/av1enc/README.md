@@ -1,4 +1,4 @@
-# effectcraft-av1enc
+# unwritten-studio-av1enc
 
 Clean-room, pure-Rust AV1 encoder for Unwritten Studio's MP4 / WebM export (layer L0, `std` only,
 no `unsafe`, builds for `wasm32-unknown-unknown`).

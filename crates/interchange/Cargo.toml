@@ -1,5 +1,5 @@
 [package]
-name = "effectcraft-interchange"
+name = "unwritten-studio-interchange"
 description = "Premiere Pro interop through timeline interchange: Final Cut Pro 7 XML (xmeml), FCPXML, OpenTimelineIO and CMX 3600 EDL sequences to and from compositions (via filmcraft-interchange)"
 version.workspace = true
 edition.workspace = true
@@ -10,10 +10,10 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-effectcraft-time = { workspace = true }
-effectcraft-color = { workspace = true }
-effectcraft-keyframe = { workspace = true }
-effectcraft-project = { workspace = true }
+unwritten-studio-time = { workspace = true }
+unwritten-studio-color = { workspace = true }
+unwritten-studio-keyframe = { workspace = true }
+unwritten-studio-project = { workspace = true }
 filmcraft-interchange = { workspace = true }
 filmcraft-project = { workspace = true }
 filmcraft-media = { workspace = true }

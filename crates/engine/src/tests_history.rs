@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use effectcraft_project::Project;
+use unwritten_studio_project::Project;
 use serde_json::{Value, json};
 
 use crate::Session;
@@ -143,7 +143,7 @@ fn modified_mark_follows_undo_and_no_op_edits_record_nothing() {
     let mut s = Session::default();
     s.execute("comp.new", json!({"name": "H", "width": 64, "height": 64, "duration": 2})).unwrap();
     solid(&mut s, "A");
-    let path = std::env::temp_dir().join(format!("ec-dirty-{}.ecproj", std::process::id()));
+    let path = std::env::temp_dir().join(format!("ec-dirty-{}.uwproj", std::process::id()));
     s.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
     assert!(!s.is_dirty());
     // Setting a value to what it already is: no undo step, still saved.

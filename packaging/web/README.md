@@ -1,13 +1,13 @@
 # Hosting Unwritten Studio for the web
 
-`effectcraft-web-<version>.zip` (from the GitHub release, or `packaging/web/package.sh`) holds a
-static site in `effectcraft-web-<version>/`:
+`unwritten-studio-web-<version>.zip` (from the GitHub release, or `packaging/web/package.sh`) holds a
+static site in `unwritten-studio-web-<version>/`:
 
 | File | What it is |
 |---|---|
 | `index.html` | The page. It loads everything through relative URLs. |
-| `effectcraft_web.js` | wasm-bindgen glue (generated, ES module) |
-| `effectcraft_web_bg.wasm` | The app: about 58 MB, about 17 MB with gzip and 10 MB with Brotli (v0.3.1) |
+| `unwritten_studio_web.js` | wasm-bindgen glue (generated, ES module) |
+| `unwritten_studio_web_bg.wasm` | The app: about 58 MB, about 17 MB with gzip and 10 MB with Brotli (v0.3.1) |
 | `snippets/…/js/host.js` | Browser glue (storage, audio, workers) |
 | `worker.js`, `audio-worklet.js` | Render and frame workers, and audio playback |
 | `sw.js`, `manifest.webmanifest`, icons | Offline install: the service worker and the app manifest |
@@ -18,15 +18,15 @@ There is no server-side code. Upload the folder's contents anywhere that serves 
 ## Any path works
 
 All URLs in `index.html` are relative: the page is written that way
-(`apps/effectcraft-web/web/index.html`), and `package.sh` refuses a build with root-absolute
+(`apps/unwritten-studio-web/web/index.html`), and `package.sh` refuses a build with root-absolute
 URLs. So the site works at a domain root (`https://example.com/`), under a prefix
-(`https://example.com/tools/effectcraft/`) and from a CDN bucket.
+(`https://example.com/tools/unwritten-studio/`) and from a CDN bucket.
 
-The file names are the same in every release (`effectcraft_web_bg.wasm` and so on), so browsers
+The file names are the same in every release (`unwritten_studio_web_bg.wasm` and so on), so browsers
 must revalidate them: a long-lived cache would keep returning visitors on the old version after
 you upgrade in place. Revalidation is cheap (an unchanged file answers `304 Not Modified`), and
 the service worker keeps the app for offline use after the first visit. To cache the files for
-longer, serve each release from its own versioned path (`/effectcraft/0.4.0/`).
+longer, serve each release from its own versioned path (`/unwritten-studio/0.4.0/`).
 
 ## Required server settings
 
@@ -48,7 +48,7 @@ longer, serve each release from its own versioned path (`/effectcraft/0.4.0/`).
 nginx example:
 
 ```nginx
-location /effectcraft/ {
+location /unwritten-studio/ {
     types { application/wasm wasm; text/javascript js; text/html html; }
     gzip on;
     gzip_types application/wasm text/javascript text/html;
@@ -62,7 +62,7 @@ Local test: `python3 -m http.server 8765` inside the folder, then open http://lo
 
 ```html
 <iframe
-  src="https://example.com/effectcraft/"
+  src="https://example.com/unwritten-studio/"
   title="Unwritten Studio"
   style="width: 100%; height: 720px; border: 0;"
   allow="fullscreen; clipboard-read; clipboard-write"
@@ -74,7 +74,7 @@ Local test: `python3 -m http.server 8765` inside the folder, then open http://lo
 - Keyboard shortcuts go to the iframe after the user clicks into it, as with any embedded app.
 - **Cross-origin embeds** work. Preferences, projects and imported media are kept in the
   iframe origin's browser storage: the Origin Private File System, else IndexedDB, else memory
-  only (`effectcraft.info().storage.backend` says which; see `docs/web.md` › Persistence).
+  only (`unwritten-studio.info().storage.backend` says which; see `docs/web.md` › Persistence).
   Browsers that partition or block third-party storage may forget them between visits, and the
   app then starts with defaults.
 - **Sandboxed iframes** need at least
@@ -94,6 +94,6 @@ Unwritten Studio renders with wgpu. It uses **WebGPU** when the browser has it a
 | `?webgl` | Force the WebGL2 backend (useful when a WebGPU driver misbehaves) |
 | `?cpu` | Force the CPU canvas path (slowest, most compatible) |
 
-For example: `<iframe src="https://example.com/effectcraft/?webgl" ...>`.
+For example: `<iframe src="https://example.com/unwritten-studio/?webgl" ...>`.
 
 A browser with neither WebGPU nor WebGL2 gets a message in place of the app.

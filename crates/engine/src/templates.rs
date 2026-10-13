@@ -4,9 +4,9 @@
 //!   `ATTRIBUTION.md`): each builds its project by running engine commands on a scratch session,
 //!   so it is exactly what a user could make by hand. Their thumbnails are rendered by our own
 //!   renderer the first time they are asked for.
-//! - **User templates**: File ▸ Save as Template… writes the open project as an `.ectemplate`
+//! - **User templates**: File ▸ Save as Template… writes the open project as an `.uwtemplate`
 //!   (the open template container of `essential.exportTemplate`: a stored ZIP with
-//!   `manifest.json` (`kind: "project"`), `project.ecproj`, `poster.png` and `thumb.txt`) into
+//!   `manifest.json` (`kind: "project"`), `project.uwproj`, `poster.png` and `thumb.txt`) into
 //!   the config store's `Templates` folder.
 //! - **Embedded footage**: saving embeds the footage files the project reads (default on,
 //!   `embedFootage`), as `media/<item>/<file>` entries like `essential.exportTemplate`, up to
@@ -24,11 +24,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use effectcraft_keyframe::{Keyframe, Value as KV};
-use effectcraft_project::{ItemId, LayerId, Project};
-use effectcraft_time::Tick;
 use serde::Serialize;
 use serde_json::{Value, json};
+use unwritten_studio_keyframe::{Keyframe, Value as KV};
+use unwritten_studio_project::{ItemId, LayerId, Project};
+use unwritten_studio_time::Tick;
 
 use crate::commands::essential::{TEMPLATE_FORMAT, TEMPLATE_VERSION, read_template};
 use crate::commands::{CommandSpec, always, bad, str_p};
@@ -37,7 +37,7 @@ use crate::{EngineError, Result, Session, cmd, query};
 /// The config-store folder user templates live in.
 pub const TEMPLATES_DIR: &str = "Templates";
 /// Template file extension.
-pub const EXT: &str = "ectemplate";
+pub const EXT: &str = "uwtemplate";
 /// Default cap on the footage a saved template embeds (MB, all files together).
 pub const EMBED_LIMIT_MB: f64 = 256.0;
 /// Folder (under the settings folder) that footage extracted from templates goes to.
@@ -160,9 +160,9 @@ fn shape(s: &mut Session, name: &str, kind: &str, size: [f64; 2], fill: &str, po
 
 fn gradient(s: &mut Session, l: LayerId, start: [f64; 2], end: [f64; 2], a: &str, b: &str, radial: bool) -> Result<()> {
     ex(s, "effect.apply", json!({"layers": [l.0], "effect": "ec.generate.gradientramp"}))?;
-    let hex = |h: &str| effectcraft_color::Rgba::from_hex(h).map(|c| [c.r as f64, c.g as f64, c.b as f64, 1.0]).unwrap_or([1.0; 4]);
+    let hex = |h: &str| unwritten_studio_color::Rgba::from_hex(h).map(|c| [c.r as f64, c.g as f64, c.b as f64, 1.0]).unwrap_or([1.0; 4]);
     edit_layer(s, l, |ly| {
-        let set = |ly: &mut effectcraft_project::Layer, k: &str, v: KV| {
+        let set = |ly: &mut unwritten_studio_project::Layer, k: &str, v: KV| {
             if let Some(p) = ly.props.prop_mut(&format!("effects/#1/{k}")) {
                 p.value = v;
             }
@@ -176,7 +176,7 @@ fn gradient(s: &mut Session, l: LayerId, start: [f64; 2], end: [f64; 2], a: &str
     Ok(())
 }
 
-fn edit_layer(s: &mut Session, l: LayerId, f: impl FnOnce(&mut effectcraft_project::Layer)) {
+fn edit_layer(s: &mut Session, l: LayerId, f: impl FnOnce(&mut unwritten_studio_project::Layer)) {
     let Some(cid) = s.active_comp_id() else { return };
     if let Some(ly) = Arc::make_mut(&mut s.project).comp_mut(cid).and_then(|c| c.layer_mut(l)) {
         f(ly);
@@ -185,7 +185,7 @@ fn edit_layer(s: &mut Session, l: LayerId, f: impl FnOnce(&mut effectcraft_proje
 
 /// Eased keyframes at seconds (layer time = comp time: template layers start at 0).
 fn keys(s: &mut Session, l: LayerId, path: &str, list: &[(f64, KV)]) {
-    let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(effectcraft_time::FrameRate::FPS_30);
+    let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(unwritten_studio_time::FrameRate::FPS_30);
     edit_layer(s, l, |ly| {
         if let Some(p) = ly.props.prop_mut(path) {
             p.keys = list.iter().map(|(t, v)| Keyframe::new(rate.snap_nearest(Tick::from_seconds_f64(*t)), v.clone()).eased()).collect();
@@ -209,7 +209,7 @@ fn expose(s: &mut Session, l: LayerId, path: &str, name: &str) -> Result<()> {
 fn finish(s: &mut Session, eg_name: &str, poster: f64) -> Result<()> {
     ex(s, "essential.setName", json!({"name": eg_name}))?;
     if let Some(cid) = s.active_comp_id() {
-        let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(effectcraft_time::FrameRate::FPS_30);
+        let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(unwritten_studio_time::FrameRate::FPS_30);
         if let Some(c) = Arc::make_mut(&mut s.project).comp_mut(cid) {
             c.poster_time = rate.snap_nearest(Tick::from_seconds_f64(poster));
         }
@@ -384,7 +384,7 @@ fn text_orbit(s: &mut Session) -> Result<()> {
             (8.0 * i as f64 / n as f64, KV::Vec3([960.0 + 1500.0 * a.sin(), 380.0, -1500.0 * a.cos()]))
         })
         .collect();
-    let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(effectcraft_time::FrameRate::FPS_30);
+    let rate = s.active_comp().map(|c| c.frame_rate).unwrap_or(unwritten_studio_time::FrameRate::FPS_30);
     edit_layer(s, cam, |ly| {
         if let Some(p) = ly.props.prop_mut("transform/position") {
             p.keys = list.iter().map(|(t, v)| Keyframe::new(rate.snap_nearest(Tick::from_seconds_f64(*t)), v.clone())).collect();
@@ -506,7 +506,7 @@ pub fn render_thumb(p: &Project) -> Option<String> {
 pub fn thumbnail(s: &Session, id: &str) -> Result<String> {
     if let Some(name) = id.strip_prefix("user/") {
         let bytes = read_user(s, name)?;
-        let entries = effectcraft_lottie::zip::read_stored(&bytes);
+        let entries = unwritten_studio_lottie::zip::read_stored(&bytes);
         if let Some((_, t)) = entries.iter().find(|(k, _)| k == "thumb.txt") {
             return Ok(String::from_utf8_lossy(t).into_owned());
         }
@@ -531,14 +531,17 @@ fn user_dir(s: &Session) -> Option<PathBuf> {
     s.config.as_ref()?.dir().map(|d| d.join(TEMPLATES_DIR))
 }
 
-/// File names of the user templates (`*.ectemplate`), sorted.
+/// File names of the user templates (`*.uwtemplate` plus legacy `*.ectemplate`), sorted.
 pub fn user_files(s: &Session) -> Vec<String> {
     let Some(cfg) = &s.config else { return vec![] };
     let mut v: Vec<String> = match user_dir(s) {
         Some(d) => cfg.files().list(&d).into_iter().map(|(n, _)| n).collect(),
         None => cfg.list(TEMPLATES_DIR),
     };
-    v.retain(|n| n.to_ascii_lowercase().ends_with(&format!(".{EXT}")));
+    v.retain(|n| {
+        let lower = n.to_ascii_lowercase();
+        lower.ends_with(&format!(".{EXT}")) || lower.ends_with(".ectemplate")
+    });
     v.sort();
     v
 }
@@ -557,7 +560,7 @@ fn read_user(s: &Session, file: &str) -> Result<Vec<u8>> {
         Some(d) => s.services.read_file(&d.join(file).to_string_lossy()).map_err(|e| EngineError::Other(format!("cannot read template {file}: {e}"))),
         None => cfg
             .read(&format!("{TEMPLATES_DIR}/{file}"))
-            .and_then(|t| effectcraft_track::roto::rle::base64_decode(&t))
+            .and_then(|t| unwritten_studio_track::roto::rle::base64_decode(&t))
             .ok_or_else(|| bad("templates", format!("no user template `{file}`"))),
     }
 }
@@ -573,7 +576,7 @@ fn write_user(s: &Session, file: &str, bytes: &[u8]) -> Result<String> {
         }
         None => {
             let name = format!("{TEMPLATES_DIR}/{file}");
-            cfg.write(&name, &effectcraft_track::roto::rle::base64_encode(bytes)).map_err(|e| EngineError::Other(format!("cannot write {name}: {e}")))?;
+            cfg.write(&name, &unwritten_studio_track::roto::rle::base64_encode(bytes)).map_err(|e| EngineError::Other(format!("cannot write {name}: {e}")))?;
             Ok(name)
         }
     }
@@ -614,7 +617,7 @@ pub fn list(s: &Session) -> Vec<TemplateInfo> {
     for f in user_files(s) {
         let Ok(bytes) = read_user(s, &f) else { continue };
         let Ok((m, p, _)) = read_template(&bytes) else { continue };
-        let stem = f.strip_suffix(&format!(".{EXT}")).unwrap_or(&f).to_string();
+        let stem = f.strip_suffix(&format!(".{EXT}")).or_else(|| f.strip_suffix(".ectemplate")).unwrap_or(&f).to_string();
         let name = Some(str_of(&m, "name")).filter(|n| !n.is_empty()).unwrap_or(stem);
         let cat = Some(str_of(&m, "category")).filter(|n| !n.is_empty()).unwrap_or_else(|| "My Templates".into());
         v.push(info_from(format!("user/{f}"), name, str_of(&m, "description"), cat, false, &p));
@@ -623,7 +626,7 @@ pub fn list(s: &Session) -> Vec<TemplateInfo> {
 }
 
 /// A template's project, its name and its archive entries (embedded footage), by id or by
-/// `.ectemplate` file.
+/// `.uwtemplate` file.
 type Opened = (Project, String, Vec<(String, Vec<u8>)>);
 
 fn project_of(s: &Session, id: Option<&str>, path: Option<&str>) -> Result<Opened> {
@@ -664,7 +667,7 @@ fn embed_footage(s: &Session, proj: &mut Project, entries: &mut Vec<(String, Vec
     for id in ids {
         let Some(it) = proj.items.get_mut(&id) else { continue };
         let name = it.name.clone();
-        let effectcraft_project::ItemKind::Footage(f) = &mut it.kind else { continue };
+        let unwritten_studio_project::ItemKind::Footage(f) = &mut it.kind else { continue };
         if f.data.is_some() || f.path.is_empty() {
             continue;
         }
@@ -749,7 +752,7 @@ fn extract_footage(s: &Session, proj: &mut Project, entries: &[(String, Vec<u8>)
         written.insert(k.clone(), out);
     }
     for it in proj.items.values_mut() {
-        if let effectcraft_project::ItemKind::Footage(f) = &mut it.kind {
+        if let unwritten_studio_project::ItemKind::Footage(f) = &mut it.kind {
             if let Some(w) = written.get(&f.path) {
                 f.path = w.clone();
             }
@@ -867,7 +870,7 @@ fn save_as(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let t = s.time_of(cid);
     let mut entries: Vec<(String, Vec<u8>)> =
-        vec![("manifest.json".into(), serde_json::to_vec_pretty(&manifest).unwrap_or_default()), ("project.ecproj".into(), proj.to_json().into_bytes())];
+        vec![("manifest.json".into(), serde_json::to_vec_pretty(&manifest).unwrap_or_default()), ("project.uwproj".into(), proj.to_json().into_bytes())];
     entries.extend(media_entries);
     if let Ok((w, h, rgba)) = s.render_rgba8(cid, t, 320) {
         if let Ok(png) = crate::commands::comp_more::encode_png(&rgba, w, h) {
@@ -875,7 +878,7 @@ fn save_as(s: &mut Session, p: &Value) -> Result<Value> {
         }
         entries.push(("thumb.txt".into(), encode_thumb(w, h, &rgba).into_bytes()));
     }
-    let bytes = effectcraft_lottie::zip::store(&entries);
+    let bytes = unwritten_studio_lottie::zip::store(&entries);
     let at = write_user(s, &file, &bytes)?;
     match &warning {
         Some(w) => s.events.push(crate::Event::Toast { message: format!("Saved template “{name}”: {w}"), error: false }),
@@ -918,7 +921,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "New Project from Template",
             [],
             None,
-            "{id (templates.list) | path (.ectemplate), projectPath? (save the new project there; embedded footage goes to `<stem> Footage/` next to it), footageDir?} → an untitled copy (embedded footage extracted: `footage` lists the files)",
+            "{id (templates.list) | path (.uwtemplate), projectPath? (save the new project there; embedded footage goes to `<stem> Footage/` next to it), footageDir?} → an untitled copy (embedded footage extracted: `footage` lists the files)",
             always,
             create
         ),
@@ -984,7 +987,7 @@ mod tests {
         s.execute("templates.create", json!({"id": "kinetic-type"})).unwrap();
         s.execute("layer.newSolid", json!({"name": "Mine", "color": "#ff00ff"})).unwrap();
         let r = s.execute("templates.saveAs", json!({"name": "My Promo", "description": "Mine", "category": "Work"})).unwrap();
-        assert_eq!(r["id"], "user/My Promo.ectemplate");
+        assert_eq!(r["id"], "user/My Promo.uwtemplate");
         let l = list(&s);
         let mine = l.iter().find(|t| !t.builtin).unwrap();
         assert_eq!((mine.name.as_str(), mine.category.as_str(), mine.description.as_str()), ("My Promo", "Work", "Mine"));
@@ -1003,8 +1006,8 @@ mod tests {
         assert!(s.execute("templates.delete", json!({"id": "title-card"})).is_err());
         s.execute("templates.delete", json!({"id": mine.id})).unwrap();
         assert!(list(&s).iter().all(|t| t.builtin));
-        assert!(s.execute("templates.delete", json!({"id": "user/My Promo.ectemplate"})).is_err());
-        assert!(s.execute("templates.create", json!({"id": "user/../x.ectemplate"})).is_err());
+        assert!(s.execute("templates.delete", json!({"id": "user/My Promo.uwtemplate"})).is_err());
+        assert!(s.execute("templates.create", json!({"id": "user/../x.uwtemplate"})).is_err());
     }
 
     #[test]
@@ -1020,7 +1023,7 @@ mod tests {
         let mut s = Session { config: Some(Arc::new(DirConfig::new(&dir))), ..Default::default() };
         s.execute("templates.create", json!({"id": "lower-third"})).unwrap();
         s.execute("templates.saveAs", json!({"name": "On Disk"})).unwrap();
-        let f = dir.join(TEMPLATES_DIR).join("On Disk.ectemplate");
+        let f = dir.join(TEMPLATES_DIR).join("On Disk.uwtemplate");
         // A real template file: the Essential Graphics reader understands it too.
         let info = s.execute("essential.templateInfo", json!({"path": f.to_string_lossy()})).unwrap();
         assert_eq!((info["kind"].as_str(), info["name"].as_str()), (Some("project"), Some("On Disk")));
@@ -1051,8 +1054,8 @@ mod tests {
     }
 
     fn add_footage(s: &mut Session, name: &str, path: &str, sequence: Vec<String>) -> ItemId {
-        let f = effectcraft_project::Footage { path: path.into(), width: 4, height: 4, has_video: true, sequence, ..Default::default() };
-        Arc::make_mut(&mut s.project).add_item(name, effectcraft_color::Label::Aqua, None, effectcraft_project::ItemKind::Footage(f))
+        let f = unwritten_studio_project::Footage { path: path.into(), width: 4, height: 4, has_video: true, sequence, ..Default::default() };
+        Arc::make_mut(&mut s.project).add_item(name, unwritten_studio_color::Label::Aqua, None, unwritten_studio_project::ItemKind::Footage(f))
     }
 
     fn footage_paths(s: &Session) -> Vec<(String, String, Vec<String>)> {
@@ -1061,7 +1064,7 @@ mod tests {
             .items
             .values()
             .filter_map(|i| match &i.kind {
-                effectcraft_project::ItemKind::Footage(f) => Some((i.name.clone(), f.path.clone(), f.sequence.clone())),
+                unwritten_studio_project::ItemKind::Footage(f) => Some((i.name.clone(), f.path.clone(), f.sequence.clone())),
                 _ => None,
             })
             .collect();
@@ -1100,8 +1103,8 @@ mod tests {
         assert!(warning.contains("1 footage item") && warning.contains("1 MB"), "{warning}");
         assert!(s.events.iter().any(|e| matches!(e, crate::Event::Toast { message, .. } if message.contains("embedding limit"))));
         // The archive holds the files under media/<item>/.
-        let bytes = read_user(&s, "With Footage.ectemplate").unwrap();
-        let entries = effectcraft_lottie::zip::read_stored(&bytes);
+        let bytes = read_user(&s, "With Footage.uwtemplate").unwrap();
+        let entries = unwritten_studio_lottie::zip::read_stored(&bytes);
         let names: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).filter(|k| k.starts_with("media/")).collect();
         assert_eq!(names.len(), 4, "{names:?}");
         assert!(names.iter().any(|n| n.ends_with("/still.png")) && names.iter().any(|n| n.ends_with("/shot_002.png")));
@@ -1110,9 +1113,9 @@ mod tests {
         for f in &seq {
             std::fs::remove_file(f).unwrap();
         }
-        let proj_path = root.join("work").join("Promo.ecproj");
+        let proj_path = root.join("work").join("Promo.uwproj");
         std::fs::create_dir_all(proj_path.parent().unwrap()).unwrap();
-        let r = s.execute("templates.create", json!({"id": "user/With Footage.ectemplate", "projectPath": proj_path.to_string_lossy()})).unwrap();
+        let r = s.execute("templates.create", json!({"id": "user/With Footage.uwtemplate", "projectPath": proj_path.to_string_lossy()})).unwrap();
         assert_eq!(r["untitled"], false);
         assert_eq!(r["footage"].as_array().unwrap().len(), 4, "{r}");
         assert_eq!(s.path.as_deref(), Some(&*proj_path.to_string_lossy()));
@@ -1129,16 +1132,16 @@ mod tests {
         // Over the cap: still linked to the original file.
         assert_eq!(get("Big").1, big);
         // Without a project path: a fresh folder under the settings folder each time.
-        s.execute("templates.create", json!({"id": "user/With Footage.ectemplate"})).unwrap();
+        s.execute("templates.create", json!({"id": "user/With Footage.uwtemplate"})).unwrap();
         let base = root.join("config").join(FOOTAGE_DIR);
         assert!(base.join("With Footage").join("still.png").exists());
         assert!(s.path.is_none());
-        s.execute("templates.create", json!({"id": "user/With Footage.ectemplate"})).unwrap();
+        s.execute("templates.create", json!({"id": "user/With Footage.uwtemplate"})).unwrap();
         assert!(base.join("With Footage 2").join("still.png").exists());
         // Not embedding: no media entries.
         let r = s.execute("templates.saveAs", json!({"name": "Linked", "embedFootage": false})).unwrap();
         assert_eq!(r["embedded"], 0);
-        let entries = effectcraft_lottie::zip::read_stored(&read_user(&s, "Linked.ectemplate").unwrap());
+        let entries = unwritten_studio_lottie::zip::read_stored(&read_user(&s, "Linked.uwtemplate").unwrap());
         assert!(entries.iter().all(|(k, _)| !k.starts_with("media/")));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1167,7 +1170,7 @@ mod tests {
         }
         struct Imp(Arc<Mem>);
         impl crate::Importer for Imp {
-            fn probe(&self, path: &str) -> std::result::Result<effectcraft_project::Footage, String> {
+            fn probe(&self, path: &str) -> std::result::Result<unwritten_studio_project::Footage, String> {
                 Err(path.into())
             }
             fn register(&self, path: &str, _: &[u8]) {
@@ -1185,19 +1188,19 @@ mod tests {
         s.execute("templates.create", json!({"id": "title-card"})).unwrap();
         add_footage(&mut s, "Clip", "/clip.png", vec![]);
         s.execute("templates.saveAs", json!({"name": "Web"})).unwrap();
-        s.execute("templates.create", json!({"id": "user/Web.ectemplate"})).unwrap();
+        s.execute("templates.create", json!({"id": "user/Web.uwtemplate"})).unwrap();
         let want = format!("/{FOOTAGE_DIR}/Web/clip.png");
         assert_eq!(mem.0.lock().unwrap().get(&want), Some(&vec![3; 64]));
         assert_eq!(*mem.1.lock().unwrap(), vec![want.clone()]);
         assert!(footage_paths(&s).iter().any(|f| f.1 == want));
-        s.execute("templates.create", json!({"id": "user/Web.ectemplate"})).unwrap();
+        s.execute("templates.create", json!({"id": "user/Web.uwtemplate"})).unwrap();
         assert!(mem.0.lock().unwrap().contains_key(&format!("/{FOOTAGE_DIR}/Web 2/clip.png")));
     }
 
     #[test]
     fn file_names_are_safe() {
-        assert_eq!(file_name_for("A/B: C"), "A_B_ C.ectemplate");
-        assert_eq!(file_name_for(""), "Template.ectemplate");
+        assert_eq!(file_name_for("A/B: C"), "A_B_ C.uwtemplate");
+        assert_eq!(file_name_for(""), "Template.uwtemplate");
         assert!(!file_name_for("...").starts_with('.'));
         assert!(check_name("../x").is_err());
     }

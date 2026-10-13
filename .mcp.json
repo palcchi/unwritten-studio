@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "effectcraft": {
+    "unwritten-studio": {
       "command": "cargo",
-      "args": ["run", "--quiet", "--release", "-p", "effectcraft-cli", "--", "mcp", "--demo"]
+      "args": ["run", "--quiet", "--release", "-p", "unwritten-studio-cli", "--", "mcp", "--demo"]
     },
-    "effectcraft-app": {
+    "unwritten-studio-app": {
       "command": "cargo",
-      "args": ["run", "--quiet", "--release", "-p", "effectcraft-cli", "--", "mcp", "--bridge", "9877"]
+      "args": ["run", "--quiet", "--release", "-p", "unwritten-studio-cli", "--", "mcp", "--bridge", "9877"]
     }
   }
 }

@@ -28,7 +28,7 @@
 <br>
 
 <p align="center">
-  <img src="docs/images/effectcraft-hero.png" alt="Unwritten Studio's main window: the animated demo composition in the Composition panel, the Project panel, a Timeline with text, shape and solid layers, and the Properties panel showing the selected text layer's transform, font and paragraph settings" width="100%">
+  <img src="docs/images/unwritten-studio-hero.png" alt="Unwritten Studio's main window: the animated demo composition in the Composition panel, the Project panel, a Timeline with text, shape and solid layers, and the Properties panel showing the selected text layer's transform, font and paragraph settings" width="100%">
 </p>
 
 <p align="center">
@@ -58,8 +58,10 @@ then to go further in a few places where it matters to us:
 
 - **Lottie import and export built in**, so animations can go straight to the web and apps
   without a plugin.
-- **A project file you can read.** Projects are versioned JSON (`.ecproj`), so they diff cleanly
+- **A project file you can read.** Projects are versioned JSON (`.uwproj`), so they diff cleanly
   in version control.
+- **Older projects remain readable.** Existing `.ecproj` / `.ecprojx` projects and `.ectemplate`
+  templates can still be opened; new saves use the Unwritten Studio extensions.
 - **Everything is scriptable.** Every menu item, timeline drag and property edit goes through one
   command registry, so the same actions are reachable from a command line, a JSON control
   channel and an MCP server for agents.
@@ -96,7 +98,7 @@ or into the Timeline, between layers and at the time you point to.
   rigging, and follow-through for hair and cloth.
 
 <p align="center">
-  <img src="docs/images/effectcraft-graph-editor.png" alt="The Graph Editor showing an eased value curve for a text animator's Range Start, with the graph editor's button bar for hold, linear, auto Bezier and Easy Ease" width="100%">
+  <img src="docs/images/unwritten-studio-graph-editor.png" alt="The Graph Editor showing an eased value curve for a text animator's Range Start, with the graph editor's button bar for hold, linear, auto Bezier and Easy Ease" width="100%">
 </p>
 
 ## Effects
@@ -112,7 +114,7 @@ controls. All nine **Layer Styles** (Drop Shadow, Inner/Outer Glow, Bevel and Em
 overlays, Stroke) with Global Light. Preview plays audio in sync, with meters and waveforms.
 
 <p align="center">
-  <img src="docs/images/effectcraft-effects.png" alt="A CC Particle World burst with Glow, and the Effect Controls panel listing the particle system's parameters" width="100%">
+  <img src="docs/images/unwritten-studio-effects.png" alt="A CC Particle World burst with Glow, and the Effect Controls panel listing the particle system's parameters" width="100%">
 </p>
 
 ## 3D
@@ -123,7 +125,7 @@ with soft ray-traced shadows, layers that intersect correctly, orbit, pan and do
 tools, and Front, Top, Left and Custom views.
 
 <p align="center">
-  <img src="docs/images/effectcraft-3d.png" alt="The 3D Showcase demo in Custom View 1: intersecting cards lit by a spot light with soft shadows on a gridded floor, with the camera frustum and light drawn as wireframes" width="100%">
+  <img src="docs/images/unwritten-studio-3d.png" alt="The 3D Showcase demo in Custom View 1: intersecting cards lit by a spot light with soft shadows on a gridded floor, with the camera frustum and light drawn as wireframes" width="100%">
 </p>
 
 ## Export
@@ -142,7 +144,7 @@ modes, time remapping, optionally expressions) as `.json` or `.lottie`, and list
 cannot express; File ▸ Import ▸ Lottie… opens one as a new composition.
 
 <p align="center">
-  <img src="docs/images/effectcraft-render-queue.png" alt="The Render Queue panel with two compositions queued" width="100%">
+  <img src="docs/images/unwritten-studio-render-queue.png" alt="The Render Queue panel with two compositions queued" width="100%">
 </p>
 
 ## Built for agents
@@ -150,14 +152,14 @@ cannot express; File ▸ Import ▸ Lottie… opens one as a new composition.
 Everything you can do from a menu is a command with an id, and agents can reach every one of
 them:
 
-- **MCP server:** `effectcraft-cli mcp` speaks the Model Context Protocol over stdio, headless
+- **MCP server:** `unwritten-studio-cli mcp` speaks the Model Context Protocol over stdio, headless
   or bridged to the running app (`--bridge 9877`). Tools cover commands, the project and property
   tree, keyframes and rendered frames. This repository ships a ready [`.mcp.json`](.mcp.json).
 - **Command line:** one-shot calls with JSON output, for example
-  `effectcraft-cli set Main '#1' transform/position '[100,360]' --time 0 main.ecproj --save`
-  or `effectcraft-cli render --comp Main --out main.mp4`, or
-  `effectcraft-cli exec file.exportLottie '{"comp":"Main","path":"main.json"}' main.ecproj`.
-- **Control channel:** `effectcraft --control 9877` accepts JSON lines to run commands, inspect
+  `unwritten-studio-cli set Main '#1' transform/position '[100,360]' --time 0 main.uwproj --save`
+  or `unwritten-studio-cli render --comp Main --out main.mp4`, or
+  `unwritten-studio-cli exec file.exportLottie '{"comp":"Main","path":"main.json"}' main.uwproj`.
+- **Control channel:** `unwritten-studio --control 9877` accepts JSON lines to run commands, inspect
   and click any widget by its automation id, and take screenshots.
 
 See [docs/agents.md](docs/agents.md) and [docs/control-protocol.md](docs/control-protocol.md).
@@ -173,13 +175,13 @@ both programs are ARM64 and runs the command-line tool there, but it doesn't ope
 or run the test suite natively on ARM64 yet, so please report anything that behaves differently.
 
 On Gentoo, the community [::snakebyte overlay](https://github.com/switch87/snakebyte-overlay) packages
-the Linux release as `media-video/effectcraft-bin` (not maintained by the Unwritten Studio team):
+the Linux release as `media-video/unwritten-studio-bin` (not maintained by the Unwritten Studio team):
 
 ```sh
 eselect repository add snakebyte git https://github.com/switch87/snakebyte-overlay.git
 emaint sync -r snakebyte
-echo 'media-video/effectcraft-bin ~amd64' >> /etc/portage/package.accept_keywords/effectcraft
-emerge --ask media-video/effectcraft-bin
+echo 'media-video/unwritten-studio-bin ~amd64' >> /etc/portage/package.accept_keywords/unwritten-studio
+emerge --ask media-video/unwritten-studio-bin
 ```
 
 To build it yourself you need [Rust](https://rustup.rs/) 1.95 or newer.
@@ -187,13 +189,15 @@ To build it yourself you need [Rust](https://rustup.rs/) 1.95 or newer.
 ```sh
 git clone https://github.com/palcchi/unwritten-studio
 cd unwritten-studio
-cargo run --release -p effectcraft          # the app (add `-- --demo` to open the demo project)
-cargo run --release -p effectcraft-cli -- render --out intro.mp4    # render the demo headless
+cargo run --release -p unwritten-studio          # the app (add `-- --demo` to open the demo project)
+cargo run --release -p unwritten-studio-cli -- render --out intro.mp4    # render the demo headless
 cargo xtask web --serve 8765                # the browser build on http://127.0.0.1:8765/ (docs/web.md)
 ```
 
 New to it? [docs/footage.md](docs/footage.md) covers importing footage and image sequences and
 Interpret Footage.
+
+For file formats, existing settings, and browser-data compatibility, see [docs/migration.md](docs/migration.md).
 
 To work on it: `cargo test --workspace`, and `cargo xtask ci` before every commit (format, lints,
 tests, layering, asset attribution and the WebAssembly build). See [CONTRIBUTING.md](CONTRIBUTING.md),
@@ -206,7 +210,7 @@ exists, including all of its effects, but existing is not the same as behaving e
 Effects, and we haven't measured that yet. Today it's a good place to try things and to tell us
 what breaks. It isn't yet a replacement for After Effects on client work. In particular:
 
-- **After Effects projects can't be opened.** Projects are saved as `.ecproj`, readable versioned
+- **After Effects projects can't be opened.** Projects are saved as `.uwproj`, readable versioned
   JSON, but Unwritten Studio can't open `.aep` / `.aepx` files, and After Effects plug-ins don't run.
 - **Behaviour still differs from After Effects in places.** Nothing yet compares our renders with
   After Effects automatically, so please report differences.
@@ -244,32 +248,32 @@ send us right now.
 
 | Build | Installer | Portable |
 |---|---|---|
-| x64 (64-bit Intel/AMD) | `effectcraft-<ver>-windows-x64.msi` | `effectcraft-<ver>-windows-x64-portable.zip` |
-| arm64 (Snapdragon and other ARM PCs) | `effectcraft-<ver>-windows-arm64.msi` | `effectcraft-<ver>-windows-arm64-portable.zip` |
-| x86 (32-bit) | `effectcraft-<ver>-windows-x86.msi` | `effectcraft-<ver>-windows-x86-portable.zip` |
+| x64 (64-bit Intel/AMD) | `unwritten-studio-<ver>-windows-x64.msi` | `unwritten-studio-<ver>-windows-x64-portable.zip` |
+| arm64 (Snapdragon and other ARM PCs) | `unwritten-studio-<ver>-windows-arm64.msi` | `unwritten-studio-<ver>-windows-arm64-portable.zip` |
+| x86 (32-bit) | `unwritten-studio-<ver>-windows-x86.msi` | `unwritten-studio-<ver>-windows-x86-portable.zip` |
 
 Installers and executables are code-signed. The installer asks where to install Unwritten Studio
 (Program Files by default), and later versions install into the same folder. To install silently
-into a folder of your choice: `msiexec /i effectcraft-<ver>-windows-x64.msi /qn INSTALLFOLDER="D:\Apps\Unwritten Studio"`.
+into a folder of your choice: `msiexec /i unwritten-studio-<ver>-windows-x64.msi /qn INSTALLFOLDER="D:\Apps\Unwritten Studio"`.
 
 ### macOS
 
 | Build | File | Notes |
 |---|---|---|
-| App, universal (Apple silicon + Intel) | `effectcraft-<ver>-macos-universal.dmg` | Signed and notarized |
-| Command-line tool, universal | `effectcraft-cli-<ver>-macos-universal.zip` | Signed and notarized |
+| App, universal (Apple silicon + Intel) | `unwritten-studio-<ver>-macos-universal.dmg` | Signed and notarized |
+| Command-line tool, universal | `unwritten-studio-cli-<ver>-macos-universal.zip` | Signed and notarized |
 
 ### Linux
 
 | Format | x86_64 | aarch64 (ARM64) | Notes |
 |---|---|---|---|
-| AppImage | `effectcraft-<ver>-linux-x86_64.AppImage` | `effectcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
-| Flatpak | `effectcraft-<ver>-linux-x86_64.flatpak` | `effectcraft-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
-| Debian/Ubuntu | `effectcraft-<ver>-linux-x86_64.deb` | `effectcraft-<ver>-linux-aarch64.deb` | |
-| Fedora/RHEL/openSUSE | `effectcraft-<ver>-linux-x86_64.rpm` | `effectcraft-<ver>-linux-aarch64.rpm` | |
-| Tarball | `effectcraft-<ver>-linux-x86_64.tar.gz` | `effectcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+| AppImage | `unwritten-studio-<ver>-linux-x86_64.AppImage` | `unwritten-studio-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
+| Flatpak | `unwritten-studio-<ver>-linux-x86_64.flatpak` | `unwritten-studio-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
+| Debian/Ubuntu | `unwritten-studio-<ver>-linux-x86_64.deb` | `unwritten-studio-<ver>-linux-aarch64.deb` | |
+| Fedora/RHEL/openSUSE | `unwritten-studio-<ver>-linux-x86_64.rpm` | `unwritten-studio-<ver>-linux-aarch64.rpm` | |
+| Tarball | `unwritten-studio-<ver>-linux-x86_64.tar.gz` | `unwritten-studio-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
 
-RISC-V 64-bit: `effectcraft-<ver>-linux-riscv64.tar.gz` (tarball only; needs glibc 2.39+, e.g. Ubuntu 24.04+ or Debian 13+).
+RISC-V 64-bit: `unwritten-studio-<ver>-linux-riscv64.tar.gz` (tarball only; needs glibc 2.39+, e.g. Ubuntu 24.04+ or Debian 13+).
 
 **File drag-and-drop on Linux:** The current eframe/winit 0.30 native Wayland backend does not
 deliver file-hover or file-drop events. On Hyprland and other native Wayland sessions, use
@@ -277,7 +281,7 @@ deliver file-hover or file-drop events. On Hyprland and other native Wayland ses
 XWayland is installed and `DISPLAY` is set:
 
 ```sh
-env -u WAYLAND_DISPLAY effectcraft
+env -u WAYLAND_DISPLAY unwritten-studio
 ```
 
 When the backend delivers events (X11/XWayland, Windows and macOS), dropping media anywhere
@@ -289,13 +293,13 @@ File ▸ Import fallback instead.
 
 | Build | File |
 |---|---|
-| x86_64 | `effectcraft-<ver>-freebsd-x86_64.tar.gz` |
+| x86_64 | `unwritten-studio-<ver>-freebsd-x86_64.tar.gz` |
 
 ### Web (WebAssembly)
 
 | Build | File | Notes |
 |---|---|---|
-| Static site | `effectcraft-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
+| Static site | `unwritten-studio-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
 
 ## Project and contributions
 

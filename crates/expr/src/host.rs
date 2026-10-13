@@ -7,11 +7,11 @@
 //! the answers and runs the script again. Expressions are pure functions of these answers, so
 //! re-running is exact, and the runtime stays free of borrowed state.
 
-use effectcraft_geom::{Mat3, Mat4};
-use effectcraft_keyframe::Value;
-use effectcraft_project::{Comp, ItemId, ItemKind, Layer, LayerId, LayerSource, Node, PropGroup, Property};
-use effectcraft_render::{EvalCtx, source_size};
-use effectcraft_time::Tick;
+use unwritten_studio_geom::{Mat3, Mat4};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::{Comp, ItemId, ItemKind, Layer, LayerId, LayerSource, Node, PropGroup, Property};
+use unwritten_studio_render::{EvalCtx, source_size};
+use unwritten_studio_time::Tick;
 
 /// A name-or-index argument (`layer("A")`, `layer(2)`, `effect(1)`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -117,7 +117,7 @@ fn cell_json(c: &str) -> serde_json::Value {
 }
 
 /// The data of a data footage item as `{data, rows, header}` JSON (see [`Req::FootageData`]).
-pub fn footage_data_json(f: &effectcraft_project::Footage) -> Option<String> {
+pub fn footage_data_json(f: &unwritten_studio_project::Footage) -> Option<String> {
     let text = f.data.as_deref()?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     Some(match f.data_format()? {
@@ -146,8 +146,8 @@ pub fn footage_data_json(f: &effectcraft_project::Footage) -> Option<String> {
 }
 
 /// A text document as the style API's JSON.
-pub fn doc_json(d: &effectcraft_keyframe::TextDoc) -> String {
-    use effectcraft_keyframe::text_doc::{char_style_json, para_style_json};
+pub fn doc_json(d: &unwritten_studio_keyframe::TextDoc) -> String {
+    use unwritten_studio_keyframe::text_doc::{char_style_json, para_style_json};
     let runs: Vec<serde_json::Value> = d.runs().iter().map(|r| serde_json::json!({"len": r.len, "style": char_style_json(&r.style)})).collect();
     let paras: Vec<serde_json::Value> = d.paras().iter().map(para_style_json).collect();
     serde_json::json!({"doc": d, "text": d.text, "runs": runs, "paras": paras}).to_string()
@@ -400,7 +400,7 @@ impl<'a> Resolver<'a> {
                 let v = if *pre { p.value_at(l.layer_time(Tick::from_seconds_f64(t))) } else { self.ctx_at(*comp, t)?.value(l, p) };
                 match v {
                     Value::Text(d) => Resp::Str(doc_json(&d)),
-                    Value::Str(s) => Resp::Str(doc_json(&effectcraft_keyframe::TextDoc::plain(&s))),
+                    Value::Str(s) => Resp::Str(doc_json(&unwritten_studio_keyframe::TextDoc::plain(&s))),
                     _ => Resp::Null,
                 }
             }
@@ -416,12 +416,12 @@ impl<'a> Resolver<'a> {
                 let ctx = self.ctx_at(*comp, f64::from_bits(*t))?;
                 let r = match &l.source {
                     LayerSource::Text => {
-                        let paths: Vec<_> = effectcraft_render::text::glyph_paths(&ctx, l).into_iter().map(|(p, _)| p).collect();
-                        effectcraft_path::bounds(&paths).map(|b| [b.y0, b.x0, b.width(), b.height()]).unwrap_or([0.0; 4])
+                        let paths: Vec<_> = unwritten_studio_render::text::glyph_paths(&ctx, l).into_iter().map(|(p, _)| p).collect();
+                        unwritten_studio_path::bounds(&paths).map(|b| [b.y0, b.x0, b.width(), b.height()]).unwrap_or([0.0; 4])
                     }
                     LayerSource::Shape => {
                         let contents = l.props.sub("contents")?;
-                        let buf = effectcraft_render::shapes::render(&ctx, l, contents, 1.0);
+                        let buf = unwritten_studio_render::shapes::render(&ctx, l, contents, 1.0);
                         if buf.img.width <= 4 {
                             [0.0; 4]
                         } else {
@@ -489,7 +489,7 @@ impl<'a> Resolver<'a> {
                 Resp::nums(crate::sample::sample_image(self.ctx, ItemId(*comp), l, [f(x), f(y)], [f(rx), f(ry)], *post, f(t))?.map(|v| v as f64))
             }
             Req::Markers { comp, layer } => {
-                let marks: Vec<(f64, &effectcraft_project::Marker)> = match layer {
+                let marks: Vec<(f64, &unwritten_studio_project::Marker)> = match layer {
                     Some(l) => {
                         let l = self.layer(*comp, *l)?;
                         l.markers.iter().map(|m| (l.comp_time(m.time).seconds(), m)).collect()

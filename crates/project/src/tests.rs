@@ -1,5 +1,5 @@
-use effectcraft_keyframe::{Keyframe, ShapePath, Value};
-use effectcraft_time::{FrameRate, Tick};
+use unwritten_studio_keyframe::{Keyframe, ShapePath, Value};
+use unwritten_studio_time::{FrameRate, Tick};
 
 use crate::build::{self, Ids};
 use crate::{Comp, ItemKind, LayerSource, MaskMode, Project, Solid};
@@ -7,10 +7,10 @@ use crate::{Comp, ItemKind, LayerSource, MaskMode, Project, Solid};
 fn project_with_layer() -> (Project, crate::ItemId) {
     let mut p = Project::default();
     let comp = Comp::new(1920, 1080, FrameRate::FPS_29_97, Tick::from_seconds_f64(10.0));
-    let cid = p.add_item("Main", effectcraft_color::Label::Sandstone, None, ItemKind::Comp(comp.clone().into()));
+    let cid = p.add_item("Main", unwritten_studio_color::Label::Sandstone, None, ItemKind::Comp(comp.clone().into()));
     let sid = p.add_item(
         "Red Solid",
-        effectcraft_color::Label::Red,
+        unwritten_studio_color::Label::Red,
         None,
         ItemKind::Solid(Solid { color: [1.0, 0.0, 0.0], width: 1920, height: 1080, pixel_aspect: 1.0 }),
     );
@@ -190,8 +190,8 @@ fn item_users_count_layers_in_every_comp() {
     let (mut p, main) = project_with_layer();
     let sid = p.find_by_name("Red Solid").unwrap().id;
     let comp = p.comp(main).unwrap().clone();
-    let pre = p.add_item("A Precomp", effectcraft_color::Label::Sandstone, None, ItemKind::Comp(comp.clone().into()));
-    let unused = p.add_item("Unused", effectcraft_color::Label::Red, None, ItemKind::Solid(Solid { color: [0.0; 3], width: 8, height: 8, pixel_aspect: 1.0 }));
+    let pre = p.add_item("A Precomp", unwritten_studio_color::Label::Sandstone, None, ItemKind::Comp(comp.clone().into()));
+    let unused = p.add_item("Unused", unwritten_studio_color::Label::Red, None, ItemKind::Solid(Solid { color: [0.0; 3], width: 8, height: 8, pixel_aspect: 1.0 }));
     // Two more layers of the solid in the precomp (it starts with one, cloned from Main), and the
     // precomp nested in Main.
     for _ in 0..2 {

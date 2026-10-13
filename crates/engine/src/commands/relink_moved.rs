@@ -12,7 +12,7 @@
 //! Paths are compared by their parts, split on `/` and `\`, so a project made on Windows relinks on
 //! macOS and the other way round.
 
-use effectcraft_project::{Footage, FootageKind, ItemId, ItemKind, Project};
+use unwritten_studio_project::{Footage, FootageKind, ItemId, ItemKind, Project};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, str_p};
@@ -260,8 +260,8 @@ mod tests {
             moved_candidates("/new/p", "/old/p/shots/a.mov"),
             ["/new/p/old/p/shots/a.mov", "/new/p/p/shots/a.mov", "/new/p/shots/a.mov", "/new/p/a.mov"]
         );
-        assert_eq!(project_dir("/x/y/p.ecproj").as_deref(), Some("/x/y"));
-        assert_eq!(project_dir("p.ecproj"), None);
+        assert_eq!(project_dir("/x/y/p.uwproj").as_deref(), Some("/x/y"));
+        assert_eq!(project_dir("p.uwproj"), None);
         // Hostile input doesn't panic.
         for (a, b) in [("", ""), ("/", "/"), ("x", ""), ("\\\\", "//"), ("/a", "/a/b/c")] {
             let _ = moved_root(a, b);

@@ -1,6 +1,6 @@
 Unwritten Studio portable mode
 
-While this file sits next to effectcraft.exe, Unwritten Studio keeps its settings, keyboard shortcuts,
+While this file sits next to unwritten-studio.exe, Unwritten Studio keeps its settings, keyboard shortcuts,
 crash-recovery files, logs and plug-ins in the Unwritten StudioData folder beside it instead of
 %APPDATA%\Unwritten Studio. Copy the whole folder to move Unwritten Studio with its settings.
 

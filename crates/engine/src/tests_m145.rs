@@ -8,9 +8,9 @@ use serde_json::{Value, json};
 
 use crate::render::RenderOpts;
 use crate::{KeyRef, Session};
-use effectcraft_keyframe::Value as KV;
-use effectcraft_project::{ItemId, LayerId};
-use effectcraft_time::Tick;
+use unwritten_studio_keyframe::Value as KV;
+use unwritten_studio_project::{ItemId, LayerId};
+use unwritten_studio_time::Tick;
 
 fn tmp(name: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU32, Ordering};
@@ -31,7 +31,7 @@ fn solid(s: &mut Session, color: &str) -> u64 {
     s.execute("layer.newSolid", json!({"color": color, "width": 32, "height": 24})).unwrap()["layer"].as_u64().unwrap()
 }
 
-fn layer(s: &Session, id: u64) -> effectcraft_project::Layer {
+fn layer(s: &Session, id: u64) -> unwritten_studio_project::Layer {
     s.active_comp().unwrap().layer(LayerId(id)).unwrap().clone()
 }
 
@@ -63,7 +63,7 @@ fn new_masks_cycle_colours_only_when_asked() {
             .unwrap()
             .groups()
             .map(|g| match g.kind {
-                effectcraft_project::GroupKind::Mask { color, .. } => color,
+                unwritten_studio_project::GroupKind::Mask { color, .. } => color,
                 _ => [0; 3],
             })
             .collect()
@@ -238,7 +238,7 @@ fn motion_path_span_follows_the_composition_setting() {
 
 #[test]
 fn import_export_helpers() {
-    use effectcraft_project::AlphaMode;
+    use unwritten_studio_project::AlphaMode;
     let mut p = crate::prefs::Prefs::default();
     assert_eq!(p.unlabeled_alpha(false), None, "Ask User");
     for (v, movie, want) in [
@@ -282,7 +282,7 @@ fn import_export_helpers() {
 
 #[test]
 fn render_queue_uses_default_folder_bit_depth_names_and_segments() {
-    use effectcraft_project::render_queue::{OutputFormat, RenderQueueItem};
+    use unwritten_studio_project::render_queue::{OutputFormat, RenderQueueItem};
     let mut s = session();
     solid(&mut s, "#ff0000");
     let dir = tmp("out");
@@ -406,10 +406,10 @@ fn recent_footage_and_presets_are_remembered() {
 fn save_a_copy_as_xml_opens_again() {
     let mut s = session();
     solid(&mut s, "#ff0000");
-    let path = tmp("copy.ecprojx");
+    let path = tmp("copy.uwprojx");
     s.execute("file.saveCopyAsXml", json!({"path": path.to_string_lossy()})).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.starts_with("<?xml") && text.contains("<Unwritten StudioProject"));
+    assert!(text.starts_with("<?xml") && text.contains("<UnwrittenStudioProject"));
     let before = s.project.to_json();
     let mut t = Session::default();
     t.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
@@ -474,7 +474,7 @@ fn compatibility_report_and_logging() {
     let r = s.execute("help.enableLogging", json!({"on": true})).unwrap();
     let file = PathBuf::from(r["path"].as_str().unwrap());
     assert!(file.starts_with(&dir));
-    log::warn!(target: "effectcraft::tests", "hello log");
+    log::warn!(target: "unwritten-studio::tests", "hello log");
     assert!(std::fs::read_to_string(&file).unwrap().contains("logging enabled"));
     assert_eq!(crate::menus::checked(&s, "help.enableLogging", &Value::Null), Some(true));
     let r = s.execute("help.revealLogFile", json!({})).unwrap();
@@ -502,7 +502,8 @@ fn create_vr_environment_and_extract_cubemap() {
         let c = s.project.comp(ItemId(*f)).unwrap();
         assert_eq!((c.width, c.height), (64, 64));
         assert!(c.layers.iter().any(|l| l.is_camera()));
-        let nested = c.layers.iter().find(|l| matches!(l.source, effectcraft_project::LayerSource::Comp { item } if item == main)).expect("the scene, nested");
+        let nested =
+            c.layers.iter().find(|l| matches!(l.source, unwritten_studio_project::LayerSource::Comp { item } if item == main)).expect("the scene, nested");
         assert!(nested.switches.collapse && nested.is_3d(), "collapsed 3D precomp");
         let _ = &aname;
     }
@@ -594,13 +595,13 @@ fn keyframe_labels_and_label_groups() {
     // Edit ▸ Label colours the selected keyframes.
     s.execute("edit.label", json!({"label": "Blue"})).unwrap();
     let labels: Vec<u8> = layer(&s, a).props.prop("transform/opacity").unwrap().keys.iter().map(|k| k.label).collect();
-    let blue = effectcraft_color::Label::ALL.iter().position(|l| *l == effectcraft_color::Label::Blue).unwrap() as u8;
+    let blue = unwritten_studio_color::Label::ALL.iter().position(|l| *l == unwritten_studio_color::Label::Blue).unwrap() as u8;
     assert_eq!(labels, [blue, 0, blue]);
-    assert_eq!(layer(&s, a).label, effectcraft_color::Label::Red, "the layer keeps its label");
+    assert_eq!(layer(&s, a).label, unwritten_studio_color::Label::Red, "the layer keeps its label");
     // Serde: labels round-trip; unlabeled keys don't write the field.
     let json = s.project.to_json();
     assert!(json.contains(&format!("\"label\": {blue}")) || json.contains(&format!("\"label\":{blue}")));
-    let back = effectcraft_project::Project::from_json(&json).unwrap();
+    let back = unwritten_studio_project::Project::from_json(&json).unwrap();
     assert_eq!(back.comp(s.active_comp_id().unwrap()).unwrap().layer(LayerId(a)).unwrap().props.prop("transform/opacity").unwrap().keys[2].label, blue);
     // Moving a labelled key's value keeps the label.
     s.execute("time.set", json!({"time": 1.0})).unwrap();
@@ -655,9 +656,9 @@ fn rpf_camera_import_reads_json_and_csv_camera_data() {
 #[test]
 fn dynamic_menus_and_window_viewer_labels() {
     let mut s = session();
-    s.prefs.push_recent("/p/One.ecproj");
+    s.prefs.push_recent("/p/One.uwproj");
     let (e, _) = crate::menus::dynamic(&s, "recentProjects", &Default::default());
-    assert_eq!((e[0].label.as_str(), e[0].command.as_str()), ("One.ecproj", "file.openRecent"));
+    assert_eq!((e[0].label.as_str(), e[0].command.as_str()), ("One.uwproj", "file.openRecent"));
     assert_eq!(crate::menus::dynamic(&s, "history", &Default::default()).0.len(), s.history.undo.len());
     let a = solid(&mut s, "#ff0000");
     s.state.selected_layers = vec![LayerId(a)];
@@ -734,7 +735,7 @@ fn replace_with_precomp_swaps_every_use_of_the_item_for_one_new_comp() {
     assert_eq!(s.project.item(pre).unwrap().name, format!("{} Comp", s.project.item(item).unwrap().name));
     for cid in [main, other] {
         let c = s.project.comp(cid).unwrap();
-        assert!(c.layers.iter().all(|l| matches!(l.source, effectcraft_project::LayerSource::Comp { item } if item == pre)));
+        assert!(c.layers.iter().all(|l| matches!(l.source, unwritten_studio_project::LayerSource::Comp { item } if item == pre)));
     }
     // The layer keeps its transform; the item stays in the project; one undo step.
     assert_eq!(in_main(&s).props, props);

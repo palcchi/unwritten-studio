@@ -79,7 +79,7 @@ are grouped by area; the issue tracker has the rest.
 | 20 | **Multi-monitor and video output** | #486: any panel can move into a native window of its own (panel menu ▸ Move Panel to New Window, `window.panelWindow`) and so onto another screen, restored with the workspace; still missing: dragging tabs between those windows, app shortcuts while one has the focus, named workspaces remembering them, Mercury Transmit to video hardware (we have a second preview window only) | Two-screen setups are standard for professionals | 10–20 h | G2 · [hardware-parity.md](hardware-parity.md) |
 | 21 | **Small 26.x features** | Proportional Scrubbing (26.2), pasting Illustrator's own clipboard data as shapes (26.3; SVG markup on the clipboard pastes as a shape layer, #738), variable-font filter (26.3), the rebuilt Effect Controls (26.5). Percentage guides (View ▸ Add Percentage Guide, Convert Guides to Percentage / Pixels) and effect colour labels (Effect Controls header bar and right-click Label menu, `effect.setLabel`) are in (#1095), built from the release notes' one-line descriptions and never compared with After Effects: the Timeline shows no effect label, and the labels' exact UI there is unknown | Users of the current version expect them | 10–20 h left | — · [ui-parity.md](ui-parity.md) |
 | 22 | **Encoder efficiency** | HEVC / AV1 have no B-frames, multi-reference or SAO / CDEF; Opus no FEC / DTX; single-file intermediates are 8-bit uncompressed QuickTime only (#372 closed by #778: no 16-bpc, AVI or lossless-compressed codec); #325 render over existing file | Larger files than After Effects + Media Encoder | 20–40 h | G6 · [file-format-parity.md](file-format-parity.md) |
-| 23 | **Essential Graphics interchange** | Templates are `.ectemplate`, not `.mogrt`; #338 and #611 closed | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
+| 23 | **Essential Graphics interchange** | Templates are `.uwtemplate`, not `.mogrt`; #338 and #611 closed | Premiere editors can't use our templates | 15–30 h | — · [file-format-parity.md](file-format-parity.md) |
 | 24 | **Timeline depth requests** | #601 expand precomps in place, #602 reorderable render stack, #604 guide-only effects, #425 keyframe confusion (#355 and #428 closed) | Power-user speed | 15–30 h | G2 · [ui-parity.md](ui-parity.md) |
 | 25 | **Accessibility** | AccessKit is enabled in eframe and tests read focus labels; the Project panel has After Effects' arrow-key navigation and named, stateful AccessKit nodes (#776), but the other panels have had no screen-reader pass or keyboard navigation audit, and there is no contrast check | Excludes users; After Effects supports screen readers poorly too | 15–30 h | G9 · [ui-parity.md](ui-parity.md) |
 
@@ -172,7 +172,7 @@ The most important missing piece: it turns every other estimate here into a meas
 - Regression evidence for the reports of 8 October, checked headlessly on Windows:
   `a_short_project_panel_draws` (#231), `viewer_press_prefers_a_selected_layer_under_the_pointer`
   (#230), `match_system_uses_the_system_language_where_there_is_a_catalog` (#229) and
-  `apps/effectcraft-web/tests/page.mjs` (#226, #225); the #225, #226 and #231 reproductions also
+  `apps/unwritten-studio-web/tests/page.mjs` (#226, #225); the #225, #226 and #231 reproductions also
   pass in the dev web build in headless Chrome 154 (device pixel ratio 2, a rejected file read,
   `GPUDevice.destroy()`).
 - Regression evidence for the Turbulent Displace, Wave Warp and Bulge pinning of #227:
@@ -220,9 +220,9 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
 - Fuzz the inputs we don't control: project files, imported media and documents, expressions,
   scripts, control-channel and MCP requests. Every crash found becomes a regression test
   (AGENTS.md "Never crash"). Project files are fuzzed (#779): a seeded, dependency-free mutation
-  fuzzer runs in `cargo test -p effectcraft-engine` (`fuzz_file_open_never_crashes`, `.ecproj`
-  JSON and `.ecprojx` XML through File ▸ Open, the first queries and a thumbnail render; longer
-  runs via `EFFECTCRAFT_FUZZ_ITERS` / `EFFECTCRAFT_FUZZ_SECS`). It found one crash, deeply nested
+  fuzzer runs in `cargo test -p unwritten-studio-engine` (`fuzz_file_open_never_crashes`, `.uwproj`
+  JSON and `.uwprojx` XML through File ▸ Open, the first queries and a thumbnail render; longer
+  runs via `UNWRITTEN_STUDIO_FUZZ_ITERS` / `UNWRITTEN_STUDIO_FUZZ_SECS`). It found one crash, deeply nested
   XML overflowing the stack, now refused. Imported media and documents, expressions, scripts and
   control-channel / MCP requests are still to do.
 - Run the gate on every pull request in CI (gap 4): today no workflow runs the tests on PRs.
@@ -238,7 +238,7 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
 - A candidate for that decision (#248): [py-aep](https://github.com/forticheprod/py-aep), an MIT
   licensed Python library that reads and writes `.aep` files, reported by a user as working well.
   It can't be linked into the pure-Rust app. It could run as an external converter (`.aep` to
-  `.ecproj`, the way ffmpeg is used only from outside), or its format knowledge could be ported.
+  `.uwproj`, the way ffmpeg is used only from outside), or its format knowledge could be ported.
   The second means reading another implementation of the format, which AGENTS.md rules out
   unless the clean-room scope allows it.
 - Also in this area: relative footage paths and relinking when a project moves (gap 18).
@@ -267,7 +267,7 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
 
 - Decided on 5 October 2026 for Roto Brush: licensed weights with pure-Rust inference, if the
   impact on the system is low, in a composable, swappable module. Done in M13.35: the
-  `effectcraft-segment` crate (a `MaskModel` interface, a registry that only accepts
+  `unwritten-studio-segment` crate (a `MaskModel` interface, a registry that only accepts
   open-source licences, MobileSAM under Apache-2.0), weights downloaded on demand and verified,
   Settings ▸ Roto Brush to choose. Next: measure it against After Effects (G1); faster encoders
   (GPU) for long shots.

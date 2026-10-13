@@ -1,4 +1,4 @@
-# effectcraft-hevcenc
+# unwritten-studio-hevcenc
 
 Clean-room, pure-Rust HEVC / H.265 encoder for Unwritten Studio's MP4 export (layer L0, `std` only,
 no `unsafe`, builds for `wasm32-unknown-unknown`).
@@ -59,7 +59,7 @@ reaches 45.8 dB PSNR-Y at QP 22.
 
 ## Tests
 
-`cargo test -p effectcraft-hevcenc`:
+`cargo test -p unwritten-studio-hevcenc`:
 
 - every stream is decoded with the first-party `filmcraft-hevc` decoder and compared bit-exactly
   with the encoder's reconstruction (`Encoder::last_reconstruction`, hidden API);

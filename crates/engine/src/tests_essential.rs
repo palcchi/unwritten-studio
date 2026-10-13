@@ -1,10 +1,10 @@
 //! Essential Graphics: authoring controls, master properties (per-instance overrides, Push to
-//! Comp, Revert), `.ectemplate` export/import, and Responsive Design — Time.
+//! Comp, Revert), `.uwtemplate` export/import, and Responsive Design — Time.
 
-use effectcraft_project::essential;
-use effectcraft_project::{ItemId, LayerId};
-use effectcraft_time::Tick;
 use serde_json::{Value, json};
+use unwritten_studio_project::essential;
+use unwritten_studio_project::{ItemId, LayerId};
+use unwritten_studio_time::Tick;
 
 use crate::Session;
 use crate::render::RenderOpts;
@@ -85,7 +85,7 @@ fn controls_are_listed_typed_and_editable() {
     assert_eq!(c["type"], "dropdown");
     let comp = s.project.comp(card).unwrap();
     let menu = comp.layer(LayerId(solid)).unwrap().props.prop("effects/#2/menu").unwrap();
-    assert!(matches!(&menu.ui, effectcraft_project::ParamUi::Popup { options } if options.len() == 4 && options[3] == "Huge"));
+    assert!(matches!(&menu.ui, unwritten_studio_project::ParamUi::Popup { options } if options.len() == 4 && options[3] == "Huge"));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn mirrored_and_linked_properties() {
     s.execute("essential.pushToComp", json!({"layer": a, "control": mirror})).unwrap();
     assert_eq!((opa(&s, solid), opa(&s, bg2)), (35.0, 35.0));
     // Saved and loaded with the project.
-    let back = effectcraft_project::Project::from_json(&s.project.to_json()).unwrap();
+    let back = unwritten_studio_project::Project::from_json(&s.project.to_json()).unwrap();
     assert_eq!(back.comp(card).unwrap().essential, s.project.comp(card).unwrap().essential);
     // Unlink; removing the master removes its mirrors.
     s.execute("essential.unlinkProperty", json!({"comp": card.0, "control": opacity, "layer": bg2, "path": "transform/opacity"})).unwrap();
@@ -220,20 +220,35 @@ fn mirrored_and_linked_properties() {
 
 #[test]
 fn template_export_import_round_trip_with_overrides() {
-    let dir = out_dir("ectemplate");
+    let dir = out_dir("uwtemplate");
     let (mut s, card, _solid, ids) = card();
-    let path = dir.join("Lower Card.ectemplate").to_string_lossy().to_string();
+    let path = dir.join("Lower Card.uwtemplate").to_string_lossy().to_string();
     let r = s.execute("essential.exportTemplate", json!({"comp": card.0, "path": path})).unwrap();
     assert_eq!(r["name"], "Lower Card");
     let info = s.execute("essential.templateInfo", json!({"path": path})).unwrap();
-    assert_eq!(info["format"], "effectcraft-template");
+    assert_eq!(info["format"], "unwritten-studio-template");
     assert_eq!(info["width"], 64);
     let kinds: Vec<&str> = info["controls"].as_array().unwrap().iter().map(|c| c["kind"].as_str().unwrap()).collect();
     assert_eq!(kinds, ["property", "property", "group", "property", "comment"]);
     assert_eq!(info["controls"][3]["group"], ids["group"]);
-    let entries = effectcraft_lottie::zip::read_stored(&std::fs::read(&path).unwrap());
+    let entries = unwritten_studio_lottie::zip::read_stored(&std::fs::read(&path).unwrap());
     let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
-    assert!(names.contains(&"manifest.json") && names.contains(&"project.ecproj") && names.contains(&"poster.png"), "{names:?}");
+    assert!(names.contains(&"manifest.json") && names.contains(&"project.uwproj") && names.contains(&"poster.png"), "{names:?}");
+
+    let mut legacy_entries = entries.clone();
+    for (name, bytes) in &mut legacy_entries {
+        if name == "manifest.json" {
+            let mut manifest: Value = serde_json::from_slice(bytes).unwrap();
+            manifest["format"] = json!("effectcraft-template");
+            *bytes = serde_json::to_vec(&manifest).unwrap();
+        } else if name == "project.uwproj" {
+            *name = "project.ecproj".into();
+        }
+    }
+    let legacy_path = dir.join("Legacy.ectemplate");
+    std::fs::write(&legacy_path, unwritten_studio_lottie::zip::store(&legacy_entries)).unwrap();
+    let legacy_info = s.execute("essential.templateInfo", json!({"path": legacy_path.to_string_lossy()})).unwrap();
+    assert_eq!(legacy_info["format"], "effectcraft-template");
 
     // A fresh project imports it and gets an instance in its active comp.
     let mut t = Session::default();
@@ -259,7 +274,7 @@ fn template_export_import_round_trip_with_overrides() {
     t.execute("essential.set", json!({"layer": inst, "control": color_ctl, "value": "#ffff00"})).unwrap();
     let px = center(&t, show);
     assert!(px[0] > 0.99 && px[1] > 0.99 && px[2] < 0.01, "yellow: {px:?}");
-    let saved = effectcraft_project::Project::from_json(&t.project.to_json()).unwrap();
+    let saved = unwritten_studio_project::Project::from_json(&t.project.to_json()).unwrap();
     let mut u = Session::default();
     u.replace_project(saved, None);
     u.open_comp(show);
@@ -270,8 +285,8 @@ fn template_export_import_round_trip_with_overrides() {
     assert_ne!(r2["comp"], r["comp"]);
     assert!(r2["layer"].is_null());
     // Not a template.
-    std::fs::write(dir.join("bad.ectemplate"), b"nope").unwrap();
-    assert!(t.execute("essential.importTemplate", json!({"path": dir.join("bad.ectemplate").to_string_lossy()})).is_err());
+    std::fs::write(dir.join("bad.uwtemplate"), b"nope").unwrap();
+    assert!(t.execute("essential.importTemplate", json!({"path": dir.join("bad.uwtemplate").to_string_lossy()})).is_err());
 }
 
 #[test]
@@ -280,15 +295,15 @@ fn media_replacement_swaps_footage_per_instance() {
     // Two "footage" items rendered by a fake source: item → solid colour.
     struct Colors;
     impl crate::render::FootageSource for Colors {
-        fn frame(&self, _: ItemId, f: &effectcraft_project::Footage, _: Tick) -> Option<Arc<effectcraft_raster::Image>> {
+        fn frame(&self, _: ItemId, f: &unwritten_studio_project::Footage, _: Tick) -> Option<Arc<unwritten_studio_raster::Image>> {
             let c = if f.path.contains("red") { [1.0, 0.0, 0.0, 1.0] } else { [0.0, 0.0, 1.0, 1.0] };
-            Some(Arc::new(effectcraft_raster::Image::filled(16, 16, c)))
+            Some(Arc::new(unwritten_studio_raster::Image::filled(16, 16, c)))
         }
     }
     let mut s = Session { footage: Arc::new(Colors), ..Default::default() };
-    let foot = |p: &str| effectcraft_project::Footage {
+    let foot = |p: &str| unwritten_studio_project::Footage {
         path: p.into(),
-        kind: effectcraft_project::FootageKind::Still,
+        kind: unwritten_studio_project::FootageKind::Still,
         width: 16,
         height: 16,
         has_video: true,
@@ -296,8 +311,8 @@ fn media_replacement_swaps_footage_per_instance() {
     };
     let (red, blue) = s
         .edit("x", None, |proj, _| {
-            let r = proj.add_item("red.png", Default::default(), None, effectcraft_project::ItemKind::Footage(foot("red.png")));
-            let b = proj.add_item("blue.png", Default::default(), None, effectcraft_project::ItemKind::Footage(foot("blue.png")));
+            let r = proj.add_item("red.png", Default::default(), None, unwritten_studio_project::ItemKind::Footage(foot("red.png")));
+            let b = proj.add_item("blue.png", Default::default(), None, unwritten_studio_project::ItemKind::Footage(foot("blue.png")));
             Ok((r, b))
         })
         .unwrap();

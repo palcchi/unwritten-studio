@@ -6,10 +6,10 @@
 
 use std::f64::consts::PI;
 
-use effectcraft_color::luminance;
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
-use effectcraft_raster::Px;
+use unwritten_studio_color::luminance;
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
+use unwritten_studio_raster::Px;
 use rayon::prelude::*;
 
 use crate::util::{Plane, Rng, gauss_plane, hash1, layer_rect, lerp3, map_xy, smoothstep, unpremul};
@@ -409,7 +409,7 @@ fn image_contour(ctx: &EffectCtx, b: &Buf) -> Option<Contour> {
     let ch = pr.e("imageContour/valueChannel");
     let mut v = Plane::from_image(&img, |px| {
         let (c, a) = unpremul(px);
-        let (hh, s, l) = effectcraft_color::rgb_to_hsl(c[0], c[1], c[2]);
+        let (hh, s, l) = unwritten_studio_color::rgb_to_hsl(c[0], c[1], c[2]);
         match ch {
             0 => c[0] * a,
             1 => c[1] * a,
@@ -509,7 +509,7 @@ pub struct Wave {
     pub outline: Option<Vec<(f64, f64)>>,
 }
 
-/// Radio Waves, shared with the GPU compositor (effectcraft-gpu `fx_gen2`): the live waves,
+/// Radio Waves, shared with the GPU compositor (unwritten-studio-gpu `fx_gen2`): the live waves,
 /// oldest first, and the contour they ripple from (Image Contours / Mask).
 pub struct RadioPlan {
     pub waves: Vec<Wave>,
@@ -1226,7 +1226,7 @@ pub fn specs() -> Vec<EffectSpec> {
 mod tests {
     use super::*;
     use crate::Params;
-    use effectcraft_raster::Image;
+    use unwritten_studio_raster::Image;
 
     fn run(id: &str, set: &[(&str, Value)], img: Image) -> Buf {
         let s = crate::find(id).unwrap();

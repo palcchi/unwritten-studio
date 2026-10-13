@@ -1,11 +1,11 @@
 //! Layer masks: path coverage with expansion, feather, opacity, invert, combined by mode.
 
-use effectcraft_effects::Buf;
-use effectcraft_geom::{Mat3, vec2};
-use effectcraft_keyframe::Value;
-use effectcraft_path::{FillRule, StrokeStyle};
-use effectcraft_project::{FeatherFalloff, GroupKind, Layer, MaskMode, MaskMotionBlur};
-use effectcraft_raster::{Mask, box_blur, gaussian_blur};
+use unwritten_studio_effects::Buf;
+use unwritten_studio_geom::{Mat3, vec2};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_path::{FillRule, StrokeStyle};
+use unwritten_studio_project::{FeatherFalloff, GroupKind, Layer, MaskMode, MaskMotionBlur};
+use unwritten_studio_raster::{Mask, box_blur, gaussian_blur};
 use rayon::prelude::*;
 
 use crate::eval::EvalCtx;
@@ -25,7 +25,7 @@ pub struct MaskBlur {
 /// Coverage of one mask in buffer pixels (before mode/opacity/invert). With mask motion blur
 /// (Layer ▸ Mask ▸ Motion Blur: On, or Same As Layer with the layer's switch on) an animated
 /// path is averaged over the comp's shutter.
-fn coverage(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup, buf: &Buf, blur: MaskBlur) -> Option<Mask> {
+fn coverage(ctx: &EvalCtx, layer: &Layer, g: &unwritten_studio_project::PropGroup, buf: &Buf, blur: MaskBlur) -> Option<Mask> {
     let mb = blur.allowed
         && match g.kind {
             GroupKind::Mask { motion_blur, .. } => match motion_blur {
@@ -44,7 +44,7 @@ fn coverage(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup, bu
         let k = 1.0 / n as f32;
         for i in 0..n {
             let f = phase + angle * i as f64 / (n - 1) as f64;
-            let sub = ctx.at(ctx.time + effectcraft_time::Tick::from_seconds_f64(f * fd));
+            let sub = ctx.at(ctx.time + unwritten_studio_time::Tick::from_seconds_f64(f * fd));
             let Some(c) = coverage_at(&sub, layer, g, buf) else { continue };
             match &mut acc {
                 None => {
@@ -60,9 +60,9 @@ fn coverage(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup, bu
     coverage_at(ctx, layer, g, buf)
 }
 
-fn coverage_at(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup, buf: &Buf) -> Option<Mask> {
+fn coverage_at(ctx: &EvalCtx, layer: &Layer, g: &unwritten_studio_project::PropGroup, buf: &Buf) -> Option<Mask> {
     let Value::Path(sp) = ctx.group_value(layer, g, "path")? else { return None };
-    let path = effectcraft_path::to_kurbo(&sp);
+    let path = unwritten_studio_path::to_kurbo(&sp);
     let (w, h) = (buf.img.width, buf.img.height);
     let m = Mat3::translate(vec2(buf.offset[0], buf.offset[1])) * Mat3::scale(vec2(buf.scale, buf.scale));
     let exp = ctx.f(layer, g, "expansion", 0.0);
@@ -71,14 +71,14 @@ fn coverage_at(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup,
     // are applied together from the signed distance to the path.
     let variable = !sp.feather.is_empty();
     let mut cov = if variable {
-        effectcraft_path::feather::variable_feather_coverage(&sp, &m, w, h, exp, linear)
+        unwritten_studio_path::feather::variable_feather_coverage(&sp, &m, w, h, exp, linear)
     } else {
-        effectcraft_path::fill_coverage(std::slice::from_ref(&path), &m, w, h, FillRule::NonZero)
+        unwritten_studio_path::fill_coverage(std::slice::from_ref(&path), &m, w, h, FillRule::NonZero)
     };
     if exp.abs() > 0.01 && !variable {
-        let ring = effectcraft_path::stroke_coverage(
+        let ring = unwritten_studio_path::stroke_coverage(
             std::slice::from_ref(&path),
-            &StrokeStyle { width: exp.abs() * 2.0, join: effectcraft_path::Join::Round, ..Default::default() },
+            &StrokeStyle { width: exp.abs() * 2.0, join: unwritten_studio_path::Join::Round, ..Default::default() },
             &m,
             w,
             h,
@@ -104,26 +104,26 @@ fn coverage_at(ctx: &EvalCtx, layer: &Layer, g: &effectcraft_project::PropGroup,
 
 /// The layer's enabled masks at the context time, flattened to polylines in layer space (for
 /// effects that use masks as paths: Stroke, Scribble, Inner/Outer Key, Reshape…).
-pub fn shapes(ctx: &EvalCtx, layer: &Layer) -> Vec<effectcraft_effects::MaskShape> {
+pub fn shapes(ctx: &EvalCtx, layer: &Layer) -> Vec<unwritten_studio_effects::MaskShape> {
     let Some(masks) = layer.masks() else { return Vec::new() };
     let mut out = Vec::new();
     for g in masks.groups().filter(|g| g.enabled) {
         let GroupKind::Mask { inverted, .. } = g.kind else { continue };
         let Some(Value::Path(sp)) = ctx.group_value(layer, g, "path") else { continue };
-        let path = effectcraft_path::to_kurbo(&sp);
+        let path = unwritten_studio_path::to_kurbo(&sp);
         let mut pts: Vec<[f64; 2]> = Vec::new();
         let mut closed = false;
         kurbo::flatten(path.iter(), 0.25, |el| match el {
-            effectcraft_path::PathEl::MoveTo(p) | effectcraft_path::PathEl::LineTo(p) if pts.last() != Some(&[p.x, p.y]) => {
+            unwritten_studio_path::PathEl::MoveTo(p) | unwritten_studio_path::PathEl::LineTo(p) if pts.last() != Some(&[p.x, p.y]) => {
                 pts.push([p.x, p.y]);
             }
-            effectcraft_path::PathEl::ClosePath => closed = true,
+            unwritten_studio_path::PathEl::ClosePath => closed = true,
             _ => {}
         });
         if closed && pts.len() > 1 && pts.first() == pts.last() {
             pts.pop();
         }
-        out.push(effectcraft_effects::MaskShape { name: g.name.clone(), points: pts, closed: closed || sp.closed, inverted });
+        out.push(unwritten_studio_effects::MaskShape { name: g.name.clone(), points: pts, closed: closed || sp.closed, inverted });
     }
     out
 }
@@ -134,7 +134,7 @@ pub fn apply(ctx: &EvalCtx, layer: &Layer, buf: &mut Buf, blur: MaskBlur) -> boo
     let Some(masks) = layer.masks() else { return false };
     // An open mask (a path the Pen is still drawing) makes no transparency: the layer shows
     // whole until the path is closed (After Effects; effects still use it as a path).
-    let closed = |g: &effectcraft_project::PropGroup| matches!(ctx.group_value(layer, g, "path"), Some(Value::Path(sp)) if sp.closed);
+    let closed = |g: &unwritten_studio_project::PropGroup| matches!(ctx.group_value(layer, g, "path"), Some(Value::Path(sp)) if sp.closed);
     let list: Vec<_> = masks.groups().filter(|g| g.enabled && matches!(g.kind, GroupKind::Mask { mode, .. } if mode != MaskMode::None) && closed(g)).collect();
     if list.is_empty() {
         return false;

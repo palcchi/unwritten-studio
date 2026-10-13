@@ -1,13 +1,13 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 //! Tiny native WAV to ProRes PCM MOV sample-position proof.
-use effectcraft_export::render_queue::{AudioFormat, OutputFormat, OutputModule, RenderSettings};
-use effectcraft_export::{Job, JobOptions, Sink, export};
-use effectcraft_media::{MediaPool, probe_bytes};
-use effectcraft_project::{Comp, Footage, ItemId, ItemKind, LayerSource, Project, build};
-use effectcraft_raster::Image;
-use effectcraft_render::FootageSource;
-use effectcraft_time::{FrameRate, TICKS_PER_SECOND, Tick};
+use unwritten_studio_export::render_queue::{AudioFormat, OutputFormat, OutputModule, RenderSettings};
+use unwritten_studio_export::{Job, JobOptions, Sink, export};
+use unwritten_studio_media::{MediaPool, probe_bytes};
+use unwritten_studio_project::{Comp, Footage, ItemId, ItemKind, LayerSource, Project, build};
+use unwritten_studio_raster::Image;
+use unwritten_studio_render::FootageSource;
+use unwritten_studio_time::{FrameRate, TICKS_PER_SECOND, Tick};
 use std::sync::{Arc, Mutex};
 
 struct RecordingNative {

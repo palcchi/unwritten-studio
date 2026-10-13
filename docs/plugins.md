@@ -18,12 +18,12 @@ Guide):
 | `Scripts/Startup` and `Scripts/Shutdown`: run in alphabetical order when the app starts and quits | Not run | Gap |
 | `Scripts/ScriptUI Panels`: listed at the bottom of the Window menu, dockable like the app's own panels, `this` is the panel | `Scripts/ScriptUI Panels/` in the settings folder (File ▸ Scripts ▸ Install ScriptUI Panel… copies one there), listed at the bottom of the Window menu, docked like any panel, `this` is the panel; the panels open when the app quits open again at the next launch | Same. Where a panel was docked isn't kept: workspace layouts aren't saved between launches |
 | Keyboard shortcuts for scripts (the Keyboard Shortcuts editor lists the scripts of the Scripts folder) | Shortcuts bind to commands and menu entries; the File ▸ Scripts and Window menu entries of scripts aren't offered | Gap |
-| Running a script from the command line (`afterfx -r script.jsx`) | `effectcraft-cli script`, the control channel's and MCP's `script.run` | Same purpose, other entry points |
+| Running a script from the command line (`afterfx -r script.jsx`) | `unwritten-studio-cli script`, the control channel's and MCP's `script.run` | Same purpose, other entry points |
 | `app.settings` (kept in the preferences between sessions) | Kept in `script_settings.json` in the settings folder (`script.settings.get` / `script.settings.save`) | Same |
 | Allow Scripts to Write Files and Access Network | Settings ▸ Scripting & Expressions | Same |
 
 The settings folder is `~/Library/Application Support/Unwritten Studio` on macOS, `%APPDATA%\Unwritten Studio`
-on Windows and `$XDG_CONFIG_HOME/effectcraft` (or `~/.config/effectcraft`) on Linux
+on Windows and `$XDG_CONFIG_HOME/unwritten-studio` (or `~/.config/unwritten-studio`) on Linux
 ([preferences.md](preferences.md)); the web app keeps it in browser storage.
 
 ## Scripts
@@ -31,10 +31,10 @@ on Windows and `$XDG_CONFIG_HOME/effectcraft` (or `~/.config/effectcraft`) on Li
 Scripts use After Effects' scripting object model (`app`, `app.project`, `CompItem`, layers,
 `Property` with keyframes and eases, `app.beginUndoGroup`…), so most scripts written for After
 Effects' documented API run unchanged. Every edit a script makes is an engine command: undoable,
-journaled and the same as the UI's action. The `effectcraft-script` crate's docs
+journaled and the same as the UI's action. The `unwritten-studio-script` crate's docs
 (`crates/script/src/lib.rs`) list the object model.
 
-* Run one: File ▸ Scripts ▸ Run Script File…, the Script Console panel, `effectcraft-cli script
+* Run one: File ▸ Scripts ▸ Run Script File…, the Script Console panel, `unwritten-studio-cli script
   file.jsx`, or `script.run {code, name}` over the control channel and MCP.
 * Install one: File ▸ Scripts ▸ Install Script File… (or copy it into `Scripts/` in the settings
   folder). It is listed in File ▸ Scripts at once (After Effects asks for a restart).
@@ -138,10 +138,10 @@ There are two ways to write one:
 
 | | WebAssembly plug-in | Rust plug-in |
 |---|---|---|
-| What | a `.wasm` (or `.wat`) module | a type implementing `effectcraft_effects::plugin::EffectPlugin` |
+| What | a `.wasm` (or `.wat`) module | a type implementing `unwritten_studio_effects::plugin::EffectPlugin` |
 | Loaded by | Effect ▸ Load Effect Plug-in…, `effect.plugins.load {path \| folder}`, or the `Plug-ins` folder next to the settings at start-up | `register_plugin(Arc::new(MyEffect))` in an app that links Unwritten Studio's crates |
 | Sandbox | yes: no imports (no files, clock or network), fuel-limited, at most 1 GiB of memory, deterministic floats | none (it is your code) |
-| Platforms | desktop and CLI (the wasmi interpreter, crate feature `effectcraft-plugin/wasm`); not the web build | everywhere |
+| Platforms | desktop and CLI (the wasmi interpreter, crate feature `unwritten-studio-plugin/wasm`); not the web build | everywhere |
 
 `effect.plugins.list` lists what is loaded: `{api, wasm, plugins: [{id, name, category, version,
 author, source, params}]}`.
@@ -166,7 +166,7 @@ Every plug-in describes itself with a JSON manifest:
 ```json
 {
   "api": 1,
-  "id": "org.effectcraft.example.posterize-bands",
+  "id": "org.unwritten-studio.example.posterize-bands",
   "name": "Posterize Bands",
   "category": "Stylize",
   "version": "1.0.0",
@@ -219,7 +219,7 @@ cd examples/plugins/posterize-bands
 cargo build --release --target wasm32-unknown-unknown
 # then, in Unwritten Studio: Effect ▸ Load Effect Plug-in… → target/wasm32-unknown-unknown/release/posterize_bands.wasm
 # or headless:
-effectcraft-cli exec effect.plugins.load '{"path": "target/wasm32-unknown-unknown/release/posterize_bands.wasm"}'
+unwritten-studio-cli exec effect.plugins.load '{"path": "target/wasm32-unknown-unknown/release/posterize_bands.wasm"}'
 ```
 
 Any language that compiles to WebAssembly works (C, Zig, AssemblyScript…) as long as the module
@@ -229,7 +229,7 @@ has no imports. `crates/plugin/src/tests.rs` has a plug-in written directly in W
 
 ```rust
 use std::sync::Arc;
-use effectcraft_effects::plugin::*;
+use unwritten_studio_effects::plugin::*;
 
 struct Swap(PluginManifest);
 

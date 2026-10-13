@@ -4,9 +4,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use effectcraft_color::luminance;
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
+use unwritten_studio_color::luminance;
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
 use rayon::prelude::*;
 
 use crate::util::{premul, unpremul};

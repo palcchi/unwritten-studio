@@ -4,8 +4,8 @@
 
 - A **SwiftUI/UIKit iPadOS app target** (`ios/UnwrittenStudio.xcodeproj`) with an adaptive editorial workspace, in-project item browser, composition preview, timeline rows, inspector, toolbar, native project-document import/export, and keyboard shortcuts.
 - A Rust static-library bridge around the existing Unwritten Studio `Session`, command registry, project model, media importer, serialization, and renderer. The app does not load a webpage or use a `WKWebView`.
-- Project creation, `.ecproj`/`.ecprojx` open and `.ecproj` save, composition/layer listing, adding solid/shape/text layers, selecting a timeline layer, undo/redo, playhead scrubbing, image/video/audio import into app-owned storage and the active composition, and locally rendered RGBA preview.
-- The iOS Rust session attempts `effectcraft-gpu::Gpu::headless()`; wgpu can use the Apple Metal backend on iOS. If adapter/device initialization fails, the existing CPU renderer remains the fallback. The current rendering path can still perform substantial source/effect work on CPU, and no iPad benchmark or thermal/memory profile has been run.
+- Project creation, `.uwproj`/`.uwprojx` open and `.uwproj` save, composition/layer listing, adding solid/shape/text layers, selecting a timeline layer, undo/redo, playhead scrubbing, image/video/audio import into app-owned storage and the active composition, and locally rendered RGBA preview.
+- The iOS Rust session attempts `unwritten-studio-gpu::Gpu::headless()`; wgpu can use the Apple Metal backend on iOS. If adapter/device initialization fails, the existing CPU renderer remains the fallback. The current rendering path can still perform substantial source/effect work on CPU, and no iPad benchmark or thermal/memory profile has been run.
 
 ## Not yet implemented / unverified
 
@@ -37,14 +37,14 @@ The script compiles the device Rust static library, archives the Xcode app for g
 ## Install and test on iPad
 
 1. Connect a development-signed IPA through Xcode Devices and Simulators, Apple Configurator, or an approved MDM distribution path. The iPad must be included in the development provisioning profile.
-2. Open a project or create one, add a solid/text layer, scrub the timeline, and save/export an `.ecproj` document.
+2. Open a project or create one, add a solid/text layer, scrub the timeline, and save/export an `.uwproj` document.
 3. Import an image/video/audio file and verify that the copied media remains linked after closing/reopening the project.
 4. Verify render correctness against the same frame from the desktop/CLI, compare CPU and Metal output, and capture GPU adapter, preview render time, memory, and thermal behavior on each target device class.
 5. Verify portrait/landscape, split view, Stage Manager, touch targets, an external keyboard, pointer, and Pencil on supported hardware.
 
 ## Architecture and migration notes
 
-- Reused portable Rust layers: `effectcraft-project`, `effectcraft-engine`, `effectcraft-render`, `effectcraft-media`, and the `effectcraft-host` session assembly; `effectcraft-gpu` is used opportunistically for a headless wgpu compositor.
+- Reused portable Rust layers: `unwritten-studio-project`, `unwritten-studio-engine`, `unwritten-studio-render`, `unwritten-studio-media`, and the `unwritten-studio-host` session assembly; `unwritten-studio-gpu` is used opportunistically for a headless wgpu compositor.
 - The existing native frontend is eframe/egui/winit and has desktop-only window/menu/audio/file-dialog assumptions; it is **not** reused as an iPad shell. The web crate is also not part of this native target.
 - The bridge is a small C ABI static library, with pointer ownership documented in `ios/Rust/include/unwritten_studio_core.h`. Unsafe pointer conversion/release code is isolated to the ABI module. Swift owns native document URLs and copies imported media into app-owned support storage before passing stable paths to Rust.
 - No AVFoundation media decoding or hardware encoder integration has been added. The current media pipeline remains the existing Rust codec path and therefore must be profiled on iPad.

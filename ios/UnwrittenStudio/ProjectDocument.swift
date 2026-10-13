@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let unwrittenStudioProject = UTType(filenameExtension: "ecproj", conformingTo: .json)
+    static let unwrittenStudioProject = UTType(filenameExtension: "uwproj", conformingTo: .json)
         ?? UTType(exportedAs: "works.valliant.unwrittenstudio.project", conformingTo: .json)
 }
 

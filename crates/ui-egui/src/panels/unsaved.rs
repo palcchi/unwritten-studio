@@ -13,7 +13,7 @@ use egui::{Color32, vec2};
 use serde_json::{Value, json};
 
 use crate::theme::Tokens;
-use crate::{Dialog, EffectcraftApp};
+use crate::{Dialog, UnwrittenStudioApp};
 
 /// Commands that replace or close the open project (Quit is asked when the window closes).
 const CLOSING: &[&str] = &["file.newProject", "file.open", "file.openRecent", "file.closeProject", "file.revert", "file.openDemoProject", "templates.create"];
@@ -30,14 +30,14 @@ pub struct Pending {
 
 /// Whether `id` needs the prompt first. When it does, the prompt opens holding the command and
 /// the caller must not run it (it runs once the user answers).
-pub fn guard(app: &mut EffectcraftApp, id: &str, params: &Value) -> bool {
+pub fn guard(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> bool {
     if !CLOSING.contains(&id) || std::mem::take(&mut app.dialog_state.unsaved.answered) {
         return false;
     }
     ask(app, id, params)
 }
 
-fn ask(app: &mut EffectcraftApp, id: &str, params: &Value) -> bool {
+fn ask(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> bool {
     if !app.session.is_dirty() {
         return false;
     }
@@ -47,7 +47,7 @@ fn ask(app: &mut EffectcraftApp, id: &str, params: &Value) -> bool {
 }
 
 /// The window's close button (and Quit, which closes it): keep the window open and ask.
-pub fn on_close_requested(app: &mut EffectcraftApp, ctx: &egui::Context) {
+pub fn on_close_requested(app: &mut UnwrittenStudioApp, ctx: &egui::Context) {
     if !ctx.input(|i| i.viewport().close_requested()) || app.dialog_state.unsaved.quitting {
         return;
     }
@@ -58,24 +58,24 @@ pub fn on_close_requested(app: &mut EffectcraftApp, ctx: &egui::Context) {
     }
 }
 
-/// The project's display name: its file name, or `Untitled Project.ecproj`.
-pub fn project_name(app: &EffectcraftApp) -> String {
+/// The project's display name: its file name, or `Untitled Project.uwproj`.
+pub fn project_name(app: &UnwrittenStudioApp) -> String {
     app.session
         .path
         .as_deref()
         .and_then(|p| std::path::Path::new(p).file_name())
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Untitled Project.ecproj".into())
+        .unwrap_or_else(|| "Untitled Project.uwproj".into())
 }
 
 /// The window title: the project's path (or name) and `*` while it has unsaved changes.
-pub fn window_title(app: &EffectcraftApp) -> String {
+pub fn window_title(app: &UnwrittenStudioApp) -> String {
     let doc = app.session.path.clone().unwrap_or_else(|| project_name(app));
     format!("Unwritten Studio - {doc}{}", if app.session.is_dirty() { " *" } else { "" })
 }
 
 /// Whether the prompt is Revert Project (Revert / Cancel) instead of Unsaved Changes.
-pub(crate) fn is_revert(app: &EffectcraftApp) -> bool {
+pub(crate) fn is_revert(app: &UnwrittenStudioApp) -> bool {
     app.dialog_state.unsaved.command.as_ref().is_some_and(|(id, _)| id == "file.revert")
 }
 
@@ -85,7 +85,7 @@ enum Answer {
     Cancel,
 }
 
-pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
+pub fn show(app: &mut UnwrittenStudioApp, ctx: &egui::Context, t: &Tokens) {
     if app.dialog_state.unsaved.command.is_none() {
         app.dialog = None;
         return;
@@ -147,7 +147,7 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     }
 }
 
-fn answer_with(app: &mut EffectcraftApp, ctx: &egui::Context, a: Answer) {
+fn answer_with(app: &mut UnwrittenStudioApp, ctx: &egui::Context, a: Answer) {
     app.dialog = None;
     let Some((id, params)) = app.dialog_state.unsaved.command.take() else { return };
     match a {
@@ -184,16 +184,16 @@ fn answer_with(app: &mut EffectcraftApp, ctx: &egui::Context, a: Answer) {
 mod tests {
     use super::*;
 
-    fn app() -> (EffectcraftApp, egui::Context) {
+    fn app() -> (UnwrittenStudioApp, egui::Context) {
         let ctx = egui::Context::default();
-        let app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let app = UnwrittenStudioApp::new(unwritten_studio_engine::Session::default());
         crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
         (app, ctx)
     }
 
     /// One frame of the dialogs, with `close` = the window's close button pressed; returns
     /// whether the frame asked the window to stay open.
-    fn frame(app: &mut EffectcraftApp, ctx: &egui::Context, close: bool) -> bool {
+    fn frame(app: &mut UnwrittenStudioApp, ctx: &egui::Context, close: bool) -> bool {
         let mut raw = egui::RawInput::default();
         if close {
             raw.viewports.entry(egui::ViewportId::ROOT).or_default().events.push(egui::ViewportEvent::Close);
@@ -207,7 +207,7 @@ mod tests {
         out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.contains(&egui::ViewportCommand::CancelClose))
     }
 
-    fn modified(app: &mut EffectcraftApp) {
+    fn modified(app: &mut UnwrittenStudioApp) {
         app.session.execute("comp.new", json!({"name": "Main", "width": 64, "height": 64})).unwrap();
         assert!(app.session.is_dirty());
     }
@@ -219,7 +219,7 @@ mod tests {
         crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
         assert!(app.dialog.is_none());
         modified(&mut app);
-        assert!(window_title(&app).ends_with("Untitled Project.ecproj *"), "{}", window_title(&app));
+        assert!(window_title(&app).ends_with("Untitled Project.uwproj *"), "{}", window_title(&app));
         let r = crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
         assert_eq!(r, json!({"dialog": "unsavedChanges"}));
         assert_eq!(app.dialog, Some(Dialog::UnsavedChanges));
@@ -245,7 +245,8 @@ mod tests {
 
     #[test]
     fn cmd_backspace_is_dont_save_but_not_revert() {
-        let press = |app: &mut EffectcraftApp, ctx: &egui::Context| crate::panels::dialogs::press_key(app, ctx, egui::Key::Backspace, egui::Modifiers::COMMAND);
+        let press =
+            |app: &mut UnwrittenStudioApp, ctx: &egui::Context| crate::panels::dialogs::press_key(app, ctx, egui::Key::Backspace, egui::Modifiers::COMMAND);
         let (mut app, ctx) = app();
         modified(&mut app);
         crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
@@ -257,7 +258,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ec-unsaved-key-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         modified(&mut app);
-        app.session.execute("file.saveAs", json!({"path": dir.join("Kept.ecproj").to_string_lossy()})).unwrap();
+        app.session.execute("file.saveAs", json!({"path": dir.join("Kept.uwproj").to_string_lossy()})).unwrap();
         app.session.execute("layer.newNull", json!({})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "file.revert", json!({})).unwrap();
         press(&mut app, &ctx);
@@ -268,11 +269,11 @@ mod tests {
 
     #[test]
     fn enter_is_save_and_cmd_r_is_revert() {
-        let press = |app: &mut EffectcraftApp, ctx: &egui::Context| crate::panels::dialogs::press_key(app, ctx, egui::Key::Enter, egui::Modifiers::NONE);
+        let press = |app: &mut UnwrittenStudioApp, ctx: &egui::Context| crate::panels::dialogs::press_key(app, ctx, egui::Key::Enter, egui::Modifiers::NONE);
         let (mut app, ctx) = app();
         let dir = std::env::temp_dir().join(format!("ec-unsaved-enter-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("Kept.ecproj");
+        let path = dir.join("Kept.uwproj");
         modified(&mut app);
         app.session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
         // The Revert prompt discards work: Enter leaves it open.
@@ -301,11 +302,11 @@ mod tests {
         let (mut app, ctx) = app();
         let dir = std::env::temp_dir().join(format!("ec-unsaved-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("Kept.ecproj");
+        let path = dir.join("Kept.uwproj");
         modified(&mut app);
         app.session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
         assert!(!app.session.is_dirty());
-        assert!(window_title(&app).ends_with("Kept.ecproj"), "{}", window_title(&app));
+        assert!(window_title(&app).ends_with("Kept.uwproj"), "{}", window_title(&app));
         // Revert: Revert / Cancel.
         app.session.execute("layer.newNull", json!({})).unwrap();
         crate::menus::invoke(&mut app, &ctx, "file.revert", json!({})).unwrap();

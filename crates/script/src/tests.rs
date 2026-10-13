@@ -3,15 +3,15 @@
 
 use std::sync::Arc;
 
-use effectcraft_engine::Session;
-use effectcraft_engine::keyframe::Value as KV;
-use effectcraft_engine::project::{Comp, ItemId, Layer};
+use unwritten_studio_engine::Session;
+use unwritten_studio_engine::keyframe::Value as KV;
+use unwritten_studio_engine::project::{Comp, ItemId, Layer};
 use serde_json::{Value, json};
 
 use crate::{Outcome, run_code};
 
 fn session() -> Session {
-    let mut s = Session { expr: Some(Arc::new(effectcraft_expr::Expressions)), expr_check: Some(effectcraft_expr::check_syntax), ..Default::default() };
+    let mut s = Session { expr: Some(Arc::new(unwritten_studio_expr::Expressions)), expr_check: Some(unwritten_studio_expr::check_syntax), ..Default::default() };
     crate::install(&mut s);
     s
 }
@@ -79,7 +79,7 @@ fn builds_a_comp_end_to_end() {
         txt.setParentWithJump(nul);
         bg.blendingMode = BlendingMode.MULTIPLY;
         var rq = app.project.renderQueue.items.add(comp);
-        rq.outputModule(1).file = new File("/tmp/effectcraft-script-test/out.mp4");
+        rq.outputModule(1).file = new File("/tmp/unwritten-studio-script-test/out.mp4");
         app.endUndoGroup();
         writeLn("layers: " + comp.numLayers);
         [comp.numLayers, pos.numKeys, pos.keyValue(2)[0], txt.transform.opacity.value, comp.layer(1).name]
@@ -100,7 +100,7 @@ fn builds_a_comp_end_to_end() {
     assert_eq!(title.props.prop("transform/opacity").unwrap().expr.as_ref().unwrap().text, "50 + 25");
     assert_eq!(title.parent, Some(layer(c, "Null 1").id));
     let bg = layer(c, "BG");
-    assert_eq!(bg.blend_mode, effectcraft_engine::color::BlendMode::Multiply);
+    assert_eq!(bg.blend_mode, unwritten_studio_engine::color::BlendMode::Multiply);
     let fx = bg.props.group("effects/#1").unwrap();
     assert_eq!(fx.match_id, "ec.blur.gaussian");
     assert_eq!(bg.props.prop("effects/#1/blurriness").unwrap().value, KV::Scalar(12.0));
@@ -369,7 +369,7 @@ fn layers_items_and_markers() {
         c.layers
             .iter()
             .any(|l| l.name == "Key"
-                && matches!(l.source, effectcraft_engine::project::LayerSource::Light { kind: effectcraft_engine::project::LightKind::Spot }))
+                && matches!(l.source, unwritten_studio_engine::project::LayerSource::Light { kind: unwritten_studio_engine::project::LightKind::Spot }))
     );
 }
 
@@ -381,7 +381,7 @@ fn security_gate_for_files() {
     std::fs::write(proj.join("data.txt"), "inside").unwrap();
     std::fs::write(dir.join("secret.txt"), "outside").unwrap();
     let mut s = session();
-    s.path = Some(proj.join("p.ecproj").to_string_lossy().to_string());
+    s.path = Some(proj.join("p.uwproj").to_string_lossy().to_string());
     let q = |p: &std::path::Path| serde_json::to_string(&p.to_string_lossy()).unwrap();
     // Reading inside the project folder works.
     let o = ok(&mut s, &format!("var f = new File({}); f.open('r'); var t = f.read(); f.close(); t", q(&proj.join("data.txt"))));
@@ -456,7 +456,7 @@ fn scripts_cant_change_what_scripts_may_do() {
     s.execute("prefs.set", json!({"key": "scripting.allowScriptsWriteFiles", "value": true})).unwrap();
     ok(&mut s, "app.run('prefs.reset', {})");
     assert!(s.prefs.scripting.allow_scripts_write_files);
-    assert_eq!(s.prefs.general.undo_levels, effectcraft_engine::prefs::Prefs::default().general.undo_levels);
+    assert_eq!(s.prefs.general.undo_levels, unwritten_studio_engine::prefs::Prefs::default().general.undo_levels);
     // A command script file is a script too.
     let dir = std::env::temp_dir().join(format!("ec-script-grant-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -517,7 +517,7 @@ fn engine_entry_points() {
 #[test]
 fn console_keeps_variables() {
     let mut s = session();
-    let req = |code: &'static str| effectcraft_engine::ScriptRequest { code, name: "console", console: true };
+    let req = |code: &'static str| unwritten_studio_engine::ScriptRequest { code, name: "console", console: true };
     let r = crate::run(&mut s, &req("var counter = 41;"));
     assert!(r.error.is_none(), "{r:?}");
     let r = crate::run(&mut s, &req("counter + 1"));
@@ -613,7 +613,7 @@ fn motion_graphics_template_hooks_add_mirrors_and_controllers() {
     assert_eq!(o.result, json!([true, true, true, 2, "Fade", "Fade", "Fade Again"]));
     let (_, c) = comp_named(&s, "Card");
     let eg = c.essential.as_ref().unwrap();
-    assert!(matches!(eg.controls[1].kind, effectcraft_engine::project::essential::EgKind::Mirror { of } if of == eg.controls[0].id));
+    assert!(matches!(eg.controls[1].kind, unwritten_studio_engine::project::essential::EgKind::Mirror { of } if of == eg.controls[0].id));
 }
 
 #[test]
@@ -798,9 +798,9 @@ fn layer_selection_in_a_closed_comp_survives_to_the_next_script() {
 
 /// Probes every file as a 64x32 still (the media layer's single-file probe).
 struct Stills;
-impl effectcraft_engine::Importer for Stills {
-    fn probe(&self, path: &str) -> Result<effectcraft_engine::project::Footage, String> {
-        use effectcraft_engine::project::{Footage, FootageKind};
+impl unwritten_studio_engine::Importer for Stills {
+    fn probe(&self, path: &str) -> Result<unwritten_studio_engine::project::Footage, String> {
+        use unwritten_studio_engine::project::{Footage, FootageKind};
         Ok(Footage { path: path.into(), kind: FootageKind::Still, width: 64, height: 32, has_video: true, codec: "PNG".into(), ..Default::default() })
     }
 }
@@ -808,7 +808,7 @@ impl effectcraft_engine::Importer for Stills {
 /// `importFile(new ImportOptions(file))` imports just the picked file unless `sequence` is set (#475).
 #[test]
 fn import_options_sequence_picks_one_still_or_the_run() {
-    use effectcraft_engine::project::{FootageKind, ItemKind};
+    use unwritten_studio_engine::project::{FootageKind, ItemKind};
     let dir = std::env::temp_dir().join(format!("ec-script-seq-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for n in ["shot_0001.png", "shot_0002.png", "shot_0003.png"] {
@@ -832,7 +832,7 @@ fn import_options_sequence_picks_one_still_or_the_run() {
 /// #813: FootageItem proxies, replaceWithSequence and mainSource.conformFrameRate.
 #[test]
 fn footage_proxies_sequences_and_conform_rate() {
-    use effectcraft_engine::project::ItemKind;
+    use unwritten_studio_engine::project::ItemKind;
     let dir = std::env::temp_dir().join(format!("ec-script-proxy-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for n in ["shot_0001.png", "shot_0002.png", "take_0001.png", "take_0002.png", "proxy.png"] {
@@ -868,14 +868,14 @@ fn footage_proxies_sequences_and_conform_rate() {
 
 /// A flat green footage source, so `sampleImage` on a footage layer has known pixels.
 struct Flat;
-impl effectcraft_engine::render::FootageSource for Flat {
+impl unwritten_studio_engine::render::FootageSource for Flat {
     fn frame(
         &self,
-        _item: effectcraft_engine::project::ItemId,
-        f: &effectcraft_engine::project::Footage,
-        _t: effectcraft_engine::time::Tick,
-    ) -> Option<Arc<effectcraft_engine::render::Image>> {
-        Some(Arc::new(effectcraft_engine::render::Image::filled(f.width.max(1), f.height.max(1), [0.0, 1.0, 0.0, 1.0])))
+        _item: unwritten_studio_engine::project::ItemId,
+        f: &unwritten_studio_engine::project::Footage,
+        _t: unwritten_studio_engine::time::Tick,
+    ) -> Option<Arc<unwritten_studio_engine::render::Image>> {
+        Some(Arc::new(unwritten_studio_engine::render::Image::filled(f.width.max(1), f.height.max(1), [0.0, 1.0, 0.0, 1.0])))
     }
 }
 
@@ -912,7 +912,7 @@ fn binary_file_io_preserves_all_byte_values() {
     let original = [0x89u8, 0x50, 0x4e, 0x47, 0x00, 0x7f, 0x80, 0xff, 0x0a];
     std::fs::write(&src, original).unwrap();
     let mut s = session();
-    s.path = Some(dir.join("project.ecproj").to_string_lossy().to_string());
+    s.path = Some(dir.join("project.uwproj").to_string_lossy().to_string());
     s.prefs.scripting.allow_scripts_write_files = true;
     let q = |p: &std::path::Path| serde_json::to_string(&p.to_string_lossy()).unwrap();
 
@@ -1116,8 +1116,8 @@ fn extendscript_substr_keeps_start_and_length_semantics() {
 
 #[test]
 fn import_options_preserve_layered_psd_compositions() {
-    use effectcraft_psd::Rect;
-    use effectcraft_psd::write::{WDoc, WLayer, write};
+    use unwritten_studio_psd::Rect;
+    use unwritten_studio_psd::write::{WDoc, WLayer, write};
 
     let dir = std::env::temp_dir().join(format!("ec-script-import-as-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

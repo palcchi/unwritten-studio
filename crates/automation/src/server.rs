@@ -171,9 +171,9 @@ impl McpServer {
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}, "resources": {"listChanged": false, "subscribe": false}},
-                    "serverInfo": {"name": "effectcraft", "title": format!("Unwritten Studio ({mode})"), "version": env!("CARGO_PKG_VERSION")},
+                    "serverInfo": {"name": "unwritten-studio", "title": format!("Unwritten Studio ({mode})"), "version": env!("CARGO_PKG_VERSION")},
                     "instructions": instructions,
-                    "_meta": {"effectcraftAutoSave": self.autosave_info()},
+                    "_meta": {"unwrittenStudioAutoSave": self.autosave_info()},
                 }))
             }
             "ping" => Ok(json!({})),
@@ -206,7 +206,7 @@ impl McpServer {
                 {
                     let meta = obj.entry("_meta").or_insert_with(|| json!({}));
                     if let Some(meta) = meta.as_object_mut() {
-                        meta.insert("effectcraftAutoSave".into(), self.autosave_info());
+                        meta.insert("unwrittenStudioAutoSave".into(), self.autosave_info());
                     }
                 }
                 if self.autosave.is_some()
@@ -275,8 +275,8 @@ impl McpServer {
 }
 
 /// The craft catalog resources (docs/mcp.md).
-const DOCUMENT_URI: &str = "effectcraft://document";
-const COMMANDS_URI: &str = "effectcraft://commands";
+const DOCUMENT_URI: &str = "unwritten-studio://document";
+const COMMANDS_URI: &str = "unwritten-studio://commands";
 
 /// Whether a request declares MCP 2026-07-28 or later in its `_meta` (a "modern" client, which
 /// negotiates per request instead of through `initialize`).

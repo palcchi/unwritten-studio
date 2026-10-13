@@ -2,9 +2,9 @@
 //! and synthesised onto this one), Median (Legacy) and Curl Noise (divergence-free flow
 //! distortion from the curl of a fractal noise potential).
 
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
-use effectcraft_raster::Image;
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
+use unwritten_studio_raster::Image;
 use rayon::prelude::*;
 
 use crate::noise::{GrainLook, draw_boxes, fbm, grain_params, median_image, preview_params, sampling_boxes, sampling_params};

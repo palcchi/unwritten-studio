@@ -1,0 +1,8 @@
+asset:        com.unwrittenstudio.app.svg
+title:        Unwritten Studio app icon, Linux hicolor scalable
+author:       Unwritten Studio contributors (original illustration by the project owner)
+source:       original work
+license:      MIT OR Apache-2.0
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-02 by Unwritten Studio contributors (Claude agent, app icon)
+notes:        Copy of unwritten-studio-small.svg, written by packaging/icons.sh.

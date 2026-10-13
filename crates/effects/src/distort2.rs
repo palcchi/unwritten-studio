@@ -13,10 +13,10 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
-use effectcraft_color::{BlendMode, blend_pixel};
-use effectcraft_keyframe::Value;
-use effectcraft_project::ParamUi;
-use effectcraft_raster::{Image, Px};
+use unwritten_studio_color::{BlendMode, blend_pixel};
+use unwritten_studio_keyframe::Value;
+use unwritten_studio_project::ParamUi;
+use unwritten_studio_raster::{Image, Px};
 use rayon::prelude::*;
 
 use crate::generate::value_noise;

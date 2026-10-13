@@ -56,7 +56,7 @@ the 168 live AE samples.
 ## Auto-Bezier spatial tangents
 
 Measured on 10 October 2026 with After Effects 2026 (26.3) by running the original
-`examples/ae-spatial-tangents.jsx` in both hosts (`AfterFX.exe -r` and `effectcraft-cli script`):
+`examples/ae-spatial-tangents.jsx` in both hosts (`AfterFX.exe -r` and `unwritten-studio-cli script`):
 three original Position paths, ten keys, with even and uneven key timing. The script pins spatial
 interpolation to auto-Bezier, since an AE preference can default new keys to linear.
 
@@ -73,7 +73,7 @@ including a timing change. AE's output stays local; only the script and these sc
 
 ## Still unmeasured
 
-Rendered frame comparisons now have a deterministic `effectcraft_effects::fidelity::compare_frames`
+Rendered frame comparisons now have a deterministic `unwritten_studio_effects::fidelity::compare_frames`
 helper. Corpus runners can use it with locally generated host/reference frames and fail on either a
 mean or maximum channel error without committing proprietary renders.
 

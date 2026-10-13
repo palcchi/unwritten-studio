@@ -8,7 +8,7 @@
 //! (`[#####]`) that becomes the zero-padded frame number. A relative result is resolved against the
 //! project's folder (or the working directory for unsaved projects).
 
-use effectcraft_time::{FrameRate, Tick};
+use unwritten_studio_time::{FrameRate, Tick};
 use serde::{Deserialize, Serialize};
 
 use crate::{Comp, ItemId};
@@ -629,7 +629,7 @@ impl OutputFormat {
         OutputFormat::from_name(&ext)
     }
     /// An output `path` without its extensions, for this format to add its own: the project
-    /// extensions a save dialog filtered to projects appended (`Comp 1.png.ecproj`, #293), one
+    /// extensions a save dialog filtered to projects appended (`Comp 1.png.uwproj`, #293), one
     /// output format's extension (the one being replaced), and any more of this format's
     /// (`Comp 2.mov.mov`, from a format change or a comp named `Comp 2.mov`). Another extension
     /// stays part of the name (`logo.png.mov`).
@@ -654,10 +654,10 @@ impl OutputFormat {
 }
 
 /// Project file extensions: never a render's output.
-const PROJECT_EXTENSIONS: [&str; 2] = ["ecproj", "ecprojx"];
+const PROJECT_EXTENSIONS: [&str; 2] = ["uwproj", "uwprojx"];
 
 /// An output `path` without the project extensions a save dialog filtered to projects appended
-/// to it (`Comp 1.mov.ecproj` → `Comp 1.mov`, #293).
+/// to it (`Comp 1.mov.uwproj` → `Comp 1.mov`, #293).
 pub fn without_project_extension(path: &str) -> &str {
     let mut p = path;
     while let Some(s) = strip_extension(p, |e| PROJECT_EXTENSIONS.iter().any(|x| e.eq_ignore_ascii_case(x))) {
@@ -1502,15 +1502,15 @@ mod tests {
     }
 
     /// Output names end in the format's extension exactly once (#293): a save dialog filtered to
-    /// projects appended `.ecproj` (`Comp 1.mov.ecproj`, `Comp 1_00001.png.ecproj` for every
+    /// projects appended `.uwproj` (`Comp 1.mov.uwproj`, `Comp 1_00001.png.uwproj` for every
     /// frame), and a format change or a comp named `Comp 2.mov` doubled it (`Comp 2.mov.mov`).
     #[test]
     fn output_names_end_in_the_format_extension_once() {
         use OutputFormat::*;
         for (path, format, want) in [
-            ("/out/Comp 1.mov.ecproj", ProRes, "/out/Comp 1.mov"),
-            ("/out/Comp 1_[#####].png.ecproj", PngSequence, "/out/Comp 1_[#####].png"),
-            ("/out/Comp 1.mov.ecprojx.ecproj", ProRes, "/out/Comp 1.mov"),
+            ("/out/Comp 1.mov.uwproj", ProRes, "/out/Comp 1.mov"),
+            ("/out/Comp 1_[#####].png.uwproj", PngSequence, "/out/Comp 1_[#####].png"),
+            ("/out/Comp 1.mov.uwprojx.uwproj", ProRes, "/out/Comp 1.mov"),
             ("/out/Comp 2.mov.mov", ProRes, "/out/Comp 2.mov"),
             ("/out/Comp 2.mov.mov.mov", ProRes, "/out/Comp 2.mov"),
             ("/out/render", ProRes, "/out/render.mov"),
@@ -1523,16 +1523,16 @@ mod tests {
         ] {
             assert_eq!(format.with_extension(path), want, "{path} as {format:?}");
         }
-        assert_eq!(without_project_extension("C:/out/Comp 1.mov.ecproj"), "C:/out/Comp 1.mov");
+        assert_eq!(without_project_extension("C:/out/Comp 1.mov.uwproj"), "C:/out/Comp 1.mov");
         assert_eq!(without_project_extension("Comp 1.mov"), "Comp 1.mov");
         // Changing the format replaces one extension and drops the project one.
-        let mut m = OutputModule { output: "/out/Comp 1.mov.ecproj".into(), ..OutputModule::for_format(ProRes) };
+        let mut m = OutputModule { output: "/out/Comp 1.mov.uwproj".into(), ..OutputModule::for_format(ProRes) };
         m.set_format(H264);
         assert_eq!(m.output, "/out/Comp 1.mp4");
         m.output = "/out/Comp 2.mov.mov".into();
         m.set_format(ProRes);
         assert_eq!(m.output, "/out/Comp 2.mov");
-        m.output = "/out/Comp 2.mov.ecproj".into();
+        m.output = "/out/Comp 2.mov.uwproj".into();
         m.set_format(PngSequence);
         assert_eq!(m.output, "/out/Comp 2_[#####].png");
     }

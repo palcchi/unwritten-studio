@@ -1,7 +1,7 @@
 //! Opt-in visual review of every built-in panel, workspaces and common dialogs.
 //! Original fixture; captures are review outputs, not shipped assets.
-use effectcraft_engine::Session;
-use effectcraft_ui_egui::{Dialog, EffectcraftApp, dock::PanelKind};
+use unwritten_studio_engine::Session;
+use unwritten_studio_ui_egui::{Dialog, UnwrittenStudioApp, dock::PanelKind};
 use egui_kittest::Harness;
 use serde_json::json;
 
@@ -17,14 +17,14 @@ fn all_ui_review_captures() {
         s.execute("layer.newSolid", json!({"name":"Plate","color":"#406080","width":160,"height":120})).unwrap();
         s.execute("renderQueue.add", json!({"format":"png","output":"review-[#####].png"})).unwrap();
         std::sync::Arc::make_mut(&mut s.project).settings.gpu_acceleration = false;
-        let mut h = Harness::builder().with_size(size).build_eframe(|_| EffectcraftApp::new(s));
+        let mut h = Harness::builder().with_size(size).build_eframe(|_| UnwrittenStudioApp::new(s));
         h.run_steps(4);
         h.render().unwrap().save(out.join(format!("{label}-workspace.png"))).unwrap();
         let ctx = h.ctx.clone();
-        h.state_mut().set_theme(&ctx, effectcraft_ui_egui::theme::ThemeKind::Light);
+        h.state_mut().set_theme(&ctx, unwritten_studio_ui_egui::theme::ThemeKind::Light);
         h.run_steps(4);
         h.render().unwrap().save(out.join(format!("{label}-workspace-light.png"))).unwrap();
-        h.state_mut().set_theme(&ctx, effectcraft_ui_egui::theme::ThemeKind::Dark);
+        h.state_mut().set_theme(&ctx, unwritten_studio_ui_egui::theme::ThemeKind::Dark);
         for p in PanelKind::ALL {
             h.state_mut().show_panel(p);
             h.state_mut().ui.maximized = Some(p);

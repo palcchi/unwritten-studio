@@ -12,7 +12,7 @@ use std::cell::RefCell;
 /// levels, mix, tint r g b a, invert).
 const MANIFEST: &str = r#"{
   "api": 1,
-  "id": "org.effectcraft.example.posterize-bands",
+  "id": "org.unwritten-studio.example.posterize-bands",
   "name": "Posterize Bands",
   "category": "Stylize",
   "version": "1.0.0",

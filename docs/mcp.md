@@ -1,6 +1,6 @@
 # MCP conventions
 
-Run `effectcraft-cli mcp` for a headless session, or `effectcraft-cli mcp --bridge 9877`
+Run `unwritten-studio-cli mcp` for a headless session, or `unwritten-studio-cli mcp --bridge 9877`
 to use the desktop app's control channel. Existing ports are unchanged.
 
 ## Confining file access
@@ -42,13 +42,13 @@ read `results` / `items` for the details. Malformed JSON
 returns `-32700` with a null id and the session keeps serving. The MCP backend owns its session
 without a mutex; the engine's render-job mutexes already recover poisoned locks.
 
-Resources `effectcraft://document` and `effectcraft://commands` return JSON matching
+Resources `unwritten-studio://document` and `unwritten-studio://commands` return JSON matching
 `doc_inspect` and `command_list`. Clients declaring MCP 2026-07-28 in per-request `_meta`
 receive `resultType: complete` and list/read cache hints; document reads are never cached.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"command_run","arguments":{"id":"comp.new","params":{"width":640,"height":360}}}}
-{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"effectcraft://document"}}
+{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"unwritten-studio://document"}}
 ```
 
 ## Progress and cancellation

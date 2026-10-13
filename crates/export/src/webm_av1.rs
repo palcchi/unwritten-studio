@@ -6,9 +6,9 @@
 
 use std::io::{Seek, SeekFrom, Write};
 
-use effectcraft_project::Comp;
-use effectcraft_project::render_queue::Channels;
-use effectcraft_time::{TICKS_PER_SECOND, Tick};
+use unwritten_studio_project::Comp;
+use unwritten_studio_project::render_queue::Channels;
+use unwritten_studio_time::{TICKS_PER_SECOND, Tick};
 
 use crate::encode::VideoEncoder;
 use crate::encode::mix;
@@ -119,7 +119,7 @@ pub(crate) async fn webm_av1(job: &Cx<'_>, comp: &Comp, w: u32, h: u32, st: &mut
             pcm_left.extend(mix(job, start, n, OPUS_RATE));
             cursor = end;
         }
-        let fs = effectcraft_opusenc::OpusEncoder::FRAME_SIZE * opus_channels;
+        let fs = unwritten_studio_opusenc::OpusEncoder::FRAME_SIZE * opus_channels;
         if finish && !pcm_left.is_empty() {
             let pad = (fs - pcm_left.len() % fs) % fs + fs;
             pcm_left.extend(std::iter::repeat_n(0.0, pad));

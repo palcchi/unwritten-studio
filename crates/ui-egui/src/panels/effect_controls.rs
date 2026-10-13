@@ -1437,7 +1437,11 @@ pub fn viewer_hook(
                 painter.rect_stroke(sw, 2.0, Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
             }
         }
+        // No frame to sample yet (it is still rendering, or its readback is pending): the click
+        // leaves the eyedropper armed instead of using it up without a colour.
+        let unsampled = pick.kind == "color" && keyer.is_none() && app.viewer_image.is_none();
         if resp.clicked()
+            && !unsampled
             && let Some(pos) = resp.interact_pointer_pos()
         {
             let c = map.to_comp(pos);

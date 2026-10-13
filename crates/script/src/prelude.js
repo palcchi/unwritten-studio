@@ -1285,8 +1285,12 @@ AVLayer.prototype.constructor = AVLayer;
   P.sourceRectAtTime = function (t, extents) {
     return __get("sourceRect", { comp: this.__comp, layer: this.__id, time: __num(t, "time"), extents: !!extents });
   };
-  P.sourcePointToComp = function (p) { return p; };
-  P.compPointToSource = function (p) { return p; };
+  // Source ↔ comp points, through the layer's transform and its parents' at the comp's time (#808).
+  function pointIn(layer, p, toComp) {
+    return __get("pointConvert", { comp: layer.__comp, layer: layer.__id, point: [__num(p[0], "point"), __num(p[1], "point")], toComp: toComp, time: layer.containingComp.time });
+  }
+  P.sourcePointToComp = function (p) { return pointIn(this, p, true); };
+  P.compPointToSource = function (p) { return pointIn(this, p, false); };
   P.replaceSource = function () { throw __err("replaceSource is not supported yet"); };
   P.openInViewer = function () { __call("layer.openLayer", this.__p1()); return null; };
 })();

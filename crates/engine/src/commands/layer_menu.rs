@@ -76,6 +76,13 @@ fn sampling(s: &mut Session, p: &Value) -> Result<Value> {
         "bicubic" => Sampling::Bicubic,
         q => return Err(bad("layer.sampling", format!("sampling must be bilinear|bicubic, not `{q}`"))),
     };
+    // `toggle`: layers that all have it already get the other one.
+    let all = s.project.comp(cid).is_some_and(|c| c.layers.iter().filter(|l| ids.contains(&l.id)).all(|l| l.switches.sampling == q));
+    let q = match q {
+        Sampling::Bilinear if all && b_p(p, "toggle").unwrap_or(false) => Sampling::Bicubic,
+        Sampling::Bicubic if all && b_p(p, "toggle").unwrap_or(false) => Sampling::Bilinear,
+        q => q,
+    };
     s.edit("Layer Sampling", None, |proj, _| {
         for l in proj.comp_mut(cid).ok_or(EngineError::NoComp)?.layers.iter_mut().filter(|l| ids.contains(&l.id)) {
             l.switches.sampling = q;
@@ -800,7 +807,7 @@ fn sequence(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("layer.quality", "Quality", [], None, "{layers?, quality: best|draft|wireframe}", has_layers, quality),
-        cmd!("layer.sampling", "Sampling", [], None, "{layers?, sampling: bilinear|bicubic}", has_layers, sampling),
+        cmd!("layer.sampling", "Sampling", [], None, "{layers?, sampling: bilinear|bicubic, toggle?}", has_layers, sampling),
         cmd!("layer.frameBlending", "Frame Blending", [], None, "{layers?, mode: off|frameMix|pixelMotion}", has_layers, frame_blending),
         cmd!("layer.hideOtherVideo", "Hide Other Video", ["Layer", "Switches"], Some("Cmd+Alt+Shift+V"), "{layers?}", has_layers, hide_other_video),
         cmd!("layer.showAllVideo", "Show All Video", ["Layer", "Switches"], None, "{comp?}", has_comp, show_all_video),

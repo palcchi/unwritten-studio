@@ -408,6 +408,14 @@ fn fast_previews_and_show_channel_modes_have_default_keys() {
     assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("green", false));
     s.execute("view.channel.green", json!({})).unwrap();
     assert_eq!(s.state.viewer.channel.id(), "rgb");
+    // Grayscale and colorized of one channel replace each other; the same again is RGB.
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    s.execute("view.channel.red", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("red", false));
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    assert_eq!((s.state.viewer.channel.id(), s.state.viewer.colorized), ("red", true));
+    s.execute("view.channel.redColorized", json!({})).unwrap();
+    assert_eq!(s.state.viewer.channel.id(), "rgb");
 }
 
 /// Default keys for commands and menu entries that had none.
@@ -418,8 +426,8 @@ fn default_keys_for_commands_that_had_none() {
     for (id, params, key) in [
         ("edit.pasteReversedKeyframes", json!(null), "Cmd+Shift+V"),
         ("edit.purge", json!({"what": "snapshot"}), "Cmd+Shift+F5"),
-        ("layer.sampling", json!({"sampling": "bilinear"}), "Alt+B"),
-        ("layer.sampling", json!({"sampling": "bicubic"}), "Alt+Shift+B"),
+        ("layer.sampling", json!({"sampling": "bilinear", "toggle": true}), "Alt+B"),
+        ("layer.sampling", json!({"sampling": "bicubic", "toggle": true}), "Alt+Shift+B"),
         ("view.res.custom", json!(null), "Cmd+Alt+J"),
         ("file.setProxy", json!(null), "Cmd+Alt+P"),
         ("file.openRecent", json!(null), "Cmd+Alt+Shift+P"),

@@ -127,8 +127,10 @@ fn snapping_options(s: &mut Session, p: &Value) -> Result<Value> {
 fn channel(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_p(p, "channel").unwrap_or("rgb");
     let c = Channel::from_name(name).ok_or_else(|| bad("view.channel", format!("unknown channel `{name}` (rgb|red|green|blue|alpha|rgbStraight)")))?;
-    // Choosing the active single channel again returns to RGB, as in After Effects.
-    let c = if c == s.state.viewer.channel && c != Channel::Rgb && b_p(p, "toggle").unwrap_or(false) { Channel::Rgb } else { c };
+    // Choosing the active single channel again returns to RGB; not when that changes it between
+    // grayscale and colorized.
+    let same = c == s.state.viewer.channel && b_p(p, "colorized").is_none_or(|v| v == s.state.viewer.colorized);
+    let c = if same && c != Channel::Rgb && b_p(p, "toggle").unwrap_or(false) { Channel::Rgb } else { c };
     s.state.viewer.channel = c;
     if let Some(v) = b_p(p, "colorized") {
         s.state.viewer.colorized = v;

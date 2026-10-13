@@ -676,7 +676,7 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             crate::panels::timeline::zoom(app, ctx, k);
             return Ok(Value::Null);
         }
-        "timeline.zoomFit" => app.ui.timeline.pps = None,
+        "timeline.zoomFit" => crate::panels::timeline::toggle_fit_zoom(app, ctx),
         "timeline.zoomFrameToggle" => crate::panels::timeline::toggle_frame_zoom(app, ctx),
         "timeline.column" => {
             let col = params.get("column").and_then(Value::as_str).ok_or("timeline.column: need `column`")?;

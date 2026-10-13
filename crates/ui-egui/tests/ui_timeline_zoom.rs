@@ -163,6 +163,29 @@ fn semicolon_toggles_frame_level_and_the_whole_comp() {
     assert_eq!(h.state().ui.timeline.pps, None);
 }
 
+/// `Shift+;` zooms out to the whole comp, and again back in to the span it left.
+#[test]
+fn shift_semicolon_toggles_the_whole_comp_and_the_span_before() {
+    let (mut h, _) = harness();
+    h.state_mut().session.execute("time.set", json!({"time": 120.0})).unwrap();
+    h.run_steps(3);
+    let ctx = h.ctx.clone();
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.zoomFrameToggle", json!({})).unwrap();
+    h.run_steps(2);
+    let before = (h.state().ui.timeline.start, h.state().ui.timeline.pps);
+    assert!(before.1.is_some());
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.zoomFit", json!({})).unwrap();
+    assert_eq!(h.state().ui.timeline.pps, None);
+    h.run_steps(2);
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.zoomFit", json!({})).unwrap();
+    assert_eq!((h.state().ui.timeline.start, h.state().ui.timeline.pps), before);
+    // With nothing to go back to, the whole comp stays.
+    h.state_mut().ui.timeline.pps = None;
+    h.state_mut().ui.timeline.before_fit = None;
+    effectcraft_ui_egui::menus::invoke(h.state_mut(), &ctx, "timeline.zoomFit", json!({})).unwrap();
+    assert_eq!(h.state().ui.timeline.pps, None);
+}
+
 fn space(h: &mut Harness<'_, EffectcraftApp>, pressed: bool) {
     h.event(Event::Key { key: egui::Key::Space, physical_key: None, pressed, repeat: false, modifiers: Modifiers::NONE });
     h.step();

@@ -1,6 +1,6 @@
 # Localization parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (Ukrainian panel catalog recounted after it caught up with the Chinese ones) · **Target:** Adobe After Effects 2026
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (effect names and the generated Effect menu go through a catalog, in Simplified Chinese) · **Target:** Adobe After Effects 2026
 
 How much of EffectCraft's interface is translated, language by language, compared with After
 Effects. [gaps.md](gaps.md) gap 16 and workstream G9 hold the work;
@@ -19,13 +19,22 @@ interface; Arabic and Hebrew text *in layers* is supported through its Middle Ea
 - **Menus:** `crates/ui-egui/src/i18n.rs`, one catalog per language keyed by
   `(command, English label)`. A test (`every_translation_key_exists_in_the_actual_menu_tree`)
   fails if any fixed menu entry is untranslated or a row is stale, so every catalog covers all
-  **618** fixed entries. The generated Effect menu (effect names) is deliberately left in English.
+  **618** fixed entries. The generated Effect menu is not part of that fixed tree: its entries
+  and category submenus take their labels from the effect catalog below.
 - **Panels, dialogs, buttons, tooltips:** `crates/ui-egui/src/i18n/ui.rs`, keyed by the English
   source string, with English fallback. Catalogs exist for Japanese, Simplified and Traditional
   Chinese, Ukrainian and Czech.
-- **Not translated anywhere yet:** effect names and their ≈ 1,650 parameter names
-  (`crates/effects`), engine-generated text (property names, errors, undo labels), the Home
-  screen's unwrapped literals (#574), Learn tutorials and documentation.
+- **Effect names:** `crates/ui-egui/src/i18n/effects.rs`, keyed by **effect id**, in Simplified
+  Chinese (306 rows, one per effect in the registry, plus its 21 categories). The registry's
+  English name stays the effect's identity: `effect.list`, `effect.apply {"effect": …}`, scripts
+  and expressions match on it, and the property tree stores it as the effect group's name. Only
+  the drawing — the Effect menu, Effect Controls, the Timeline and Effects & Presets — goes
+  through the catalog, so a project file is identical whichever interface language opens it.
+  A repeat (`Gaussian Blur 2`) keeps the index the engine appends, and a group the user renamed
+  in Effect Controls stays verbatim. No other language has rows yet, so they draw English.
+- **Not translated anywhere yet:** effect *parameter* names (≈ 1,650, `crates/effects`),
+  engine-generated text (property names, errors, undo labels), the Home screen's unwrapped
+  literals (#574), Learn tutorials and documentation.
 - **Language choice:** Settings ▸ General ▸ Language, or Match System
   (`match_system_uses_the_system_language_where_there_is_a_catalog`).
 - **Fonts:** no bundled CJK font; the UI installs system fallbacks probed by script (Kana, Han,
@@ -48,7 +57,7 @@ the true percentages are slightly lower.
 | Language | Code | UI strings translated | Dialogs / tooltips / help | Script support | Native review | Status | To `full` |
 |---|---|---|---|---|---|---|---|
 | English | `en` | ≈ 3,900 (100%, source) | All; docs in English | — | yes | full | — |
-| Simplified Chinese | `zh-hans` | 1,081 (≈ 28%): menus 618/618, panels 463 | Panels and dialogs partly (≈ 35% of panel strings); no help, effects untranslated; Home screen literals unwrapped (#574) | System CJK fallback; Han follows the UI language; CJK text in comps renders wrongly (#453); IME in text layers | no | partial | 6–9 h + review |
+| Simplified Chinese | `zh-hans` | 1,081 (≈ 28%): menus 618/618, panels 463 | Panels and dialogs partly (≈ 35% of panel strings); no help, effect names translated (306) and their parameter names not; Home screen literals unwrapped (#574) | System CJK fallback; Han follows the UI language; CJK text in comps renders wrongly (#453); IME in text layers | no | partial | 6–9 h + review |
 | Spanish | `es` | 618 (≈ 16%) | Menus only | Latin, fine | no | menus only | 7–10 h + review |
 | Hindi | `hi` | 0 | — | UI: Devanagari fallback font but no shaping; text layers shape Devanagari | no | none (After Effects: none) | 9–13 h + shaping in the UI |
 | Arabic | `ar` | 0 | — | UI: Arabic fallback font but no shaping and no RTL layout; text layers: bidi + shaping | no | none (After Effects: none) | 9–13 h + 15–25 h RTL UI |
@@ -75,7 +84,7 @@ After Effects also ships Italian and Russian, which EffectCraft does not (8–12
 German, Korean, Italian and Russian 0%). This is the localization row in
 [target-app-parity.md](target-app-parity.md#by-dimension).
 
-**Effort.** One-time work first: route effect names, parameter names and engine messages through
+**Effort.** One-time work first: route parameter names and engine messages through
 a catalog, wrap the remaining panel literals, and add a Hangul probe (10–20 h). Then each language
 needs ≈ 2,900 more strings (≈ 5–9 h per language at the pace of #398 and #401). Parity with After
 Effects' 10 non-English languages: **≈ 60–110 h**; the four extra languages of the standard list
@@ -89,3 +98,4 @@ can give; none has had it.
 |---|---|---|
 | 2026-10-10 | major | First localization parity document: catalog rows counted for all six languages, the twelve-language table, After Effects' 11 shipped languages from its bundle |
 | 2026-10-11 | minor | Ukrainian panel catalog brought level with the Chinese ones (495 of 496 rows, counted at this commit); its share rises to ≈ 29%. The other languages' panel counts are the 10 October measurement |
+| 2026-10-13 | minor | Effect names and the generated Effect menu leave English: `i18n/effects.rs` adds 306 rows keyed by effect id (Simplified Chinese, from After Effects 2026's interface and Adobe's Chinese documentation for the `CC` series) and the 21 category names. Parameter names are still English; no other language has rows |

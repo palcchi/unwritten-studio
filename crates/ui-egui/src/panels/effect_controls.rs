@@ -1100,6 +1100,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut tops: Vec<(u64, f32)> = vec![];
     for (fi, g) in fx.iter().enumerate() {
         let GroupKind::Effect { effect } = &g.kind else { continue };
+        // The header draws the effect's name in the interface language; the automation labels
+        // below keep the property tree's name, which is the registry's English name (#821).
+        let shown = crate::i18n::effects::group(effect, &g.name);
         let r = Rect::from_min_size(pos2(body.min.x, y), vec2(body.width(), ROW + 2.0));
         tops.push((g.uid, r.min.y));
         y += ROW + 2.0;
@@ -1140,14 +1143,15 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let commit = response.lost_focus() || (response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if escape || commit {
                 ctx.data_mut(|d| d.remove::<String>(rename_id));
-                if !escape && !value.trim().is_empty() && value != g.name {
+                // The field opens with the drawn name, so committing it unchanged is not a rename.
+                if !escape && !value.trim().is_empty() && value != shown {
                     actions.push(("prop.renameGroup".into(), json!({"layer": layer.id.0, "prop": g.uid, "name": value})));
                 }
             } else {
                 ctx.data_mut(|d| d.insert_temp(rename_id, value));
             }
         } else {
-            let name = bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &g.name, Tokens::semibold(12.0), t.text);
+            let name = bp.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &shown, Tokens::semibold(12.0), t.text);
             app.auto.add(&format!("effectControls.effect.{}.name", g.uid), name, &g.name);
         }
         let rresp = ui.interact(reset, egui::Id::new(("ec-reset", g.uid)), Sense::click());
@@ -1166,7 +1170,11 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             widgets::open_popup(ui, apop);
         }
         if let Some(spec) = effectcraft_engine::effects::find(effect) {
-            let lines = vec![spec.name.to_string(), format!("Category: {}", spec.category), "EffectCraft built-in effect (MIT OR Apache-2.0)".to_string()];
+            let lines = vec![
+                crate::i18n::effects::name(spec.id, spec.name),
+                format!("Category: {}", crate::i18n::effects::category(spec.category)),
+                "EffectCraft built-in effect (MIT OR Apache-2.0)".to_string(),
+            ];
             let _ = widgets::popup_menu(ui, apop, about.left_bottom(), &lines, None);
         }
         let hresp = ui.interact(
@@ -1175,10 +1183,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             if editing.is_some() { Sense::hover() } else { Sense::click_and_drag() },
         );
         if hresp.double_clicked() {
-            ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
+            ctx.data_mut(|d| d.insert_temp(rename_id, shown.clone()));
             ctx.data_mut(|d| d.insert_temp(rename_id.with("start"), true));
         }
-        hresp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, &g.name));
+        hresp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, active, &shown));
         app.auto.add(&format!("effectControls.effect.{}", g.uid), r, &g.name);
         if hresp.clicked() || hresp.drag_started() || hresp.secondary_clicked() {
             let add = ui.input(|i| i.modifiers.shift || i.modifiers.command);
@@ -1207,7 +1215,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             item(ui, "Paste", has_clip, "effect.paste", json!({"layers": [lid]}));
             item(ui, "Duplicate", true, "effect.duplicate", json!({"layer": lid, "effect": g.uid}));
             if ui.button(crate::i18n::tr("Rename")).clicked() {
-                ctx.data_mut(|d| d.insert_temp(rename_id, g.name.clone()));
+                ctx.data_mut(|d| d.insert_temp(rename_id, shown.clone()));
                 ctx.data_mut(|d| d.insert_temp(rename_id.with("start"), true));
                 ui.close();
             }
@@ -1532,7 +1540,7 @@ pub fn viewer_hook(
                     let Some(resp) = resp else { continue };
                     if resp.hovered() {
                         ctx.set_cursor_icon(egui::CursorIcon::Move);
-                        resp.clone().on_hover_text(format!("{}: {}", g.name, pr.name));
+                        resp.clone().on_hover_text(format!("{}: {}", crate::i18n::effects::group(&g.match_id, &g.name), pr.name));
                     }
                     if resp.dragged()
                         && let Some(pos) = resp.interact_pointer_pos()

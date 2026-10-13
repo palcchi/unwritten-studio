@@ -5,9 +5,11 @@
 
 use crate::EffectcraftApp;
 
+/// Effect names, keyed by effect id (#821).
+pub(crate) mod effects;
 /// Translations for the panels, tooltips and dialogs below the menu bar (see the module docs).
 mod ui;
-use effectcraft_engine::menus::MenuEntry;
+use effectcraft_engine::menus::{MenuEntry, MenuNode};
 pub(crate) use ui::{set_current, tr, tr_args};
 
 /// Every language with a catalog, in the order Settings ▸ General ▸ Language lists them.
@@ -138,6 +140,15 @@ fn lookup<'a>(catalog: &[(&str, &str, &'a str)], command: &str, source: &'a str)
 }
 
 pub(crate) fn entry(app: &EffectcraftApp, e: &MenuEntry, shown: String) -> String {
+    // The generated Effect menu's entries label themselves with the effect's registry name; the
+    // catalog replaces it with the interface language's (#821). The entry keeps its command and
+    // its `{"effect": <id>}` params, so a script, an expression or the control channel is
+    // unaffected by what the menu draws.
+    if e.command == "effect.apply"
+        && let Some(id) = e.params.get("effect").and_then(|v| v.as_str())
+    {
+        return effects::name(id, &e.label);
+    }
     // Undo/redo names come from the history, so they are formatted per language here rather than
     // looked up in a catalog. An English (or untranslated) interface keeps the shown label.
     let (undo, no_undo, redo, no_redo) = match language(app) {
@@ -166,6 +177,16 @@ pub(crate) fn entry(app: &EffectcraftApp, e: &MenuEntry, shown: String) -> Strin
         // look it up as a source label (a layer literally named "File" must stay "File").
         _ => shown,
     }
+}
+
+/// The label to draw for a generated Effect-menu category submenu, or `None` for every other
+/// submenu (whose label goes through [`submenu`]).
+///
+/// The generated submenus are the only ones whose children are all `effect.apply` entries, which
+/// is what identifies them: their label is one of the registry's 21 categories, drawn as a
+/// submenu in the Effect menu and as a folder row in Effects & Presets (#821).
+pub(crate) fn effect_category(children: &[MenuNode], source: &str) -> Option<String> {
+    (!children.is_empty() && children.iter().all(|c| matches!(c, MenuNode::Item(e) if e.command == "effect.apply"))).then(|| effects::category(source))
 }
 
 pub(crate) fn submenu(app: &EffectcraftApp, source: &str, shown: String) -> String {

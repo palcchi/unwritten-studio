@@ -483,6 +483,26 @@ effectcraft-cli run clip.ecproj roto.stroke '{"layer":"#1","points":[[300,200],[
   roto.propagate '{"layer":"#1","wait":true}' roto.freeze '{"layer":"#1","wait":true}' --save
 ```
 
+### Object Matte
+
+The Object Matte tool (third in the Alt+W slot) works in the Composition viewer: click an object,
+or drag a box around it; Shift adds another Object Matte instead of re-prompting the layer's.
+Agents use `objectMatte.apply {layer, point: [x, y], box?: [x0, y0, x1, y1], frame?, track?,
+before?, after?, effect?}` (layer pixels, layer frames; `effect` re-prompts that instance), one
+undo step each. With a trained model installed (Settings ▸ Roto Brush) the box is the model's box
+prompt. `objectMatte.propagate {layer, effect?, direction?, wait?}` tracks the matte over the
+frames around the reference frame in the background (`roto.cancel` stops it; edits to the prompt
+or the layer's frames queue it again), `objectMatte.freeze {wait?}` / `objectMatte.unfreeze`
+store or drop the final mattes, and `objectMatte.status {layer, effect?}` reports the job's
+progress, the frozen state, the tracked frames and which are computed. With the disk cache on (Settings ▸
+Media & Disk Cache), computed Object Matte and Roto Brush segmentations are also kept there, keyed
+by what they are made of, so reopening a project reuses them.
+
+```sh
+effectcraft-cli run clip.ecproj objectMatte.apply '{"layer":"#1","point":[320,200],"box":[250,120,400,300]}' \
+  objectMatte.propagate '{"layer":"#1","wait":true}' objectMatte.freeze '{"layer":"#1","wait":true}' --save
+```
+
 ### Text: styles and editing
 
 Source Text holds character style runs and per-paragraph settings. CR (`\r`), LF (`\n`) and

@@ -627,6 +627,7 @@ const JAPANESE: &[(&str, &str)] = &[
     ("Project", "プロジェクト"),
     ("Total Offset", "合計オフセット"),
     ("Per Layer", "レイヤーごと"),
+    ("Track", "トラック"),
 ];
 
 const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
@@ -1352,6 +1353,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
     ("Stored, but not used by EffectCraft yet", "已保存，但 EffectCraft 尚未使用"),
     ("Total Offset", "总偏移"),
     ("Per Layer", "每个图层"),
+    ("Track", "跟踪"),
 ];
 
 const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
@@ -2072,6 +2074,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
     ("Stored, but not used by EffectCraft yet", "已儲存，但 EffectCraft 尚未使用"),
     ("Total Offset", "總偏移"),
     ("Per Layer", "每個圖層"),
+    ("Track", "追蹤"),
 ];
 
 /// Ukrainian (uk): original translations of the same interface rows as the Chinese catalogs.
@@ -2539,6 +2542,7 @@ const UKRAINIAN: &[(&str, &str)] = &[
     ("⌘/Ctrl-drag a pin to record its motion", "Перетягніть опорну точку з ⌘/Ctrl, щоб записати її рух"),
     ("▣ {}", "▣ {}"),
     ("⚠ {} is used by:", "⚠ {} використовується в:"),
+    ("Track", "Відстежити"),
     // Strings a panel used to hand to a helper as a bare literal: the helper draws them (the
     // viewer's toolbar tooltips and popup items, the solid dialog's checkbox), so the lookup has
     // to reach the catalog from inside the helper. Kept at the end so the catalogs stay parallel.

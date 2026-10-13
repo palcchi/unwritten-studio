@@ -85,7 +85,11 @@ fn unreadable_native_workspace_is_preserved_after_later_layout_changes() {
         assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_string());
         app.set_workspace("Minimal");
         app.ui.focused = PanelKind::Project;
-        effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name":"Must not overwrite"})).unwrap();
+        let error = effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name":"Must not overwrite"})).unwrap_err();
+        assert!(error.contains("won't be there after a restart") && error.contains("workspaces.json"), "{error}");
+        assert_eq!(app.ui.status, error, "the failure is in the status bar");
+        assert_eq!(app.ui.workspace, "Must not overwrite", "the layout stays usable for this session");
+        assert!(app.ui.saved_workspaces.contains_key("Must not overwrite"));
         eframe::App::on_exit(&mut app);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert!(effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].is_string());

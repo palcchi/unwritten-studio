@@ -297,12 +297,14 @@ fn draw_precomp(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas:
 
 /// Adjustment layer (`Renderer::draw_adjustment`): the effect stack runs on the comp below,
 /// resident on the GPU (non-GPU effects read back, run on the CPU and upload), and the result
-/// replaces the canvas inside the layer's footprint × opacity. `None` = draw it on the CPU.
+/// replaces the canvas inside the layer's footprint × track matte × opacity. `None` = draw it
+/// on the CPU.
 fn draw_adjustment(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, canvas: &mut GpuImage) -> Option<()> {
     let opacity = r.layer_opacity(ctx, layer);
     let Some(foot) = r.adjustment_footprint(ctx, layer) else { return Some(()) };
     let (w, h) = (canvas.width, canvas.height);
     let matte = place(e, r, ctx, layer, &foot, &e.zeros(w, h), BlendMode::Normal, 1.0, None)?;
+    let matte = track_matte(e, r, ctx, layer, matte, None)?;
     let pipe = r.pipe();
     // Effects run in the working space, not the linear blending space.
     let below = match pipe.from_blend() {
@@ -353,27 +355,32 @@ fn composite_iso_with(
     matte_img: Option<GpuImage>,
     levels: Option<f32>,
 ) -> Option<()> {
-    if let Some((m, kind)) = r.track_matte(ctx, layer) {
-        let mimg = match matte_img.filter(|i| (i.width, i.height) == (canvas.width, canvas.height)) {
-            Some(i) => i,
-            None => {
-                let mut mimg = e.zeros(canvas.width, canvas.height);
-                if m.is_active_at(ctx.time)
-                    && let Some(mb) = r.layer_buf(ctx, m)
-                {
-                    let mo = ctx.opacity(m) as f32;
-                    mimg = place(e, r, ctx, m, &mb, &mimg, BlendMode::Normal, mo, None)?;
-                }
-                mimg
-            }
-        };
-        iso = ops::matte(e, &iso, &mimg, kind);
-    }
+    iso = track_matte(e, r, ctx, layer, iso, matte_img)?;
     if layer.preserve_transparency {
         iso = ops::preserve(e, &iso, canvas);
     }
     *canvas = ops::blend_full(e, canvas, &iso, layer.blend_mode, opacity, layer.id.0 as u32, levels);
     Some(())
+}
+
+/// `Renderer::apply_track_matte`: `img` (comp-sized) times the layer's track matte, if it has
+/// one; `matte_img` as in [`composite_iso_with`].
+fn track_matte(e: &mut Enc, r: &Renderer, ctx: &EvalCtx, layer: &Layer, img: GpuImage, matte_img: Option<GpuImage>) -> Option<GpuImage> {
+    let Some((m, kind)) = r.track_matte(ctx, layer) else { return Some(img) };
+    let mimg = match matte_img.filter(|i| (i.width, i.height) == (img.width, img.height)) {
+        Some(i) => i,
+        None => {
+            let mut mimg = e.zeros(img.width, img.height);
+            if m.is_active_at(ctx.time)
+                && let Some(mb) = r.layer_buf(ctx, m)
+            {
+                let mo = ctx.opacity(m) as f32;
+                mimg = place(e, r, ctx, m, &mb, &mimg, BlendMode::Normal, mo, None)?;
+            }
+            mimg
+        }
+    };
+    Some(ops::matte(e, &img, &mimg, kind))
 }
 
 /// Draw a processed layer buffer onto `target` (transform, motion blur sub-samples), quantising

@@ -81,6 +81,10 @@ errors. Unreadable, invalid or newer files leave the default workspace available
 preserved for the entire session, including after later layout changes. Load and save errors
 appear in the status message and the nullable
 `workspaceStorageError` field; a failed write remains eligible for retry.
+`window.saveWorkspace`, `window.saveWorkspaceAs` and `window.editWorkspaces` (rename, delete)
+write the file immediately and return an error when it isn't written (a failed write, a file
+preserved after a failed load, or no configuration store). The changed workspaces still apply
+for the session, and a later save retries them.
 
 ## Input
 

@@ -340,9 +340,10 @@ fn non_finite_32_bit_samples_become_finite() {
     d.layers = vec![WLayer::solid("L", Rect::new(0, 0, 4, 4), [0.5, 0.5, 0.5, 1.0])];
     let p = Psd::parse(write(&d)).unwrap();
     let raw: Vec<u8> = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25].iter().flat_map(|v| v.to_be_bytes()).collect();
-    let s = p.samples(&raw, 4, 1);
+    let mut s = vec![f32::NAN; 4];
+    p.for_each_sample(&raw, 4, 1, |i, v| s[i] = v);
     assert_eq!(s, vec![0.0, 1.0, 0.0, 0.25]);
-    assert!(p.to_rgb(&[Some(s.clone()), Some(s.clone()), Some(s)], 1).iter().all(|v| v.is_finite()));
+    assert!(p.rgb_from([s[1], s[1], s[1], 0.0]).iter().all(|v| v.is_finite()));
 }
 
 #[test]
@@ -350,6 +351,61 @@ fn rect_new_near_i32_max_saturates() {
     let r = Rect::new(i32::MAX, i32::MAX, 1, i32::MAX);
     assert_eq!((r.right, r.bottom), (i32::MAX, i32::MAX));
     assert!(r.is_empty());
+}
+
+fn find(bytes: &[u8], needle: &[u8]) -> usize {
+    bytes.windows(needle.len()).position(|w| w == needle).expect("needle present")
+}
+
+/// The second layer record's signature overwritten.
+fn bad_signature() -> Vec<u8> {
+    let mut bytes = write(&doc_with_layers(8, ColorMode::Rgb, true));
+    let at = find(&bytes, b"8BIMmul ");
+    bytes[at] = b'X';
+    bytes
+}
+
+/// The first channel of the first layer claims more data than the file holds.
+fn bad_channel_length() -> Vec<u8> {
+    let mut bytes = write(&doc_with_layers(8, ColorMode::Rgb, true));
+    let at = find(&bytes, b"8BIMnorm");
+    let first_len = at - 4 * 6 + 2;
+    bytes[first_len..first_len + 4].copy_from_slice(&0x7fff_fff0u32.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn damaged_layer_section_keeps_the_merged_image() {
+    let good = Psd::parse(write(&doc_with_layers(8, ColorMode::Rgb, true))).unwrap();
+    assert!(good.warnings.is_empty() && good.layers.len() == 3);
+    let want = good.composite().unwrap();
+    for bytes in [bad_signature(), bad_channel_length()] {
+        let p = Psd::parse(bytes).unwrap();
+        assert!(p.layers.is_empty());
+        assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
+        assert!(p.warnings[0].contains("Layers could not be read"));
+        assert_eq!((p.width, p.height), (40, 30));
+        let got = p.composite().unwrap();
+        assert_eq!(got.data, want.data);
+    }
+}
+
+#[test]
+fn header_damage_and_missing_merged_image_still_fail() {
+    let good = write(&doc_with_layers(8, ColorMode::Rgb, true));
+    // Zero width.
+    let mut b = good.clone();
+    b[18..22].copy_from_slice(&0u32.to_be_bytes());
+    assert!(Psd::parse(b).is_err());
+    // Unknown colour mode.
+    let mut b = good.clone();
+    b[24..26].copy_from_slice(&99u16.to_be_bytes());
+    assert!(Psd::parse(b).is_err());
+    // Damaged layers and no merged image at all: nothing to fall back to.
+    let end = Psd::parse(good).unwrap().merged_offset;
+    let mut b = bad_signature();
+    b.truncate(end);
+    assert!(Psd::parse(b).is_err());
 }
 
 /// A ZIP plane body for the decoder: the plane delta-coded per row when `predict`.
@@ -433,59 +489,4 @@ fn rle_composite_matches_the_raw_one() {
         assert_eq!(rle.composite().unwrap().data, raw.composite().unwrap().data, "{depth} bit");
         assert_eq!(rle.layer_pixels(2, true).unwrap().data, raw.layer_pixels(2, true).unwrap().data, "{depth} bit");
     }
-}
-
-fn find(bytes: &[u8], needle: &[u8]) -> usize {
-    bytes.windows(needle.len()).position(|w| w == needle).expect("needle present")
-}
-
-/// The second layer record's signature overwritten.
-fn bad_signature() -> Vec<u8> {
-    let mut bytes = write(&doc_with_layers(8, ColorMode::Rgb, true));
-    let at = find(&bytes, b"8BIMmul ");
-    bytes[at] = b'X';
-    bytes
-}
-
-/// The first channel of the first layer claims more data than the file holds.
-fn bad_channel_length() -> Vec<u8> {
-    let mut bytes = write(&doc_with_layers(8, ColorMode::Rgb, true));
-    let at = find(&bytes, b"8BIMnorm");
-    let first_len = at - 4 * 6 + 2;
-    bytes[first_len..first_len + 4].copy_from_slice(&0x7fff_fff0u32.to_be_bytes());
-    bytes
-}
-
-#[test]
-fn damaged_layer_section_keeps_the_merged_image() {
-    let good = Psd::parse(write(&doc_with_layers(8, ColorMode::Rgb, true))).unwrap();
-    assert!(good.warnings.is_empty() && good.layers.len() == 3);
-    let want = good.composite().unwrap();
-    for bytes in [bad_signature(), bad_channel_length()] {
-        let p = Psd::parse(bytes).unwrap();
-        assert!(p.layers.is_empty());
-        assert_eq!(p.warnings.len(), 1, "{:?}", p.warnings);
-        assert!(p.warnings[0].contains("Layers could not be read"));
-        assert_eq!((p.width, p.height), (40, 30));
-        let got = p.composite().unwrap();
-        assert_eq!(got.data, want.data);
-    }
-}
-
-#[test]
-fn header_damage_and_missing_merged_image_still_fail() {
-    let good = write(&doc_with_layers(8, ColorMode::Rgb, true));
-    // Zero width.
-    let mut b = good.clone();
-    b[18..22].copy_from_slice(&0u32.to_be_bytes());
-    assert!(Psd::parse(b).is_err());
-    // Unknown colour mode.
-    let mut b = good.clone();
-    b[24..26].copy_from_slice(&99u16.to_be_bytes());
-    assert!(Psd::parse(b).is_err());
-    // Damaged layers and no merged image at all: nothing to fall back to.
-    let end = Psd::parse(good).unwrap().merged_offset;
-    let mut b = bad_signature();
-    b.truncate(end);
-    assert!(Psd::parse(b).is_err());
 }

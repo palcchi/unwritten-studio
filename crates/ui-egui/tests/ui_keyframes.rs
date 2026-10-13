@@ -463,5 +463,6 @@ fn speed_graph_handle_drags_upward_past_the_top() {
     assert_eq!(out_speed(&h), 0.0);
     drag(&mut h, at, at + egui::vec2(0.0, -400.0), Default::default());
     let long = out_speed(&h);
-    assert!(short > 1.0 && long > 9.0 * short, "40 px up gave {short}, 400 px up gave {long}");
+    // The speed per pixel depends on the graph's fitted scale; only the proportion matters.
+    assert!(short > 0.0 && long > 9.0 * short, "40 px up gave {short}, 400 px up gave {long}");
 }

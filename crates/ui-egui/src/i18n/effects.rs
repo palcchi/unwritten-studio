@@ -301,6 +301,7 @@ const SIMPLIFIED_CHINESE: &[Row] = &[
     ("ec.key.unmult", "Unmult", "Unmult"),
     ("ec.keying.keylight", "Key Light", "Key Light"),
     ("ec.matte.mattechoker", "Matte Choker", "遮罩阻塞工具"),
+    ("ec.matte.objectmatte", "Object Matte", "对象遮罩"),
     ("ec.matte.refinehard", "Refine Hard Matte", "调整实边遮罩"),
     ("ec.matte.refinesoft", "Refine Soft Matte", "调整柔和遮罩"),
     ("ec.matte.rotobrush", "Roto Brush & Refine Edge", "Roto 笔刷和细化边缘"),

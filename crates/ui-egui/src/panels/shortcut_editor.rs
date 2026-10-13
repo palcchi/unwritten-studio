@@ -223,9 +223,10 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             }
         }
     }
-    // Enter is OK, unless it belongs to the rename field or an open preset menu. A recorded Enter
-    // never gets here: the recorder took the frame's key events above.
-    close |= st.rename.is_none() && !egui::Popup::is_any_open(ctx) && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Enter));
+    // Enter is OK, unless it belongs to the rename field, an open preset menu or the delete
+    // confirmation (where Enter is not Delete). A recorded Enter never gets here: the recorder
+    // took the frame's key events above.
+    close |= st.rename.is_none() && st.confirm_delete.is_none() && !egui::Popup::is_any_open(ctx) && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Enter));
     // Modifiers: toggles, or the ones held on the keyboard.
     let held = ctx.input(|i| i.modifiers);
     let held = [held.ctrl && cfg!(target_os = "macos"), held.command, held.alt, held.shift];

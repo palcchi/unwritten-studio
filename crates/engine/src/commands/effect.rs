@@ -117,7 +117,7 @@ fn find_fx(s: &Session, p: &Value, cmd: &str) -> Result<(effectcraft_project::It
     let g = match p.get("effect") {
         Some(Value::Number(n)) => {
             let n = n.as_u64().unwrap_or(0);
-            fx.groups().find(|g| g.uid == n).or_else(|| fx.groups().nth(n.saturating_sub(1) as usize))
+            fx.groups().find(|g| g.uid == n).or_else(|| usize::try_from(n.saturating_sub(1)).ok().and_then(|i| fx.groups().nth(i)))
         }
         Some(Value::String(name)) => fx.groups().find(|g| &g.name == name || g.match_id == *name),
         _ => s.state.selected_props.iter().find_map(|(l, u)| (*l == lid).then(|| fx.groups().find(|g| g.uid == *u)).flatten()),
@@ -416,6 +416,35 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Tint's Swap Colors button edits both swatches at the CTI in one undo step. Like Reset,
+/// it keys animated parameters without moving their existing keys or replacing expressions.
+fn swap_tint_colors(s: &mut Session, p: &Value) -> Result<Value> {
+    let cmd = "effect.swapTintColors";
+    if !p.is_object() || p.get("effect").is_some_and(|v| !v.is_string() && v.as_u64().is_none_or(|n| n == 0)) {
+        return Err(bad(cmd, "effect must be a positive index, uid or name"));
+    }
+    let (cid, lid, uid) = find_fx(s, p, cmd)?;
+    let comp = s.project.comp(cid).ok_or(EngineError::NoComp)?;
+    let layer = comp.layer(lid).ok_or(EngineError::NoComp)?;
+    let g = layer.props.find_group(uid).filter(|g| g.match_id == "ec.color.tint").ok_or_else(|| bad(cmd, "not a Tint effect"))?;
+    let lt = layer.layer_time(s.time_of(cid));
+    let color = |id| {
+        g.prop(id)
+            .map(|pr| pr.value_at(lt))
+            .filter(|v| matches!(v, effectcraft_keyframe::Value::Color(_)))
+            .ok_or_else(|| bad(cmd, "Tint is missing a colour parameter"))
+    };
+    let (black, white) = (color("black")?, color("white")?);
+    s.edit("Swap Tint Colors", None, |proj, _| {
+        let g = layer_mut(proj, cid, lid)?.props.find_group_mut(uid).ok_or_else(|| bad(cmd, "effect gone"))?;
+        for (id, value) in [("black", white), ("white", black)] {
+            g.prop_mut(id).ok_or_else(|| bad(cmd, "Tint is missing a colour parameter"))?.set_value_at(lt, value);
+        }
+        Ok(())
+    })?;
+    Ok(json!({"effect": uid}))
+}
+
 fn last(s: &mut Session, p: &Value) -> Result<Value> {
     let id = s.state.last_effect.clone().ok_or_else(|| bad("effect.applyLast", "no effect applied yet"))?;
     let mut q = p.clone();
@@ -507,6 +536,15 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("effect.copy", "Copy Effects", [], None, "{layer?, effect? | effects?: [uid|name|index]} (default: the selected effects)", has_layers, copy),
         cmd!("effect.paste", "Paste Effects", [], None, "{layers?} — adds the copied effects to the layers", has_layers, paste),
         cmd!("effect.reset", "Reset Effect", [], None, "{layer?, effect}", has_layers, reset),
+        cmd!(
+            "effect.swapTintColors",
+            "Swap Tint Colors",
+            [],
+            None,
+            "{comp?, layer?, effect?: index|uid|name} — swaps Tint's Map Black To and Map White To at the current layer time in one undo step",
+            has_layers,
+            swap_tint_colors
+        ),
         crate::query!(
             "effect.list",
             "List Effects",

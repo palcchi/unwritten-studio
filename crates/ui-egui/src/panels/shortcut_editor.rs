@@ -215,6 +215,9 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
             }
         }
     }
+    // Enter is OK, unless it belongs to the rename field or an open preset menu. A recorded Enter
+    // never gets here: the recorder took the frame's key events above.
+    close |= st.rename.is_none() && !egui::Popup::is_any_open(ctx) && ctx.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Enter));
     // Modifiers: toggles, or the ones held on the keyboard.
     let held = ctx.input(|i| i.modifiers);
     let held = [held.ctrl && cfg!(target_os = "macos"), held.command, held.alt, held.shift];
@@ -237,7 +240,9 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
         }
     }
 
-    super::dialogs::modal(ctx, "Keyboard Shortcuts", vec2(1000.0, 720.0), t, |ui| {
+    // No outer scroll area: the command list takes the height left over, so OK stays in view.
+    super::dialogs::modal_fit(ctx, "Keyboard Shortcuts", vec2(1000.0, 760.0), t, |ui, height| {
+        let top = ui.cursor().top();
         // ---- preset bar
         ui.horizontal(|ui| {
             ui.label(tr("Preset:"));
@@ -437,42 +442,49 @@ pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
                 q.split_whitespace().all(|w| hay.contains(w))
             })
             .collect();
-        ui.allocate_ui_with_layout(vec2(ui.available_width(), 270.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
-            ui.set_height(270.0);
+        let footer = 6.0 + ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 2.0;
+        let list_h = (height - (ui.cursor().top() - top) - footer).max(140.0);
+        ui.allocate_ui_with_layout(vec2(ui.available_width(), list_h), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+            ui.set_height(list_h);
             // Command list.
             ui.vertical(|ui| {
                 ui.set_width(620.0);
                 let row_h = 20.0;
-                egui::ScrollArea::vertical().id_salt("sc-rows").max_height(230.0).auto_shrink([false, false]).show_rows(ui, row_h, rows.len(), |ui, range| {
-                    for i in range {
-                        let b = rows[i];
-                        let keys = table.keys.get(&b.key).cloned().unwrap_or_default();
-                        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
-                        let sel = st.selected.as_deref() == Some(b.key.as_str());
-                        if sel {
-                            ui.painter().rect_filled(r, 0.0, t.row_selected);
-                        } else if i % 2 == 1 {
-                            ui.painter().rect_filled(r, 0.0, t.row_alt);
+                egui::ScrollArea::vertical().id_salt("sc-rows").max_height(list_h - 40.0).auto_shrink([false, false]).show_rows(
+                    ui,
+                    row_h,
+                    rows.len(),
+                    |ui, range| {
+                        for i in range {
+                            let b = rows[i];
+                            let keys = table.keys.get(&b.key).cloned().unwrap_or_default();
+                            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+                            let sel = st.selected.as_deref() == Some(b.key.as_str());
+                            if sel {
+                                ui.painter().rect_filled(r, 0.0, t.row_selected);
+                            } else if i % 2 == 1 {
+                                ui.painter().rect_filled(r, 0.0, t.row_alt);
+                            }
+                            let pp = ui.painter();
+                            pp.text(pos2(r.min.x + 6.0, r.center().y), Align2::LEFT_CENTER, &b.label, Tokens::ui(11.5), t.text);
+                            pp.text(pos2(r.min.x + 230.0, r.center().y), Align2::LEFT_CENTER, b.path.join(" > "), Tokens::ui(10.5), t.text_faint);
+                            let ks: Vec<String> = keys.iter().map(|k| crate::menus::shortcut_text(k)).collect();
+                            let col = if b.scope == APP_SCOPE { APP_COLOR } else { PANEL_COLOR };
+                            pp.text(
+                                pos2(r.max.x - 8.0, r.center().y),
+                                Align2::RIGHT_CENTER,
+                                ks.join(", "),
+                                Tokens::ui(11.5),
+                                if keys.is_empty() { t.text_faint } else { col },
+                            );
+                            app.auto.add(&format!("shortcuts.row.{i}"), r, &b.label);
+                            if resp.clicked() {
+                                st.selected = Some(b.key.clone());
+                                st.pending.clear();
+                            }
                         }
-                        let pp = ui.painter();
-                        pp.text(pos2(r.min.x + 6.0, r.center().y), Align2::LEFT_CENTER, &b.label, Tokens::ui(11.5), t.text);
-                        pp.text(pos2(r.min.x + 230.0, r.center().y), Align2::LEFT_CENTER, b.path.join(" > "), Tokens::ui(10.5), t.text_faint);
-                        let ks: Vec<String> = keys.iter().map(|k| crate::menus::shortcut_text(k)).collect();
-                        let col = if b.scope == APP_SCOPE { APP_COLOR } else { PANEL_COLOR };
-                        pp.text(
-                            pos2(r.max.x - 8.0, r.center().y),
-                            Align2::RIGHT_CENTER,
-                            ks.join(", "),
-                            Tokens::ui(11.5),
-                            if keys.is_empty() { t.text_faint } else { col },
-                        );
-                        app.auto.add(&format!("shortcuts.row.{i}"), r, &b.label);
-                        if resp.clicked() {
-                            st.selected = Some(b.key.clone());
-                            st.pending.clear();
-                        }
-                    }
-                });
+                    },
+                );
                 ui.label(RichText::new(format!("{} of {} commands", rows.len(), table.bindables.len())).color(t.text_faint));
             });
             ui.separator();
@@ -601,6 +613,48 @@ mod tests {
         app.auto.begin_frame();
         let mut out = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| crate::panels::dialogs::show(app, ui.ctx()));
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn the_ok_button_stays_inside_the_dialog_in_a_small_window() {
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        open(&mut app);
+        for size in [vec2(1680.0, 1020.0), vec2(1280.0, 720.0)] {
+            for _ in 0..3 {
+                app.auto.begin_frame();
+                let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), size)), ..Default::default() };
+                let mut out = ctx.run_ui(input, |ui| crate::panels::dialogs::show(&mut app, ui.ctx()));
+                out.textures_delta.clear();
+            }
+            let [_, y, _, h] = app.auto.find("shortcuts.close").expect("OK button").rect;
+            // The window less the modal's margin and its frame padding.
+            assert!(y + h <= size.y - 24.0 - 18.0 + 0.5, "OK ends at {} in a {size:?} window", y + h);
+        }
+    }
+
+    #[test]
+    fn enter_is_ok_except_while_recording_or_renaming() {
+        let enter = || egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
+        // Recording: Enter is the recorded key.
+        open(&mut app);
+        app.dialog_state.shortcuts.recording = true;
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, Some(Dialog::Shortcuts));
+        assert_eq!(app.dialog_state.shortcuts.pending, "Enter");
+        // Renaming a preset: Enter belongs to the name field.
+        app.dialog_state.shortcuts.rename = Some("Mine".into());
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, Some(Dialog::Shortcuts));
+        // Otherwise it closes the editor, also with the search field focused.
+        app.dialog_state.shortcuts.rename = None;
+        frame(&mut app, &ctx, vec![]);
+        frame(&mut app, &ctx, vec![enter()]);
+        assert_eq!(app.dialog, None);
     }
 
     #[test]

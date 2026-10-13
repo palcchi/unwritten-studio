@@ -507,6 +507,9 @@ pub fn apply_visuals(ctx: &egui::Context, t: &Tokens) {
         // Scroll bars always show (egui's float in only over the list), so long menus and lists
         // can be dragged without a mouse wheel or touchpad (#269).
         s.spacing.scroll = egui::style::ScrollStyle::solid();
+        // The handle takes the text colour: the fill it would otherwise get is the colour of its
+        // track (both are the field background), which left it invisible until hovered.
+        s.spacing.scroll.foreground_color = true;
         s.text_styles.insert(TextStyle::Body, FontId::new(12.0, FontFamily::Proportional));
         s.text_styles.insert(TextStyle::Button, FontId::new(12.0, FontFamily::Proportional));
         s.text_styles.insert(TextStyle::Small, FontId::new(11.0, FontFamily::Proportional));

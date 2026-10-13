@@ -12,7 +12,7 @@ extension points: [plugins.md](plugins.md); overall numbers:
 Expression Language Reference and Scripting Guide (behaviour only, AGENTS.md §2) and tested with
 our own scripts; no real-world script library has been run against both apps.
 
-| Feature | After Effects 2026 | EffectCraft | Status | Evidence / gap |
+| Feature | After Effects 2026 | Unwritten Studio | Status | Evidence / gap |
 |---|---|---|---|---|
 | Expression language | JavaScript engine (default) and Legacy ExtendScript | JavaScript (boa) with legacy array maths (`value + [10, 0]`) | good | `crates/expr` tests; no separate Legacy ExtendScript engine mode |
 | Expression object model | `thisComp`, `thisLayer`, `wiggle`, `loopOut`, `valueAtTime`, `sampleImage`, `footage()`, text style API… | Same members, from the reference | good | `crates/expr/src/tests.rs`; behaviour of edge cases unmeasured (G1) |

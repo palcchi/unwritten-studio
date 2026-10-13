@@ -1,4 +1,4 @@
-# Flatpak manifest for EffectCraft, ready for a Flathub submission.
+# Flatpak manifest for Unwritten Studio, ready for a Flathub submission.
 #
 # Flatpak builds run offline, so the crate sources must be vendored first. From the repo root:
 #

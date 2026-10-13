@@ -1,4 +1,4 @@
-//! EffectCraft headless CLI: one-shot agent commands, frame rendering and the MCP server.
+//! Unwritten Studio headless CLI: one-shot agent commands, frame rendering and the MCP server.
 //!
 //! ```text
 //! effectcraft-cli info                                        project + engine summary
@@ -456,7 +456,7 @@ fn run(cmd: &str, args: &Args, json_out: bool) -> Result<(), Failure> {
                 emit(&info, true);
             } else {
                 say!(
-                    "EffectCraft {} ({}), {} commands, {} effects",
+                    "Unwritten Studio {} ({}), {} commands, {} effects",
                     info["version"].as_str().unwrap_or(""),
                     info["mode"].as_str().unwrap_or(""),
                     info["commands"],
@@ -1090,7 +1090,7 @@ fn adv3d_bench_comp(p: &mut effectcraft_engine::project::Project) -> Option<Item
     }
     add(p, &comp, LayerSource::Text, &|l| {
         l.switches.three_d = true;
-        let doc = TextDoc { text: "EffectCraft".into(), size: 180.0, fill: [0.95, 0.75, 0.2, 1.0], apply_fill: true, ..Default::default() };
+        let doc = TextDoc { text: "Unwritten Studio".into(), size: 180.0, fill: [0.95, 0.75, 0.2, 1.0], apply_fill: true, ..Default::default() };
         set(l, "text/sourceText", Value::Text(Box::new(doc)));
         let mut next = 900_000u64;
         l.props.children.push(build::extrusion_geometry_options(&mut Ids(&mut next)).into());

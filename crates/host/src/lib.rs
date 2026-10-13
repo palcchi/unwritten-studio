@@ -97,10 +97,10 @@ pub fn session() -> Session {
     }
 }
 
-/// The platform config directory for EffectCraft (`EFFECTCRAFT_CONFIG_DIR` overrides):
-/// `~/Library/Application Support/EffectCraft` (macOS), `%APPDATA%\EffectCraft` (Windows),
+/// The platform config directory for Unwritten Studio (`EFFECTCRAFT_CONFIG_DIR` overrides):
+/// `~/Library/Application Support/Unwritten Studio` (macOS), `%APPDATA%\Unwritten Studio` (Windows),
 /// `$XDG_CONFIG_HOME/effectcraft` or `~/.config/effectcraft` (Linux and others). A `portable.txt`
-/// beside the executable puts it in `EffectCraftData` there instead ([`app_dirs`]).
+/// beside the executable puts it in `Unwritten StudioData` there instead ([`app_dirs`]).
 pub fn config_dir() -> Option<std::path::PathBuf> {
     app_dirs::current().dir.clone()
 }

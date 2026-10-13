@@ -1,10 +1,10 @@
-# EffectCraft Roadmap
+# Unwritten Studio Roadmap
 
 **Stage: alpha** · next: beta, ~30 points of "ready for real work" and ~350–620 h away
 
 > **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (open-issue count, crash list and localization share re-audited against `upstream/main` 470ea7a3) · **Target:** Adobe After Effects 2026 (26.5.0.89)
 
-EffectCraft aims to do what After Effects does, with the same panels, menus and behaviour, written
+Unwritten Studio aims to do what After Effects does, with the same panels, menus and behaviour, written
 from scratch in Rust. This page is the one-page summary; the evidence is in
 [docs/target-app-parity.md](docs/target-app-parity.md), the work list in
 [docs/gaps.md](docs/gaps.md), and the plan in [docs/roadmap.md](docs/roadmap.md).
@@ -113,7 +113,7 @@ Ranked; detail in [docs/roadmap.md](docs/roadmap.md) and [docs/gaps.md](docs/gap
 | 5 | Performance: benchmarks at 1080p / 4K, real-time cached playback, hardware video (G5) | 50–100 |
 | 6 | Localization depth: effect names, all panels, Korean / Italian (G9) | 60–110 |
 
-Come tell us what matters most to you on [Discord](https://discord.gg/artcraft).
+Come tell us what matters most to you on [Discord](https://github.com/palcchi/unwritten-studio/issues).
 
 ## Progress log
 

@@ -37,15 +37,12 @@ fn click(h: &mut Harness<'_, EffectcraftApp>, id: &str) {
     h.run_steps(2);
 }
 
-/// #581: the header's Discord pill fits its label with even padding (it was a fixed 104 px with
-/// the text at its left).
+/// The header exposes a feedback shortcut without linking to the former vendor community.
 #[test]
-fn discord_pill_fits_its_label() {
+fn header_has_feedback_shortcut() {
     let h = harness();
-    let e = h.state().auto.find("header.discord").expect("the Discord pill").clone();
-    let text = h.ctx.fonts_mut(|f| f.layout_no_wrap("Discord".into(), effectcraft_ui_egui::theme::Tokens::semibold(12.0), egui::Color32::WHITE).size().x);
-    // Padding 10, the 14 px icon, a 6 px gap, the text, padding 12.
-    assert!((e.rect[2] - (text + 42.0)).abs() < 0.5, "{} for a {text} px label", e.rect[2]);
+    let e = h.state().auto.find("header.feedback").expect("feedback shortcut").clone();
+    assert!((e.rect[2] - 26.0).abs() < 0.5, "{}", e.rect[2]);
 }
 
 #[test]

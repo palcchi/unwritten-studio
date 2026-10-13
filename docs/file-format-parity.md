@@ -2,7 +2,7 @@
 
 > **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (closed issue references re-audited against `upstream/main` 470ea7a3) · **Target:** Adobe After Effects 2026
 
-Every format After Effects reads or writes, with EffectCraft's support. After Effects' list comes
+Every format After Effects reads or writes, with Unwritten Studio's support. After Effects' list comes
 from its installed bundle (26.5.0.89: `Info.plist` `CFBundleDocumentTypes`, `Plug-ins/Format`,
 `Resources/usd_plugins`) and its public documentation; ours from `crates/media/src/lib.rs`
 (`STILL_EXTENSIONS`, `VIDEO_EXTENSIONS`, `MODEL_EXTENSIONS`, FilmCraft's `AUDIO_EXTENSIONS`),
@@ -20,7 +20,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 ## After Effects' own formats
 
-| Format | After Effects | EffectCraft read | Write | Fidelity / notes | Tested by |
+| Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
 | Project `.aep` | R/W (native) | none | none | Main file format; needs an owner decision on clean-room scope (#190; #248, closed as its duplicate: py-aep as an external converter; open PRs #251 and #860). Blocks beta | — |
 | XML project `.aepx` | R/W | none | none | Same decision as `.aep` | — |

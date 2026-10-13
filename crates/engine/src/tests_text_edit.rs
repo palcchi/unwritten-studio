@@ -292,7 +292,7 @@ fn pinned_variable_font(family: &str) -> Vec<u8> {
 /// the font menu's rows carry the flag the filter uses.
 #[test]
 fn fonts_filter_variable_families() {
-    const FAMILY: &str = "EffectCraft Variable Filter Test";
+    const FAMILY: &str = "Unwritten Studio Variable Filter Test";
     assert_eq!(effectcraft_text::fonts::add_font_data(pinned_variable_font(FAMILY)).len(), 1);
     let mut s = Session::default();
     let all = s.execute("text.fonts", json!({})).unwrap();

@@ -1,6 +1,6 @@
 [package]
 name = "unwritten-studio-core"
-description = "C ABI bridge from Unwritten Studio for iPadOS to the reusable EffectCraft Rust engine"
+description = "C ABI bridge from Unwritten Studio for iPadOS to the reusable Unwritten Studio Rust engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

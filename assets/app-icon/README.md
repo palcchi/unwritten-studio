@@ -1,9 +1,9 @@
-# EffectCraft app icon
+# Unwritten Studio app icon
 
 **Creature:** a unicorn, as an engraved head-and-shoulders bust looking out of the tile.
 
-**Style:** an ink engraving portrait in the Crafting Apps' owl-template framing (the FilmCraft owl):
-full-bleed colour field, tight head-and-shoulders crop, the body running off the bottom and right edges.
+**Style:** an ink engraving portrait with a full-bleed colour field, tight head-and-shoulders crop,
+and the body running off the bottom and right edges.
 
 **Tile:** 512 × 512 viewBox, rounded square `rx=112`, clipped; no border or roundel.
 
@@ -11,11 +11,11 @@ full-bleed colour field, tight head-and-shoulders crop, the body running off the
 
 | Colour | Hex | Used for |
 |---|---|---|
-| App colour (EffectCraft pink) | `#e0368f` | the full-bleed field |
+| App colour (Unwritten Studio pink) | `#e0368f` | the full-bleed field |
 | Paper | `#efe9dc` | the figure |
 | Ink | `#0b0b0c` | line work and contour |
 
-**Provenance:** the project owner drew it in ArtCraft (a 2880 px engraving-style image, kept in
+**Provenance:** the project owner created it as a 2880 px engraving-style image, kept in
 craftrules at `assets/app-icons/effectcraft/source.png`). It was vectorised with craftrules
 `assets/logo-options/_tools/vectorize_tile.py`, which keys out the field and traces the ink with potrace.
 Licence: see [LICENSE.txt](LICENSE.txt) (MIT OR Apache-2.0, like the repo).

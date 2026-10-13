@@ -1,6 +1,6 @@
 //! Effects & Presets: search (matches highlighted), the contents menu (colour-depth / GPU
 //! filters, animation presets on/off, categories or alphabetical, refresh), Favorites (star an
-//! effect), Recently Used, "* Animation Presets" (EffectCraft's own text animation and transition
+//! effect), Recently Used, "* Animation Presets" (Unwritten Studio's own text animation and transition
 //! presets and the user's `.ecpreset` files) and the effect categories. Double-click applies to the
 //! selected layers; dragging an effect onto a layer (timeline, viewer, Effect Controls) applies
 //! it there.
@@ -24,13 +24,13 @@ pub struct PresetFile {
     pub path: String,
 }
 
-/// Where user presets live: `$EC_PRESETS_DIR`, else `~/Documents/EffectCraft/Presets`.
+/// Where user presets live: `$EC_PRESETS_DIR`, else `~/Documents/Unwritten Studio/Presets`.
 pub fn presets_dir() -> Option<std::path::PathBuf> {
     if let Ok(d) = std::env::var("EC_PRESETS_DIR") {
         return Some(d.into());
     }
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()?;
-    Some(std::path::Path::new(&home).join("Documents").join("EffectCraft").join("Presets"))
+    Some(std::path::Path::new(&home).join("Documents").join("Unwritten Studio").join("Presets"))
 }
 
 /// The `.ecpreset` files in `dir`, sorted by name.

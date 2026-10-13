@@ -1245,7 +1245,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             let lines = vec![
                 crate::i18n::effects::name(spec.id, spec.name),
                 format!("Category: {}", crate::i18n::effects::category(spec.category)),
-                "EffectCraft built-in effect (MIT OR Apache-2.0)".to_string(),
+                "Unwritten Studio built-in effect (MIT OR Apache-2.0)".to_string(),
             ];
             let _ = widgets::popup_menu(ui, apop, about.left_bottom(), &lines, None);
         }

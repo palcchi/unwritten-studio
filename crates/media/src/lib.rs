@@ -1,4 +1,4 @@
-//! Footage import for EffectCraft (layer **L3**: it implements `effectcraft_render::FootageSource`).
+//! Footage import for Unwritten Studio (layer **L3**: it implements `effectcraft_render::FootageSource`).
 //!
 //! - [`probe`] / [`probe_bytes`]: inspect a file and describe it as an [`effectcraft_project::Footage`]
 //!   (video, still, image sequence or audio; size, rate, duration, streams, codec, alpha).

@@ -3,7 +3,7 @@
 ## Implemented in this vertical slice
 
 - A **SwiftUI/UIKit iPadOS app target** (`ios/UnwrittenStudio.xcodeproj`) with an adaptive editorial workspace, in-project item browser, composition preview, timeline rows, inspector, toolbar, native project-document import/export, and keyboard shortcuts.
-- A Rust static-library bridge around the existing EffectCraft `Session`, command registry, project model, media importer, serialization, and renderer. The app does not load a webpage or use a `WKWebView`.
+- A Rust static-library bridge around the existing Unwritten Studio `Session`, command registry, project model, media importer, serialization, and renderer. The app does not load a webpage or use a `WKWebView`.
 - Project creation, `.ecproj`/`.ecprojx` open and `.ecproj` save, composition/layer listing, adding solid/shape/text layers, selecting a timeline layer, undo/redo, playhead scrubbing, image/video/audio import into app-owned storage and the active composition, and locally rendered RGBA preview.
 - The iOS Rust session attempts `effectcraft-gpu::Gpu::headless()`; wgpu can use the Apple Metal backend on iOS. If adapter/device initialization fails, the existing CPU renderer remains the fallback. The current rendering path can still perform substantial source/effect work on CPU, and no iPad benchmark or thermal/memory profile has been run.
 
@@ -11,7 +11,7 @@
 
 - No signed or unsigned `.ipa` has been produced in this Ubuntu environment. This machine has no `xcodebuild`, Apple SDK, iOS simulator runtime, Apple signing identity, provisioning profile, or physical iPad connection. An installable IPA is **not** being claimed.
 - `cargo check --locked -p unwritten-studio-core` passes for both `aarch64-apple-ios` and `aarch64-apple-ios-sim`; this checks Rust's Apple-target code and Metal backend dependencies, but does **not** link against an Apple SDK or produce an app. Xcode compilation/archive, device launch, native document picker behavior, touch/Pencil/pointer behavior, rotation/split-screen/Stage Manager, and Metal runtime compatibility remain unverified.
-- The native screen is a focused first vertical slice, not a port of the full EffectCraft desktop UI. The current UI exposes basic project/layer workflows; advanced effects, keyframe editing, audio playback, render-queue export, full property editing, drag/reorder, Apple Pencil drawing, and advanced import options remain follow-up work.
+- The native screen is a focused first vertical slice, not a port of the full Unwritten Studio desktop UI. The current UI exposes basic project/layer workflows; advanced effects, keyframe editing, audio playback, render-queue export, full property editing, drag/reorder, Apple Pencil drawing, and advanced import options remain follow-up work.
 - The project browser lists the current document's items; recent-project history and visual thumbnails are not implemented. Native controls and scrolling/slider touch work are present, but custom canvas gestures, Pencil tools and hardware pointer behavior have not been tested.
 - GPU initialization is attempted, not guaranteed. Unsupported formats, shader/device limits, allocations, or GPU-specific effects can fall back to CPU. Native execution is not presumed faster. Performance must be measured on supported iPads before setting product claims or default preview quality.
 
@@ -51,4 +51,4 @@ The script compiles the device Rust static library, archives the Xcode app for g
 
 ## Upstream license
 
-EffectCraft is licensed under MIT OR Apache-2.0. This derivative retains the upstream `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, and attribution files. The Unwritten Studio app code remains under the repository's MIT OR Apache-2.0 license unless subsequently separated.
+Unwritten Studio is licensed under MIT OR Apache-2.0. This derivative retains the upstream `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, and attribution files. The Unwritten Studio app code remains under the repository's MIT OR Apache-2.0 license unless subsequently separated.

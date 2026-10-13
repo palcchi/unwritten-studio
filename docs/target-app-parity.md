@@ -2,7 +2,7 @@
 
 > **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (issue, catalog and export-format references re-audited against `upstream/main` 470ea7a3; the 10 October re-measure is otherwise unchanged) · **Target:** Adobe After Effects 2026 (26.5.0.89)
 
-The authoritative assessment of how close EffectCraft is to After Effects, and how much work is
+The authoritative assessment of how close Unwritten Studio is to After Effects, and how much work is
 left. [gaps.md](gaps.md) lists every known shortfall one at a time; the
 [ROADMAP](../ROADMAP.md) summarises both. Deep dives: [effects-parity.md](effects-parity.md),
 [scripting-parity.md](scripting-parity.md), [file-format-parity.md](file-format-parity.md),
@@ -547,7 +547,7 @@ axes since M13.6; Advanced 3D's DOF has iris shapes since M13.8).
   readback staging buffers are reused and the 8/16 bpc quantisation after each layer is fused
   into the layer's composite. `bench --gpu` on an M4 Pro under load (both binaries run back to
   back, median of 15): Lower Third 1920×1080 GPU warm 21.0 → 4.1 ms/frame (viewer 11.1 → 2.6;
-  Half 10.1 → 3.1), EffectCraft Intro 27.5 → 7.8 (viewer 21.7 → 3.6), 3D Showcase ≈ 95 → ≈ 60
+  Half 10.1 → 3.1), Unwritten Studio Intro 27.5 → 7.8 (viewer 21.7 → 3.6), 3D Showcase ≈ 95 → ≈ 60
   (viewer ≈ 80 → ≈ 40), Adjustment Layers 93 → 36. In steady state the only transfer left is
   the frame's own readback (0.0 MB uploads per frame on every demo comp; the adjustment
   footprint is now cached and uploaded once).
@@ -693,7 +693,7 @@ Fixes from measured reports:
 
 ### Update: plug-ins and extensions as in After Effects; ease presets become a ScriptUI panel
 
-EffectCraft's core keeps After Effects parity; what After Effects users get from third parties is
+Unwritten Studio's core keeps After Effects parity; what After Effects users get from third parties is
 an extension, on the same extension points After Effects has ([plugins.md](plugins.md) compares
 them: scripts, ScriptUI panels, effect plug-ins, with a guide to writing a panel).
 
@@ -828,10 +828,10 @@ meanwhile. Footage, solids, proxies and the project settings are hashed by value
 states are kept, so a long drag doesn't hold on to every intermediate state. The disk cache's
 content key now also covers proxies and Use Proxy.
 
-Since (M13.30–M13.31): the Tools bar and About dialog carry the ArtCraft mark. The
+The Tools bar and About dialog use the current project identity; inherited vendor marks were removed.
 Home screen is laid out like After Effects' and covers the whole workspace. A left rail holds New
 Project / Open Project, the Home, Templates and Learn pages and, at its foot, the community
-links. The Home page has a "Welcome to EffectCraft" heading, quick-start tiles (New Composition,
+links. The Home page has a "Welcome to Unwritten Studio" heading, quick-start tiles (New Composition,
 Open Demo Project, Import Footage, New from Template) and the recent projects as a filterable
 table with thumbnails and Name / Opened ("3 hours ago") / Size / Kind columns. New automation ids:
 `home.filter`, `home.templates`, `home.file.import`.
@@ -891,7 +891,7 @@ content keys), audio scrubbing, four snapshot slots.
 
 ### Update: M3.14 project files
 
-Project files name the version that wrote them (`savedBy`); opening one that a newer EffectCraft
+Project files name the version that wrote them (`savedBy`); opening one that a newer Unwritten Studio
 saved warns that what this version doesn't know is lost on saving (`file.open` reports
 `savedBy`). Saving checks that the file reads back first, so a value JSON can't hold (NaN)
 fails the save with a message instead of writing a project that can never be opened (the file
@@ -994,7 +994,7 @@ public ICC specification and baked into a 3D LUT for the viewer).
 
 #### M13.26: Premiere Pro interop via timeline interchange
 
-| Feature | After Effects | EffectCraft | Status |
+| Feature | After Effects | Unwritten Studio | Status |
 |---|---|---|---|
 | File ▸ Import ▸ Adobe Premiere Pro Project… | reads `.prproj` | reads Final Cut Pro XML (Premiere's File ▸ Export ▸ Final Cut Pro XML), FCPXML, OTIO, EDL, AAF and OMF (`file.importTimeline`): comps, layers by track, timing/speed/reverse/holds, Motion and Opacity keyframes, dissolves as opacity keys, nested sequences as precomps, audio layers with levels, bins as folders, missing media as placeholders | ≈ 85% |
 | File ▸ Export ▸ Adobe Premiere Pro Project… | writes `.prproj` | writes Final Cut Pro XML `.xml` (also FCPXML, OTIO, EDL, AAF, OMF; `file.exportTimeline`): clips per layer with timing, Motion, Opacity and levels; precomps nested; rendered-only layers pre-rendered to ProRes 4444 with alpha | ≈ 85% |

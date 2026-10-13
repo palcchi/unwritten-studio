@@ -1,4 +1,4 @@
-//! Encode a short comp to every output format and decode it back: through EffectCraft's own
+//! Encode a short comp to every output format and decode it back: through Unwritten Studio's own
 //! media layer (FilmCraft decoders) for MP4/MOV, the `image`/`gif` crates for stills and GIF,
 //! and — when installed — ffprobe as an external oracle (skipped otherwise).
 //!

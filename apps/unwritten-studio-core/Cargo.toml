@@ -1,0 +1,24 @@
+[package]
+name = "unwritten-studio-core"
+description = "C ABI bridge from Unwritten Studio for iPadOS to the reusable EffectCraft Rust engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+effectcraft-engine = { workspace = true }
+effectcraft-host = { workspace = true }
+effectcraft-gpu = { workspace = true }
+effectcraft-project = { workspace = true }
+effectcraft-time = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Raw pointers are confined to the documented C boundary in src/lib.rs.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"

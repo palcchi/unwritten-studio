@@ -1,0 +1,265 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* UnwrittenStudioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* UnwrittenStudioApp.swift */; };
+		A10000000000000000000002 /* StudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* StudioModel.swift */; };
+		A10000000000000000000003 /* ProjectDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* ProjectDocument.swift */; };
+		A10000000000000000000004 /* WorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* WorkspaceView.swift */; };
+		A10000000000000000000005 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* Assets.xcassets */; };
+		A10000000000000000000006 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* LaunchScreen.storyboard */; };
+		A10000000000000000000007 /* libunwritten_studio_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* libunwritten_studio_core.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A20000000000000000000001 /* UnwrittenStudioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnwrittenStudioApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* StudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioModel.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* ProjectDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDocument.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* WorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceView.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A20000000000000000000006 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		A20000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A20000000000000000000008 /* UnwrittenStudio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UnwrittenStudio-Bridging-Header.h"; sourceTree = "<group>"; };
+		A20000000000000000000009 /* libunwritten_studio_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "../build/ios/$(PLATFORM_NAME)/libunwritten_studio_core.a"; sourceTree = "<group>"; };
+		A20000000000000000000010 /* UnwrittenStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UnwrittenStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		B10000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000007 /* libunwritten_studio_core.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C10000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C10000000000000000000002 /* UnwrittenStudio */,
+				C10000000000000000000003 /* Rust */,
+				C10000000000000000000004 /* Frameworks */,
+				C10000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C10000000000000000000002 /* UnwrittenStudio */ = {
+			isa = PBXGroup;
+			path = UnwrittenStudio;
+			sourceTree = "<group>";
+			children = (
+				A20000000000000000000001 /* UnwrittenStudioApp.swift */,
+				A20000000000000000000002 /* StudioModel.swift */,
+				A20000000000000000000003 /* ProjectDocument.swift */,
+				A20000000000000000000004 /* WorkspaceView.swift */,
+				A20000000000000000000005 /* Assets.xcassets */,
+				A20000000000000000000006 /* LaunchScreen.storyboard */,
+				A20000000000000000000007 /* Info.plist */,
+				A20000000000000000000008 /* UnwrittenStudio-Bridging-Header.h */,
+			);
+		};
+		C10000000000000000000003 /* Rust */ = {
+			isa = PBXGroup;
+			path = Rust;
+			sourceTree = "<group>";
+			children = ();
+		};
+		C10000000000000000000004 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (A20000000000000000000009 /* libunwritten_studio_core.a */,);
+			sourceTree = "<group>";
+		};
+		C10000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (A20000000000000000000010 /* UnwrittenStudio.app */,);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D10000000000000000000001 /* UnwrittenStudio */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E10000000000000000000002 /* Build configuration list for PBXNativeTarget "UnwrittenStudio" */;
+			buildPhases = (
+				F10000000000000000000001 /* Build Rust core */,
+				B10000000000000000000002 /* Sources */,
+				B10000000000000000000001 /* Frameworks */,
+				B10000000000000000000003 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = UnwrittenStudio;
+			productName = UnwrittenStudio;
+			productReference = A20000000000000000000010 /* UnwrittenStudio.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D10000000000000000000002 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {D10000000000000000000001 = {CreatedOnToolsVersion = 16.0; };};
+			};
+			buildConfigurationList = E10000000000000000000001 /* Build configuration list for PBXProject "UnwrittenStudio" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			mainGroup = C10000000000000000000001;
+			productRefGroup = C10000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (D10000000000000000000001 /* UnwrittenStudio */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		B10000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000005 /* Assets.xcassets in Resources */,
+				A10000000000000000000006 /* LaunchScreen.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B10000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* UnwrittenStudioApp.swift in Sources */,
+				A10000000000000000000002 /* StudioModel.swift in Sources */,
+				A10000000000000000000003 /* ProjectDocument.swift in Sources */,
+				A10000000000000000000004 /* WorkspaceView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F10000000000000000000001 /* Build Rust core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = ("$(SRCROOT)/../Cargo.toml", "$(SRCROOT)/../apps/unwritten-studio-core/src/lib.rs");
+			name = "Build Rust core";
+			outputPaths = ("$(PROJECT_DIR)/../build/ios/$(PLATFORM_NAME)/libunwritten_studio_core.a",);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nROOT=\"${SRCROOT}/..\"\nif [[ -f \"${HOME}/.cargo/env\" ]]; then source \"${HOME}/.cargo/env\"; fi\ncase \"${PLATFORM_NAME}\" in\n  iphoneos) RUST_TARGET=aarch64-apple-ios ;;\n  iphonesimulator) RUST_TARGET=aarch64-apple-ios-sim ;;\n  *) echo \"error: unsupported iOS platform ${PLATFORM_NAME}\" >&2; exit 2 ;;\nesac\n(cd \"${ROOT}\" && cargo build --locked --release -p unwritten-studio-core --target \"${RUST_TARGET}\")\nOUT=\"${PROJECT_DIR}/../build/ios/${PLATFORM_NAME}\"\nmkdir -p \"${OUT}\"\ncp \"${ROOT}/target/${RUST_TARGET}/release/libunwritten_studio_core.a\" \"${OUT}/libunwritten_studio_core.a\"\necho \"Built Rust core for ${RUST_TARGET}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		E20000000000000000000001 /* Debug project */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		E20000000000000000000002 /* Release project */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		E20000000000000000000003 /* Debug target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "$(SRCROOT)/UnwrittenStudio/Info.plist";
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/Rust/include");
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/../build/ios/$(PLATFORM_NAME)");
+				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-lc++");
+				PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/UnwrittenStudio/UnwrittenStudio-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		E20000000000000000000004 /* Release target */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "$(SRCROOT)/UnwrittenStudio/Info.plist";
+				HEADER_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/Rust/include");
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/../build/ios/$(PLATFORM_NAME)");
+				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-lc++");
+				PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/UnwrittenStudio/UnwrittenStudio-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E30000000000000000000001 /* Build configuration list for PBXProject */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (E20000000000000000000001 /* Debug project */, E20000000000000000000002 /* Release project */);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E30000000000000000000002 /* Build configuration list for PBXNativeTarget */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (E20000000000000000000003 /* Debug target */, E20000000000000000000004 /* Release target */);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = D10000000000000000000002 /* Project object */;
+}

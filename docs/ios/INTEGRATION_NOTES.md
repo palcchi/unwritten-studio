@@ -1,0 +1,7 @@
+# iPadOS integration notes
+
+- **Project documents:** the iPadOS `FileDocument` type reads and writes the engine's JSON `.ecproj` format using the system file importer/exporter. `.ecprojx` XML is recognized as a readable type by the core parser but the current native save action exports JSON only.
+- **Imported media:** native document URLs are security-scoped only during access. The app copies picked media into its own Application Support folder and imports that stable local path via `file.import`, avoiding an expiring external document URL in the project.
+- **Rendering:** Rust `Session::render_rgba8` renders the current composition locally. The native wrapper asks for a bounded preview size. The iOS session initializes the existing wgpu compositor opportunistically; all unsupported/failed paths keep the pre-existing CPU rendering fallback. No GPU speed claim is made.
+- **Editing:** native buttons dispatch stable EffectCraft engine command IDs (`comp.new`, `layer.newSolid`, `layer.newText`, `comp.open`, `layer.select`, `file.import`) and direct Session undo/redo/time operations. This keeps project semantics in Rust and the iPad-specific document/UI concerns in Swift.
+- **Signing:** bundle id is `works.valliant.unwrittenstudio`. The release/archive build needs an Apple Development team and provisioning profile for device installation. No signing material belongs in the repo.

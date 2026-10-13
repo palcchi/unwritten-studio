@@ -58,6 +58,18 @@ sequences, except dropped files (`"drag": true`), which import as stills as in A
 imports stills and a folder's files one by one, and `"alphabetical": true` is Force Alphabetical
 Order.
 
+## Importing another project
+
+File ▸ Import ▸ EffectCraft Project… (or an `.ecproj` / `.ecprojx` file given to File ▸ Import)
+merges that project into the open one, inside a folder named after the file, as After Effects
+imports an `.aep`. Every item, layer and property id moves past the open project's, so precomps,
+parents, track mattes, Layer Control values, Essential Graphics and tracker targets keep pointing
+at the right things. It is one undo step. Footage paths relative to the imported project resolve
+next to it.
+
+Agents: `file.importProject {"path": "/projects/titles.ecproj"}` returns the comps, the root comps,
+`primaryComp` (the only root comp, if there is one) and any missing media.
+
 ## Interpret Footage
 
 Select a footage item in the Project panel and choose **File ▸ Interpret Footage ▸ Main…**

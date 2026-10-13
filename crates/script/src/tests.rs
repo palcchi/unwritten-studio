@@ -1357,3 +1357,21 @@ fn earth_studio_style_script_keys_the_camera() {
     assert_eq!(cam.props.prop("transform/rotationX").unwrap().keys[1].value, KV::Scalar(182.0));
     assert_eq!(cam.props.prop("cameraOptions/zoom").unwrap().keys[1].value, KV::Scalar(1600.0));
 }
+
+/// Pro Levels2's Alpha controls sit one group down (under Alpha), so a script finds them by their
+/// name on the effect as well as through the group (#1063).
+#[test]
+fn scripted_levels_alpha_controls_resolve_from_the_effect() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var c = app.project.items.addComp("Levels", 320, 180, 1, 3, 30);
+        var l = c.layers.addSolid([1, 0, 0], "S", 320, 180, 1);
+        var fx = l.property("ADBE Effect Parade").addProperty("ADBE Pro Levels2");
+        fx.property("Alpha Input White").setValue(0.5);
+        [fx.property("Alpha").property("Alpha Input White").value, fx.property("Alpha Input White").value]
+        "#,
+    );
+    assert_eq!(o.result, json!([0.5, 0.5]));
+}

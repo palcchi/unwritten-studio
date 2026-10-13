@@ -789,8 +789,8 @@ impl<'a, 'i> Parser<'a, 'i> {
                 // Nested viewport.
                 let x = self.attr_len(n, "x", 'x', &st);
                 let y = self.attr_len(n, "y", 'y', &st);
-                let w = n.attribute("width").and_then(|v| self.length(v, 'x', st.font_size)).unwrap_or(self.vw);
-                let h = n.attribute("height").and_then(|v| self.length(v, 'y', st.font_size)).unwrap_or(self.vh);
+                let w = n.attribute("width").and_then(|v| self.length(v, 'x', st.font_size)).filter(|v| v.is_finite()).unwrap_or(self.vw);
+                let h = n.attribute("height").and_then(|v| self.length(v, 'y', st.font_size)).filter(|v| v.is_finite()).unwrap_or(self.vh);
                 let vb = viewbox_transform(n, w, h);
                 let mut children = vec![];
                 let saved = (self.vw, self.vh);
@@ -926,7 +926,7 @@ impl<'a, 'i> Parser<'a, 'i> {
             }
             "rect" => {
                 let (w, h) = (l("width", 'x'), l("height", 'y'));
-                if w <= 0.0 || h <= 0.0 {
+                if !(w > 0.0 && h > 0.0) {
                     return None;
                 }
                 let rx_a = n.attribute("rx").and_then(|v| self.length(v, 'x', st.font_size));
@@ -981,7 +981,7 @@ impl<'a, 'i> Parser<'a, 'i> {
 
 fn viewbox(n: roxmltree::Node) -> Option<([f64; 2], f64, f64)> {
     let v = pathdata::numbers(n.attribute("viewBox")?);
-    (v.len() == 4 && v[2] > 0.0 && v[3] > 0.0).then(|| ([v[0], v[1]], v[2], v[3]))
+    (v.len() == 4 && v.iter().all(|x| x.is_finite()) && v[2] > 0.0 && v[3] > 0.0).then(|| ([v[0], v[1]], v[2], v[3]))
 }
 
 /// The viewBox → viewport transform (`preserveAspectRatio`, default `xMidYMid meet`).

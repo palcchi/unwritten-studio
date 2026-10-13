@@ -18,15 +18,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     steps:
-      - name: Checkout Unwritten Studio
+      - name: Checkout Unwritten Studio source
         uses: actions/checkout@v4
-
-      - name: Checkout upstream EffectCraft source
-        uses: actions/checkout@v4
-        with:
-          repository: storytold/effectcraft
-          ref: main
-          path: effectcraft
 
       - name: Install Rust and iOS target
         uses: dtolnay/rust-toolchain@stable
@@ -41,14 +34,13 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
 
       - name: Probe native app for iOS
-        working-directory: effectcraft
         shell: bash
         run: |
           set +e
-          cargo check --locked -p effectcraft --target aarch64-apple-ios 2>&1 | tee ../ios-compatibility.log
+          cargo check --locked -p effectcraft --target aarch64-apple-ios 2>&1 | tee ios-compatibility.log
           result=${PIPESTATUS[0]}
-          echo "" | tee -a ../ios-compatibility.log
-          echo "cargo_check_exit_code=${result}" | tee -a ../ios-compatibility.log
+          echo "" | tee -a ios-compatibility.log
+          echo "cargo_check_exit_code=${result}" | tee -a ios-compatibility.log
           if [ "${result}" -eq 0 ]; then
             echo "iOS Rust compile check passed."
           else

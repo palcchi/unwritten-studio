@@ -168,6 +168,22 @@ fn usage(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"items": doomed.len(), "layers": layers, "comps": comps}))
 }
 
+/// How many times an item (default: the first selected) is used: the layers, in every
+/// composition, whose source it is, as the Project panel's "used N times", and the compositions
+/// that use it (its ▾ menu opens one), ordered by name.
+fn used_in(s: &mut Session, p: &Value) -> Result<Value> {
+    let c = "project.usedIn";
+    let id = match p.get("item") {
+        Some(v) => item_ref(s, v, c)?,
+        None => *s.state.project_selection.first().ok_or_else(|| bad(c, "no `item` given and nothing selected in the Project panel"))?,
+    };
+    let users = s.project.item_users(id);
+    let count = users.iter().fold(0usize, |n, (_, k)| n.saturating_add(*k));
+    let comps: Vec<Value> =
+        users.iter().map(|(cid, n)| json!({"id": cid.0, "name": s.project.item(*cid).map(|i| i.name.as_str()).unwrap_or_default(), "layers": n})).collect();
+    Ok(json!({"item": id.0, "count": count, "comps": comps}))
+}
+
 /// Delete project items (folders with their contents). Layers that use a deleted item and Render
 /// Queue items of deleted comps go too, like After Effects' Edit ▸ Clear in the Project panel.
 fn delete(s: &mut Session, p: &Value) -> Result<Value> {
@@ -265,6 +281,7 @@ pub fn specs() -> Vec<CommandSpec> {
             delete
         ),
         query!("project.usage", "Project Item Usage", "{items?: [id|name] (default: selected)} → {items, layers, comps} that deleting them removes", usage),
+        query!("project.usedIn", "Project Item Used In", "{item?: id|name (default: selected)} → {item, count, comps: [{id, name, layers}]}", used_in),
         cmd!("project.duplicate", "Duplicate Project Items", [], None, "{items?: [id|name] (default: selected)} → {items}", always, duplicate),
     ]
 }

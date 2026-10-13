@@ -1447,6 +1447,23 @@ impl Project {
     pub fn comp_of_layer(&self, layer: LayerId) -> Option<ItemId> {
         self.comps().find(|(_, c)| c.layer(layer).is_some()).map(|(id, _)| *id)
     }
+    /// The compositions whose layers use `item` as their source (footage, solid, 3D model or
+    /// precomp), each with how many of its layers do, ordered by comp name then id. Only direct
+    /// layers count, as in After Effects' Project panel ("used 3 times"): a solid inside a precomp
+    /// is used by the precomp, not by the comps that nest it. The total is the sum of the counts.
+    pub fn item_users(&self, item: ItemId) -> Vec<(ItemId, usize)> {
+        let mut users: Vec<(ItemId, String, usize)> = self
+            .items
+            .iter()
+            .filter_map(|(id, it)| {
+                let comp = it.as_comp()?;
+                let n = comp.layers.iter().filter(|l| l.source.item() == Some(item)).count();
+                (n > 0).then(|| (*id, it.name.to_lowercase(), n))
+            })
+            .collect();
+        users.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+        users.into_iter().map(|(id, _, n)| (id, n)).collect()
+    }
     /// Whether comp `inner` is (transitively) nested inside comp `outer` (to prevent cycles).
     pub fn comp_contains(&self, outer: ItemId, inner: ItemId) -> bool {
         if outer == inner {

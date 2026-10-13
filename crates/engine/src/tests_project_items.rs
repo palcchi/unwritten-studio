@@ -190,3 +190,24 @@ fn text_animators_masks_and_shape_groups_rename() {
         assert!(s.execute("prop.renameGroup", json!({"layer": l, "prop": u, "name": "  "})).is_err());
     }
 }
+
+/// `project.usedIn`: the Project panel's "used N times" and its ▾ list of comps, by name.
+#[test]
+fn used_in_counts_layers_across_comps() {
+    let mut s = Session::default();
+    s.execute("comp.new", json!({"name": "Inner", "width": 64, "height": 64, "duration": 1})).unwrap();
+    let inner = s.active_comp_id().unwrap();
+    s.execute("comp.new", json!({"name": "Outer", "width": 64, "height": 64, "duration": 1})).unwrap();
+    let outer = s.active_comp_id().unwrap();
+    s.execute("layer.addItem", json!({"item": inner.0})).unwrap();
+    s.execute("layer.addItem", json!({"item": inner.0})).unwrap();
+    let r = s.execute("project.usedIn", json!({"item": "Inner"})).unwrap();
+    assert_eq!(r["count"], 2);
+    assert_eq!(r["comps"], json!([{"id": outer.0, "name": "Outer", "layers": 2}]));
+    // Default: the selected item; an unused one is used 0 times.
+    s.execute("project.select", json!({"items": [outer.0]})).unwrap();
+    let r = s.execute("project.usedIn", json!({})).unwrap();
+    assert_eq!((r["item"].as_u64(), r["count"].as_u64()), (Some(outer.0), Some(0)));
+    assert_eq!(r["comps"], json!([]));
+    assert!(s.execute("project.usedIn", json!({"item": "Nope"})).is_err());
+}

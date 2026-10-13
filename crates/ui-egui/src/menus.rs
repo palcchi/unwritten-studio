@@ -271,6 +271,13 @@ fn no_params(p: &Value) -> bool {
     p.as_object().is_none_or(|m| m.is_empty())
 }
 
+/// `{"comp": id}` and nothing else: Composition Settings opens on that comp instead of
+/// applying no settings to it.
+fn only_comp(p: &Value) -> Option<effectcraft_engine::project::ItemId> {
+    let m = p.as_object().filter(|m| m.len() == 1)?;
+    m.get("comp")?.as_u64().map(effectcraft_engine::project::ItemId)
+}
+
 /// Execute a UI or engine command by id.
 pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: Value) -> Result<Value, String> {
     // Layer ▸ New ▸ Text (menu, shortcut, context menus) puts an insertion point in the centre of
@@ -647,6 +654,9 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         "app.home" => app.ui.start_screen = !app.ui.start_screen,
         "app.newComp" | "comp.new" if no_params(&params) => crate::panels::dialogs::open_new_comp(app),
         "app.compSettings" | "comp.settings" if no_params(&params) => crate::panels::dialogs::open_comp_settings(app)?,
+        "app.compSettings" | "comp.settings" if only_comp(&params).is_some() => {
+            crate::panels::dialogs::open_comp_settings_for(app, only_comp(&params).ok_or("missing `comp`")?)?
+        }
         "app.solidSettings" | "layer.newSolid" if no_params(&params) => crate::panels::dialogs::open_new_solid(app)?,
         "keys.velocity" if no_params(&params) => crate::panels::key_dialogs::open_velocity(app)?,
         "keys.interpolation" if no_params(&params) => crate::panels::key_dialogs::open_interpolation(app)?,

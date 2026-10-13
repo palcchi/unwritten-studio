@@ -865,6 +865,23 @@ impl Comp {
             && layers.iter().zip(&o.layers).all(|(a, b)| a.same_pixels(b))
     }
 
+    /// Draws the same pixels as `o` once plain markers are ignored: they change no pixels. Protected
+    /// time markers with a duration set the timing (Responsive Design), so those still count.
+    pub fn same_pixels_ignoring_markers(&self, o: &Comp) -> bool {
+        let protected =
+            |m: &[Marker]| -> Vec<(Tick, Tick)> { m.iter().filter(|m| m.protected && m.duration > Tick::ZERO).map(|m| (m.time, m.duration)).collect() };
+        if protected(&self.markers) != protected(&o.markers) {
+            return false;
+        }
+        let mut c = self.clone();
+        c.markers = o.markers.clone();
+        for (a, b) in c.layers.iter_mut().zip(&o.layers) {
+            a.markers = b.markers.clone();
+            a.markers_locked = b.markers_locked;
+        }
+        c.same_pixels(o)
+    }
+
     /// The comp with those switches and the Resolution at their defaults (borrowed when they
     /// already are), for keys that hash the whole comp.
     pub fn pixel_form(&self) -> std::borrow::Cow<'_, Comp> {

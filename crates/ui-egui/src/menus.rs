@@ -35,6 +35,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("playback.stop", "Stop", [], None),
     uic!("view.fit", "Fit", [], Some("Shift+/")),
     uic!("view.actualSize", "100%", [], Some("/")),
+    uic!("view.fitUpTo100", "Fit up to 100%", [], Some("Alt+/")),
+    uic!("view.nextItem", "Next Composition in Viewer", [], Some("Shift+.")),
+    uic!("view.previousItem", "Previous Composition in Viewer", [], Some("Shift+,")),
     uic!("viewer.nudge.up", "Move Selected Layers Up 1 Pixel at Current Magnification", [], Some("ArrowUp")),
     uic!("viewer.nudge.down", "Move Selected Layers Down 1 Pixel at Current Magnification", [], Some("ArrowDown")),
     uic!("viewer.nudge.left", "Move Selected Layers Left 1 Pixel at Current Magnification", [], Some("ArrowLeft")),
@@ -53,6 +56,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("timeline.zoomIn", "Zoom In Time", [], Some("=")),
     uic!("timeline.zoomOut", "Zoom Out Time", [], Some("-")),
     uic!("timeline.zoomFit", "Zoom to Fit Comp", [], Some("Shift+;")),
+    uic!("timeline.scrollToTime", "Scroll to Current Time", [], Some("D")),
+    uic!("timeline.scrollToLayer", "Scroll Topmost Selected Layer to Top", [], Some("X")),
+    uic!("timeline.parentColumn", "Show/Hide Parent Column", [], Some("Shift+F4")),
     uic!("timeline.zoomFrameToggle", "Zoom In to Frame Level / Out to the Whole Comp", [], Some(";")),
     uic!("timeline.graphEditor", "Graph Editor", [], Some("Shift+F3")),
     uic!("timeline.switchesModes", "Toggle Switches / Modes", [], Some("F4")),
@@ -108,6 +114,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("tool.orbit", "Orbit Tool", [], Some("1")),
     uic!("tool.panCamera", "Pan Camera Tool", [], Some("2")),
     uic!("tool.dolly", "Dolly Tool", [], Some("3")),
+    uic!("tool.camera", "Camera Tools", [], Some("C")),
     uic!("tool.rotate", "Rotation Tool", [], Some("W")),
     uic!("tool.panBehind", "Pan Behind Tool", [], Some("Y")),
     uic!("tool.shape", "Shape Tools", [], Some("Q")),
@@ -123,6 +130,10 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     uic!("markers.dialog", "Marker Settings...", [], None),
     uic!("window.maximizePanel", "Maximize Panel Under Pointer", [], Some("`")),
     uic!("window.maximizeApp", "Maximize or Restore Application Window", [], Some("Cmd+\\")),
+    uic!("window.toggleCompTimeline", "Switch Between Composition and Timeline Panel", [], Some("\\")),
+    uic!("window.nextPanel", "Next Panel in Frame", [], Some("Alt+Shift+.")),
+    uic!("window.previousPanel", "Previous Panel in Frame", [], Some("Alt+Shift+,")),
+    uic!("window.closeAll", "Close Panel or All Viewers", [], Some("Cmd+Shift+W")),
     uic!("window.dockPanel", "Dock Panel", [], None),
     uic!("window.floatPanel", "Undock Panel", [], None),
     uic!("window.closePanel", "Close Panel", [], None),
@@ -374,6 +385,16 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
         return frontend(app, ctx, "window.workspace", json!({"name": ws}));
     }
     if let Some(t) = id.strip_prefix("tool.") {
+        // C cycles through the camera tools.
+        if t == "camera" {
+            let tools = [Tool::Orbit, Tool::PanCamera, Tool::Dolly];
+            let next = match tools.iter().position(|x| *x == app.ui.tool) {
+                Some(i) => tools[(i + 1) % tools.len()],
+                None => Tool::Orbit,
+            };
+            app.ui.tool = next;
+            return Ok(json!({"tool": next}));
+        }
         // Slot shortcuts cycle through the slot's tools.
         let slot = match t {
             "shape" => Some(8),
@@ -570,6 +591,62 @@ pub fn invoke(app: &mut EffectcraftApp, ctx: &egui::Context, id: &str, params: V
             app.ui.viewer.zoom = None;
             app.ui.viewer.fit_up_to_100 = false;
             app.ui.viewer.pan = [0.0, 0.0];
+            return Ok(Value::Null);
+        }
+        "timeline.scrollToTime" => app.ui.timeline.scroll_to = Some(crate::state::ScrollTo::Time),
+        "timeline.scrollToLayer" => app.ui.timeline.scroll_to = Some(crate::state::ScrollTo::Layer),
+        "timeline.parentColumn" => {
+            let on = !crate::panels::timeline::column_visible(&app.ui.timeline, "parent");
+            crate::panels::timeline::set_column(&mut app.ui.timeline, "parent", on)?;
+            return Ok(json!({"parent": on}));
+        }
+        "view.fitUpTo100" => {
+            app.ui.viewer.zoom = None;
+            app.ui.viewer.fit_up_to_100 = true;
+            app.ui.viewer.pan = [0.0, 0.0];
+            return Ok(Value::Null);
+        }
+        // Shift+, / Shift+.: the previous / next open composition (the viewer's tabs).
+        "view.nextItem" | "view.previousItem" => {
+            let open = app.session.state.open_comps.clone();
+            let Some(i) = app.session.state.active_comp.and_then(|c| open.iter().position(|o| *o == c)) else { return Ok(Value::Null) };
+            let step = if id == "view.nextItem" { 1 } else { open.len().saturating_sub(1) };
+            let Some(next) = open.get((i + step) % open.len().max(1)).copied().filter(|n| Some(*n) != app.session.state.active_comp) else {
+                return Ok(Value::Null);
+            };
+            return run_engine(app, ctx, "comp.open", json!({"comp": next.0}));
+        }
+        // \\: between the Composition viewer and the Timeline.
+        "window.toggleCompTimeline" => {
+            let to = if app.ui.focused == PanelKind::Timeline { crate::panels::viewers::active_panel(app) } else { PanelKind::Timeline };
+            app.show_panel(to);
+            return Ok(json!({"focused": to.id()}));
+        }
+        // Alt+Shift+, / Alt+Shift+.: the previous / next tab of the focused panel's group.
+        "window.nextPanel" | "window.previousPanel" => {
+            let focused = app.ui.focused;
+            let group: Vec<PanelKind> = match app.ui.floating.iter().find(|f| f.panels.contains(&focused)) {
+                Some(f) => f.panels.clone(),
+                None => app.ui.dock.group_of(focused).map(<[PanelKind]>::to_vec).unwrap_or_default(),
+            };
+            let Some(i) = group.iter().position(|p| *p == focused) else { return Ok(Value::Null) };
+            let step = if id == "window.nextPanel" { 1 } else { group.len().saturating_sub(1) };
+            if let Some(next) = group.get((i + step) % group.len().max(1)).copied() {
+                app.show_panel(next);
+            }
+            return Ok(json!({"focused": app.ui.focused.id()}));
+        }
+        // Ctrl+Shift+W: with a viewer or the Timeline active, every open composition closes;
+        // any other panel closes itself.
+        "window.closeAll" => {
+            let focused = app.ui.focused;
+            if matches!(focused, PanelKind::Composition | PanelKind::Timeline | PanelKind::Viewer(_)) {
+                for c in app.session.state.open_comps.clone() {
+                    run_engine(app, ctx, "comp.close", json!({"comp": c.0}))?;
+                }
+            } else {
+                app.close_panel(focused);
+            }
             return Ok(Value::Null);
         }
         "view.actualSize" if app.ui.focused == PanelKind::Layer => {
@@ -2131,6 +2208,131 @@ mod tests {
         let (r, cmds) = run(&mut app, true);
         assert_eq!(r, json!({"maximized": false}));
         assert!(cmds.contains(&egui::ViewportCommand::Maximized(false)), "{cmds:?}");
+    }
+
+    /// The default keys of the keyboard-only commands parse and reach them.
+    #[test]
+    fn keyboard_only_commands_are_bound() {
+        let app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        for (id, keys) in [
+            ("time.workAreaStart", "Shift+Home"),
+            ("time.workAreaEnd", "Shift+End"),
+            ("time.previousInOut", "Cmd+Alt+Shift+ArrowLeft"),
+            ("time.nextInOut", "Cmd+Alt+Shift+ArrowRight"),
+            ("comp.workAreaToSelection", "Cmd+Alt+B"),
+            ("comp.activateRecent", "Shift+Escape"),
+            ("keys.deselectAll", "Shift+F2"),
+            ("keys.deselectAll", "Cmd+Alt+Shift+A"),
+            ("layer.extendSelectionNext", "Cmd+Shift+ArrowDown"),
+            ("layer.moveInToStart", "Alt+Home"),
+            ("layer.moveEarlier", "Alt+PageUp"),
+            ("layer.moveLater10", "Alt+Shift+PageDown"),
+            ("layer.stretchInToTime", "Cmd+Shift+,"),
+            ("layer.stretchOutToTime", "Cmd+Alt+,"),
+            ("layer.mask.selectNext", "Alt+`"),
+            ("layer.mask.selectPrevious", "Alt+Shift+`"),
+            ("layer.castsShadows", "Alt+Shift+C"),
+            ("timeline.scrollToTime", "D"),
+            ("timeline.scrollToLayer", "X"),
+            ("timeline.parentColumn", "Shift+F4"),
+            ("view.fitUpTo100", "Alt+/"),
+            ("view.nextItem", "Shift+."),
+            ("view.previousItem", "Shift+,"),
+            ("window.toggleCompTimeline", "\\"),
+            ("window.nextPanel", "Alt+Shift+."),
+            ("window.previousPanel", "Alt+Shift+,"),
+            ("window.closeAll", "Cmd+Shift+W"),
+            ("tool.camera", "C"),
+        ] {
+            assert!(bindings(&app.session).into_iter().any(|x| x.2 == id && Some((x.0, x.1)) == parse_shortcut(keys)), "{id} on {keys}");
+        }
+    }
+
+    #[test]
+    fn timeline_keys_scroll_and_toggle_the_parent_column() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        // D and X leave a scroll for the Timeline to do when it is drawn.
+        run(&mut app, "timeline.scrollToTime");
+        assert_eq!(app.ui.timeline.scroll_to, Some(crate::state::ScrollTo::Time));
+        run(&mut app, "timeline.scrollToLayer");
+        assert_eq!(app.ui.timeline.scroll_to, Some(crate::state::ScrollTo::Layer));
+        // Shift+F4 shows and hides the Parent column.
+        let parent = crate::panels::timeline::column_visible(&app.ui.timeline, "parent");
+        run(&mut app, "timeline.parentColumn");
+        assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), !parent);
+        run(&mut app, "timeline.parentColumn");
+        assert_eq!(crate::panels::timeline::column_visible(&app.ui.timeline, "parent"), parent);
+    }
+
+    #[test]
+    fn viewer_keys_fit_and_step_through_open_comps() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        let new = |app: &mut EffectcraftApp, name: &str| app.session.execute("comp.new", json!({"name": name, "duration": 4})).unwrap()["comp"].as_u64();
+        let active = |app: &EffectcraftApp| app.session.state.active_comp.map(|c| c.0);
+        // With one composition open there is nothing to step to.
+        let a = new(&mut app, "A");
+        run(&mut app, "view.nextItem");
+        assert_eq!(active(&app), a);
+        // Shift+, / Shift+.: through the open compositions, wrapping.
+        let b = new(&mut app, "B");
+        assert_eq!(active(&app), b);
+        run(&mut app, "view.nextItem");
+        assert_eq!(active(&app), a);
+        run(&mut app, "view.previousItem");
+        assert_eq!(active(&app), b);
+        // Alt+/ fits the viewer without magnifying past 100 %; Shift+/ fits fully again.
+        app.ui.viewer.zoom = Some(3.0);
+        run(&mut app, "view.fitUpTo100");
+        assert!(app.ui.viewer.zoom.is_none() && app.ui.viewer.fit_up_to_100);
+        run(&mut app, "view.fit");
+        assert!(!app.ui.viewer.fit_up_to_100);
+    }
+
+    #[test]
+    fn panel_keys_switch_cycle_and_close() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        let run = |app: &mut EffectcraftApp, id: &str| invoke(app, &ctx, id, json!({})).unwrap();
+        for name in ["A", "B"] {
+            app.session.execute("comp.new", json!({"name": name, "duration": 4})).unwrap();
+        }
+        // \\ switches between the Timeline and the Composition viewer.
+        app.ui.focused = PanelKind::Timeline;
+        run(&mut app, "window.toggleCompTimeline");
+        assert_eq!(app.ui.focused, PanelKind::Composition);
+        run(&mut app, "window.toggleCompTimeline");
+        assert_eq!(app.ui.focused, PanelKind::Timeline);
+        // Alt+Shift+. / Alt+Shift+,: the tabs of the focused panel's group, wrapping.
+        let group = app.ui.dock.group_of(PanelKind::Timeline).unwrap().to_vec();
+        assert!(group.len() > 1, "{group:?}");
+        run(&mut app, "window.nextPanel");
+        assert_eq!(app.ui.focused, group[(group.iter().position(|p| *p == PanelKind::Timeline).unwrap() + 1) % group.len()]);
+        run(&mut app, "window.previousPanel");
+        assert_eq!(app.ui.focused, PanelKind::Timeline);
+        // Ctrl+Shift+W with the Timeline active closes every composition.
+        run(&mut app, "window.closeAll");
+        assert!(app.session.state.open_comps.is_empty());
+        // With another panel active it closes that panel.
+        app.show_panel(PanelKind::Project);
+        run(&mut app, "window.closeAll");
+        assert!(!app.ui.dock.contains(PanelKind::Project));
+    }
+
+    #[test]
+    fn c_cycles_the_camera_tools() {
+        let ctx = egui::Context::default();
+        let mut app = EffectcraftApp::new(effectcraft_engine::Session::default());
+        app.ui.tool = Tool::Selection;
+        let mut seen = vec![];
+        for _ in 0..4 {
+            invoke(&mut app, &ctx, "tool.camera", json!({})).unwrap();
+            seen.push(app.ui.tool);
+        }
+        assert_eq!(seen, [Tool::Orbit, Tool::PanCamera, Tool::Dolly, Tool::Orbit]);
     }
 
     #[test]

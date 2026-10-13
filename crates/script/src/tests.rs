@@ -1104,3 +1104,19 @@ fn source_point_conversions_follow_the_layer_transform() {
     assert!(near(&v[0], 350.0) && near(&v[1], 275.0), "{v}");
     assert!(near(&v[2], 100.0) && near(&v[3], 50.0), "{v}");
 }
+
+/// #1063: a script asks a light's options for After Effects' "ADBE Casts Shadows".
+#[test]
+fn light_options_accept_the_after_effects_casts_shadows_name() {
+    let mut s = session();
+    let o = ok(
+        &mut s,
+        r#"
+        var comp = app.project.items.addComp("Repro", 1920, 1080, 1, 10, 25);
+        var light = comp.layers.addLight("Key", [100, 100]);
+        var c = light.property("ADBE Light Options Group").property("ADBE Casts Shadows");
+        c == null ? "null" : c.name
+        "#,
+    );
+    assert_ne!(o.result, json!("null"), "{:?}", o.result);
+}

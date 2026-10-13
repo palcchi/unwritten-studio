@@ -394,6 +394,8 @@ fn alias(k: &str) -> Option<&'static str> {
         "content" | "contents" => "contents",
         "maskshape" | "maskpath" => "path",
         "maskfeather" => "feather",
+        // A light's options name it "ADBE Casts Shadows" in After Effects (#1063).
+        "adbecastsshadows" => "castsShadows",
         "maskopacity" => "opacity",
         "maskexpansion" | "maskoffset" => "expansion",
         "sourcetext" => "sourceText",

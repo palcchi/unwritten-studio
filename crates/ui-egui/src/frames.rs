@@ -1970,4 +1970,19 @@ mod tests {
         switch(&mut s, inner, solid, "video", true);
         assert_ne!(at(&s), o1);
     }
+
+    #[test]
+    fn markers_keep_the_frames() {
+        use effectcraft_engine::Session;
+        use serde_json::json;
+        let mut s = Session::default();
+        let id = |v: serde_json::Value, k: &str| v[k].as_u64().unwrap();
+        let outer = ItemId(id(s.execute("comp.new", json!({"name": "Outer", "width": 8, "height": 8, "duration": 1})).unwrap(), "comp"));
+        let solid = id(s.execute("layer.newSolid", json!({"comp": outer.0, "color": "#ff0000"})).unwrap(), "layer");
+        let f = Frames::default();
+        let at = |s: &Session| f.content_of(&s.project, s.revision, outer);
+        let o0 = at(&s);
+        s.execute("layer.addMarker", json!({"comp": outer.0, "layers": [solid], "time": 0.5, "comment": "beat"})).unwrap();
+        assert_eq!(at(&s), o0, "a marker changes no pixels, so it keeps the frames");
+    }
 }

@@ -775,9 +775,9 @@ fn interpret(s: &mut Session, p: &Value) -> Result<Value> {
     s.edit("Interpret Footage", None, |proj, _| {
         for (i, g) in items.iter().zip(&guesses) {
             let Some(ItemKind::Footage(f)) = proj.item_mut(*i).map(|x| &mut x.kind) else { continue };
-            let old = f.duration;
+            let old = f.looped_duration();
             it.apply(f, *g);
-            let new = f.duration;
+            let new = f.looped_duration();
             if new == old {
                 continue;
             }

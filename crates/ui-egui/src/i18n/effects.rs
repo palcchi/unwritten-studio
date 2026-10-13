@@ -17,15 +17,18 @@
 //! [`tests::every_effect_has_a_row`] instead of silently pointing a translation at another
 //! effect.
 //!
-//! Only Simplified Chinese has rows. Every other language — Traditional Chinese included —
-//! draws the registry's English name; a translator adds rows to [`TRADITIONAL_CHINESE`] keyed
-//! by the same ids (the test below refuses an id that Simplified Chinese does not have).
+//! A language decides for itself which names stay English: After Effects' Japanese interface
+//! leaves the `CC` series, the `VR` set and the `OCIO` set in English, while its Simplified
+//! Chinese one translates them (the `CC` names come from Adobe's Chinese *documentation*, which
+//! names 68 of the 69). Repeating the English name is therefore a language-level choice, not a
+//! missing row: [`tests::only_the_brand_names_stay_in_english`] pins *Simplified Chinese's* five
+//! brand names and is deliberately not shared by the other languages.
 //!
-//! The names come from the installed After Effects 2026 (26.5.0.89) Simplified Chinese
-//! interface; the `CC` series follows Adobe's Chinese *documentation*, which names 68 of the 69
-//! that the interface leaves in English (see the PR for #821). `Cryptomatte`, `EXtractoR`,
-//! `IDentifier`, `Key Light` and `Unmult` stay in English as brand names, and `Face
-//! Measurements` / `Face Track Points` are EffectCraft's own effects, so their wording is ours.
+//! The Simplified Chinese names come from the installed After Effects 2026 (26.5.0.89)
+//! Simplified Chinese interface, its 21 category folder names included; `Cryptomatte`,
+//! `EXtractoR`, `IDentifier`, `Key Light` and `Unmult` stay in English as brand names, and
+//! `Face Measurements` / `Face Track Points` are EffectCraft's own effects, so their wording is
+//! ours.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -35,9 +38,51 @@ use super::ui::current;
 /// One row: effect id, the registry's English name, the translation.
 type Row = (&'static str, &'static str, &'static str);
 
+/// One language's catalog: its effect rows and its category labels, the latter keyed by the
+/// registry's English category name.
+struct Catalog {
+    rows: &'static [Row],
+    categories: &'static [(&'static str, &'static str)],
+    /// `rows` indexed by effect id, built on first use: the panels look a name up once per drawn
+    /// row and per frame.
+    index: OnceLock<HashMap<&'static str, (&'static str, &'static str)>>,
+}
+
+impl Catalog {
+    fn row(&self, id: &str) -> Option<(&'static str, &'static str)> {
+        self.index.get_or_init(|| self.rows.iter().map(|(id, english, translated)| (*id, (*english, *translated))).collect()).get(id).copied()
+    }
+
+    fn category(&self, source: &str) -> Option<&'static str> {
+        self.categories.iter().find(|(english, _)| *english == source).map(|(_, translated)| *translated)
+    }
+}
+
+/// The catalog for `language`; `None` for English (the source of every name, needing no lookup)
+/// and for a language with no table.
+///
+/// **Adding a language** is two tables and one arm: write its rows (one per effect, ids from
+/// [`SIMPLIFIED_CHINESE`]) and its category labels, name them in the `static` below and in this
+/// `match`. Nothing else changes — not the lookups, not one panel. `zh-hant` and `ja` are listed
+/// with empty tables, so a translator fills rows in without touching this function, and until
+/// then those languages draw the registry's English name.
+fn catalog(language: &str) -> Option<&'static Catalog> {
+    static SIMPLIFIED: Catalog = Catalog { rows: SIMPLIFIED_CHINESE, categories: SIMPLIFIED_CHINESE_CATEGORIES, index: OnceLock::new() };
+    static TRADITIONAL: Catalog = Catalog { rows: TRADITIONAL_CHINESE, categories: TRADITIONAL_CHINESE_CATEGORIES, index: OnceLock::new() };
+    static JAPANESE: Catalog = Catalog { rows: JAPANESE_EFFECTS, categories: JAPANESE_CATEGORIES, index: OnceLock::new() };
+    match language {
+        "zh-hans" => Some(&SIMPLIFIED),
+        "zh-hant" => Some(&TRADITIONAL),
+        // Japanese: the slot the Japanese data point on #821 asked for, so both languages share
+        // this one catalog instead of inventing a second mechanism.
+        "ja" => Some(&JAPANESE),
+        _ => None,
+    }
+}
+
 /// The effect's name to draw: the catalog row for `id`, else the registry's `english`.
 pub(crate) fn name(id: &str, english: &str) -> String {
-    row(id).map_or_else(|| english.to_string(), |(_, translated)| translated.to_string())
+    catalog(current()).and_then(|c| c.row(id)).map_or_else(|| english.to_string(), |(_, translated)| translated.to_string())
 }
 
 /// The name to draw for an effect group the property tree stores as `stored`: the catalog name,
@@ -47,7 +92,7 @@ pub(crate) fn name(id: &str, english: &str) -> String {
 /// (Effect Controls ▸ Rename), so it stays verbatim — as does the whole string in a language
 /// with no row.
 pub(crate) fn group(id: &str, stored: &str) -> String {
-    let Some((english, translated)) = row(id) else { return stored.to_string() };
+    let Some((english, translated)) = catalog(current()).and_then(|c| c.row(id)) else { return stored.to_string() };
     if stored == english {
         return translated.to_string();
     }
@@ -61,38 +106,16 @@ pub(crate) fn group(id: &str, stored: &str) -> String {
 }
 
 /// The label to draw for the effect category `source` (the generated Effect menu's submenus and
-/// Effects & Presets' folder rows).
+/// Effects & Presets' folder rows), else `source`.
 pub(crate) fn category(source: &str) -> String {
-    if current() != "zh-hans" {
-        return source.to_string();
-    }
-    CATEGORIES.iter().find(|(english, _)| *english == source).map_or_else(|| source.to_string(), |(_, translated)| translated.to_string())
+    catalog(current()).and_then(|c| c.category(source)).map_or_else(|| source.to_string(), str::to_string)
 }
 
 /// Does effect `id` (`english` when the language has no row) match the Effects & Presets search
-/// `query` (lowercase)? Both names match, so a Chinese interface can be searched either way.
+/// `query` (lowercase)? Both names match, so a translated interface can be searched either way.
 pub(crate) fn matches(id: &str, english: &str, query: &str) -> bool {
-    english.to_lowercase().contains(query) || row(id).is_some_and(|(_, translated)| translated.to_lowercase().contains(query))
-}
-
-/// `id`'s (English name, translation) in the current language.
-fn row(id: &str) -> Option<(&'static str, &'static str)> {
-    index(current()).and_then(|rows| rows.get(id).copied())
-}
-
-type Index = HashMap<&'static str, (&'static str, &'static str)>;
-
-/// The catalog for `language`, indexed by effect id (built on first use); `None` for English and
-/// any language with no rows.
-fn index(language: &str) -> Option<&'static Index> {
-    static HANS: OnceLock<Index> = OnceLock::new();
-    static HANT: OnceLock<Index> = OnceLock::new();
-    let (slot, rows) = match language {
-        "zh-hans" => (&HANS, SIMPLIFIED_CHINESE),
-        "zh-hant" => (&HANT, TRADITIONAL_CHINESE),
-        _ => return None,
-    };
-    Some(slot.get_or_init(|| rows.iter().map(|(id, english, translated)| (*id, (*english, *translated))).collect()))
+    english.to_lowercase().contains(query)
+        || catalog(current()).and_then(|c| c.row(id)).is_some_and(|(_, translated)| translated.to_lowercase().contains(query))
 }
 
 /// Simplified Chinese (`zh-hans`): one row per effect in the registry.
@@ -404,15 +427,30 @@ const SIMPLIFIED_CHINESE: &[Row] = &[
     ("ec.vr.sharpen", "VR Sharpen", "VR 锐化"),
     ("ec.vr.spheretoplane", "VR Sphere to Plane", "VR 球面到平面"),
 ];
-
-/// Traditional Chinese (`zh-hant`): no rows yet, so the language draws the English names.
+/// Traditional Chinese (`zh-hant`): no rows yet. A translator fills one row per effect, ids from
+/// [`SIMPLIFIED_CHINESE`]; a row may repeat the English name, which is what the language draws
+/// for that effect.
 const TRADITIONAL_CHINESE: &[Row] = &[];
 
-/// The 21 category folder names the generated Effect menu and Effects & Presets draw. Read from
-/// the installed After Effects 2026 (26.5.0.89) Simplified Chinese interface (the checklist's
-/// `07-类别` sheet); two of them are the interface's own wording where our first suggestion
-/// differed (`Keying` is 抠像, not 键控; `Obsolete` is 过时, not 已废弃).
-const CATEGORIES: &[(&str, &str)] = &[
+/// Japanese (`ja`): reserved for the Japanese data point on #821, so both languages share this
+/// one catalog instead of inventing a second mechanism. A translator fills one row per effect,
+/// ids from [`SIMPLIFIED_CHINESE`]; the names Adobe's Japanese interface leaves in English (the
+/// `CC` series, the `VR` set, the `OCIO` set, `Cryptomatte`, `EXtractoR`, `IDentifier`,
+/// `Key Light`, `Unmult`, `Twirl (Legacy)` and the two EffectCraft-only effects) repeat that
+/// English name here rather than being left out.
+const JAPANESE_EFFECTS: &[Row] = &[];
+
+/// Traditional Chinese (`zh-hant`) category labels, keyed by the registry's English category.
+const TRADITIONAL_CHINESE_CATEGORIES: &[(&str, &str)] = &[];
+
+/// Japanese (`ja`) category labels, keyed by the registry's English category.
+const JAPANESE_CATEGORIES: &[(&str, &str)] = &[];
+
+/// The 21 category folder names the generated Effect menu and Effects & Presets draw, in
+/// Simplified Chinese. Read from the installed After Effects 2026 (26.5.0.89) Simplified Chinese
+/// interface (the checklist's `07-类别` sheet); two of them are the interface's own wording where
+/// our first suggestion differed (`Keying` is 抠像, not 键控; `Obsolete` is 过时, not 已废弃).
+const SIMPLIFIED_CHINESE_CATEGORIES: &[(&str, &str)] = &[
     ("3D Channel", "3D 通道"),
     ("Audio", "音频"),
     ("Blur & Sharpen", "模糊和锐化"),
@@ -468,8 +506,10 @@ mod tests {
         assert_eq!(listed, ids.len(), "an effect id is listed twice");
     }
 
-    /// The five names Adobe leaves in English as brand names, and the only rows that may: any
-    /// other row repeating its English name is a translation that never happened.
+    /// The five names Adobe's Simplified Chinese interface leaves in English as brand names, and
+    /// the only zh-hans rows that may repeat their English name. Deliberately not shared: another
+    /// language keeps different names in English (Japanese leaves the whole `CC`, `VR` and `OCIO`
+    /// sets in English), so this is zh-hans's own choice, not an invariant of the tables.
     #[test]
     fn only_the_brand_names_stay_in_english() {
         const BRANDS: [&str; 5] = ["ec.3d.cryptomatte", "ec.3d.extractor", "ec.3d.identifier", "ec.keying.keylight", "ec.key.unmult"];
@@ -478,30 +518,46 @@ mod tests {
         }
     }
 
-    /// Traditional Chinese may lag Simplified Chinese but may not invent ids or disagree about
-    /// which effect an id names: a translator fills this table row by row.
+    /// The languages that have no rows yet, with the table a translator fills in for each. A new
+    /// language is added here and to [`catalog`]; the test then guards its rows as they arrive.
+    const PENDING: &[(&str, &[Row])] = &[("zh-hant", TRADITIONAL_CHINESE), ("ja", JAPANESE_EFFECTS)];
+
+    /// A pending language may lag Simplified Chinese but may not invent ids or disagree about
+    /// which effect an id names: a translator fills these tables row by row. While they are
+    /// empty the test is a no-op, which is why the slot ships before the data does.
     #[test]
-    fn traditional_chinese_only_uses_known_ids() {
-        for (id, english, translated) in TRADITIONAL_CHINESE {
-            let Some((_, hans_english, _)) = SIMPLIFIED_CHINESE.iter().find(|(hans_id, _, _)| hans_id == id) else {
-                panic!("zh-hant row {id} is not an effect the zh-hans catalog knows");
-            };
-            assert_eq!(*english, *hans_english, "{id}: the two catalogs name the effect differently");
-            assert!(!translated.is_empty(), "{id}: empty translation");
+    fn a_pending_language_only_uses_known_ids() {
+        for (language, rows) in PENDING {
+            let mut ids: Vec<&str> = vec![];
+            for (id, english, translated) in *rows {
+                let Some((_, hans_english, _)) = SIMPLIFIED_CHINESE.iter().find(|(hans_id, _, _)| hans_id == id) else {
+                    panic!("{language} row {id} is not an effect the zh-hans catalog knows");
+                };
+                assert_eq!(*english, *hans_english, "{id}: {language} and zh-hans name the effect differently");
+                assert!(!translated.is_empty(), "{id}: empty {language} translation (repeat the English name if it stays)");
+                ids.push(id);
+            }
+            let listed = ids.len();
+            ids.sort_unstable();
+            ids.dedup();
+            assert_eq!(listed, ids.len(), "{language} lists an effect id twice");
         }
     }
 
-    /// Every category the registry and its plug-ins report has a row, and every row names a
-    /// category that exists: the generated Effect menu and Effects & Presets draw both.
+    /// Every category the registry and its plug-ins report has a Simplified Chinese row, and
+    /// every row of every language names a category that exists — else the generated Effect menu
+    /// and Effects & Presets would draw a label no folder has.
     #[test]
     fn every_category_has_a_row() {
         let categories = effects::categories();
         for category in &categories {
-            assert!(CATEGORIES.iter().any(|(english, _)| english == category), "no catalog row for category {category}");
+            assert!(SIMPLIFIED_CHINESE_CATEGORIES.iter().any(|(english, _)| english == category), "no catalog row for category {category}");
         }
-        for (english, translated) in CATEGORIES {
-            assert!(categories.contains(english), "the catalog lists {english}, which is not a category");
-            assert!(!translated.is_empty(), "empty translation for {english}");
+        for (language, rows) in [("zh-hans", SIMPLIFIED_CHINESE_CATEGORIES), ("zh-hant", TRADITIONAL_CHINESE_CATEGORIES), ("ja", JAPANESE_CATEGORIES)] {
+            for (english, translated) in rows {
+                assert!(categories.contains(english), "{language} lists {english}, which is not a category");
+                assert!(!translated.is_empty(), "empty {language} translation for {english}");
+            }
         }
     }
 
@@ -520,11 +576,24 @@ mod tests {
         set_current("en");
     }
 
-    /// English, and every language without rows (Traditional Chinese included), draws the
-    /// registry's name; an id with no row keeps it too rather than drawing an empty label.
+    /// English, and a language with no catalog or no row for this effect, draws the registry's
+    /// name rather than an empty label.
+    ///
+    /// The pending languages are also checked to still be row-less and to have an arm in
+    /// [`catalog`]: an arm with no table would leave a translator's rows dead, and the day a
+    /// pending language gets rows this fails so its slot moves out of [`PENDING`], where the
+    /// coverage for it lives.
     #[test]
     fn languages_without_rows_draw_the_registry_name() {
-        for language in ["en", "ja", "zh-hant", "uk", "cs"] {
+        for language in ["en", "uk", "cs"] {
+            set_current(language);
+            assert_eq!(name("ec.blur.gaussian", "Gaussian Blur"), "Gaussian Blur", "{language}");
+            assert_eq!(group("ec.blur.gaussian", "Gaussian Blur 2"), "Gaussian Blur 2", "{language}");
+            assert_eq!(category("Blur & Sharpen"), "Blur & Sharpen", "{language}");
+        }
+        for (language, rows) in PENDING {
+            assert!(catalog(language).is_some(), "{language} has a table but no arm in `catalog`: its rows would be dead");
+            assert!(rows.is_empty(), "{language} has rows now: move it out of PENDING and cover it here");
             set_current(language);
             assert_eq!(name("ec.blur.gaussian", "Gaussian Blur"), "Gaussian Blur", "{language}");
             assert_eq!(group("ec.blur.gaussian", "Gaussian Blur 2"), "Gaussian Blur 2", "{language}");

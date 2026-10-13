@@ -31,7 +31,12 @@ interface; Arabic and Hebrew text *in layers* is supported through its Middle Ea
   the drawing — the Effect menu, Effect Controls, the Timeline and Effects & Presets — goes
   through the catalog, so a project file is identical whichever interface language opens it.
   A repeat (`Gaussian Blur 2`) keeps the index the engine appends, and a group the user renamed
-  in Effect Controls stays verbatim. No other language has rows yet, so they draw English.
+  in Effect Controls stays verbatim. Adding a language there is two tables and one arm, and no
+  panel changes: Traditional Chinese and Japanese have their tables in place and empty, so those
+  languages draw English until a translator fills them (the Japanese set for #821 is what that
+  slot is for). Each language decides for itself which names stay English — Adobe's Japanese
+  interface leaves the `CC`, `VR` and `OCIO` sets in English while its Chinese one translates
+  them — so a row repeating the English name is a choice, not a missing row.
 - **Not translated anywhere yet:** effect *parameter* names (≈ 1,650, `crates/effects`),
   engine-generated text (property names, errors, undo labels), the Home screen's unwrapped
   literals (#574), Learn tutorials and documentation.

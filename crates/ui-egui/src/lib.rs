@@ -1138,6 +1138,14 @@ impl EffectcraftApp {
         true
     }
 
+    /// A preview plays with Video off in the Preview panel (audio only): the current time stays
+    /// put, so the viewer and Timeline say so instead of looking stuck (#1118). The frame under
+    /// the audible sample, when one is known.
+    pub fn video_preview_off(&self) -> Option<Option<i64>> {
+        let p = self.playback.plan.filter(|_| self.playback.playing)?;
+        (!p.video).then_some(self.playback.audio_frame)
+    }
+
     /// The viewer shows grids, guides and safe margins (hidden while a preview without
     /// Include Overlays plays).
     pub fn overlays_visible(&self) -> bool {

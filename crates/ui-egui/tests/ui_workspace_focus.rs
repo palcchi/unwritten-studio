@@ -86,7 +86,7 @@ fn unreadable_native_workspace_is_preserved_after_later_layout_changes() {
         app.set_workspace("Minimal");
         app.ui.focused = PanelKind::Project;
         let error = effectcraft_ui_egui::menus::invoke(&mut app, &ctx, "window.saveWorkspaceAs", json!({"name":"Must not overwrite"})).unwrap_err();
-        assert!(error.contains("won't be there after a restart") && error.contains("workspaces.json"), "{error}");
+        assert!(error.contains("may be lost after a restart") && error.contains("workspaces.json"), "{error}");
         assert_eq!(app.ui.status, error, "the failure is in the status bar");
         assert_eq!(app.ui.workspace, "Must not overwrite", "the layout stays usable for this session");
         assert!(app.ui.saved_workspaces.contains_key("Must not overwrite"));
@@ -383,7 +383,7 @@ fn failed_workspace_save_is_reported_and_retryable() {
     let ctx = egui::Context::default();
     let invoke = |app: &mut EffectcraftApp, id: &str, params| effectcraft_ui_egui::menus::invoke(app, &ctx, id, params);
     let error = invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "caption craft"})).unwrap_err();
-    assert!(error.contains("synthetic full disk") && error.contains("won't be there after a restart"), "{error}");
+    assert!(error.contains("synthetic full disk") && error.contains("may be lost after a restart"), "{error}");
     assert_eq!(app.ui.status, error);
     let storage_error = effectcraft_ui_egui::control::inspect(&app, &ctx)["workspaceStorageError"].clone();
     assert!(storage_error.as_str().is_some_and(|e| e.contains("synthetic full disk")), "{storage_error}");
@@ -465,4 +465,29 @@ fn an_earlier_queued_frontend_failure_is_not_a_later_commands_result() {
     invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Fine"})).unwrap();
     // Its own failure with nothing queued is still the result.
     assert!(invoke(&mut app, "window.workspace", json!({"name": "missing"})).is_err());
+}
+
+/// A failed Save Workspace or Delete of a workspace already on disk leaves the file as it was:
+/// after a restart the earlier layout, and the workspace that wasn't deleted, come back.
+#[test]
+fn failed_save_or_delete_of_a_saved_workspace_keeps_the_file() {
+    let store = Arc::new(FullDisk::default());
+    let mut app = EffectcraftApp::new(Session { config: Some(store.clone()), ..Default::default() });
+    let ctx = egui::Context::default();
+    let invoke = |app: &mut EffectcraftApp, id: &str, params| effectcraft_ui_egui::menus::invoke(app, &ctx, id, params);
+    invoke(&mut app, "window.workspace", json!({"name": "Minimal"})).unwrap();
+    invoke(&mut app, "window.saveWorkspaceAs", json!({"name": "Kept"})).unwrap();
+    let saved = app.ui.dock.clone();
+    let before = store.read("workspaces.json").unwrap();
+    store.full.store(true, std::sync::atomic::Ordering::Relaxed);
+    app.ui.dock.close(PanelKind::Timeline);
+    let error = invoke(&mut app, "window.saveWorkspace", json!({})).unwrap_err();
+    assert!(error.contains("synthetic full disk") && error.contains("may be lost after a restart"), "{error}");
+    assert!(invoke(&mut app, "window.editWorkspaces", json!({"name": "Kept", "delete": true})).is_err());
+    assert!(app.saved_workspace_names().is_empty(), "the delete applies for this session");
+    assert_eq!(store.read("workspaces.json").unwrap(), before);
+    let mut restarted = EffectcraftApp::new(Session { config: Some(store), ..Default::default() });
+    assert_eq!(restarted.saved_workspace_names(), ["Kept"]);
+    restarted.set_workspace("Kept");
+    assert_eq!(restarted.ui.dock, saved);
 }

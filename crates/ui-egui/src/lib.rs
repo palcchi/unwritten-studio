@@ -429,10 +429,11 @@ impl EffectcraftApp {
 
     /// Keep the saved workspaces for the next session (see [`EffectcraftApp::new`]): After
     /// Effects' saved workspaces last until they are deleted (#320). `Err` when they weren't
-    /// written (#696): the layouts stay usable and a later save retries, but a restart loses them.
+    /// written (#696): the change applies for this session and a later save retries it, but until
+    /// then a restart brings back what is on disk.
     pub(crate) fn store_saved_workspaces(&mut self) -> Result<(), String> {
         let Err(error) = self.workspace_store.save_now(self.session.config.as_deref(), &self.ui) else { return Ok(()) };
-        let message = format!("Workspaces are kept for this session only and won't be there after a restart: {error}");
+        let message = format!("Workspace changes couldn't be saved and may be lost after a restart: {error}");
         log::warn!("{message}");
         self.ui.status = message.clone();
         // The raw error, so the background retry doesn't report the same failure again.

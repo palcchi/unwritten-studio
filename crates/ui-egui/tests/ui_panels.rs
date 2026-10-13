@@ -466,6 +466,44 @@ fn essential_graphics_scale_keeps_constrain_proportions() {
     assert!(unlinked[0] > linked[0] && unlinked[1] == linked[1], "unlinked, X moves alone: {unlinked:?}");
 }
 
+/// #956: the Properties panel's Scale chain link shares the Timeline's Constrain Proportions
+/// state: unlinking in Properties unlinks the Timeline row too, and X/Y scale together only
+/// while linked.
+#[test]
+fn properties_scale_link_shares_the_timeline_state() {
+    let mut h = harness();
+    let layer = h.state().session.active_comp().unwrap().layers[0].id.0;
+    h.state_mut().session.execute("layer.select", json!({"layers": [layer]})).unwrap();
+    h.state_mut().session.execute("prop.set", json!({"layer": layer, "path": "transform/scale", "value": [100.0, 50.0]})).unwrap();
+    open(&mut h, "properties");
+    let uid = {
+        let comp = h.state().session.active_comp().unwrap();
+        let l = comp.layers.iter().find(|l| l.id.0 == layer).unwrap();
+        l.props.prop("transform/scale").unwrap().uid
+    };
+    let link = format!("properties.prop.{uid}.constrain");
+    assert!(h.state().auto.find(&link).is_some(), "the chain link is drawn");
+    let scale = |h: &Harness<'_, EffectcraftApp>| {
+        let comp = h.state().session.active_comp().unwrap();
+        let l = comp.layers.iter().find(|l| l.id.0 == layer).unwrap();
+        l.props.prop("transform/scale").unwrap().value.components()
+    };
+    // Linked: dragging X scales Y with it.
+    drag_x(&mut h, &format!("properties.prop.{uid}.value.0"), 40.0);
+    let linked = scale(&h);
+    assert!(linked[0] > 100.0, "{linked:?}");
+    assert!((linked[1] / linked[0] - 0.5).abs() < 1e-6, "Y follows X in proportion: {linked:?}");
+    // Unlinking in Properties writes the shared state, so the Timeline row unlinks too.
+    click(&mut h, &link);
+    assert!(h.state().ui.timeline.unlinked.contains(&uid), "unlinking writes the shared state");
+    drag_x(&mut h, &format!("properties.prop.{uid}.value.0"), 40.0);
+    let unlinked = scale(&h);
+    assert!(unlinked[0] > linked[0] && unlinked[1] == linked[1], "unlinked, X moves alone: {unlinked:?}");
+    // Re-linking clears it again.
+    click(&mut h, &link);
+    assert!(!h.state().ui.timeline.unlinked.contains(&uid), "re-linking clears the shared state");
+}
+
 /// #757: Effects & Presets lists the built-in Transitions presets under * Animation Presets;
 /// double-clicking one applies it to the selected layer (effect plus keyframes).
 #[test]

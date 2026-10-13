@@ -1671,7 +1671,11 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
     if !tab_only && app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         // A popup or colour picker takes Escape first (the picker goes back to its original colour).
-        if crate::panels::shortcut_editor::recording(app) || egui::Popup::is_any_open(ctx) || crate::color_picker::open_recently(ctx) {
+        if crate::panels::shortcut_editor::recording(app)
+            || crate::panels::shortcut_editor::confirming(app)
+            || egui::Popup::is_any_open(ctx)
+            || crate::color_picker::open_recently(ctx)
+        {
             return;
         }
         ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
@@ -1780,8 +1784,9 @@ fn handle_shortcuts_impl(app: &mut EffectcraftApp, ctx: &egui::Context, tab_only
         }
         // Escape closes dialogs.
         if key == egui::Key::Escape && app.dialog.is_some() {
-            // Escape while recording a shortcut cancels the recording, not the editor.
-            if crate::panels::shortcut_editor::recording(app) {
+            // Escape while recording a shortcut cancels the recording, not the editor; so does
+            // Escape in its Delete Preset prompt.
+            if crate::panels::shortcut_editor::recording(app) || crate::panels::shortcut_editor::confirming(app) {
                 continue;
             }
             if app.dialog == Some(crate::Dialog::Info) {

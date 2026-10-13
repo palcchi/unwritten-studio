@@ -227,6 +227,25 @@ fn toggle(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!(r))
 }
 
+/// `effect.setLabel`: the effect's colour label (None clears it).
+fn set_label(s: &mut Session, p: &Value) -> Result<Value> {
+    let c = "effect.setLabel";
+    let (cid, lid, uid) = find_fx(s, p, c)?;
+    let lab = match p.get("label") {
+        Some(Value::Number(n)) => n.as_u64().and_then(|i| effectcraft_color::Label::ALL.get(usize::try_from(i).ok()?).copied()),
+        Some(Value::String(name)) => s.prefs.label_from_name(name),
+        _ => None,
+    }
+    .ok_or_else(|| bad(c, "missing or unknown `label` (name or index 0-16; 0 / None clears it)"))?;
+    s.edit("Effect Label", None, |proj, _| {
+        let l = layer_mut(proj, cid, lid)?;
+        let g = l.props.find_group_mut(uid).ok_or_else(|| bad(c, "gone"))?;
+        g.label = (lab != effectcraft_color::Label::None).then_some(lab);
+        Ok(())
+    })?;
+    Ok(Value::Null)
+}
+
 fn reorder(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, lid, uid) = find_fx(s, p, "effect.reorder")?;
     let to = p.get("index").and_then(Value::as_u64).ok_or_else(|| bad("effect.reorder", "missing `index` (1-based)"))? as usize;
@@ -482,6 +501,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("effect.removeAll", "Remove All", ["Effect"], Some("Cmd+Shift+E"), "{layers?}", has_layers, remove_all),
         cmd!("effect.remove", "Remove Effect", [], None, "{layer?, effect: index|uid|name}", has_layers, remove),
         cmd!("effect.toggle", "Toggle Effect", [], None, "{layer?, effect, value?}", has_layers, toggle),
+        cmd!("effect.setLabel", "Effect Label", [], None, "{layer?, effect, label: name|index 0-16 (None clears)}", has_layers, set_label),
         cmd!("effect.reorder", "Reorder Effect", [], None, "{layer?, effect, index}", has_layers, reorder),
         cmd!("effect.duplicate", "Duplicate Effect", [], None, "{layer?, effect}", has_layers, duplicate),
         cmd!("effect.copy", "Copy Effects", [], None, "{layer?, effect? | effects?: [uid|name|index]} (default: the selected effects)", has_layers, copy),

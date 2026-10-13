@@ -140,8 +140,9 @@ Compositions and Text Layers), `view.channel {channel, colorized?}`,
 `view.channel.red|green|blue|alpha|redColorized|greenColorized|blueColorized|rgbStraight`), `view.res.full|half|third|quarter|auto {comp?}` and
 `view.res.custom {factor, comp?}` (the comp's Resolution, saved with the project but no undo
 step; `ui.set {viewer: {res}}` sets the active comp's, and `ui.inspect` reports it as
-`ui.viewer.res`), `view.setRegionOfInterest {rect}`, `view.addGuide`,
-`view.moveGuide`, `view.removeGuide`; editing: `shape.newPath` (Pen on shape layers),
+`ui.viewer.res`), `view.setRegionOfInterest {rect}`, `view.addGuide {percent?}`,
+`view.addPercentGuide`, `view.convertGuides {to: percent|pixels, index?}`,
+`view.moveGuide` (comp pixels, whatever the guide's unit), `view.removeGuide`, `effect.setLabel {layer?, effect, label}`; editing: `shape.newPath` (Pen on shape layers),
 `shape.newShape` (the shape tools: a new group in the selected shape layer, else a new shape layer),
 `shape.toolOptions` (the Tools bar's Tool Creates Shape / Mask and Fill and Stroke Options),
 `mask.insertVertex`, `mask.convertVertex`, `mask.deleteVertices`, `path.freeTransform` (masks and

@@ -210,8 +210,12 @@ fn guide_index(s: &Session, p: &Value, cmd: &str) -> Result<(effectcraft_project
 fn move_guide(s: &mut Session, p: &Value) -> Result<Value> {
     let (cid, i) = guide_index(s, p, "view.moveGuide")?;
     let pos = f_p(p, "position").ok_or_else(|| bad("view.moveGuide", "missing `position` (comp px)"))?;
+    let pos = if pos.is_finite() { pos } else { return Err(bad("view.moveGuide", "`position` must be a finite number")) };
     s.edit("Move Guide", merge_p(p), |proj, _| {
-        proj.comp_mut(cid).ok_or(EngineError::NoComp)?.guides[i].position = pos;
+        let c = proj.comp_mut(cid).ok_or(EngineError::NoComp)?;
+        let (w, h) = (c.width, c.height);
+        let g = c.guides.get_mut(i).ok_or(EngineError::NoComp)?;
+        g.set_px(pos, w, h);
         Ok(())
     })?;
     Ok(json!(pos))

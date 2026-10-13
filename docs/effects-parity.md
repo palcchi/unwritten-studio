@@ -1,6 +1,6 @@
 # Effects parity
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (parameter count and closed issue references re-audited against `upstream/main` 470ea7a3 and the generated effects.md) · **Target:** Adobe After Effects 2026
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (effect colour labels; earlier change: parameter count and closed issue references re-audited against `upstream/main` 470ea7a3 and the generated effects.md) · **Target:** Adobe After Effects 2026
 
 Effects are the deepest single area of After Effects. This page separates the four questions
 that a single "306 of 306" hides: does each effect exist, does it run fast, does it look like
@@ -17,7 +17,7 @@ After Effects', and does the preset library exist. The per-effect catalogue is t
 | 32-bit float, no clamping | 306 | Measured: registry flags |
 | **Rendered output matches After Effects** | **unmeasured** | No effect is compared with an After Effects render yet. `effectcraft_effects::fidelity::compare_frames` exists for the corpus ([fidelity/README.md](fidelity/README.md)); simulation effects are pinned by golden hashes of our own output (M13.27) |
 | Animation presets | **54** original presets (8 text-animator, 23 Transitions, 23 Backgrounds) against After Effects' **621** `.ffx` presets | Measured: `crates/engine/presets/text_animators.json`, `crates/engine/presets/transitions.json`, `crates/engine/presets/backgrounds.json`; the After Effects `Presets` folder |
-| 26.x additions | Curl Noise (26.3) present (#463 open); effect colour labels and the rebuilt Effect Controls (26.5) missing | Release notes |
+| 26.x additions | Curl Noise (26.3) present (#463 open); effect colour labels (26.5) present in Effect Controls only, not in the Timeline; the rebuilt Effect Controls (26.5) missing | Release notes |
 
 **Breadth ≈ 85%** (presets weigh in; the effects themselves are ≈ 100%). **Ready ≈ 40%**: until a
 corpus compares renders, each effect is assumed to differ somewhere, and users keep confirming it.
@@ -65,4 +65,5 @@ the GPU is performance, not parity.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | Parameters 3,014 to 3,017 (effects.md); #303, #514, #526, #533–#536 marked closed instead of pending |
+| 2026-10-12 | minor | Effect colour labels (26.5) added in Effect Controls |
 | 2026-10-10 | major | First effects parity checklist |

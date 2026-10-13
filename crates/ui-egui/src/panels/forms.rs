@@ -357,6 +357,13 @@ pub fn open_form(app: &mut EffectcraftApp, id: &str, p: &Value) -> bool {
                 ],
             )
         }
+        "view.addPercentGuide" if !has(p, &["position"]) => (
+            "Add Percentage Guide".into(),
+            vec![
+                Field::choice("orientation", "Orientation", &[("Vertical", json!("vertical")), ("Horizontal", json!("horizontal"))], 0),
+                Field::num("position", "Position (percent of the composition)", 50.0),
+            ],
+        ),
         // Several items selected: After Effects' New Composition from Selection dialog.
         "file.newCompFromSelection"
             if s.state.project_selection.len() > 1 && !has(p, &["single", "dimensionsFrom", "duration", "sequence", "addToRenderQueue"]) =>

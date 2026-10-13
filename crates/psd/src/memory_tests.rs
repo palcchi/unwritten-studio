@@ -40,7 +40,7 @@ impl Psd {
         Ok(self.ref_samples(&raw, w, h))
     }
 
-    fn ref_samples(&self, raw: &[u8], w: usize, h: usize) -> Vec<f32> {
+    pub(crate) fn ref_samples(&self, raw: &[u8], w: usize, h: usize) -> Vec<f32> {
         match self.depth {
             1 => {
                 let rowb = w.div_ceil(8);
@@ -55,13 +55,29 @@ impl Psd {
                 out
             }
             16 => raw.as_chunks::<2>().0.iter().take(w * h).map(|c| u16::from_be_bytes([c[0], c[1]]) as f32 / 65535.0).collect(),
-            32 => raw.as_chunks::<4>().0.iter().take(w * h).map(|c| f32::from_be_bytes([c[0], c[1], c[2], c[3]])).collect(),
+            // As the previous decoder after the non-finite fix: NaN reads as 0, +inf as 1, -inf as 0.
+            32 => raw
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .take(w * h)
+                .map(|c| {
+                    let v = f32::from_be_bytes([c[0], c[1], c[2], c[3]]);
+                    if v.is_nan() || v == f32::NEG_INFINITY {
+                        0.0
+                    } else if v == f32::INFINITY {
+                        1.0
+                    } else {
+                        v
+                    }
+                })
+                .collect(),
             _ => raw.iter().take(w * h).map(|&b| b as f32 / 255.0).collect(),
         }
     }
 
     /// Convert colour channels (in the document's mode) to RGB.
-    fn ref_to_rgb(&self, ch: &[Option<Vec<f32>>], i: usize) -> [f32; 3] {
+    pub(crate) fn ref_to_rgb(&self, ch: &[Option<Vec<f32>>], i: usize) -> [f32; 3] {
         let g = |k: usize| ch.get(k).and_then(|c| c.as_ref()).map_or(0.0, |c| c[i]);
         let rgb = match self.mode {
             ColorMode::Rgb => [g(0), g(1), g(2)],

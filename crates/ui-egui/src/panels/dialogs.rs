@@ -203,6 +203,22 @@ pub(crate) fn modal_fit(ctx: &egui::Context, title: &str, size: egui::Vec2, t: &
         });
 }
 
+/// The buttons of a [`modal_fit`] body of `height`, kept in view: `footer` lays them out first,
+/// at the bottom (bottom up: its first row is the lowest), and the rest of the body gets the room
+/// above them. Returns that room (a left-to-right row, clipped to it, so a long or wide body
+/// scrolls or clips under the buttons instead of pushing them out of the dialog) and its height.
+pub(crate) fn above_footer(ui: &mut egui::Ui, height: f32, footer: impl FnOnce(&mut egui::Ui)) -> (egui::Ui, f32) {
+    let area = ui.allocate_space(vec2(ui.available_width(), height)).1;
+    let mut foot = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(egui::Layout::bottom_up(egui::Align::Min)));
+    footer(&mut foot);
+    foot.add_space(8.0);
+    let body_h = (foot.min_rect().top() - area.top()).max(0.0);
+    let room = Rect::from_min_size(area.min, vec2(area.width(), body_h));
+    let mut body = ui.new_child(egui::UiBuilder::new().max_rect(room).layout(egui::Layout::left_to_right(egui::Align::Min)));
+    body.set_clip_rect(room.intersect(body.clip_rect()));
+    (body, body_h)
+}
+
 pub fn show(app: &mut EffectcraftApp, ctx: &egui::Context) {
     let Some(d) = app.dialog else { return };
     let t = app.tokens;

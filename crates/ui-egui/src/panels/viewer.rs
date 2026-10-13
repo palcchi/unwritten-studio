@@ -1261,11 +1261,16 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         if context_layers.is_empty() {
             ui.label(crate::i18n::tr("No unlocked layer selected"));
         } else {
-            let vector = context_layers
-                .iter()
-                .filter_map(|id| comp.layer(effectcraft_engine::project::LayerId(*id)))
-                .any(|layer| super::timeline::vector_footage_layer(&app.session.project, layer));
-            super::timeline::layer_menu(ui, &context_layers, vector, &mut context_actions);
+            let caps = context_layers.iter().filter_map(|id| comp.layer(effectcraft_engine::project::LayerId(*id))).fold(
+                super::timeline::LayerMenuCaps::default(),
+                |mut caps, layer| {
+                    let c = super::timeline::LayerMenuCaps::of(&app.session.project, layer);
+                    caps.vector |= c.vector;
+                    caps.text |= c.text;
+                    caps
+                },
+            );
+            super::timeline::layer_menu(ui, &context_layers, caps, &mut context_actions);
         }
         ui.separator();
         if ui.button(copy_frame).clicked() {

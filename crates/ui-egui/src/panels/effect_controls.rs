@@ -646,6 +646,27 @@ impl<'a> FxScope<'a> {
     }
 }
 
+/// Twirl `g` closed (it was `open`) or open; with `all` (Alt/Cmd-click) every group under it follows.
+fn toggle_closed(app: &mut EffectcraftApp, g: &PropGroup, open: bool, all: bool) {
+    fn walk(g: &PropGroup, out: &mut Vec<u64>) {
+        for sg in g.groups() {
+            out.push(sg.uid);
+            walk(sg, out);
+        }
+    }
+    let mut uids = vec![g.uid];
+    if all {
+        walk(g, &mut uids);
+    }
+    for u in uids {
+        if open {
+            app.ui.fx_closed.insert(u);
+        } else {
+            app.ui.fx_closed.remove(&u);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn group_rows(
     app: &mut EffectcraftApp,
@@ -705,11 +726,7 @@ fn group_rows(
                     app.auto.add(&format!("effectControls.row.{}", sg.uid), r, &sg.name);
                     app.auto.add(&format!("effectControls.group.{}.twirl", sg.uid), tw, &sg.name);
                     if widgets::twirl(ui, tw, open, egui::Id::new(("ec-g", sg.uid)), &t).clicked() {
-                        if open {
-                            app.ui.fx_closed.insert(sg.uid);
-                        } else {
-                            app.ui.fx_closed.remove(&sg.uid);
-                        }
+                        toggle_closed(app, sg, open, ui.input(|i| i.modifiers.alt || i.modifiers.command));
                     }
                     let name = p.text(pos2(tw.max.x + 6.0, r.center().y), Align2::LEFT_CENTER, &sg.name, Tokens::ui(12.0), t.text);
                     app.auto.add(&format!("effectControls.group.{}.name", sg.uid), name, &sg.name);
@@ -1114,11 +1131,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
         app.auto.add(&format!("effectControls.effect.{}.fx", g.uid), fxr, &g.name);
         let tw = Rect::from_center_size(pos2(r.min.x + 32.0, r.center().y), vec2(12.0, 12.0));
         if widgets::twirl(ui, tw, open, egui::Id::new(("ec-tw", g.uid)), &t).clicked() {
-            if open {
-                app.ui.fx_closed.insert(g.uid);
-            } else {
-                app.ui.fx_closed.remove(&g.uid);
-            }
+            toggle_closed(app, g, open, ui.input(|i| i.modifiers.alt || i.modifiers.command));
         }
         app.auto.add(&format!("effectControls.effect.{}.twirl", g.uid), tw, &g.name);
         let rename_id = egui::Id::new(("ec-rename", g.uid));

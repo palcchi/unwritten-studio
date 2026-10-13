@@ -579,10 +579,21 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name)
             });
             if tresp.clicked() {
-                if open {
-                    app.ui.project_open_folders.remove(&id.0);
-                } else {
-                    app.ui.project_open_folders.insert(id.0);
+                // Alt/Cmd-click twirls every folder inside it too.
+                let mut ids = vec![*id];
+                if ui.input(|i| i.modifiers.alt || i.modifiers.command) {
+                    let mut at = 0;
+                    while let Some(f) = ids.get(at).copied() {
+                        ids.extend(app.session.project.children(Some(f)).into_iter().filter(|c| c.is_folder()).map(|c| c.id));
+                        at += 1;
+                    }
+                }
+                for f in ids {
+                    if open {
+                        app.ui.project_open_folders.remove(&f.0);
+                    } else {
+                        app.ui.project_open_folders.insert(f.0);
+                    }
                 }
             }
             app.auto.add(&format!("project.item.{}.twirl", id.0), tw, &it.name);

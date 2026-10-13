@@ -60,6 +60,31 @@ fn click(h: &mut Harness<'_, EffectcraftApp>, id: &str) {
 }
 
 #[test]
+fn command_clicking_a_folder_twirl_opens_the_folders_inside_it() {
+    let (mut h, folder, _, _) = harness();
+    let s = &mut h.state_mut().session;
+    let inner = s.execute("project.newFolder", json!({"name": "Inner"})).unwrap()["item"].as_u64().unwrap();
+    let deep = s.execute("project.newFolder", json!({"name": "Deep"})).unwrap()["item"].as_u64().unwrap();
+    s.execute("project.move", json!({"items": [inner], "folder": folder.0})).unwrap();
+    s.execute("project.move", json!({"items": [deep], "folder": inner})).unwrap();
+    s.execute("project.select", json!({"items": []})).unwrap();
+    h.state_mut().ui.project_open_folders.clear();
+    h.run_steps(3);
+    let p = center(&h, &format!("project.item.{}.twirl", folder.0));
+    let cmd_click = |h: &mut Harness<'_, EffectcraftApp>| {
+        h.input_mut().events.push(Event::ModifiersChanged(Modifiers::COMMAND));
+        click_at(h, p);
+        h.input_mut().events.push(Event::ModifiersChanged(Modifiers::NONE));
+        h.step();
+    };
+    cmd_click(&mut h);
+    let open = h.state().ui.project_open_folders.clone();
+    assert!([folder.0, inner, deep].iter().all(|f| open.contains(f)), "the folder and every folder inside it open");
+    cmd_click(&mut h);
+    assert!(h.state().ui.project_open_folders.is_empty(), "and close again together");
+}
+
+#[test]
 fn folder_twirl_opens_and_closes_the_folder_on_one_click() {
     let (mut h, folder, comp, _) = harness();
     let twirl = format!("project.item.{}.twirl", folder.0);

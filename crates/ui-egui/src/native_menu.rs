@@ -169,8 +169,16 @@ pub fn build(app: &EffectcraftApp) -> NativeMenu {
                 MenuNode::Submenu { label, children } => {
                     let mut kids = vec![];
                     rec(app, children, &id, &mut kids);
-                    let shown = effectcraft_engine::menus::submenu_label(&app.session, label, &crate::menus::dyn_ctx(&app.ui.workspace, &[]));
-                    out.push(NativeNode::Submenu { label: crate::i18n::submenu(app, label, shown), children: kids });
+                    // The generated Effect menu's category submenus draw the catalog's name
+                    // (#821); every other submenu goes through the menu catalog.
+                    let shown = crate::i18n::effect_category(children, label).unwrap_or_else(|| {
+                        crate::i18n::submenu(
+                            app,
+                            label,
+                            effectcraft_engine::menus::submenu_label(&app.session, label, &crate::menus::dyn_ctx(&app.ui.workspace, &[])),
+                        )
+                    });
+                    out.push(NativeNode::Submenu { label: shown, children: kids });
                 }
                 MenuNode::Item(e) => {
                     let role = match e.command.as_str() {

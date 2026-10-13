@@ -185,7 +185,10 @@ fn effect_row(
         lp.rect_filled(r, 0.0, t.hover);
     }
     icons::paint(lp, Rect::from_center_size(pos2(r.min.x + 44.0 + indent, r.center().y), vec2(12.0, 12.0)), Icon::Fx, t.text_dim);
-    highlighted(lp, pos2(r.min.x + 56.0 + indent, r.center().y), e.name, query, &t);
+    // The row draws the effect's name in the interface language; the automation label keeps the
+    // registry's English name, which is what scripts and the control channel address (#821).
+    let shown = crate::i18n::effects::name(e.id, e.name);
+    highlighted(lp, pos2(r.min.x + 56.0 + indent, r.center().y), &shown, query, &t);
     if e.float {
         lp.text(pos2(r.max.x - 10.0, r.center().y), Align2::RIGHT_CENTER, "32", Tokens::ui(9.5), t.text_faint);
     }
@@ -322,8 +325,10 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     let mut y = list.min.y - scroll.offset;
     let mut apply: Option<Apply> = None;
     let reg = effectcraft_engine::effects::all();
-    let keep =
-        |e: &effectcraft_engine::effects::EffectSpec| depth_keeps(&view.depth, e) && (query.is_empty() || effectcraft_engine::effects::name_matches(e, &query));
+    let keep = |e: &effectcraft_engine::effects::EffectSpec| {
+        depth_keeps(&view.depth, e)
+            && (query.is_empty() || effectcraft_engine::effects::name_matches(e, &query) || crate::i18n::effects::matches(e.id, e.name, &query))
+    };
     let lookup = |id: &str| reg.iter().find(|e| e.id == id);
 
     // Favorites and Recently Used.
@@ -405,7 +410,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
             if items.is_empty() {
                 continue;
             }
-            if !folder_row(app, ui, &lp, list, &mut y, cat, cat, 0.0, searching, None) {
+            // The folder draws the category in the interface language; `cat` stays the key (the
+            // open/closed state and the automation id are the registry's English name).
+            if !folder_row(app, ui, &lp, list, &mut y, cat, &crate::i18n::effects::category(cat), 0.0, searching, None) {
                 continue;
             }
             for e in items {
@@ -421,9 +428,9 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
     if let Some(DragPayload::Effect(id)) = egui::DragAndDrop::payload::<DragPayload>(&ctx).as_deref()
         && let Some(pos) = ctx.pointer_hover_pos()
     {
-        let name = effectcraft_engine::effects::find(id).map(|e| e.name).unwrap_or("");
+        let name = effectcraft_engine::effects::find(id).map(|e| crate::i18n::effects::name(e.id, e.name)).unwrap_or_default();
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("dnd-fx")));
-        let g = painter.layout_no_wrap(name.to_string(), Tokens::ui(12.0), t.text);
+        let g = painter.layout_no_wrap(name, Tokens::ui(12.0), t.text);
         let r = Rect::from_min_size(pos + vec2(12.0, 8.0), g.size() + vec2(16.0, 8.0));
         painter.rect_filled(r, 4.0, Color32::from_rgba_premultiplied(40, 40, 40, 230));
         painter.rect_stroke(r, 4.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);

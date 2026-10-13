@@ -769,7 +769,11 @@ fn search_rows(l: &Layer, q: &str) -> Vec<Row> {
         for c in &g.children {
             match c {
                 Node::Group(sg) if depth > 1 || group_visible(sg, l) => {
-                    if sg.name.to_lowercase().contains(q) {
+                    // An effect group also matches the name the row draws, so a search finds
+                    // `高斯模糊` in a Chinese interface and `Gaussian Blur` in an English one.
+                    let hit = sg.name.to_lowercase().contains(q)
+                        || matches!(&sg.kind, GroupKind::Effect { effect } if crate::i18n::effects::matches(effect, &sg.name, q));
+                    if hit {
                         out.push(group_row(l, sg, depth, g));
                         all(l, sg, depth + 1, out);
                         continue;
@@ -2362,6 +2366,17 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
                 }
             }
             RowKind::Group { uid, name, open, has_children, fx, eye } => {
+                // The row draws an effect's name in the interface language (#821); `name` stays
+                // the property tree's, which the automation labels below keep. Any other group
+                // (a mask, a shape group, a layer style) draws its own name.
+                let group = layer.props.find_group(*uid);
+                let shown = match group.and_then(|g| match &g.kind {
+                    GroupKind::Effect { effect } => Some(effect.as_str()),
+                    _ => None,
+                }) {
+                    Some(effect) => crate::i18n::effects::group(effect, name),
+                    None => name.clone(),
+                };
                 // Selected groups (an effect, a mask, a shape group…) highlight like selected
                 // property rows.
                 let sel_group = app.session.state.selected_props.contains(&(layer.id, *uid));

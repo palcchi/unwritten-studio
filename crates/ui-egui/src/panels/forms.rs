@@ -905,7 +905,8 @@ pub(crate) fn close_info(app: &mut EffectcraftApp) {
 
 pub fn show_info(app: &mut EffectcraftApp, ctx: &egui::Context, t: &Tokens) {
     let (title, body) = app.dialog_state.info.clone();
-    let mut close = false;
+    // Enter presses OK, the default (and only) button.
+    let mut close = !ctx.egui_wants_keyboard_input() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
     // The text wraps within this small dialog; avoid a horizontal scrollbar changing its height.
     super::dialogs::modal_vertical(ctx, &title, vec2(440.0, 160.0), t, |ui| {
         ui.label(tr(&body));

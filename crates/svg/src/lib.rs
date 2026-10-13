@@ -1147,6 +1147,10 @@ pub fn parse(bytes: &[u8]) -> Result<Doc, Error> {
         }
         None => (pct_or("width", 'x', 300.0), pct_or("height", 'y', 150.0)),
     };
+    // Percentages use the root viewport's user space, even without a viewBox. A size that is not
+    // a finite positive number keeps the 300x150 default, so it cannot produce NaN geometry.
+    let usable = |v: f64, d: f64| if v.is_finite() && v > 0.0 { v } else { d };
+    (p.vw, p.vh) = vb.map_or((usable(dw, 300.0), usable(dh, 150.0)), |(_, w, h)| (w, h));
     let mut rst = st.clone();
     let (opacity, _) = p.cascade(root, &mut rst);
     let mut children = vec![];

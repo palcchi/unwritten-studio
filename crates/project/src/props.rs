@@ -337,6 +337,12 @@ pub fn parse_path(s: &str) -> Vec<Seg> {
 }
 
 impl PropGroup {
+    /// An instance in an indexed list (effect, mask, shape item, text animator, tracker): these
+    /// can be renamed, removed, duplicated and reordered; fixed groups (Transform…) can't.
+    pub fn is_instance(&self) -> bool {
+        matches!(self.kind, GroupKind::Indexed | GroupKind::Effect { .. } | GroupKind::Mask { .. } | GroupKind::Tracker { .. })
+    }
+
     pub fn new(uid: Uid, match_id: &str, name: &str) -> PropGroup {
         PropGroup { uid, match_id: match_id.into(), name: name.into(), kind: GroupKind::Plain, enabled: true, children: vec![] }
     }

@@ -142,6 +142,24 @@ fn errors_report_line_and_column() {
     assert_eq!(e.line, Some(3), "{e:?}");
 }
 
+/// A script wrapped in a function (the usual `(function () { ... })();` shape) reports the line
+/// that failed, not the wrapper's line (#1063).
+#[test]
+fn errors_inside_a_function_wrapper_report_the_failing_line() {
+    let mut s = session();
+    let o = run_code(&mut s, "(function () {\n  var a = 1;\n  throw new Error('inside');\n})();\n", "thrown.jsx");
+    let e = o.error.expect("thrown");
+    assert_eq!(e.message, "inside");
+    assert_eq!(e.line, Some(3), "{e:?}");
+    let o = run_code(&mut s, "(function () {\n  var a = 1;\n  nope.call();\n})();\n", "reference.jsx");
+    let e = o.error.expect("reference error");
+    assert_eq!(e.line, Some(3), "{e:?}");
+    let o = run_code(&mut s, "(function () {\n  var c = app.project.items.addComp('C', 10, 10, 1, 1, 24);\n  c.layer(5);\n})();\n", "range.jsx");
+    let e = o.error.expect("range error");
+    assert!(e.message.contains("out of range"), "{e:?}");
+    assert_eq!(e.line, Some(3), "{e:?}");
+}
+
 #[test]
 fn match_names_and_lookups() {
     let mut s = session();

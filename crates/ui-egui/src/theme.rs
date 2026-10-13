@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn interface_symbols_have_a_glyph_in_every_family() {
+    fn every_family_reaches_the_symbol_fallback() {
         let ctx = egui::Context::default();
         install(&ctx, &Tokens::for_kind(Default::default()), "en");
         ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();

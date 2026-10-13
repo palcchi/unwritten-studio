@@ -153,7 +153,7 @@ fn apply(s: &mut Session, found: Vec<(ItemId, Found)>) -> Value {
         s.toast(format!("Found {moved} footage item(s) in the project's new folder"));
     }
     if missing > 0 {
-        s.toast(format!("{missing} footage item(s) missing (File ▸ Dependencies ▸ Relink Missing Footage in Folder…)"));
+        s.toast(format!("{missing} footage item(s) missing (File ▸ Dependencies ▸ Relink Missing Footage…)"));
     }
     let mut out = json!({"checked": checked, "missing": missing, "probed": probed});
     if moved > 0 {

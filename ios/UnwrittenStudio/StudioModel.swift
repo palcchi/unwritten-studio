@@ -25,6 +25,18 @@ struct StudioLayer: Decodable, Identifiable {
     let durationSeconds: Double
 }
 
+struct StudioLayerTransform {
+    let position: [Double]
+    let scale: [Double]
+    let rotation: Double
+    let opacity: Double
+
+    var positionX: Double { position[0] }
+    var positionY: Double { position[1] }
+    var scaleX: Double { scale[0] }
+    var scaleY: Double { scale[1] }
+}
+
 struct StudioComposition: Decodable, Identifiable {
     let id: UInt64
     let name: String
@@ -71,6 +83,19 @@ private enum JSONValue: Decodable {
         else if let value = try? container.decode(String.self) { self = .string(value) }
         else if let value = try? container.decode([JSONValue].self) { self = .array(value) }
         else { self = .object(try container.decode([String: JSONValue].self)) }
+    }
+}
+
+private extension JSONValue {
+    var number: Double? {
+        guard case let .number(value) = self else { return nil }
+        return value
+    }
+
+    var numbers: [Double]? {
+        guard case let .array(values) = self else { return nil }
+        let numbers = values.compactMap { $0.number }
+        return numbers.count == values.count ? numbers : nil
     }
 }
 
@@ -169,6 +194,7 @@ final class StudioModel: ObservableObject {
     @Published private(set) var isImporting = false
     @Published private(set) var notice: String?
     @Published private(set) var documentName = "Untitled Project"
+    @Published private(set) var selectedTransform: StudioLayerTransform?
     @Published var playheadSeconds: Double = 0
 
     private var core: RustCore?
@@ -309,6 +335,7 @@ final class StudioModel: ObservableObject {
             if let duration = snapshot?.activeComp?.durationSeconds {
                 playheadSeconds = min(max(0, playheadSeconds), duration)
             }
+            refreshSelectedTransform()
             if render { refreshPreview() }
         } catch {
             notice = "The editor engine returned an unreadable project snapshot."
@@ -327,6 +354,54 @@ final class StudioModel: ObservableObject {
                 self.isRendering = false
             }
         }
+    }
+
+    func adjustSelectedProperty(path: String, component: Int? = nil, delta: Double) {
+        guard let core, let layerID = snapshot?.selectedLayers.first,
+              delta.isFinite, delta != 0,
+              let current = propertyValue(layerID: layerID, path: path) else { return }
+
+        let nextValue: Any
+        if let component {
+            guard var values = current.numbers, values.indices.contains(component) else { return }
+            values[component] += delta
+            nextValue = values
+        } else {
+            guard var value = current.number else { return }
+            value += delta
+            if path == "transform/opacity" { value = min(100, max(0, value)) }
+            nextValue = value
+        }
+
+        guard runReply(core.execute("prop.set", parameters: [
+            "layer": layerID,
+            "path": path,
+            "value": nextValue,
+        ])) else { return }
+        refreshSnapshot(render: true)
+    }
+
+    private func refreshSelectedTransform() {
+        guard let layerID = snapshot?.selectedLayers.first,
+              let position = propertyValue(layerID: layerID, path: "transform/position")?.numbers,
+              position.count >= 2,
+              let scale = propertyValue(layerID: layerID, path: "transform/scale")?.numbers,
+              scale.count >= 2,
+              let rotation = propertyValue(layerID: layerID, path: "transform/rotation")?.number,
+              let opacity = propertyValue(layerID: layerID, path: "transform/opacity")?.number else {
+            selectedTransform = nil
+            return
+        }
+        selectedTransform = StudioLayerTransform(position: position, scale: scale, rotation: rotation, opacity: opacity)
+    }
+
+    private func propertyValue(layerID: UInt64, path: String) -> JSONValue? {
+        guard let raw = core?.execute("prop.get", parameters: ["layer": layerID, "path": path]),
+              let data = raw.data(using: .utf8),
+              let reply = try? JSONDecoder().decode(EngineReply.self, from: data),
+              reply.ok,
+              case let .object(fields)? = reply.result else { return nil }
+        return fields["value"]
     }
 
     func dismissNotice() { notice = nil }

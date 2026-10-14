@@ -213,7 +213,7 @@ struct WorkspaceView: View {
                     toolRail
                     previewPanel
                     Rectangle().fill(StudioPalette.line).frame(width: 1)
-                    inspectorPanel.frame(width: 284)
+                    inspectorPanel.frame(width: max(284, controlTargetSize * 2 + 196))
                 }
                 Rectangle().fill(StudioPalette.line).frame(height: 1)
                 timelinePanel.frame(height: min(280, max(220, size.height * 0.30)))
@@ -380,7 +380,7 @@ struct WorkspaceView: View {
                     .accessibilityLabel("Go to start")
                 Slider(value: Binding(get: { model.playheadSeconds }, set: { model.seek(to: $0) }),
                        in: 0...(model.activeComposition?.durationSeconds ?? 1),
-                       onEditingChanged: { editing in if !editing { model.refreshPreview() } })
+                       onEditingChanged: { editing in if !editing { model.refreshSnapshot(render: true) } })
                     .tint(StudioPalette.accent)
                 Text(timecode(model.playheadSeconds))
                     .font(.system(size: 11 * typeScale, weight: .medium, design: .monospaced))
@@ -411,6 +411,21 @@ struct WorkspaceView: View {
                             .font(.system(size: 13 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 12)
+                    if let transform = model.selectedTransform {
+                        sectionTitle("TRANSFORM", trailing: "AT PLAYHEAD")
+                            .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 4)
+                        propertyControl("Position X", value: transform.positionX, unit: " px", path: "transform/position", component: 0, step: 10)
+                        propertyControl("Position Y", value: transform.positionY, unit: " px", path: "transform/position", component: 1, step: 10)
+                        propertyControl("Scale X", value: transform.scaleX, unit: "%", path: "transform/scale", component: 0, step: 5)
+                        propertyControl("Scale Y", value: transform.scaleY, unit: "%", path: "transform/scale", component: 1, step: 5)
+                        propertyControl("Rotation", value: transform.rotation, unit: "°", path: "transform/rotation", step: 5)
+                        propertyControl("Opacity", value: transform.opacity, unit: "%", path: "transform/opacity", step: 5)
+                    } else {
+                        Text("Transform properties are unavailable for this layer.")
+                            .font(.system(size: 12 * typeScale))
+                            .foregroundStyle(StudioPalette.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                    }
                     keyValue("IN", value: timecode(selected.inSeconds))
                     keyValue("OUT", value: timecode(selected.outSeconds))
                     keyValue("DURATION", value: String(format: "%.2f s", selected.durationSeconds))
@@ -535,6 +550,43 @@ struct WorkspaceView: View {
         }
         .font(.system(size: 10 * typeScale, weight: .semibold, design: .monospaced))
         .tracking(1.1)
+    }
+
+    private func propertyControl(_ title: String, value: Double, unit: String = "", path: String, component: Int? = nil, step: Double) -> some View {
+        HStack(spacing: 4) {
+            Text(title.uppercased())
+                .font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced))
+                .tracking(0.4)
+                .foregroundStyle(StudioPalette.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: 88, alignment: .leading)
+            Button {
+                model.adjustSelectedProperty(path: path, component: component, delta: -step)
+            } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 13 * typeScale, weight: .semibold))
+                    .frame(width: controlTargetSize, height: controlTargetSize)
+            }
+            .buttonStyle(ChromeButtonStyle())
+            .accessibilityLabel("Decrease \(title)")
+            Text("\(Int(value.rounded()))\(unit)")
+                .font(.system(size: 12 * typeScale, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.82))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(width: 68, alignment: .center)
+            Button {
+                model.adjustSelectedProperty(path: path, component: component, delta: step)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 13 * typeScale, weight: .semibold))
+                    .frame(width: controlTargetSize, height: controlTargetSize)
+            }
+            .buttonStyle(ChromeButtonStyle())
+            .accessibilityLabel("Increase \(title)")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 3)
     }
 
     private func keyValue(_ key: String, value: String) -> some View {

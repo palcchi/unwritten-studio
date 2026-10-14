@@ -21,6 +21,7 @@ struct WorkspaceView: View {
     @State private var showDiscardPrompt = false
     @State private var showNewPrompt = false
     @State private var pendingProject: (Data, String)?
+    @State private var isCanvasFocused = false
 
     private var typeScale: CGFloat { baseBodyPointSize / 16 }
 
@@ -36,6 +37,8 @@ struct WorkspaceView: View {
                     loadingView
                 } else if !model.hasProject {
                     welcomeView
+                } else if isCanvasFocused {
+                    focusedWorkspace(size: geometry.size, wide: wide)
                 } else if wide {
                     landscapeWorkspace(size: geometry.size)
                 } else {
@@ -99,6 +102,14 @@ struct WorkspaceView: View {
             }
             Spacer(minLength: 4)
             if model.hasProject {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isCanvasFocused.toggle() }
+                } label: {
+                    Image(systemName: isCanvasFocused ? "xmark" : "viewfinder")
+                        .frame(width: controlTargetSize, height: controlTargetSize)
+                }
+                .accessibilityLabel(isCanvasFocused ? "Show editor panels" : "Focus canvas")
+                .buttonStyle(ChromeButtonStyle())
                 if model.isImporting {
                     ProgressView().scaleEffect(0.7).tint(StudioPalette.accent)
                         .accessibilityLabel("Importing media")
@@ -245,6 +256,28 @@ struct WorkspaceView: View {
             Rectangle().fill(StudioPalette.line).frame(height: 1)
             timelinePanel
                 .frame(height: timelineHeight)
+        }
+    }
+
+    private func focusedWorkspace(size: CGSize, wide: Bool) -> some View {
+        VStack(spacing: 0) {
+            if !wide {
+                compositionStrip
+                Rectangle().fill(StudioPalette.line).frame(height: 1)
+            }
+            HStack(spacing: 0) {
+                if wide {
+                    toolRail
+                    Rectangle().fill(StudioPalette.line).frame(width: 1)
+                }
+                previewPanel
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Rectangle().fill(StudioPalette.line).frame(height: 1)
+            timelinePanel
+                .frame(height: wide
+                    ? min(280, max(220, size.height * 0.30))
+                    : min(220, max(160, size.height * 0.22)))
         }
     }
 

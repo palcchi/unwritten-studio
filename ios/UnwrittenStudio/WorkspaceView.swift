@@ -26,7 +26,9 @@ struct WorkspaceView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let wide = geometry.size.width >= 980 && geometry.size.height > 540
+            let wide = geometry.size.width >= 980
+                && geometry.size.height > 540
+                && geometry.size.width >= geometry.size.height * 1.15
             VStack(spacing: 0) {
                 topBar
                 Rectangle().fill(StudioPalette.line).frame(height: 1)

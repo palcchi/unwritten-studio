@@ -6,6 +6,7 @@
 - A Rust static-library bridge around the existing Unwritten Studio `Session`, command registry, project model, media importer, serialization, and renderer. The app does not load a webpage or use a `WKWebView`.
 - Project creation, `.uwproj`/`.uwprojx` open and `.uwproj` save, composition/layer listing, adding solid/shape/text layers, selecting a timeline layer, undo/redo, playhead scrubbing, image/video/audio import into app-owned storage and the active composition, and locally rendered RGBA preview.
 - The iOS Rust session attempts `unwritten-studio-gpu::Gpu::headless()`; wgpu can use the Apple Metal backend on iOS. If adapter/device initialization fails, the existing CPU renderer remains the fallback. The current rendering path can still perform substantial source/effect work on CPU, and no iPad benchmark or thermal/memory profile has been run.
+- First iPad usability pass: increased small workspace typography, added Dynamic Type scaling, enlarged primary touch targets to at least 44 pt, and made portrait inspector/timeline heights respond to available view geometry; the inspector now scrolls when space is constrained. This changes layout only and does not claim that the broader editor feature set is complete.
 
 ## Not yet implemented / unverified
 

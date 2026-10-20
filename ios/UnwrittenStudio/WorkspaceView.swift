@@ -5,17 +5,30 @@ import UIKit
 private enum CompactPanel: String, CaseIterable {
     case canvas = "Canvas"
     case project = "Project"
-    case effects = "Effects"
+    case effects = "Properties"
     case timeline = "Timeline"
 }
 
+private enum StudioTypography {
+    // Same bundled OFL fonts used by crates/ui-egui/src/theme.rs.
+    static func ui(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        let name: String
+        if design == .monospaced { name = "JetBrainsMono-Regular" }
+        else if weight == .bold { name = "Inter-Bold" }
+        else if weight == .semibold { name = "Inter-SemiBold" }
+        else if weight == .medium { name = "Inter-Medium" }
+        else { name = "Inter-Regular" }
+        return .custom(name, fixedSize: size)
+    }
+}
+
 private enum StudioPalette {
-    static let background = Color(red: 0.055, green: 0.055, blue: 0.055)
-    static let panel = Color(red: 0.085, green: 0.085, blue: 0.085)
-    static let raised = Color(red: 0.14, green: 0.14, blue: 0.14)
-    static let line = Color.white.opacity(0.10)
-    static let secondary = Color.white.opacity(0.55)
-    static let accent = Color(red: 0.22, green: 0.52, blue: 0.96)
+    static let background = Color(red: 18 / 255, green: 18 / 255, blue: 18 / 255)
+    static let panel = Color(red: 35 / 255, green: 35 / 255, blue: 35 / 255)
+    static let raised = Color(red: 48 / 255, green: 48 / 255, blue: 48 / 255)
+    static let line = Color(red: 52 / 255, green: 52 / 255, blue: 52 / 255)
+    static let secondary = Color(red: 154 / 255, green: 154 / 255, blue: 154 / 255)
+    static let accent = Color(red: 45 / 255, green: 140 / 255, blue: 235 / 255)
 }
 
 struct WorkspaceView: View {
@@ -41,6 +54,7 @@ struct WorkspaceView: View {
                 && geometry.size.width >= geometry.size.height * 1.15
             VStack(spacing: 0) {
                 topBar
+                if model.hasProject { toolStrip }
                 Rectangle().fill(StudioPalette.line).frame(height: 1)
                 if !model.isReady {
                     loadingView
@@ -101,13 +115,13 @@ struct WorkspaceView: View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
                 Text("UNWRITTEN STUDIO")
-                    .font(.system(size: 12 * typeScale, weight: .bold))
+                    .font(StudioTypography.ui(size: 12 * typeScale, weight: .bold))
                     .foregroundStyle(.white.opacity(0.82))
                     .lineLimit(1)
                 if model.hasProject {
                     Rectangle().fill(StudioPalette.line).frame(width: 1, height: 18)
                     Text(model.documentName)
-                        .font(.system(size: 13 * typeScale, weight: .medium))
+                        .font(StudioTypography.ui(size: 13 * typeScale, weight: .medium))
                         .lineLimit(1)
                         .foregroundStyle(.white.opacity(0.72))
                 }
@@ -210,7 +224,7 @@ struct WorkspaceView: View {
         VStack(spacing: 12) {
             ProgressView().tint(StudioPalette.accent)
             Text("Preparing local creative engine")
-                .font(.system(size: 14 * typeScale, design: .monospaced))
+                .font(StudioTypography.ui(size: 14 * typeScale, design: .monospaced))
                 .foregroundStyle(StudioPalette.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -220,24 +234,24 @@ struct WorkspaceView: View {
         VStack(alignment: .leading, spacing: 22) {
             Spacer()
             Text("START A PROJECT")
-                .font(.system(size: 28 * typeScale, weight: .semibold))
+                .font(StudioTypography.ui(size: 28 * typeScale, weight: .semibold))
                 .tracking(-1.5)
                 .lineSpacing(-4)
                 .foregroundStyle(.white)
             Text("A native workspace for motion, image and composition.")
-                .font(.system(size: 17 * typeScale))
+                .font(StudioTypography.ui(size: 17 * typeScale))
                 .foregroundStyle(StudioPalette.secondary)
                 .frame(maxWidth: 390, alignment: .leading)
             HStack(spacing: 12) {
                 Button { model.createProject() } label: {
                     Label("New Project", systemImage: "plus")
-                        .font(.system(size: 16 * typeScale, weight: .semibold))
+                        .font(StudioTypography.ui(size: 16 * typeScale, weight: .semibold))
                         .padding(.horizontal, 18).padding(.vertical, 13)
                 }
                 .buttonStyle(AccentButtonStyle())
                 Button { showOpenProject = true } label: {
                     Label("Open Project", systemImage: "folder")
-                        .font(.system(size: 16 * typeScale, weight: .medium))
+                        .font(StudioTypography.ui(size: 16 * typeScale, weight: .medium))
                         .padding(.horizontal, 18).padding(.vertical, 13)
                 }
                 .buttonStyle(ChromeButtonStyle())
@@ -248,7 +262,7 @@ struct WorkspaceView: View {
                 Spacer()
                 Text("iOS · RUST ENGINE")
             }
-            .font(.system(size: 11 * typeScale, weight: .medium, design: .monospaced))
+            .font(StudioTypography.ui(size: 11 * typeScale, weight: .medium, design: .monospaced))
             .tracking(1)
             .foregroundStyle(.white.opacity(0.32))
         }
@@ -259,19 +273,19 @@ struct WorkspaceView: View {
     }
 
     private func landscapeWorkspace(size: CGSize) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                projectBrowser.frame(width: 248)
-                Rectangle().fill(StudioPalette.line).frame(width: 1)
-                toolRail
-                previewPanel
-                Rectangle().fill(StudioPalette.line).frame(width: 1)
-                inspectorPanel.frame(width: max(284, controlTargetSize * 2 + 196))
+        // Same default topology as crates/ui-egui/src/dock.rs:448-453.
+        HStack(spacing: 4) {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    projectBrowser.frame(width: 300)
+                    previewPanel
+                        .overlay(Rectangle().stroke(StudioPalette.accent.opacity(0.65), lineWidth: 1))
+                }
+                timelinePanel.frame(height: max(220, (size.height - 104) * 0.44))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Rectangle().fill(StudioPalette.line).frame(height: 1)
-            timelinePanel.frame(height: min(280, max(220, size.height * 0.30)))
+            inspectorPanel.frame(width: 300)
         }
+        .padding(4)
     }
 
     private func portraitWorkspace(size: CGSize) -> some View {
@@ -279,7 +293,7 @@ struct WorkspaceView: View {
         let compact = size.height < 740
         let timelineHeight = veryCompact ? min(188, max(132, size.height * 0.30)) : min(compact ? 238 : 300, max(compact ? 190 : 220, size.height * 0.25))
         return VStack(spacing: 0) {
-            if size.width < 600 {
+            if size.width < 700 || size.height < 600 {
                 compactPanelSelector
                 Rectangle().fill(StudioPalette.line).frame(height: 1)
                 Group {
@@ -308,7 +322,7 @@ struct WorkspaceView: View {
             ForEach(CompactPanel.allCases, id: \.self) { panel in
                 Button { compactPanel = panel } label: {
                         Text(panel.rawValue)
-                            .font(.system(size: 11 * typeScale, weight: .medium))
+                            .font(StudioTypography.ui(size: 11 * typeScale, weight: .medium))
                         .foregroundStyle(compactPanel == panel ? .white : StudioPalette.secondary)
                         .frame(maxWidth: .infinity, minHeight: controlTargetSize)
                         .background(compactPanel == panel ? StudioPalette.accent.opacity(0.18) : .clear)
@@ -329,10 +343,6 @@ struct WorkspaceView: View {
                 Rectangle().fill(StudioPalette.line).frame(height: 1)
             }
             HStack(spacing: 0) {
-                if wide {
-                    toolRail
-                    Rectangle().fill(StudioPalette.line).frame(width: 1)
-                }
                 previewPanel
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -356,16 +366,16 @@ struct WorkspaceView: View {
                         } label: {
                             HStack(spacing: 9) {
                                 Image(systemName: item.kind == "Composition" ? "rectangle.on.rectangle" : item.kind == "Folder" ? "folder" : "square.fill")
-                                    .font(.system(size: 15 * typeScale))
+                                    .font(StudioTypography.ui(size: 15 * typeScale))
                                     .foregroundStyle(item.kind == "Composition" ? StudioPalette.accent : .white.opacity(0.55))
                                     .frame(width: 19)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.name).font(.system(size: 14 * typeScale, weight: .medium)).lineLimit(1)
-                                    Text(item.kind).font(.system(size: 10 * typeScale, weight: .medium)).foregroundStyle(StudioPalette.secondary)
+                                    Text(item.name).font(StudioTypography.ui(size: 14 * typeScale, weight: .medium)).lineLimit(1)
+                                    Text(item.kind).font(StudioTypography.ui(size: 10 * typeScale, weight: .medium)).foregroundStyle(StudioPalette.secondary)
                                 }
                                 Spacer(minLength: 0)
                                 if let layers = item.layerCount {
-                                    Text("\(layers)").font(.system(size: 11 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
+                                    Text("\(layers)").font(StudioTypography.ui(size: 11 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
                                 }
                             }
                             .padding(.horizontal, 9).padding(.vertical, 9)
@@ -392,9 +402,9 @@ struct WorkspaceView: View {
                     Button { model.openComposition(item.id) } label: {
                         HStack(spacing: 7) {
                             Rectangle().fill(item.id == model.activeComposition?.id ? StudioPalette.accent : .clear).frame(width: 2, height: 14)
-                            Text(item.name).font(.system(size: 13 * typeScale, weight: .medium))
+                            Text(item.name).font(StudioTypography.ui(size: 13 * typeScale, weight: .medium))
                             if let width = item.width, let height = item.height {
-                                Text("\(width)×\(height)").font(.system(size: 10 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
+                                Text("\(width)×\(height)").font(StudioTypography.ui(size: 10 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
                             }
                         }
                         .padding(.horizontal, 12).padding(.vertical, 11)
@@ -408,18 +418,26 @@ struct WorkspaceView: View {
         .background(StudioPalette.panel)
     }
 
-    private var toolRail: some View {
-        VStack(spacing: 8) {
-            toolButton("cursorarrow", title: "Select", active: true) {}
-            Rectangle().fill(StudioPalette.line).frame(height: 1).padding(.vertical, 5)
-            toolButton("square", title: "Add shape") { model.addShape() }
-            toolButton("textformat", title: "Add text") { model.addText() }
-            toolButton("plus.rectangle.on.folder", title: "Import media") { showImportMedia = true }
-            Spacer()
-                    Text("Tools").font(.system(size: 10 * typeScale, weight: .medium)).foregroundStyle(.white.opacity(0.3)).rotationEffect(.degrees(-90)).frame(height: 48)
+    private var toolStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                Image(systemName: "cursorarrow")
+                    .foregroundStyle(StudioPalette.accent)
+                    .frame(width: controlTargetSize, height: controlTargetSize)
+                    .accessibilityLabel("Layer selection is available in the timeline")
+                Rectangle().fill(StudioPalette.line).frame(width: 1, height: 22)
+                toolButton("square", title: "Add shape") { model.addShape() }
+                toolButton("textformat", title: "Add text") { model.addText() }
+                toolButton("plus.rectangle.on.folder", title: "Import media") { showImportMedia = true }
+                Rectangle().fill(StudioPalette.line).frame(width: 1, height: 22)
+                toolButton("arrow.uturn.backward", title: "Undo") { model.undo() }
+                    .disabled(!(model.snapshot?.canUndo ?? false))
+                toolButton("arrow.uturn.forward", title: "Redo") { model.redo() }
+                    .disabled(!(model.snapshot?.canRedo ?? false))
+            }
+            .padding(.horizontal, 8)
         }
-        .padding(.horizontal, 8).padding(.vertical, 14)
-        .frame(width: max(64, controlTargetSize + 20))
+        .frame(height: controlTargetSize)
         .background(StudioPalette.panel)
     }
 
@@ -427,17 +445,17 @@ struct WorkspaceView: View {
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.activeComposition?.name ?? "Composition")
-                        .font(.system(size: 13 * typeScale, weight: .semibold))
+                    Text("Composition: " + (model.activeComposition?.name ?? "None"))
+                        .font(StudioTypography.ui(size: 13 * typeScale, weight: .semibold))
                     Text(model.activeComposition.map { "\($0.width) × \($0.height)  ·  \(Int($0.frameRate.rounded())) fps" } ?? "NO ACTIVE COMPOSITION")
-                        .font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced))
+                        .font(StudioTypography.ui(size: 10 * typeScale, weight: .medium, design: .monospaced))
                         .tracking(0.6)
                         .foregroundStyle(StudioPalette.secondary)
                 }
                 Spacer()
                 if model.isRendering { ProgressView().scaleEffect(0.65).tint(StudioPalette.accent) }
                 Text(model.snapshot?.renderer ?? "Local renderer")
-                    .font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced))
+                    .font(StudioTypography.ui(size: 10 * typeScale, weight: .medium, design: .monospaced))
                     .foregroundStyle(StudioPalette.secondary)
                     .lineLimit(1)
             }
@@ -463,9 +481,9 @@ struct WorkspaceView: View {
                             .accessibilityLabel("Locally rendered composition preview")
                     } else {
                         VStack(spacing: 7) {
-                            Image(systemName: "viewfinder").font(.system(size: 28 * typeScale, weight: .ultraLight))
+                            Image(systemName: "viewfinder").font(StudioTypography.ui(size: 28 * typeScale, weight: .ultraLight))
                             Text(model.activeComposition == nil ? "OPEN A COMPOSITION" : "ADD A LAYER TO BEGIN")
-                                .font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced)).tracking(1.2)
+                                .font(StudioTypography.ui(size: 10 * typeScale, weight: .medium, design: .monospaced)).tracking(1.2)
                         }
                         .foregroundStyle(StudioPalette.secondary)
                     }
@@ -481,7 +499,7 @@ struct WorkspaceView: View {
                        onEditingChanged: { editing in if !editing { model.refreshSnapshot(render: true) } })
                     .tint(StudioPalette.accent)
                 Text(timecode(model.playheadSeconds))
-                    .font(.system(size: 11 * typeScale, weight: .medium, design: .monospaced))
+                    .font(StudioTypography.ui(size: 11 * typeScale, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.72))
                     .frame(width: 66, alignment: .trailing)
             }
@@ -493,7 +511,7 @@ struct WorkspaceView: View {
     private var inspectorPanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                sectionTitle("Effect Controls", trailing: "Layer")
+                sectionTitle("Properties", trailing: "Layer")
                     .padding(.horizontal, 14).padding(.vertical, 12)
                 Rectangle().fill(StudioPalette.line).frame(height: 1)
                 let selected = selectedLayer
@@ -501,12 +519,12 @@ struct WorkspaceView: View {
                     HStack(spacing: 9) {
                         Rectangle().fill(StudioPalette.accent).frame(width: 2, height: 34)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(selected.name).font(.system(size: 15 * typeScale, weight: .semibold)).lineLimit(1)
-                            Text(selected.kind).font(.system(size: 10 * typeScale, weight: .medium)).foregroundStyle(StudioPalette.secondary)
+                            Text(selected.name).font(StudioTypography.ui(size: 15 * typeScale, weight: .semibold)).lineLimit(1)
+                            Text(selected.kind).font(StudioTypography.ui(size: 10 * typeScale, weight: .medium)).foregroundStyle(StudioPalette.secondary)
                         }
                         Spacer()
                         Text(String(format: "%02d", selected.stackIndex))
-                            .font(.system(size: 13 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
+                            .font(StudioTypography.ui(size: 13 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 12)
                     if let transform = model.selectedTransform {
@@ -520,7 +538,7 @@ struct WorkspaceView: View {
                         propertyControl("Opacity", value: transform.opacity, unit: "%", path: "transform/opacity", step: 5)
                     } else {
                         Text("Transform properties are unavailable for this layer.")
-                            .font(.system(size: 12 * typeScale))
+                            .font(StudioTypography.ui(size: 12 * typeScale))
                             .foregroundStyle(StudioPalette.secondary)
                             .padding(.horizontal, 14).padding(.vertical, 8)
                     }
@@ -529,7 +547,7 @@ struct WorkspaceView: View {
                     keyValue("DURATION", value: String(format: "%.2f s", selected.durationSeconds))
                 } else {
                     Text("Select a layer in the timeline to inspect it.")
-                        .font(.system(size: 13 * typeScale)).foregroundStyle(StudioPalette.secondary)
+                        .font(StudioTypography.ui(size: 13 * typeScale)).foregroundStyle(StudioPalette.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .padding(14)
                 }
@@ -545,10 +563,10 @@ struct WorkspaceView: View {
             HStack {
                 sectionTitle("Timeline", trailing: "\(model.activeComposition?.layers.count ?? 0) Layers")
                 Spacer()
-                Button { showImportMedia = true } label: { Image(systemName: "square.and.arrow.down.on.square").font(.system(size: 14 * typeScale)).foregroundStyle(.white.opacity(0.66)) }
+                Button { showImportMedia = true } label: { Image(systemName: "square.and.arrow.down.on.square").font(StudioTypography.ui(size: 14 * typeScale)).foregroundStyle(.white.opacity(0.66)) }
                     .frame(width: controlTargetSize, height: controlTargetSize)
                     .accessibilityLabel("Import media")
-                Button { model.addSolid() } label: { Image(systemName: "plus").font(.system(size: 14 * typeScale, weight: .semibold)).foregroundStyle(StudioPalette.accent) }
+                Button { model.addSolid() } label: { Image(systemName: "plus").font(StudioTypography.ui(size: 14 * typeScale, weight: .semibold)).foregroundStyle(StudioPalette.accent) }
                     .frame(width: controlTargetSize, height: controlTargetSize)
                     .accessibilityLabel("Add solid layer")
             }
@@ -557,10 +575,10 @@ struct WorkspaceView: View {
             HStack(spacing: 0) {
                 Text("Layer").frame(width: 184, alignment: .leading)
                 HStack {
-                    Text("00:00"); Spacer(); Text(timecode((model.activeComposition?.durationSeconds ?? 0) / 2)); Spacer(); Text(timecode(model.activeComposition?.durationSeconds ?? 0))
+                    Text("0s"); Spacer(); Text(String(format: "%.1fs", (model.activeComposition?.durationSeconds ?? 0) / 2)); Spacer(); Text(String(format: "%.1fs", model.activeComposition?.durationSeconds ?? 0))
                 }
             }
-            .font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
+            .font(StudioTypography.ui(size: 10 * typeScale, weight: .medium, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
             .frame(height: 36).padding(.horizontal, 12)
             Rectangle().fill(StudioPalette.line).frame(height: 1)
             ScrollView(.vertical, showsIndicators: false) {
@@ -571,7 +589,7 @@ struct WorkspaceView: View {
                     }
                     if model.activeComposition?.layers.isEmpty ?? true {
                         Text("No layers yet · use + to add a solid")
-                            .font(.system(size: 12 * typeScale)).foregroundStyle(StudioPalette.secondary)
+                            .font(StudioTypography.ui(size: 12 * typeScale)).foregroundStyle(StudioPalette.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(14)
                     }
                 }
@@ -587,10 +605,10 @@ struct WorkspaceView: View {
             HStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Text(String(format: "%02d", layer.stackIndex))
-                        .font(.system(size: 10 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
+                        .font(StudioTypography.ui(size: 10 * typeScale, design: .monospaced)).foregroundStyle(StudioPalette.secondary)
                         .frame(width: 24, alignment: .leading)
-                    Image(systemName: iconFor(layer.kind)).font(.system(size: 11 * typeScale)).foregroundStyle(isSelected ? StudioPalette.accent : .white.opacity(0.45))
-                    Text(layer.name).font(.system(size: 12 * typeScale, weight: isSelected ? .semibold : .regular)).lineLimit(1)
+                    Image(systemName: iconFor(layer.kind)).font(StudioTypography.ui(size: 11 * typeScale)).foregroundStyle(isSelected ? StudioPalette.accent : .white.opacity(0.45))
+                    Text(layer.name).font(StudioTypography.ui(size: 12 * typeScale, weight: isSelected ? .semibold : .regular)).lineLimit(1)
                     Spacer(minLength: 0)
                 }
                 .frame(width: 184, alignment: .leading)
@@ -626,7 +644,7 @@ struct WorkspaceView: View {
         Button { showImportMedia = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus.rectangle.on.folder")
-                Text("IMPORT MEDIA").font(.system(size: 10 * typeScale, weight: .semibold, design: .monospaced)).tracking(1)
+                Text("IMPORT MEDIA").font(StudioTypography.ui(size: 10 * typeScale, weight: .semibold, design: .monospaced)).tracking(1)
                 Spacer()
             }
             .foregroundStyle(.white.opacity(0.72))
@@ -644,13 +662,13 @@ struct WorkspaceView: View {
             Spacer()
             Text(trailing).foregroundStyle(StudioPalette.secondary)
         }
-        .font(.system(size: 12 * typeScale, weight: .semibold))
+        .font(StudioTypography.ui(size: 12 * typeScale, weight: .semibold))
     }
 
     private func propertyControl(_ title: String, value: Double, unit: String = "", path: String, component: Int? = nil, step: Double) -> some View {
         HStack(spacing: 4) {
             Text(title)
-                .font(.system(size: 11 * typeScale, weight: .medium))
+                .font(StudioTypography.ui(size: 11 * typeScale, weight: .medium))
                 .foregroundStyle(StudioPalette.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -659,13 +677,13 @@ struct WorkspaceView: View {
                 model.adjustSelectedProperty(path: path, component: component, delta: -step)
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 13 * typeScale, weight: .semibold))
+                    .font(StudioTypography.ui(size: 13 * typeScale, weight: .semibold))
                     .frame(width: controlTargetSize, height: controlTargetSize)
             }
             .buttonStyle(ChromeButtonStyle())
             .accessibilityLabel("Decrease \(title)")
             Text("\(Int(value.rounded()))\(unit)")
-                .font(.system(size: 12 * typeScale, weight: .medium, design: .monospaced))
+                .font(StudioTypography.ui(size: 12 * typeScale, weight: .medium, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -674,7 +692,7 @@ struct WorkspaceView: View {
                 model.adjustSelectedProperty(path: path, component: component, delta: step)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 13 * typeScale, weight: .semibold))
+                    .font(StudioTypography.ui(size: 13 * typeScale, weight: .semibold))
                     .frame(width: controlTargetSize, height: controlTargetSize)
             }
             .buttonStyle(ChromeButtonStyle())
@@ -685,16 +703,16 @@ struct WorkspaceView: View {
 
     private func keyValue(_ key: String, value: String) -> some View {
         HStack {
-            Text(key).font(.system(size: 10 * typeScale, weight: .medium, design: .monospaced)).tracking(0.8).foregroundStyle(StudioPalette.secondary)
+            Text(key).font(StudioTypography.ui(size: 10 * typeScale, weight: .medium, design: .monospaced)).tracking(0.8).foregroundStyle(StudioPalette.secondary)
             Spacer()
-            Text(value).font(.system(size: 11 * typeScale, design: .monospaced)).foregroundStyle(.white.opacity(0.78))
+            Text(value).font(StudioTypography.ui(size: 11 * typeScale, design: .monospaced)).foregroundStyle(.white.opacity(0.78))
         }
         .padding(.horizontal, 14).padding(.vertical, 5)
     }
 
     private func toolButton(_ symbol: String, title: String, active: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 17 * typeScale, weight: .regular))
+            Image(systemName: symbol).font(StudioTypography.ui(size: 17 * typeScale, weight: .regular))
                 .foregroundStyle(active ? StudioPalette.accent : .white.opacity(0.65))
                 .frame(width: controlTargetSize, height: controlTargetSize)
                 .background(active ? StudioPalette.accent.opacity(0.13) : .clear)

@@ -8,7 +8,7 @@ struct UnwrittenStudioApp: App {
         WindowGroup {
             WorkspaceView(model: model)
                 .preferredColorScheme(.dark)
-                .tint(Color(red: 0.22, green: 0.52, blue: 0.96))
+                .tint(Color(red: 45 / 255, green: 140 / 255, blue: 235 / 255))
                 .onChange(of: model.isReady) { _, ready in
                     // Explicit CI argument only; normal launches never create a document.
                     if ready && ProcessInfo.processInfo.arguments.contains("--ui-smoke") {

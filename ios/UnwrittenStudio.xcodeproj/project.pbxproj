@@ -13,6 +13,13 @@
 		A10000000000000000000005 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* Assets.xcassets */; };
 		A10000000000000000000006 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* LaunchScreen.storyboard */; };
 		A10000000000000000000007 /* libunwritten_studio_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* libunwritten_studio_core.a */; };
+		A30000000000000000000001 /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* Inter-Regular.ttf */; };
+		A30000000000000000000002 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000002 /* Inter-Medium.ttf */; };
+		A30000000000000000000003 /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000003 /* Inter-SemiBold.ttf */; };
+		A30000000000000000000004 /* Inter-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000004 /* Inter-Bold.ttf */; };
+		A30000000000000000000005 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000005 /* JetBrainsMono-Regular.ttf */; };
+		A30000000000000000000006 /* OFL-Inter.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000006 /* OFL-Inter.txt */; };
+		A30000000000000000000007 /* OFL-JetBrainsMono.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000007 /* OFL-JetBrainsMono.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +33,13 @@
 		A20000000000000000000008 /* UnwrittenStudio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UnwrittenStudio-Bridging-Header.h"; sourceTree = "<group>"; };
 		A20000000000000000000009 /* libunwritten_studio_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "../build/ios/$(PLATFORM_NAME)/libunwritten_studio_core.a"; sourceTree = "<group>"; };
 		A20000000000000000000010 /* UnwrittenStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UnwrittenStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A40000000000000000000001 /* Inter-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Regular.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000002 /* Inter-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Medium.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000003 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-SemiBold.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000004 /* Inter-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Bold.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000005 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000006 /* OFL-Inter.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-Inter.txt"; sourceTree = "<group>"; };
+		A40000000000000000000007 /* OFL-JetBrainsMono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-JetBrainsMono.txt"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +61,7 @@
 				C10000000000000000000003 /* Rust */,
 				C10000000000000000000004 /* Frameworks */,
 				C10000000000000000000005 /* Products */,
+				C10000000000000000000006 /* Shared Fonts */,
 			);
 			sourceTree = "<group>";
 		};
@@ -80,6 +95,21 @@
 			isa = PBXGroup;
 			children = (A20000000000000000000010 /* UnwrittenStudio.app */,);
 			sourceTree = "<group>";
+		};
+		C10000000000000000000006 /* Shared Fonts */ = {
+			isa = PBXGroup;
+			name = "Shared Fonts";
+			path = "../assets/fonts";
+			sourceTree = "<group>";
+			children = (
+				A40000000000000000000001 /* Inter-Regular.ttf */,
+				A40000000000000000000002 /* Inter-Medium.ttf */,
+				A40000000000000000000003 /* Inter-SemiBold.ttf */,
+				A40000000000000000000004 /* Inter-Bold.ttf */,
+				A40000000000000000000005 /* JetBrainsMono-Regular.ttf */,
+				A40000000000000000000006 /* OFL-Inter.txt */,
+				A40000000000000000000007 /* OFL-JetBrainsMono.txt */,
+			);
 		};
 /* End PBXGroup section */
 
@@ -128,6 +158,13 @@
 			files = (
 				A10000000000000000000005 /* Assets.xcassets in Resources */,
 				A10000000000000000000006 /* LaunchScreen.storyboard in Resources */,
+				A30000000000000000000001 /* Inter-Regular.ttf in Resources */,
+				A30000000000000000000002 /* Inter-Medium.ttf in Resources */,
+				A30000000000000000000003 /* Inter-SemiBold.ttf in Resources */,
+				A30000000000000000000004 /* Inter-Bold.ttf in Resources */,
+				A30000000000000000000005 /* JetBrainsMono-Regular.ttf in Resources */,
+				A30000000000000000000006 /* OFL-Inter.txt in Resources */,
+				A30000000000000000000007 /* OFL-JetBrainsMono.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

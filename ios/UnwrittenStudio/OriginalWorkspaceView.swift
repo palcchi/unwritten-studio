@@ -29,6 +29,8 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private var pendingExport: (URL, String, Bool)?
     private var lastError: String?
     private var exportPoll: DispatchWorkItem?
+    private var smokeFrames = 0
+    private var smokeReady = false
 
     override func loadView() {
         viewport.backgroundColor = .black
@@ -90,7 +92,10 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func consume(_ result: FrameResult) {
-        if let image = result.image { canvas.image = image }
+        if let image = result.image {
+            canvas.image = image
+            recordSmokeFrame(image)
+        }
         if result.wantsKeyboard != canvas.wantsKeyboard {
             canvas.wantsKeyboard = result.wantsKeyboard
             canvas.onNeedKeyboard?(result.wantsKeyboard)
@@ -100,11 +105,39 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if let urlString = output.openURL, let url = URL(string: urlString), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         }
-        if let error = output.error, !error.isEmpty { showErrorOnce(error) }
+        if let error = output.error, !error.isEmpty {
+            recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
+            showErrorOnce(error)
+        }
         if let dialog = output.fileDialog, !dialogIDs.contains(dialog.id) {
             dialogIDs.insert(dialog.id)
             present(dialog: dialog)
         }
+    }
+
+    private func recordSmokeStatus(_ value: [String: Any], name: String) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-smoke") else { return }
+        let directory = applicationDocuments().appendingPathComponent("UISmoke", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+            try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+        } catch { NSLog("Unwritten Studio smoke evidence: %@", error.localizedDescription) }
+    }
+
+    private func recordSmokeFrame(_ image: UIImage) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-smoke"), !smokeReady else { return }
+        smokeFrames += 1
+        guard smokeFrames >= 10, let cg = image.cgImage,
+              let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return }
+        let count = CFDataGetLength(data)
+        guard count >= 4 else { return }
+        let hasVisibleContent = stride(from: 0, to: count - 3, by: 64).contains { index in
+            bytes[index] > 80 || bytes[index + 1] > 80 || bytes[index + 2] > 80
+        }
+        guard hasVisibleContent else { return }
+        smokeReady = true
+        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true], name: "workspace-ready.json")
     }
 
     private func layoutViewport(preservingZoom: Bool) {
@@ -358,12 +391,17 @@ private final class OriginalWorkspaceWorker {
             if self.handle == nil { self.handle = unwritten_studio_ui_create() }
             self.running = self.handle != nil
             guard self.running else {
-                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: "The native workspace engine could not start. Rebuild the Rust framework and verify Metal/device availability.", wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
+                var reason = "The original workspace could not start."
+                if let message = unwritten_studio_ui_last_error() {
+                    reason += " " + String(cString: message)
+                    unwritten_studio_string_free(message)
+                }
+                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: reason, wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
                 return
             }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now(), repeating: .milliseconds(34), leeway: .milliseconds(4))
-            timer.setEventHandler { [weak self] in self?.frame() }
+            timer.setEventHandler { [weak self] in autoreleasepool { self?.frame() } }
             self.timer = timer
             timer.resume()
         }

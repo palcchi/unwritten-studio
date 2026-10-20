@@ -40,6 +40,8 @@ void unwritten_studio_string_free(char *string);
  */
 typedef struct UnwrittenStudioUI UnwrittenStudioUI;
 UnwrittenStudioUI *unwritten_studio_ui_create(void);
+/* Owned UTF-8 diagnostic for a failed create; release using string_free. */
+char *unwritten_studio_ui_last_error(void);
 void unwritten_studio_ui_destroy(UnwrittenStudioUI *ui);
 uint8_t *unwritten_studio_ui_frame(UnwrittenStudioUI *ui, const char *input_json,
                                  uint32_t *width, uint32_t *height);

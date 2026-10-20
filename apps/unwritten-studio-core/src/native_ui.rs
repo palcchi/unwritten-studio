@@ -202,12 +202,12 @@ impl NativeUi {
                 }
             }
         }
-        let full = self.ctx.run_ui(raw, |ui| {
+        let mut full = self.ctx.run_ui(raw, |ui| {
             self.app.embedded_logic(ui.ctx());
             self.app.embedded_ui(ui);
         });
         self.host_output(&full.platform_output);
-        let bytes = self.gpu.render(&self.ctx, &full, pw, ph)?;
+        let bytes = self.gpu.render(&self.ctx, &mut full, pw, ph)?;
         Ok(FramePixels { bytes, width: pw, height: ph })
     }
     fn host_output(&self, out: &egui::PlatformOutput) {
@@ -234,7 +234,7 @@ impl Gpu {
         let renderer = Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, RendererOptions::default());
         Ok(Self { device, queue, renderer })
     }
-    fn render(&mut self, ctx: &egui::Context, full: &egui::FullOutput, w: u32, h: u32) -> Result<Vec<u8>, String> {
+    fn render(&mut self, ctx: &egui::Context, full: &mut egui::FullOutput, w: u32, h: u32) -> Result<Vec<u8>, String> {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Original Unwritten Studio UI"),
             size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -246,11 +246,11 @@ impl Gpu {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
-        let jobs = ctx.tessellate(full.shapes.clone(), full.pixels_per_point);
+        let jobs = ctx.tessellate(std::mem::take(&mut full.shapes), full.pixels_per_point);
         let screen = ScreenDescriptor { size_in_pixels: [w, h], pixels_per_point: full.pixels_per_point };
-        for (id, deltas) in &full.textures_delta.set {
+        for (id, deltas) in full.textures_delta.set.drain() {
             for delta in deltas {
-                self.renderer.update_texture(&self.device, &self.queue, *id, delta);
+                self.renderer.update_texture(&self.device, &self.queue, id, &delta);
             }
         }
         let mut encoder = self.device.create_command_encoder(&Default::default());
@@ -286,6 +286,9 @@ impl Gpu {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
         let submission = self.queue.submit(commands.into_iter().chain(Some(encoder.finish())));
+        for id in std::mem::take(&mut full.textures_delta.free) {
+            self.renderer.free_texture(&id);
+        }
         let slice = buffer.slice(..);
         let (sender, receiver) = mpsc::sync_channel(1);
         slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -300,15 +303,31 @@ impl Gpu {
         }
         drop(mapped);
         buffer.unmap();
-        for id in &full.textures_delta.free {
-            self.renderer.free_texture(id);
-        }
         Ok(bytes)
     }
 }
+static INIT_ERROR: Mutex<String> = Mutex::new(String::new());
+#[unsafe(no_mangle)]
+pub extern "C" fn unwritten_studio_ui_last_error() -> *mut c_char {
+    guard(|| INIT_ERROR.lock().ok().and_then(|error| CString::new(error.as_str()).ok()).map(CString::into_raw).unwrap_or(std::ptr::null_mut()))
+        .unwrap_or(std::ptr::null_mut())
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn unwritten_studio_ui_create() -> *mut NativeUi {
-    guard(|| NativeUi::new().map(Box::new).map(Box::into_raw).unwrap_or(std::ptr::null_mut())).unwrap_or(std::ptr::null_mut())
+    let error = match catch_unwind(AssertUnwindSafe(NativeUi::new)) {
+        Ok(Ok(ui)) => return Box::into_raw(Box::new(ui)),
+        Ok(Err(error)) => error,
+        Err(payload) => payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+            .unwrap_or_else(|| "Unknown panic during editor initialization".to_owned()),
+    };
+    eprintln!("Unwritten Studio frontend initialization failed: {error}");
+    if let Ok(mut stored) = INIT_ERROR.lock() {
+        *stored = error;
+    }
+    std::ptr::null_mut()
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn unwritten_studio_ui_destroy(p: *mut NativeUi) {

@@ -2200,11 +2200,14 @@ mod embedded_ui_tests {
         let mut app = UnwrittenStudioApp::new(Session::default());
         let ctx = egui::Context::default();
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
-        let _ = ctx.run(input.clone(), |ctx| app.embedded_logic(ctx));
-        let _ = ctx.run(input, |ctx| {
-            app.embedded_logic(ctx);
-            egui::CentralPanel::default().show(ctx, |ui| app.embedded_ui(ui));
-        });
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(input.clone(), |ui| {
+                app.embedded_logic(ui.ctx());
+                app.embedded_ui(ui);
+            });
+            // This lifecycle-only test deliberately does not present its textures.
+            output.textures_delta.clear();
+        }
         assert!(app.fonts_ready);
     }
 }

@@ -32,7 +32,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Test native engine workflows
-        run: cargo test --locked -p unwritten-studio-core
+        run: cargo test --locked -p unwritten-studio-core -- --include-ignored
 
       - name: Record build environment
         run: |

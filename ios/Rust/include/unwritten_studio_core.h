@@ -31,6 +31,20 @@ uint8_t *unwritten_studio_render_rgba8(const UnwrittenStudioCore *core, uint32_t
 void unwritten_studio_bytes_free(uint8_t *bytes, size_t length);
 void unwritten_studio_string_free(char *string);
 
+/* Original desktop frontend host, not a separate native reconstruction.
+ * Call every operation for a handle on one serial queue. Input JSON carries
+ * viewport geometry, pointer/keyboard events and native file-dialog answers.
+ * Returned pixels use the same owned RGBA8 allocation contract above.
+ * Read output_json after every frame (also after a null pixel result) for
+ * errors, clipboard/URL output, keyboard demand and native file-dialog requests.
+ */
+typedef struct UnwrittenStudioUI UnwrittenStudioUI;
+UnwrittenStudioUI *unwritten_studio_ui_create(void);
+void unwritten_studio_ui_destroy(UnwrittenStudioUI *ui);
+uint8_t *unwritten_studio_ui_frame(UnwrittenStudioUI *ui, const char *input_json,
+                                 uint32_t *width, uint32_t *height);
+char *unwritten_studio_ui_output_json(UnwrittenStudioUI *ui);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1851,30 +1851,10 @@ impl UnwrittenStudioApp {
     pub fn take_synthetic_input(&mut self) -> Vec<egui::Event> {
         std::mem::take(&mut self.synthetic)
     }
-}
 
-impl eframe::App for UnwrittenStudioApp {
-    fn on_exit(&mut self) {
-        self.save_workspace_state();
-        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
-        // unsaved changes, which are in the auto-save it offers).
-        if self.device_lost_close != Some(true) {
-            self.session.end_recovery();
-        }
-    }
-
-    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        let injected = !self.synthetic.is_empty();
-        self.feed_synthetic(raw_input);
-        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
-            self.session.history.merge_key = None;
-        }
-    }
-
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Run the frontend's frame-independent logic for an embedded egui host.
+    pub fn embedded_logic(&mut self, ctx: &egui::Context) {
         self.apply_gpu_failure(ctx);
-        // The CJK fallback fonts depend on the interface language, so they follow a change of
-        // Settings ▸ General ▸ Language instead of only the first frame.
         let language = crate::i18n::language(self);
         crate::i18n::set_current(language);
         if !self.styled || self.styled_language != language {
@@ -1906,21 +1886,21 @@ impl eframe::App for UnwrittenStudioApp {
         self.collect_screenshots(ctx);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    /// Draw the original frontend for an embedded egui host.
+    ///
+    /// The host owns renderer initialization and desktop pointer wrapping; this method retains the
+    /// original frame composition and worker/repaint bookkeeping.
+    pub fn embedded_ui(&mut self, ui: &mut egui::Ui) {
         if self.gpu_failure_applied == Some(true) {
             self.close_after_device_loss(ui.ctx());
             return;
         }
-        self.init_gpu(frame);
         if !self.fonts_ready {
             ui.ctx().request_repaint();
             return;
         }
         self.frame(ui);
         let ctx = ui.ctx().clone();
-        #[cfg(not(target_arch = "wasm32"))]
-        pointer_wrap::finish_native(&ctx, frame);
-        // wasm32: no frame threads; render queued frames now, between UI frames.
         if cfg!(target_arch = "wasm32") && self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 })) {
             ctx.request_repaint();
         }
@@ -1936,6 +1916,40 @@ impl eframe::App for UnwrittenStudioApp {
         if self.frames.inflight() > 0 {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
+    }
+}
+
+impl eframe::App for UnwrittenStudioApp {
+    fn on_exit(&mut self) {
+        self.save_workspace_state();
+        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
+        // unsaved changes, which are in the auto-save it offers).
+        if self.device_lost_close != Some(true) {
+            self.session.end_recovery();
+        }
+    }
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let injected = !self.synthetic.is_empty();
+        self.feed_synthetic(raw_input);
+        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
+            self.session.history.merge_key = None;
+        }
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.embedded_logic(ctx);
+    }
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.gpu_failure_applied == Some(true) {
+            self.close_after_device_loss(ui.ctx());
+            return;
+        }
+        self.init_gpu(frame);
+        self.embedded_ui(ui);
+        let ctx = ui.ctx().clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        pointer_wrap::finish_native(&ctx, frame);
     }
 }
 
@@ -2174,5 +2188,23 @@ mod appearance_tests {
         assert_eq!(app.session.prefs.appearance.appearance_mode, "dark");
         assert_eq!(app.session.prefs.appearance.dark_theme, "darker");
         assert_eq!(app.ui.theme, ThemeKind::Darker);
+    }
+}
+
+#[cfg(test)]
+mod embedded_ui_tests {
+    use super::*;
+
+    #[test]
+    fn embedded_original_ui_bootstraps_fonts_and_renders_without_panicking() {
+        let mut app = UnwrittenStudioApp::new(Session::default());
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
+        let _ = ctx.run(input.clone(), |ctx| app.embedded_logic(ctx));
+        let _ = ctx.run(input, |ctx| {
+            app.embedded_logic(ctx);
+            egui::CentralPanel::default().show(ctx, |ui| app.embedded_ui(ui));
+        });
+        assert!(app.fonts_ready);
     }
 }

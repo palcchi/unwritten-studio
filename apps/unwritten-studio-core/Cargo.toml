@@ -17,8 +17,16 @@ unwritten-studio-project = { workspace = true }
 unwritten-studio-time = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = "0.36.2"
+wgpu = { workspace = true }
+pollster = { workspace = true }
+unwritten-studio-ui-egui = { workspace = true }
 
 # Raw pointers are confined to the documented C boundary in src/lib.rs.
 [lints.rust]
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"
+
+[dev-dependencies]
+image = { workspace = true }

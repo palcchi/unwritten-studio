@@ -1,4 +1,5 @@
 #![deny(unsafe_code, unsafe_op_in_unsafe_fn)]
+mod native_ui;
 
 use std::ffi::{CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -6,10 +7,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use serde_json::{Value, json};
 use unwritten_studio_engine::Session;
 use unwritten_studio_project::{ItemId, ItemKind, Project, SavedView};
 use unwritten_studio_time::Tick;
-use serde_json::{Value, json};
 
 pub struct UnwrittenStudioCore {
     session: Mutex<Session>,

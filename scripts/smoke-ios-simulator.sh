@@ -13,6 +13,7 @@ mkdir -p "$OUT"
 xcodebuild -project "$ROOT/ios/UnwrittenStudio.xcodeproj" \
   -scheme UnwrittenStudio -configuration Release -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DERIVED" \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 APP="$DERIVED/Build/Products/Release-iphonesimulator/UnwrittenStudio.app"
 xcrun simctl list devices available --json > "$OUT/devices.json"

@@ -48,6 +48,7 @@ cpal or muda. Everything in L0 to L4, the egui UI and the web app also build for
 | L5 | `ui-egui` | The desktop interface: docking, panels, viewer, timeline, graph editor, dialogs, control channel |
 | L5 | `automation` | The MCP server, headless or bridged to the running app |
 | L6 | apps `unwritten-studio`, `unwritten-studio-cli`, `unwritten-studio-web` | Desktop app; command-line tool (render, exec, get/set, MCP); the browser app (wasm32, [web.md](web.md)) |
+| L6 | app `unwritten-studio-core` | C ABI host for the original egui editor on iOS, including copied-frame presentation, native input/dialogs and callback-safe preview audio |
 
 Allowed same-layer edges: `path → keyframe, raster`, `text → path`, `pdf → svg, text`, `effects → project, text, path, track`,
 `media / expr / export / gpu → render`, `export → media`, `lottie → format`, `host → engine, script`,

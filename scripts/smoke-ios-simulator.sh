@@ -68,6 +68,7 @@ import json, sys
 status = json.load(open(sys.argv[1]))
 assert status.get("ok") is True and status.get("nonBlack") is True, status
 assert status.get("renderedFrames", 0) >= 10 and status.get("width", 0) > 0 and status.get("height", 0) > 0, status
+assert status.get("audioEngineRunning") is True, status
 print("Verified original workspace frames:", status)
 PY
   else
@@ -78,4 +79,4 @@ PY
   xcrun simctl shutdown "$device"
 done < "$OUT/selected.tsv"
 [[ "$failed" == 0 ]] || exit 4
-echo "Original editor rendered on iPhone and iPad; evidence is in $OUT. This is not physical-device functional certification."
+echo "Original editor rendered and native audio engine started on iPhone and iPad; evidence is in $OUT. This does not certify audible output, audio sync, every editing workflow or physical devices."

@@ -51,7 +51,7 @@ pub fn current() -> &'static DataDir {
     DIR.get_or_init(|| {
         let exe = std::env::current_exe().ok();
         let env = process_env;
-        let mut d = resolve(&env, exe.as_deref().and_then(Path::parent));
+        let mut d = resolve(env, exe.as_deref().and_then(Path::parent));
         if d.mode == Mode::Platform
             && let Some(target) = d.dir.as_deref()
             && let Some(source) = legacy_linux_dir(&env)

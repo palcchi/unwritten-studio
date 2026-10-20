@@ -67,8 +67,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
         _ = canvas.becomeFirstResponder()
         worker.start()
-        if ProcessInfo.processInfo.arguments.contains("--ui-smoke"), UIDevice.current.userInterfaceIdiom == .pad,
-           let scene = view.window?.windowScene {
+        if let scene = view.window?.windowScene {
             if #available(iOS 16.0, *) {
                 scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
             }
@@ -94,7 +93,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private func consume(_ result: FrameResult) {
         if let image = result.image {
             canvas.image = image
-            recordSmokeFrame(image)
+            recordSmokeFrame(image, audioRunning: result.audioRunning)
         }
         if result.wantsKeyboard != canvas.wantsKeyboard {
             canvas.wantsKeyboard = result.wantsKeyboard
@@ -125,10 +124,10 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         } catch { NSLog("Unwritten Studio smoke evidence: %@", error.localizedDescription) }
     }
 
-    private func recordSmokeFrame(_ image: UIImage) {
+    private func recordSmokeFrame(_ image: UIImage, audioRunning: Bool) {
         guard ProcessInfo.processInfo.arguments.contains("--ui-smoke"), !smokeReady else { return }
         smokeFrames += 1
-        guard smokeFrames >= 10, let cg = image.cgImage,
+        guard smokeFrames >= 10, audioRunning, let cg = image.cgImage,
               let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return }
         let count = CFDataGetLength(data)
         guard count >= 4 else { return }
@@ -137,7 +136,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         }
         guard hasVisibleContent else { return }
         smokeReady = true
-        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true], name: "workspace-ready.json")
+        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true, "audioEngineRunning": audioRunning], name: "workspace-ready.json")
     }
 
     private func layoutViewport(preservingZoom: Bool) {
@@ -187,6 +186,13 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if !applyingViewportLayout { userZoomed = abs(scrollView.zoomScale - fitZoom) > 0.001 }
         updateViewportInsets()
         updateGestureOwnership()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // The outer recognizer can cancel the canvas' touch callbacks before
+        // the canvas receives touchesCancelled.  Release egui's primary
+        // pointer explicitly so a drag cannot leave a button held down.
+        canvas.cancelPrimaryTouch()
     }
 
     private func showErrorOnce(_ message: String) {
@@ -335,17 +341,37 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func copyToImportedMedia(_ urls: [URL]) -> [String] {
-        let root = applicationDocuments().appendingPathComponent("Imported Media", isDirectory: true)
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        // The engine keeps the paths returned by this dialog in the project.  A
+        // security-scoped URL is only valid while its access scope is open, so
+        // never hand the engine the provider's URL.  Keep project URLs and
+        // folder URLs untouched above: those are deliberately used as the
+        // base for project-relative references.  Individual media selections
+        // are copied into our container and the copied path is returned.
+        let root = applicationSupportDirectory().appendingPathComponent("Imported Media", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                     attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        } catch {
+            showErrorOnce("Could not prepare imported media storage: \(error.localizedDescription)")
+            return []
+        }
         var failures: [String] = []
         let paths = urls.compactMap { source -> String? in
+            guard source.isFileURL, !source.hasDirectoryPath else {
+                failures.append("\(source.lastPathComponent): folders are not media files")
+                return nil
+            }
             let access = source.startAccessingSecurityScopedResource()
             defer { if access { source.stopAccessingSecurityScopedResource() } }
-            let destination = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-                .appendingPathComponent(source.lastPathComponent, isDirectory: false)
             do {
-                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                guard FileManager.default.isReadableFile(atPath: source.path) else {
+                    throw CocoaError(.fileReadNoPermission)
+                }
+                let destination = try uniqueImportedMediaURL(for: source, in: root)
                 try FileManager.default.copyItem(at: source, to: destination)
+                try FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                    ofItemAtPath: destination.path)
                 return destination.path
             } catch {
                 failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
@@ -354,6 +380,32 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         }
         if !failures.isEmpty { showErrorOnce("Some media could not be imported: " + failures.joined(separator: "; ")) }
         return paths
+    }
+
+    private func applicationSupportDirectory() -> URL {
+        if let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            return directory.appendingPathComponent("Unwritten Studio", isDirectory: true)
+        }
+        // This fallback is still app-owned and avoids returning a transient
+        // security-scoped provider URL.  It should only be reached on a
+        // severely misconfigured system container.
+        return applicationDocuments().appendingPathComponent("Application Support", isDirectory: true)
+    }
+
+    private func uniqueImportedMediaURL(for source: URL, in root: URL) throws -> URL {
+        let originalName = source.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = originalName.isEmpty ? "Imported Media" : originalName
+        var destination = root.appendingPathComponent(name, isDirectory: false)
+        guard FileManager.default.fileExists(atPath: destination.path) else { return destination }
+
+        let stem = destination.deletingPathExtension().lastPathComponent
+        let suffix = destination.pathExtension
+        for index in 1...1000 {
+            let candidateName = suffix.isEmpty ? "\(stem)-\(index)" : "\(stem)-\(index).\(suffix)"
+            destination = root.appendingPathComponent(candidateName, isDirectory: false)
+            if !FileManager.default.fileExists(atPath: destination.path) { return destination }
+        }
+        throw CocoaError(.fileWriteFileExists)
     }
 
     private func finishDialog(_ id: UInt64, paths: [String]) {
@@ -368,6 +420,7 @@ private enum DialogAssociation { static var key: UInt8 = 0 }
 private final class OriginalWorkspaceWorker {
     private let queue = DispatchQueue(label: "org.unwritten.studio.egui", qos: .userInitiated)
     private var handle: OpaquePointer?
+    private var audio: OriginalWorkspaceAudio?
     private var timer: DispatchSourceTimer?
     private var running = false
     private var frameInFlight = false
@@ -399,6 +452,14 @@ private final class OriginalWorkspaceWorker {
                 self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: reason, wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
                 return
             }
+            do {
+                if self.audio == nil, let handle = self.handle {
+                    self.audio = try OriginalWorkspaceAudio(handle: unwritten_studio_ui_audio_handle(handle))
+                }
+                try self.audio?.start()
+            } catch {
+                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: error.localizedDescription, wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
+            }
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now(), repeating: .milliseconds(34), leeway: .milliseconds(4))
             timer.setEventHandler { [weak self] in autoreleasepool { self?.frame() } }
@@ -410,6 +471,7 @@ private final class OriginalWorkspaceWorker {
     func stop() { queue.async { [weak self] in
         self?.timer?.suspendIfNeeded()
         self?.timer = nil
+        self?.audio?.stop()
         self?.running = false
     } }
 
@@ -417,6 +479,7 @@ private final class OriginalWorkspaceWorker {
         queue.sync {
             running = false
             timer?.cancel(); timer = nil
+            audio?.destroy(); audio = nil
             if let handle { unwritten_studio_ui_destroy(handle); self.handle = nil }
         }
     }
@@ -465,7 +528,7 @@ private final class OriginalWorkspaceWorker {
             }
             let data = Data(bytes: pixels, count: count)
             let output = readOutput(handle)
-            result = FrameResult(image: makeImage(data: data, width: Int(width), height: Int(height)), output: output, wantsKeyboard: output?.wantsKeyboard ?? false)
+            result = FrameResult(image: makeImage(data: data, width: Int(width), height: Int(height)), output: output, wantsKeyboard: output?.wantsKeyboard ?? false, audioRunning: audio?.isRunning == true)
         }
         frameInFlight = false
         deliver(result)
@@ -487,7 +550,18 @@ private func makeImage(data: Data, width: Int, height: Int) -> UIImage? {
     return UIImage(cgImage: cg)
 }
 
-private struct FrameResult { let image: UIImage?; let output: UIOutput?; let wantsKeyboard: Bool }
+private struct FrameResult {
+    let image: UIImage?
+    let output: UIOutput?
+    let wantsKeyboard: Bool
+    let audioRunning: Bool
+    init(image: UIImage?, output: UIOutput?, wantsKeyboard: Bool, audioRunning: Bool = false) {
+        self.image = image
+        self.output = output
+        self.wantsKeyboard = wantsKeyboard
+        self.audioRunning = audioRunning
+    }
+}
 private struct DialogResponse { let id: UInt64; let paths: [String]; var json: [String: Any] { ["id": id, "paths": paths] } }
 private struct FileDialog: Decodable { let id: UInt64; let kind: String; let extensions: [String]; let many: Bool; let defaultName: String?; let project: Bool
     var contentTypes: [UTType] { let types = extensions.compactMap { UTType(filenameExtension: $0) }; return types.isEmpty ? [.data] : types }
@@ -495,13 +569,14 @@ private struct FileDialog: Decodable { let id: UInt64; let kind: String; let ext
 private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog? }
 
 private enum InputEvent {
-    case move(CGPoint), button(CGPoint, Bool), scroll(CGPoint, CGPoint), text(String), key(String, Bool, UIKeyModifierFlags), wake
+    case move(CGPoint), button(CGPoint, Bool), scroll(CGPoint, CGPoint), text(String), paste(String), key(String, Bool, UIKeyModifierFlags), wake
     var json: [String: Any] {
         switch self {
         case let .move(p): return ["type":"move", "x":p.x, "y":p.y]
         case let .button(p, pressed): return ["type":"button", "x":p.x, "y":p.y, "pressed":pressed]
         case let .scroll(p, delta): return ["type":"scroll", "x":p.x, "y":p.y, "dx":delta.x, "dy":delta.y]
         case let .text(value): return ["type":"text", "text":value]
+        case let .paste(value): return ["type":"paste", "text":value]
         case let .key(key, pressed, modifiers): return ["type":"key", "key":key, "pressed":pressed, "command":modifiers.contains(.command), "shift":modifiers.contains(.shift), "alt":modifiers.contains(.alternate), "ctrl":modifiers.contains(.control)]
         case .wake: return ["type":"wake"]
         }
@@ -541,15 +616,28 @@ private final class OriginalWorkspaceCanvas: UIView, UIKeyInput {
     override var canBecomeFirstResponder: Bool { true }
     override var inputView: UIView? { wantsKeyboard ? nil : hiddenInputView }
     var hasText: Bool { true }
-    func insertText(_ text: String) { onEvent?(.text(text)) }
+    func insertText(_ text: String) {
+        if text == "\n" {
+            onEvent?(.key("Enter", true, [])); onEvent?(.key("Enter", false, []))
+        } else { onEvent?(.text(text)) }
+    }
+    override func paste(_ sender: Any?) {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
+        onEvent?(.paste(text))
+    }
     func deleteBackward() { onEvent?(.key("Backspace", true, [])); onEvent?(.key("Backspace", false, [])) }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        for press in presses { if let key = press.key, let name = keyName(key) { onEvent?(.key(name, true, key.modifierFlags)) } }
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", true, key.modifierFlags)) } }
         super.pressesBegan(presses, with: event)
     }
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        for press in presses { if let key = press.key, let name = keyName(key) { onEvent?(.key(name, false, key.modifierFlags)) } }
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", false, key.modifierFlags)) } }
         super.pressesEnded(presses, with: event)
+    }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", false, [])) } }
+        onEvent?(.key("", false, []))
+        super.pressesCancelled(presses, with: event)
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard !scrolling, primaryTouch == nil, let touch = touches.first else { return }
@@ -567,8 +655,9 @@ private final class OriginalWorkspaceCanvas: UIView, UIKeyInput {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let primary = primaryTouch, touches.contains(primary) { finishTouch(primary) }
     }
+    func cancelPrimaryTouch() { finishTouch(primaryTouch) }
     private func finishTouch(_ touch: UITouch?) {
-        guard !scrolling, let primary = primaryTouch, touch === primary else { return }
+        guard let primary = primaryTouch, touch === primary else { return }
         onEvent?(.button(primary.location(in: self), false)); primaryTouch = nil
     }
     @objc private func pan(_ gesture: UIPanGestureRecognizer) {
@@ -594,6 +683,11 @@ private final class OriginalWorkspaceCanvas: UIView, UIKeyInput {
         case .keyboardRightArrow: return "ArrowRight"
         case .keyboardUpArrow: return "ArrowUp"
         case .keyboardDownArrow: return "ArrowDown"
+        case .keyboardSpacebar: return "Space"
+        case .keyboardHome: return "Home"
+        case .keyboardEnd: return "End"
+        case .keyboardPageUp: return "PageUp"
+        case .keyboardPageDown: return "PageDown"
         default: break
         }
         let chars = key.charactersIgnoringModifiers

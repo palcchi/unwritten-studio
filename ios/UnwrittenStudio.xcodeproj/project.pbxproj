@@ -20,7 +20,8 @@
 		A30000000000000000000005 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000005 /* JetBrainsMono-Regular.ttf */; };
 		A30000000000000000000006 /* OFL-Inter.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000006 /* OFL-Inter.txt */; };
 		A30000000000000000000007 /* OFL-JetBrainsMono.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000007 /* OFL-JetBrainsMono.txt */; };
-		A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* OriginalWorkspaceView.swift */; };
+			A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* OriginalWorkspaceView.swift */; };
+			A10000000000000000000009 /* OriginalWorkspaceAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* OriginalWorkspaceAudio.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,7 +42,8 @@
 		A40000000000000000000005 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
 		A40000000000000000000006 /* OFL-Inter.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-Inter.txt"; sourceTree = "<group>"; };
 		A40000000000000000000007 /* OFL-JetBrainsMono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-JetBrainsMono.txt"; sourceTree = "<group>"; };
-		A20000000000000000000011 /* OriginalWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalWorkspaceView.swift; sourceTree = "<group>"; };
+			A20000000000000000000011 /* OriginalWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalWorkspaceView.swift; sourceTree = "<group>"; };
+			A20000000000000000000012 /* OriginalWorkspaceAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalWorkspaceAudio.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,7 +78,8 @@
 				A20000000000000000000002 /* StudioModel.swift */,
 				A20000000000000000000003 /* ProjectDocument.swift */,
 				A20000000000000000000004 /* WorkspaceView.swift */,
-				A20000000000000000000011 /* OriginalWorkspaceView.swift */,
+					A20000000000000000000011 /* OriginalWorkspaceView.swift */,
+					A20000000000000000000012 /* OriginalWorkspaceAudio.swift */,
 				A20000000000000000000005 /* Assets.xcassets */,
 				A20000000000000000000006 /* LaunchScreen.storyboard */,
 				A20000000000000000000007 /* Info.plist */,
@@ -179,7 +182,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* UnwrittenStudioApp.swift in Sources */,
-				A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */,
+					A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */,
+					A10000000000000000000009 /* OriginalWorkspaceAudio.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

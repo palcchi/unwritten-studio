@@ -1,5 +1,6 @@
 //! Native presentation/input host for the existing editor, not a second UI.
 #![allow(unsafe_code, unsafe_op_in_unsafe_fn)]
+use super::native_audio::NativeAudioBridge;
 use egui::{Event, Key, Modifiers, Pos2, RawInput, Rect, Vec2};
 use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
 use serde_json::{Value, json};
@@ -27,6 +28,7 @@ struct HostState {
 /// Opaque handle. All operations must use its creating serial queue.
 pub struct NativeUi {
     app: UnwrittenStudioApp,
+    audio_bridge: Arc<NativeAudioBridge>,
     ctx: egui::Context,
     gpu: Gpu,
     host: Arc<Mutex<HostState>>,
@@ -56,8 +58,15 @@ fn modifiers(v: &Value) -> Modifiers {
         ctrl: v["ctrl"].as_bool().unwrap_or(false),
         shift: v["shift"].as_bool().unwrap_or(false),
         mac_cmd: command,
-        command: command || v["ctrl"].as_bool().unwrap_or(false),
+        // Ctrl and Command are distinct on iPad hardware keyboards.  Treating
+        // Ctrl as Command made Ctrl-click and Ctrl shortcuts take the macOS
+        // command path, while also making the two modifier bits disagree.
+        command,
     }
+}
+fn event_modifiers(v: &Value, current: Modifiers) -> Modifiers {
+    let has_snapshot = ["command", "ctrl", "shift", "alt"].iter().any(|name| v.get(*name).is_some());
+    if has_snapshot { modifiers(v) } else { current }
 }
 fn coordinate(v: &Value, name: &str) -> f32 {
     v[name].as_f64().filter(|n| n.is_finite()).unwrap_or(0.0).clamp(-65536.0, 65536.0) as f32
@@ -101,7 +110,9 @@ impl NativeUi {
     fn new() -> Result<Self, String> {
         let host = Arc::new(Mutex::new(HostState::default()));
         let callback_host = Arc::clone(&host);
+        let audio_bridge = NativeAudioBridge::new();
         let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+        app.hooks.audio_device = Some(audio_bridge.factory());
         app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| {
             let mut h = match callback_host.lock() {
                 Ok(h) => h,
@@ -119,7 +130,7 @@ impl NativeUi {
             let id = h.next_id;
             h.pending.push_back(PendingDialog { id, metadata: dialog_metadata(id, dialog), done });
         }));
-        Ok(Self { app, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default() })
+        Ok(Self { app, audio_bridge, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default() })
     }
     fn set_error(&self, error: impl Into<String>) {
         if let Ok(mut h) = self.host.lock() {
@@ -163,22 +174,30 @@ impl NativeUi {
             for e in events.iter().take(MAX_EVENTS) {
                 match e["type"].as_str().unwrap_or("") {
                     "move" => raw.events.push(Event::PointerMoved(pos(e))),
-                    "button" => raw.events.push(Event::PointerButton {
-                        pos: pos(e),
-                        button: match e["button"].as_str() {
-                            Some("secondary") => egui::PointerButton::Secondary,
-                            Some("middle") => egui::PointerButton::Middle,
-                            _ => egui::PointerButton::Primary,
-                        },
-                        pressed: e["pressed"].as_bool().unwrap_or(false),
-                        modifiers: self.modifiers,
-                    }),
-                    "scroll" => raw.events.push(Event::MouseWheel {
-                        unit: egui::MouseWheelUnit::Point,
-                        delta: Vec2::new(coordinate(e, "dx"), coordinate(e, "dy")),
-                        modifiers: self.modifiers,
-                        phase: egui::TouchPhase::Move,
-                    }),
+                    "button" => {
+                        let event_modifiers = event_modifiers(e, self.modifiers);
+                        self.modifiers = event_modifiers;
+                        raw.events.push(Event::PointerButton {
+                            pos: pos(e),
+                            button: match e["button"].as_str() {
+                                Some("secondary") => egui::PointerButton::Secondary,
+                                Some("middle") => egui::PointerButton::Middle,
+                                _ => egui::PointerButton::Primary,
+                            },
+                            pressed: e["pressed"].as_bool().unwrap_or(false),
+                            modifiers: event_modifiers,
+                        });
+                    }
+                    "scroll" => {
+                        let event_modifiers = event_modifiers(e, self.modifiers);
+                        self.modifiers = event_modifiers;
+                        raw.events.push(Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: Vec2::new(coordinate(e, "dx"), coordinate(e, "dy")),
+                            modifiers: event_modifiers,
+                            phase: egui::TouchPhase::Move,
+                        });
+                    }
                     "text" => {
                         if let Some(s) = e["text"].as_str() {
                             raw.events.push(Event::Text(s.chars().take(4096).collect()));
@@ -346,6 +365,14 @@ pub unsafe extern "C" fn unwritten_studio_ui_destroy(p: *mut NativeUi) {
     });
 }
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn unwritten_studio_ui_audio_handle(p: *mut NativeUi) -> *mut super::native_audio::UnwrittenStudioAudio {
+    if p.is_null() {
+        return std::ptr::null_mut();
+    }
+    let ui = unsafe { &*p };
+    guard(|| ui.audio_bridge.callback_handle()).unwrap_or(std::ptr::null_mut())
+}
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn unwritten_studio_ui_frame(p: *mut NativeUi, input: *const c_char, w: *mut u32, h: *mut u32) -> *mut u8 {
     if p.is_null() || input.is_null() || w.is_null() || h.is_null() {
         return std::ptr::null_mut();
@@ -417,6 +444,92 @@ mod tests {
         assert_eq!(key("ArrowLeft"), Some(Key::ArrowLeft));
         assert_eq!(key("1"), Some(Key::Num1));
     }
+
+    #[test]
+    fn modifiers_keep_command_and_control_distinct() {
+        let command = modifiers(&json!({"command":true}));
+        assert!(command.command && command.mac_cmd);
+        assert!(!command.ctrl);
+        let control = modifiers(&json!({"ctrl":true}));
+        assert!(control.ctrl);
+        assert!(!control.command && !control.mac_cmd);
+    }
+
+    #[test]
+    fn pointer_modifier_snapshot_overrides_stale_key_state() {
+        let stale = modifiers(&json!({"command":true}));
+        let button = event_modifiers(&json!({"type":"button", "ctrl":true}), stale);
+        assert!(button.ctrl);
+        assert!(!button.command);
+        let touch_event = event_modifiers(&json!({"type":"button", "x":4}), button);
+        assert_eq!(touch_event, button);
+    }
+
+    /// This is deliberately an original renderer test, not a command-only engine test.  It
+    /// drives the same app/session owned by NativeUi, sends real egui input, observes the async
+    /// dialog queue, then exercises the session's edit, persistence, import, and export paths.
+    #[test]
+    #[ignore = "Requires Metal/Vulkan; run explicitly with --include-ignored"]
+    fn original_app_session_input_dialog_and_project_workflow() {
+        let mut ui = NativeUi::new().expect("GPU presentation adapter");
+        ui.frame(&json!({"width":800,"height":600,"scale":1,"time":0.0,"smoke":true})).expect("initial original UI frame");
+
+        // Text and paste enter through the same RawInput path used by the iOS bridge.
+        ui.frame(&json!({"width":800,"height":600,"scale":1,"time":0.1,"events":[
+            {"type":"key","key":"A","pressed":true,"command":false,"ctrl":false,"shift":false,"alt":false},
+            {"type":"text","text":"native"},
+            {"type":"paste","text":" input"},
+            {"type":"key","key":"A","pressed":false,"command":false,"ctrl":false,"shift":false,"alt":false}
+        ]}))
+        .expect("input frame");
+
+        let (dialog_done, dialog_paths) = (Arc::new(Mutex::new(None)), Arc::new(Mutex::new(None)));
+        let done_slot = Arc::clone(&dialog_done);
+        let paths_slot = Arc::clone(&dialog_paths);
+        let done: DialogDone = Box::new(move |paths| {
+            if let Ok(mut slot) = paths_slot.lock() {
+                *slot = Some(paths);
+            }
+        });
+        if let Some(request) = ui.app.hooks.file_dialog_async.as_ref() {
+            request(FileDialog::OpenProject, done);
+            let host = ui.host.lock().expect("host lock");
+            let pending = host.pending.front().expect("dialog request");
+            assert_eq!(pending.metadata["kind"], "open");
+            assert_eq!(pending.metadata["project"], true);
+            *done_slot.lock().expect("done slot") = Some(pending.id);
+        } else {
+            panic!("native dialog hook not installed");
+        }
+        let dialog_id = dialog_done.lock().expect("done slot").expect("dialog id");
+        ui.complete_dialog(&json!({"dialog":{"id":dialog_id,"paths":["/tmp/native-workflow.uwproj"]}}));
+        assert_eq!(dialog_paths.lock().expect("paths slot").as_ref().and_then(|paths| paths.first()).map(String::as_str), Some("/tmp/native-workflow.uwproj"),);
+
+        ui.app.session.execute("file.openDemoProject", json!({})).expect("demo project");
+        let undo_before = ui.app.session.history.undo.len();
+        ui.app.session.execute("layer.newSolid", json!({"name":"Native regression","color":"#406080","width":64,"height":64})).expect("edit");
+        assert_eq!(ui.app.session.history.undo.len(), undo_before + 1);
+        ui.app.session.execute("edit.undo", json!({})).expect("undo");
+        ui.app.session.execute("edit.redo", json!({})).expect("redo");
+
+        let root = std::env::temp_dir().join(format!("unwritten-native-ui-{}", std::process::id()));
+        let project = root.with_extension("uwproj");
+        let svg = root.with_extension("svg");
+        let lottie = root.with_extension("json");
+        std::fs::write(&svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\"><rect width=\"8\" height=\"8\" fill=\"#406080\"/></svg>")
+            .expect("svg fixture");
+        ui.app.session.execute("file.saveAs", json!({"path":project.to_string_lossy()})).expect("save project");
+        ui.app.session.execute("file.import", json!({"paths":[svg.to_string_lossy()]})).expect("import svg");
+        ui.app.session.execute("file.exportLottie", json!({"path":lottie.to_string_lossy()})).expect("export lottie");
+        assert!(project.is_file() && lottie.is_file());
+        let mut reopened = unwritten_studio_host::session();
+        reopened.execute("file.open", json!({"path":project.to_string_lossy()})).expect("reopen project");
+        assert!(reopened.active_comp_id().is_some());
+        let _ = std::fs::remove_file(project);
+        let _ = std::fs::remove_file(svg);
+        let _ = std::fs::remove_file(lottie);
+    }
+
     #[test]
     #[ignore = "Requires Metal/Vulkan; run explicitly to capture rendering evidence"]
     fn original_frontend_renders_real_demo_pixels() {

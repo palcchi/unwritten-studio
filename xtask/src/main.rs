@@ -60,6 +60,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("unwritten-studio", 6),
     ("cli", 6),
     ("web", 6),
+    ("core", 6),
 ];
 
 /// Allowed same-layer edges (from, to).

@@ -79,9 +79,20 @@ pub struct AudioFeed {
 impl AudioFeed {
     /// Fill `out` (interleaved stereo) from the queue; silence where the queue runs dry.
     pub fn pull(&self, out: &mut [f32]) {
+        self.pull_impl(out, false);
+    }
+
+    /// Real-time hosts must not wait for the feeder's queue lock. Contention
+    /// produces silence without advancing the audible-sample clock.
+    pub fn try_pull(&self, out: &mut [f32]) {
+        self.pull_impl(out, true);
+    }
+
+    fn pull_impl(&self, out: &mut [f32], nonblocking: bool) {
         let mut real = 0usize;
         let mut pk = [0.0f32; 2];
-        if let Ok(mut q) = self.queue.lock() {
+        let queue = if nonblocking { self.queue.try_lock().ok() } else { self.queue.lock().ok() };
+        if let Some(mut q) = queue {
             let n = q.len().min(out.len()) & !1;
             for (i, (o, s)) in out.iter_mut().zip(q.drain(..n)).enumerate() {
                 *o = s;
@@ -571,5 +582,20 @@ mod tests {
         // After the hold time the peak marker follows the falling level.
         m.update([0.0, 0.0], 3.0);
         assert!(m.peak_db[0] < -10.0, "{}", m.peak_db[0]);
+    }
+
+    #[test]
+    fn callback_try_pull_does_not_wait_or_advance_clock_on_contention() {
+        let feed = AudioFeed::default();
+        feed.push(&[0.25, -0.5]);
+        let held = feed.queue.lock().unwrap();
+        let mut out = [1.0; 2];
+        feed.try_pull(&mut out);
+        assert_eq!(out, [0.0; 2]);
+        assert_eq!(feed.consumed(), 0);
+        drop(held);
+        feed.try_pull(&mut out);
+        assert_eq!(out, [0.25, -0.5]);
+        assert_eq!(feed.consumed(), 1);
     }
 }

@@ -1,4 +1,5 @@
 #![deny(unsafe_code, unsafe_op_in_unsafe_fn)]
+mod native_audio;
 mod native_ui;
 
 use std::ffi::{CString, c_char};

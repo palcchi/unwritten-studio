@@ -82,6 +82,10 @@ fn geometry(input: &Value) -> Result<(u32, u32, f32, u32, u32), String> {
     }
     Ok((w as u32, h as u32, scale as f32, pw, ph))
 }
+fn presentation_limits(supported: wgpu::Limits) -> wgpu::Limits {
+    wgpu::Limits::downlevel_defaults().using_resolution(supported)
+}
+
 fn dialog_metadata(id: u64, dialog: FileDialog) -> Value {
     match dialog {
         FileDialog::Open { exts, many } => json!({"id":id,"kind":"open","extensions":exts,"many":many,"project":false}),
@@ -230,7 +234,11 @@ impl Gpu {
     fn new() -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle().with_env());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).map_err(|e| e.to_string())?;
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).map_err(|e| e.to_string())?;
+        // Metal on iOS exposes 15 inter-stage variables, below wgpu's desktop
+        // default of 16. egui needs only the portable/downlevel baseline; retain
+        // the adapter's texture dimensions for Retina framebuffers and atlases.
+        let descriptor = wgpu::DeviceDescriptor { required_limits: presentation_limits(adapter.limits()), ..Default::default() };
+        let (device, queue) = pollster::block_on(adapter.request_device(&descriptor)).map_err(|e| e.to_string())?;
         let renderer = Renderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, RendererOptions::default());
         Ok(Self { device, queue, renderer })
     }
@@ -391,6 +399,15 @@ pub unsafe extern "C" fn unwritten_studio_ui_output_json(p: *mut NativeUi) -> *m
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presentation_limits_fit_ios_metal_inter_stage_cap() {
+        let supported = wgpu::Limits { max_inter_stage_shader_variables: 15, ..Default::default() };
+        let requested = presentation_limits(supported.clone());
+        assert!(requested.check_limits(&supported));
+        assert_eq!(requested.max_inter_stage_shader_variables, 15);
+        assert_eq!(requested.max_texture_dimension_2d, supported.max_texture_dimension_2d);
+    }
+
     #[test]
     fn retina_geometry_and_key_names_are_validated() {
         assert_eq!(geometry(&json!({"width":1024,"height":640,"scale":2})).unwrap(), (1024, 640, 2.0, 2048, 1280));

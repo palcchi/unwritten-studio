@@ -97,6 +97,11 @@ private extension JSONValue {
         let numbers = values.compactMap { $0.number }
         return numbers.count == values.count ? numbers : nil
     }
+
+    func field(_ name: String) -> JSONValue? {
+        guard case let .object(fields) = self else { return nil }
+        return fields[name]
+    }
 }
 
 private struct RenderedFrame: Sendable {
@@ -179,8 +184,11 @@ private final class RustCore: @unchecked Sendable {
         var width: UInt32 = 0
         var height: UInt32 = 0
         guard let bytes = unwritten_studio_render_rgba8(handle, maxSide, &width, &height) else { return nil }
-        let length = Int(width) * Int(height) * 4
+        let pixelCount = UInt64(width) * UInt64(height)
+        guard pixelCount <= UInt64(Int.max / 4),
+              let length = Int(exactly: pixelCount * 4) else { return nil }
         defer { unwritten_studio_bytes_free(bytes, length) }
+        guard width > 0, height > 0, width <= maxSide, height <= maxSide else { return nil }
         return RenderedFrame(width: Int(width), height: Int(height), pixels: Data(bytes: bytes, count: length))
     }
 }
@@ -199,6 +207,8 @@ final class StudioModel: ObservableObject {
 
     private var core: RustCore?
     private var renderTask: Task<Void, Never>?
+    private var renderGeneration = 0
+    private var importGeneration = 0
 
     init() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -224,7 +234,7 @@ final class StudioModel: ObservableObject {
         guard let core else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = trimmed.isEmpty ? "Untitled" : trimmed
-        runReply(core.newProject(title))
+        guard runReply(core.newProject(title)) else { return }
         documentName = title
         refreshSnapshot(render: true)
     }
@@ -240,12 +250,14 @@ final class StudioModel: ObservableObject {
     }
 
     func projectDocumentData() -> Data? {
+        // The FileDocument binding reads this while evaluating the view; it must not publish state.
         guard let text = core?.serializeProject() else { return nil }
         return Data(text.utf8)
     }
 
-    func savedAs(_ filename: String) {
-        core?.markSaved()
+    func savedAs(_ filename: String, savedData: Data?) {
+        // An export can finish after another edit; only mark the exact exported state clean.
+        if let savedData, savedData == projectDocumentData() { core?.markSaved() }
         documentName = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         refreshSnapshot()
     }
@@ -264,6 +276,8 @@ final class StudioModel: ObservableObject {
 
     func importMedia(from source: URL) {
         guard let core else { return }
+        importGeneration += 1
+        let generation = importGeneration
         isImporting = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let didAccess = source.startAccessingSecurityScopedResource()
@@ -285,14 +299,16 @@ final class StudioModel: ObservableObject {
                 let reply = core.importMedia(at: destination.path)
                 DispatchQueue.main.async {
                     guard let self else { return }
+                    guard self.importGeneration == generation else { return }
                     self.isImporting = false
                     if !self.runReply(reply) { return }
                     self.refreshSnapshot(render: true)
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self?.isImporting = false
-                    self?.notice = "Could not copy the selected media: \(error.localizedDescription)"
+                    guard let self, self.importGeneration == generation else { return }
+                    self.isImporting = false
+                    self.notice = "Could not copy the selected media: \(error.localizedDescription)"
                 }
             }
         }
@@ -308,8 +324,21 @@ final class StudioModel: ObservableObject {
 
     func seek(to seconds: Double, render: Bool = false) {
         guard let core else { return }
-        _ = core.setTime(seconds)
-        playheadSeconds = snapshot?.activeComp.map { min(max(0, seconds), $0.durationSeconds) } ?? 0
+        guard seconds.isFinite, seconds >= 0 else {
+            notice = "The playhead time must be a finite, non-negative number."
+            return
+        }
+        let requested = snapshot?.activeComp.map { min(seconds, max(0, $0.durationSeconds)) } ?? seconds
+        guard let raw = core.setTime(requested),
+              let data = raw.data(using: .utf8),
+              let reply = try? JSONDecoder().decode(EngineReply.self, from: data),
+              reply.ok,
+              let actual = reply.result?.field("timeSeconds")?.number,
+              actual.isFinite else {
+            notice = "The playhead could not be updated."
+            return
+        }
+        playheadSeconds = actual
         if render {
             refreshSnapshot()
             refreshPreview()
@@ -329,11 +358,14 @@ final class StudioModel: ObservableObject {
     }
 
     func refreshSnapshot(render: Bool = false) {
-        guard let core, let raw = core.snapshotJSON(), let data = raw.data(using: .utf8) else { return }
+        guard let core, let raw = core.snapshotJSON(), let data = raw.data(using: .utf8) else {
+            notice = "The editor engine returned no project snapshot."
+            return
+        }
         do {
             snapshot = try JSONDecoder().decode(StudioSnapshot.self, from: data)
             if let duration = snapshot?.activeComp?.durationSeconds {
-                playheadSeconds = min(max(0, playheadSeconds), duration)
+                playheadSeconds = min(max(0, snapshot?.currentTimeSeconds ?? 0), duration)
             }
             refreshSelectedTransform()
             if render { refreshPreview() }
@@ -343,13 +375,20 @@ final class StudioModel: ObservableObject {
     }
 
     func refreshPreview() {
-        guard let core, activeComposition != nil else { preview = nil; return }
+        renderGeneration += 1
+        let generation = renderGeneration
         renderTask?.cancel()
+        guard let core, activeComposition != nil else {
+            preview = nil
+            isRendering = false
+            return
+        }
         isRendering = true
         renderTask = Task.detached(priority: .userInitiated) { [weak self] in
             let frame = core.render(maxSide: 1280)
             await MainActor.run {
                 guard let self else { return }
+                guard self.renderGeneration == generation else { return }
                 if let frame { self.preview = frame.image() }
                 self.isRendering = false
             }

@@ -1,7 +1,9 @@
-name: iPadOS Native Build
+name: iOS Native Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -14,7 +16,7 @@ concurrency:
 
 jobs:
   unsigned-device-ipa:
-    name: Build unsigned native iPadOS IPA
+    name: Build unsigned native iPhone and iPad IPA
     runs-on: macos-15
     timeout-minutes: 120
     steps:
@@ -25,6 +27,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test native engine workflows
+        run: cargo test --locked -p unwritten-studio-core
 
       - name: Record build environment
         run: |
@@ -59,4 +67,34 @@ jobs:
             build/ios/DerivedData-unsigned/Logs/**
             build/ios/iphoneos/**
           if-no-files-found: ignore
+          retention-days: 14
+
+  simulator-smoke:
+    name: Launch native workspace on iPhone and iPad simulators
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Unwritten Studio
+        uses: actions/checkout@v4
+
+      - name: Install Rust simulator target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+
+      - name: Cache Rust simulator build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ios-simulator
+
+      - name: Build and launch real native workspace
+        run: bash scripts/smoke-ios-simulator.sh
+
+      - name: Upload simulator screenshots and launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unwritten-studio-ios-simulator-smoke
+          path: build/ios/simulator-smoke/**
+          if-no-files-found: warn
           retention-days: 14

@@ -143,6 +143,9 @@ fn dialog_metadata(id: u64, dialog: FileDialog) -> Value {
 }
 impl NativeUi {
     fn new() -> Result<Self, String> {
+        Self::new_with_config_dir(unwritten_studio_host::config_dir())
+    }
+    fn new_with_config_dir(config_dir: Option<std::path::PathBuf>) -> Result<Self, String> {
         let host = Arc::new(Mutex::new(HostState::default()));
         let callback_host = Arc::clone(&host);
         let audio_bridge = NativeAudioBridge::new();
@@ -152,10 +155,10 @@ impl NativeUi {
         // when the native view is recreated. Reuse the host's per-app directory
         // so the existing debounced/periodic workspace saves cover iOS too.
         let mut session = unwritten_studio_host::session();
-        if let Some(dir) = unwritten_studio_host::config_dir() {
+        if let Some(dir) = config_dir.clone() {
             session.config = Some(Arc::new(unwritten_studio_engine::config::DirConfig::new(dir)));
         }
-        let mut recovery = NativeSessionRecovery::new(unwritten_studio_host::config_dir());
+        let mut recovery = NativeSessionRecovery::new(config_dir);
         let recovery_result = recovery.restore(&mut session);
         let recovered = recovery_result.as_ref().ok().copied().unwrap_or(false);
         let recovery_error = recovery_result.err();
@@ -187,6 +190,10 @@ impl NativeUi {
             h.pending.push_back(PendingDialog { id, metadata: dialog_metadata(id, dialog), done });
         }));
         Ok(Self { app, audio_bridge, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default(), recovery })
+    }
+    #[cfg(test)]
+    fn new_for_test(config_dir: std::path::PathBuf) -> Result<Self, String> {
+        Self::new_with_config_dir(Some(config_dir))
     }
     fn set_error(&self, error: impl Into<String>) {
         if let Ok(mut h) = self.host.lock() {
@@ -565,7 +572,9 @@ mod tests {
     #[test]
     #[ignore = "Requires Metal/Vulkan; run explicitly with --include-ignored"]
     fn original_app_session_input_dialog_and_project_workflow() {
-        let mut ui = NativeUi::new().expect("GPU presentation adapter");
+        let recovery_dir = std::env::temp_dir().join(format!("unwritten-native-ui-workflow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&recovery_dir);
+        let mut ui = NativeUi::new_for_test(recovery_dir.clone()).expect("GPU presentation adapter");
         ui.frame(&json!({"width":800,"height":600,"scale":1,"time":0.0,"smoke":true})).expect("initial original UI frame");
 
         // Text and paste enter through the same RawInput path used by the iOS bridge.
@@ -622,12 +631,16 @@ mod tests {
         let _ = std::fs::remove_file(project);
         let _ = std::fs::remove_file(svg);
         let _ = std::fs::remove_file(lottie);
+        drop(ui);
+        let _ = std::fs::remove_dir_all(recovery_dir);
     }
 
     #[test]
     #[ignore = "Requires Metal/Vulkan; run explicitly to capture rendering evidence"]
     fn original_frontend_renders_real_demo_pixels() {
-        let mut ui = NativeUi::new().expect("GPU presentation adapter");
+        let recovery_dir = std::env::temp_dir().join(format!("unwritten-native-ui-pixels-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&recovery_dir);
+        let mut ui = NativeUi::new_for_test(recovery_dir.clone()).expect("GPU presentation adapter");
         let mut last = None;
         for i in 0..8 {
             last = Some(ui.frame(&json!({"width":1280,"height":800,"scale":1,"time":i as f64/30.0,"smoke":true})).expect("Original UI frame"));
@@ -639,5 +652,7 @@ mod tests {
         if let Ok(path) = std::env::var("UNWRITTEN_UI_SMOKE_PATH") {
             image::save_buffer(path, &frame.bytes, frame.width, frame.height, image::ColorType::Rgba8).expect("PNG preview");
         }
+        drop(ui);
+        let _ = std::fs::remove_dir_all(recovery_dir);
     }
 }

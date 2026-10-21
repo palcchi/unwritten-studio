@@ -5,6 +5,7 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 use unwritten_studio_engine::Session;
@@ -14,6 +15,7 @@ const MAX_CHECKPOINT_BYTES: usize = 32 * 1024 * 1024;
 const CHECKPOINT_NAME: &str = "embedded-session-recovery.json";
 const DEBOUNCE: Duration = Duration::from_secs(2);
 const CAP: Duration = Duration::from_secs(5);
+static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 
 pub struct NativeSessionRecovery {
     path: Option<PathBuf>,
@@ -114,18 +116,28 @@ impl NativeSessionRecovery {
 }
 
 fn atomic_write(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp = path.with_file_name(format!("{}.tmp", path.file_name().unwrap_or_default().to_string_lossy()));
-    fs::write(&temp, data)?;
-    match fs::rename(&temp, path) {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            let _ = fs::remove_file(&temp);
-            Err(error)
+    let parent = path.parent().filter(|parent| !parent.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    let temp = loop {
+        let candidate = path.with_file_name(format!("{file_name}.{}.{}.tmp", std::process::id(), NEXT_TEMP.fetch_add(1, Ordering::Relaxed)));
+        match fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
+            Ok(file) => {
+                drop(file);
+                break candidate;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
         }
+    };
+    let result = (|| {
+        fs::write(&temp, data)?;
+        fs::rename(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
     }
+    result
 }
 
 #[cfg(test)]
@@ -146,6 +158,19 @@ mod tests {
         assert!(restored.path.is_none() && restored.is_dirty() && !restored.project.items.is_empty());
         let _ = fs::remove_dir_all(dir);
     }
+
+    #[test]
+    fn checkpoint_creates_missing_nested_app_directory() {
+        let root = std::env::temp_dir().join(format!("unwritten-recovery-nested-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let app_dir = root.join("Containers/Data/Application/test-app/Library/Application Support/Unwritten Studio");
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Nested app storage","width":16,"height":16,"duration":1})).expect("project");
+        NativeSessionRecovery::new(Some(app_dir.clone())).tick(&session, true).expect("write into newly-created app directory");
+        assert!(app_dir.join(CHECKPOINT_NAME).is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn oversized_or_corrupt_checkpoint_is_rejected_and_retained() {
         let dir = std::env::temp_dir().join(format!("unwritten-recovery-bad-{}", std::process::id()));
@@ -184,20 +209,35 @@ mod tests {
     }
 
     #[test]
-    fn serialization_failure_does_not_replace_previous_checkpoint() {
+    fn failed_atomic_write_cleans_up_staged_file() {
         let dir = std::env::temp_dir().join(format!("unwritten-recovery-atomic-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let mut s = Session::default();
-        s.execute("comp.new", json!({"name":"Stable","width":16,"height":16,"duration":1})).expect("project");
-        let mut writer = NativeSessionRecovery::new(Some(dir.clone()));
-        writer.tick(&s, true).expect("write");
         let path = dir.join(CHECKPOINT_NAME);
-        let old = fs::read(&path).expect("old");
-        assert!(old.windows(6).any(|w| w == b"Stable"));
-        let temp = path.with_file_name(format!("{}.tmp", CHECKPOINT_NAME));
-        fs::create_dir(&temp).expect("block staged write");
-        assert!(writer.tick(&s, true).is_err());
-        assert_eq!(fs::read(&path).expect("retained"), old);
+        fs::create_dir_all(&dir).expect("directory");
+        fs::create_dir(&path).expect("block destination rename");
+        assert!(atomic_write(&path, br"{}\n").is_err());
+        assert!(fs::read_dir(&dir).expect("directory").all(|entry| entry.expect("entry").path() == path));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn concurrent_checkpoints_same_destination_all_produce_valid_json() {
+        let dir = std::env::temp_dir().join(format!("unwritten-recovery-concurrent-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Concurrent","width":16,"height":16,"duration":1})).expect("project");
+        let session = std::sync::Arc::new(session);
+        let mut workers = Vec::new();
+        for _ in 0..8 {
+            let session = std::sync::Arc::clone(&session);
+            let dir = dir.clone();
+            workers.push(std::thread::spawn(move || NativeSessionRecovery::new(Some(dir)).tick(&session, true)));
+        }
+        for worker in workers {
+            worker.join().expect("writer thread").expect("concurrent checkpoint");
+        }
+        let checkpoint = fs::read(dir.join(CHECKPOINT_NAME)).expect("checkpoint");
+        serde_json::from_slice::<Value>(&checkpoint).expect("valid checkpoint JSON");
         let _ = fs::remove_dir_all(dir);
     }
 }

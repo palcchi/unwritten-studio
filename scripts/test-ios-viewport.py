@@ -47,12 +47,23 @@ def check_host_contract() -> None:
     assert "lastViewportSafeAreaInsets" in source
     assert "rootView.safeAreaLayoutGuide" in source
     assert "contentInsetAdjustmentBehavior = .never" in source
+    assert "rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()" in source
+    assert "Orientation request failed:" in source
+
+    app = (root / "ios/UnwrittenStudio/UnwrittenStudioApp.swift").read_text()
+    assert "@UIApplicationDelegateAdaptor(UnwrittenStudioAppDelegate.self)" in app
+    assert 'arguments.contains("--ui-smoke")' in app
+    assert 'arguments.contains("--smoke-landscape")' in app
+    assert 'return .landscapeRight' in app
+    assert 'userInterfaceIdiom == .pad ? .all : .allButUpsideDown' in app
 
     with (root / "ios/UnwrittenStudio/Info.plist").open("rb") as handle:
         plist = plistlib.load(handle)
     assert "UIInterfaceOrientationPortrait" in plist["UISupportedInterfaceOrientations"]
     assert "UIInterfaceOrientationLandscapeLeft" in plist["UISupportedInterfaceOrientations"]
     assert "UIInterfaceOrientationLandscapeRight" in plist["UISupportedInterfaceOrientations"]
+    assert len(plist["UISupportedInterfaceOrientations~ipad"]) == 4
+    assert not plist.get("UIRequiresFullScreen", False), "Keep iPad multitasking available"
 
 
 def main() -> None:

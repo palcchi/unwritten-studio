@@ -135,8 +135,13 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape"),
            let scene = view.window?.windowScene,
            #available(iOS 16.0, *) {
-            let orientation: UIInterfaceOrientationMask = ProcessInfo.processInfo.arguments.contains("--smoke-portrait") ? .portrait : .landscape
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
+            let orientation: UIInterfaceOrientationMask = ProcessInfo.processInfo.arguments.contains("--smoke-portrait") ? .portrait : .landscapeRight
+            // SwiftUI's root hosting controller owns the window's orientation.
+            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { [weak self] error in
+                self?.recordSmokeStatus(["ok": false, "error": "Orientation request failed: \(error.localizedDescription)"], name: "workspace-error.json")
+            }
         }
     }
 

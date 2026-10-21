@@ -34,6 +34,9 @@ jobs:
       - name: Test native engine workflows
         run: cargo test --locked -p unwritten-studio-core --lib -- --include-ignored
 
+      - name: Test iOS app-owned recovery and settings directory
+        run: cargo test --locked -p unwritten-studio-host --lib app_dirs
+
       - name: Test iPad sandbox output policy
         run: cargo test --locked -p unwritten-studio-engine --lib ipad_render_defaults_stay_inside_documents_even_for_external_projects
 
@@ -62,6 +65,9 @@ jobs:
 
       - name: Test draggable workspace panels
         run: cargo test --locked -p unwritten-studio-ui-egui --test ui_dock_resize
+
+      - name: Test default panels and iOS resize precision
+        run: cargo test --locked -p unwritten-studio-ui-egui --lib dock::tests
 
       - name: Test original frontend lifecycle
         run: cargo test --locked -p unwritten-studio-ui-egui --lib embedded_original_ui_bootstraps_fonts_and_renders_without_panicking

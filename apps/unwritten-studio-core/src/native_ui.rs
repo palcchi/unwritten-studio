@@ -215,6 +215,10 @@ impl NativeUi {
             smoke_export_to_ios_storage()?;
             self.app.session.execute("file.openDemoProject", json!({})).map_err(|e| e.to_string())?;
             self.app.ui.start_screen = false;
+            // A rendered frame alone does not prove app storage is writable.
+            // Force a real checkpoint so device/simulator smoke tests catch
+            // sandbox path regressions before reporting the workspace ready.
+            self.recovery.tick(&self.app.session, true)?;
             self.smoke_opened = true;
         }
         let mut raw = RawInput {

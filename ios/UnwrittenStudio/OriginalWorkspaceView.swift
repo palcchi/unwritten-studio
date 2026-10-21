@@ -170,7 +170,10 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if let urlString = output.openURL, let url = URL(string: urlString), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         }
-        if let error = output.recoveryError, !error.isEmpty { showErrorOnce("Local recovery: \(error). Save a .unw copy to Files; existing recovery data has not been discarded.") }
+        if let error = output.recoveryError, !error.isEmpty {
+            recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
+            showErrorOnce("Local recovery: \(error). Save a .unw copy to Files; existing recovery data has not been discarded.")
+        }
         if let error = output.error, !error.isEmpty {
             // A failed native command must win over an old/stale staged file.
             // Do not let the polling fallback turn that file into a false

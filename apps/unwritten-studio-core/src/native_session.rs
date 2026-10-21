@@ -162,6 +162,28 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
+    fn failed_checkpoint_can_retry_without_discarding_the_open_project() {
+        let dir = std::env::temp_dir().join(format!("unwritten-recovery-retry-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_file(&dir);
+        // A non-directory blocks writes portably, including tests run as root.
+        fs::write(&dir, b"storage unavailable").expect("block storage");
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep my work","width":16,"height":16,"duration":1})).expect("project");
+        let before = session.project.to_file_json().expect("snapshot");
+        let mut recovery = NativeSessionRecovery::new(Some(dir.clone()));
+        assert!(recovery.tick(&session, true).is_err());
+        assert_eq!(session.project.to_file_json().expect("still open"), before);
+        fs::remove_file(&dir).expect("restore storage");
+        recovery.tick(&session, true).expect("retry write");
+        let mut restored = Session::default();
+        assert!(NativeSessionRecovery::new(Some(dir.clone())).restore(&mut restored).expect("restore"));
+        assert!(restored.project.to_file_json().expect("restored project").contains("Keep my work"));
+        assert!(restored.path.is_none() && restored.is_dirty());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn serialization_failure_does_not_replace_previous_checkpoint() {
         let dir = std::env::temp_dir().join(format!("unwritten-recovery-atomic-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

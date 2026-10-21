@@ -8,7 +8,7 @@
 //!    `%APPDATA%`. The Windows portable zip ships with `portable.txt`; the MSI doesn't. If that
 //!    folder can't be written (read-only medium, Program Files), a warning is logged and the
 //!    platform folder is used.
-//! 3. The platform convention: macOS `~/Library/Application Support/Unwritten Studio`, Windows
+//! 3. The platform convention: macOS/iOS `~/Library/Application Support/Unwritten Studio`, Windows
 //!    `%APPDATA%\Unwritten Studio`, Linux `$XDG_CONFIG_HOME/unwritten-studio` or `~/.config/unwritten-studio`.
 
 use std::ffi::OsString;
@@ -97,11 +97,19 @@ pub fn resolve(env: impl Fn(&str) -> Option<OsString>, exe_dir: Option<&Path>) -
 
 /// The platform convention, from `env` (so tests can fake `HOME`/`APPDATA`/`XDG_CONFIG_HOME`).
 pub fn platform_dir(env: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    platform_dir_for_os(env, std::env::consts::OS)
+}
+
+fn platform_dir_for_os(env: &impl Fn(&str) -> Option<OsString>, os: &str) -> Option<PathBuf> {
     let home = || env("HOME").map(PathBuf::from);
-    if cfg!(target_os = "macos") {
+    // iOS must not fall through to the Unix/XDG path: creating ~/.config at the
+    // container root can be denied by the device sandbox (EPERM). Recovery and
+    // workspace settings belong in the app-owned Library, not beside a project
+    // opened from a security-scoped document provider, nor in purgeable Caches.
+    if matches!(os, "macos" | "ios") {
         return home().map(|h| h.join("Library/Application Support/Unwritten Studio"));
     }
-    if cfg!(target_os = "windows") {
+    if os == "windows" {
         return env("APPDATA").map(|a| PathBuf::from(a).join("Unwritten Studio"));
     }
     env("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| home().map(|h| h.join(".config"))).map(|c| c.join("unwritten-studio"))
@@ -207,7 +215,7 @@ mod tests {
         assert_eq!(d.mode, Mode::Platform);
         assert!(d.warning.is_none());
         let dir = d.dir.unwrap();
-        if cfg!(target_os = "macos") {
+        if cfg!(any(target_os = "macos", target_os = "ios")) {
             assert_eq!(dir, root.join("home/Library/Application Support/Unwritten Studio"));
         } else if cfg!(target_os = "windows") {
             assert_eq!(dir, root.join("appdata").join("Unwritten Studio"));
@@ -216,6 +224,23 @@ mod tests {
         }
         assert!(!exe.join(PORTABLE_DATA_DIR).exists(), "no portable folder without a marker");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ios_data_stays_in_application_support_not_xdg_or_provider_storage() {
+        let root = temp("ios-container");
+        let home = root.join("Containers/Data/Application/test-app");
+        let provider = root.join("File Provider Storage");
+        let env = env_of(&[("HOME", &home), ("XDG_CONFIG_HOME", &provider), ("APPDATA", &provider)]);
+        let dir = platform_dir_for_os(&env, "ios").unwrap();
+        assert_eq!(dir, home.join("Library/Application Support/Unwritten Studio"));
+        ensure_writable(&dir).unwrap();
+        assert!(!home.join(".config").exists());
+        assert!(!provider.exists(), "a project provider is not app storage");
+        assert_eq!(platform_dir_for_os(&env, "macos"), Some(dir));
+        assert_eq!(platform_dir_for_os(&env, "linux"), Some(provider.join("unwritten-studio")));
+        assert!(platform_dir_for_os(&env_of(&[("XDG_CONFIG_HOME", &provider)]), "ios").is_none());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

@@ -66,8 +66,9 @@ while IFS=$'\t' read -r family device; do
     xcrun simctl io "$device" screenshot "$OUT/$label-workspace.png"
     if [[ "$ready" == 1 ]]; then
       ps -p "$pid" -o pid=,comm= > "$OUT/$label-process.txt"
-      if ! python3 - "$OUT/$label-ready.json" "$orientation" <<'PY'
+      if ! python3 - "$OUT/$label-ready.json" "$orientation" "$container" <<'PY'
 import json, math, sys
+from pathlib import Path
 status = json.load(open(sys.argv[1]))
 assert status.get("ok") is True and status.get("nonBlack") is True, status
 assert status.get("renderedFrames", 0) >= 10 and status.get("width", 0) > 0 and status.get("height", 0) > 0, status
@@ -79,6 +80,12 @@ assert all(math.isfinite(x) and x > 0 for x in (vw, vh, cw, ch, fit)), status
 assert (vh > vw) == (sys.argv[2] == "portrait"), status
 assert abs(cw * fit - vw) <= 2 and abs(ch * fit - vh) <= 2, status
 assert abs(status["width"] / status["height"] - cw / ch) < 0.01, status
+recovery = Path(sys.argv[3]) / "Library/Application Support/Unwritten Studio/embedded-session-recovery.json"
+assert recovery.is_file(), f"Missing app-owned recovery checkpoint: {recovery}"
+checkpoint = json.loads(recovery.read_text())
+assert isinstance(checkpoint, dict) and isinstance(checkpoint.get("app"), dict), "Invalid recovery checkpoint"
+assert checkpoint.get("items"), "Recovery checkpoint must contain the smoke project, not an empty session"
+print("Verified app-owned local recovery:", recovery)
 print("Verified edge-filling original workspace:", status)
 PY
       then failed=1; fi

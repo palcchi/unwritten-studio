@@ -98,7 +98,7 @@ pub fn session() -> Session {
 }
 
 /// The platform config directory for Unwritten Studio (`UNWRITTEN_STUDIO_CONFIG_DIR` overrides):
-/// `~/Library/Application Support/Unwritten Studio` (macOS), `%APPDATA%\Unwritten Studio` (Windows),
+/// `~/Library/Application Support/Unwritten Studio` (macOS/iOS app container), `%APPDATA%\Unwritten Studio` (Windows),
 /// `$XDG_CONFIG_HOME/unwritten-studio` or `~/.config/unwritten-studio` (Linux and others). A `portable.txt`
 /// beside the executable puts it in `Unwritten StudioData` there instead ([`app_dirs`]).
 pub fn config_dir() -> Option<std::path::PathBuf> {
@@ -359,8 +359,14 @@ mod tests {
         let cid = s.active_comp_id().unwrap();
         let comp = s.project.comp(cid).unwrap();
         let layer = comp.layer(unwritten_studio_engine::project::LayerId(l)).unwrap();
-        let ctx =
-            unwritten_studio_engine::render::EvalCtx { project: &s.project, comp_id: cid, comp, time: Default::default(), expr: s.expr.as_deref(), footage: None };
+        let ctx = unwritten_studio_engine::render::EvalCtx {
+            project: &s.project,
+            comp_id: cid,
+            comp,
+            time: Default::default(),
+            expr: s.expr.as_deref(),
+            footage: None,
+        };
         ctx.value(layer, layer.props.prop(path).unwrap())
     }
 

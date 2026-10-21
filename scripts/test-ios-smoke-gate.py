@@ -10,6 +10,12 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 script = (root / "scripts/smoke-ios-simulator.sh").read_text()
+# UI tests can reinstall the application; evidence must use the post-test UUID.
+launch = script.index("if xcodebuild test-without-building")
+refresh = script.index('container="$(xcrun simctl get_app_container', launch)
+readiness = script.index('if [[ -f "$checks/workspace-ready.json"', launch)
+assert launch < refresh < readiness
+
 marker = '"$container" <<\'PY\'\n'
 validator = compile(script.split(marker, 1)[1].split('\nPY\n', 1)[0], "smoke-validator", "exec")
 

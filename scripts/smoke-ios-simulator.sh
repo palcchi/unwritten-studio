@@ -58,6 +58,10 @@ while IFS=$'\t' read -r family device; do
       -disable-concurrent-destination-testing -resultBundlePath "$result" \
       "-only-testing:UnwrittenStudioUITests/WorkspaceOrientationTests/$test_method" \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$OUT/$label-test.txt"; then
+      # Xcode may reinstall the app into a new data container. Never read the
+      # pre-test UUID path after that installation.
+      container="$(xcrun simctl get_app_container "$device" "$BUNDLE" data)"
+      checks="$container/Documents/UISmoke"
       if [[ -f "$checks/workspace-ready.json" && ! -f "$checks/workspace-error.json" ]]; then
         cp "$checks/workspace-ready.json" "$OUT/$label-ready.json"
         ready=1

@@ -22,7 +22,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 | Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
-| Project `.aep` | R/W (native) | experimental native Rust | none (direct) | Bounded read-only RIFX parser and partial project adapter run inside iOS; no AE desktop or Python needed for import. Opens an untitled native copy, reports unsupported content and missing media. [Native import scope](aep-native-import.md). JSX desktop bridge remains the output route; not a full-fidelity round trip | Synthetic reader/adapter tests and private read-only workflow check; no real-AE visual certification |
+| Project `.aep` | R/W (native) | experimental native Rust | experimental native Rust | Bounded RIFX parser and partial adapter run inside iOS; narrow binary export supports solids/nulls/transforms and refuses losses by default. Keep `.unw` master and original AEP. [Import](aep-native-import.md), [export](aep-native-export.md). Not full fidelity | Local synthetic/round-trip tests; upstream AE2026 read-back evidence, not local AE certification |
 | XML project `.aepx` | R/W | none (direct) | none (direct) | XML with embedded hexadecimal binary data, not the native XML project format (`.uwprojx`). AE desktop can open it for bridge conversion; no native reader or writer | Synthetic helper tests; not verified in real AE |
 | Templates `.aet` / `.aetx` | R/W | none | none | User-created `.uwtemplate` save/create support remains; bundled Home template gallery is removed | `templates.rs` tests |
 | Motion Graphics template `.mogrt` | W (and R in Premiere) | none | none | Own `.uwtemplate` Essential Graphics templates; FilmCraft rejects our `.fcgt` export (#611) | `essential.rs` tests |
@@ -118,9 +118,13 @@ relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel wit
 | 2026-10-12 | minor | #324 and #514 marked closed; open `.aep` PRs #251 and #860 noted |
 | 2026-10-10 | major | First file format parity document, from the After Effects 26.5 bundle and this repository's import/export registries |
 
+## Native binary AEP export (experimental, partial)
+
+A separate Rust writer exports genuine `RIFX` / `Egg!` `.aep` files for a narrow subset of compositions, solids/nulls and transforms. It refuses detected losses by default and preserves the native `.unw` document. See [native AEP export](aep-native-export.md) for the supported subset, command, provenance and the distinction between upstream After Effects read-back and local testing. The older JSX bridge below remains available and is not required for this native export.
+
 ## After Effects desktop bridge (experimental, partial)
 
-Binary `.aep` can now be read directly through the separate [native importer](aep-native-import.md). Direct `.aep` writing and `.aepx` reading/writing remain **unsupported**. Those files are never renamed to `.unw`, decoded by this bridge or overwritten. The optional bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for this bridge, not for native binary AEP import.
+Binary `.aep` can now be read directly through the separate [native importer](aep-native-import.md). A narrow [native binary AEP exporter](aep-native-export.md) is also available; `.aepx` reading/writing remains **unsupported**. Native JSON is never disguised under an Adobe extension, and this bridge does not decode binary project data. The optional bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for this bridge, not for native binary AEP import.
 
 Adobe documents `.aep` as binary and `.aepx` as XML containing some hexadecimal-encoded binary data. An XML extension alone therefore does not make arbitrary project properties readable by this app. AE can open `.aepx` and save it as `.aep`; that does not establish a native iOS codec. See [Adobe's project-format documentation](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).
 

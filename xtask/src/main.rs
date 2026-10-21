@@ -46,6 +46,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("model", 2),
     ("render", 3),
     ("aep-import", 3),
+    ("aep-export", 3),
     ("media", 3),
     ("expr", 3),
     ("export", 3),

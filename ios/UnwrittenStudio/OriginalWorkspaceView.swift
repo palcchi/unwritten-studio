@@ -396,10 +396,20 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             }
             var name = self.safeFileName(raw)
             if URL(fileURLWithPath: name).pathExtension.isEmpty, let ext = dialog.extensions.first, !ext.isEmpty { name += "." + ext }
+            if !dialog.extensions.isEmpty {
+                let suffix = URL(fileURLWithPath: name).pathExtension.lowercased()
+                if !dialog.extensions.contains(where: { $0.lowercased() == suffix }) {
+                    self.finishDialog(dialog.id, paths: [])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                        self?.showErrorOnce("Choose a .\(dialog.extensions.first ?? "supported") filename for this export.")
+                    }
+                    return
+                }
+            }
             if dialog.project, ["aep", "aepx", "unwae"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) {
                 self.finishDialog(dialog.id, paths: [])
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.showErrorOnce("Save native projects as .unw. To transfer supported layers to After Effects, use File > After Effects Bridge > Export Project to AE JSX.")
+                    self?.showErrorOnce("Save native projects as .unw. To transfer supported layers to After Effects, use File > Export > After Effects AEP. For the legacy JSX bridge, use File > After Effects Bridge > Export Project to AE JSX.")
                 }
                 return
             }

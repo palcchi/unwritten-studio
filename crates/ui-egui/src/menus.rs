@@ -764,6 +764,14 @@ pub fn invoke(app: &mut UnwrittenStudioApp, ctx: &egui::Context, id: &str, param
                 }
                 return r;
             }
+            if id == "file.exportAep" && params == json!({}) {
+                // This path is a dry run only; the engine never writes its placeholder.
+                let stamp = ctx.input(|i| i.time);
+                let placeholder = format!("__unwritten-aep-review-{stamp:.6}.aep");
+                let report = app.session.execute("file.exportAep", json!({"path": placeholder, "dryRun": true})).map_err(|e| e.to_string())?;
+                app.aep_export_review = Some(crate::panels::aep_export::Review { report: report.get("report").cloned().unwrap_or(Value::Null) });
+                return Ok(json!({"dialog": "file.exportAep", "dryRun": true}));
+            }
             if let Some(r) = file_dialog(app, id, &params) {
                 return r;
             }
@@ -1352,6 +1360,7 @@ fn file_dialog(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> Option
         "view.exportGuides" => ("path", Ask::Save("Guides.json")),
         "view.importGuides" => ("path", Ask::Open(&["json"])),
         "file.exportLottie" => ("path", Ask::Save("Animation.json")),
+        "file.exportAep" => ("path", Ask::Save("Untitled Project.aep")),
         "file.importLottie" => ("path", Ask::Open(&["json", "lottie"])),
         "file.importProject" => ("path", Ask::Open(&["aep", "unwae", "unw", "uwproj", "uwprojx", "ecproj", "ecprojx"])),
         "file.importTimeline" => ("path", Ask::Open(&["xml", "fcpxml", "otio", "edl", "aaf", "omf"])),
@@ -1806,6 +1815,13 @@ pub fn handle_tab_shortcut(app: &mut UnwrittenStudioApp, ctx: &egui::Context) {
 }
 
 fn handle_shortcuts_impl(app: &mut UnwrittenStudioApp, ctx: &egui::Context, tab_only: bool) {
+    if app.aep_export_review.is_some() {
+        if !tab_only && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            app.aep_export_review = None;
+        }
+        return;
+    }
     let start = modifiers_at_start(ctx);
     // Dialog cancellation owns Escape even when a text field has keyboard focus.
     if !tab_only && app.dialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -2528,6 +2544,44 @@ mod tests {
         app.run_dialog_answers(&ctx);
         assert!(!dir.join("Frame.png").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aep_review_precedes_save_picker_and_only_explicit_acceptance_continues() {
+        use std::sync::{Arc, Mutex};
+        let mut app = UnwrittenStudioApp::new(unwritten_studio_engine::Session::default());
+        app.session.execute("comp.new", json!({"width":64,"height":36,"duration":1,"frameRate":30})).unwrap();
+        let ctx = egui::Context::default();
+        let pending: Arc<Mutex<Vec<(crate::FileDialog, crate::DialogDone)>>> = Arc::default();
+        let queue = pending.clone();
+        app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| queue.lock().unwrap().push((dialog, done))));
+        let before = app.session.project.to_json();
+        invoke(&mut app, &ctx, "file.exportAep", json!({})).unwrap();
+        assert!(app.aep_export_review.is_some());
+        assert!(pending.lock().unwrap().is_empty());
+        assert_eq!(app.session.project.to_json(), before);
+        // Cancel is copy-only: no picker, document edit, or export.
+        app.aep_export_review = None;
+        assert!(pending.lock().unwrap().is_empty());
+        // The explicit confirmation carries the selected loss policy to the asynchronous picker.
+        invoke(&mut app, &ctx, "file.exportAep", json!({"allowLosses":false})).unwrap();
+        let (dialog, done) = pending.lock().unwrap().pop().unwrap();
+        assert_eq!(dialog, crate::FileDialog::Save { default: "Untitled Project.aep".into(), ext: "aep".into(), project: false });
+        done(Vec::new());
+        app.run_dialog_answers(&ctx);
+        assert_eq!(app.session.project.to_json(), before);
+        assert!(app.session.path.is_none());
+    }
+
+    #[test]
+    fn aep_review_reports_losses_before_any_partial_copy_is_approved() {
+        let mut app = UnwrittenStudioApp::new(unwritten_studio_engine::Session::default());
+        app.session.execute("file.openDemoProject", json!({})).unwrap();
+        app.hooks.pick_save = Some(Box::new(|_| panic!("no save picker before approval")));
+        let ctx = egui::Context::default();
+        invoke(&mut app, &ctx, "file.exportAep", json!({})).unwrap();
+        let review = app.aep_export_review.as_ref().unwrap();
+        assert!(review.report["losses"].as_array().is_some_and(|a| !a.is_empty()));
     }
 
     #[test]

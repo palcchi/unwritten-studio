@@ -30,6 +30,7 @@ pub mod media_cache;
 pub mod menus;
 pub mod models;
 mod native_aep;
+mod native_aep_export;
 pub mod offload;
 pub mod perf;
 pub mod prefs;

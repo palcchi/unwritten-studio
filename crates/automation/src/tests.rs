@@ -859,6 +859,7 @@ fn resources_match_tools_and_recover_after_parse_error() {
 /// Rendering is a direct tool call, outside Session::execute's existing panic guard.
 #[test]
 fn render_panic_is_an_error_and_session_remains_usable() {
+    use std::sync::{Arc, Mutex};
     use unwritten_studio_engine::{
         color::Label,
         project::{Footage, FootageKind, ItemId, ItemKind},
@@ -866,7 +867,6 @@ fn render_panic_is_an_error_and_session_remains_usable() {
         render::FootageSource,
         time::Tick,
     };
-    use std::sync::{Arc, Mutex};
     struct BrokenFootage(Mutex<bool>);
     impl FootageSource for BrokenFootage {
         fn frame(&self, _: ItemId, _: &Footage, _: Tick) -> Option<Arc<Image>> {
@@ -952,7 +952,11 @@ impl unwritten_studio_engine::Exporter for SlowExporter {
     fn formats(&self) -> Vec<unwritten_studio_engine::project::render_queue::OutputFormat> {
         unwritten_studio_engine::project::render_queue::OutputFormat::ALL.to_vec()
     }
-    fn export(&self, job: &unwritten_studio_engine::ExportJob, progress: &mut dyn FnMut(u64, u64) -> bool) -> Result<unwritten_studio_engine::ExportResult, String> {
+    fn export(
+        &self,
+        job: &unwritten_studio_engine::ExportJob,
+        progress: &mut dyn FnMut(u64, u64) -> bool,
+    ) -> Result<unwritten_studio_engine::ExportResult, String> {
         std::fs::write(job.path, b"partial").map_err(|e| e.to_string())?;
         let n = 2000;
         for k in 0..=n {
@@ -1225,6 +1229,11 @@ fn automation_roots_confine_file_access() {
     denied(&mut s, "save_project", json!({"path": "relative.uwproj"}));
     denied(&mut s, "save_project", json!({"path": p(&write, "../elsewhere/up.uwproj")}));
     denied(&mut s, "execute_command", json!({"command": "comp.saveFrameAs", "params": {"path": p(&outside, "f.png")}}));
+    // Binary AEP export is a write, not the fallback read access for unknown commands.
+    denied(&mut s, "execute_command", json!({"command": "file.exportAep", "params": {"path": p(&read, "copy.aep")}}));
+    denied(&mut s, "execute_command", json!({"command": "file.exportAep", "params": {"path": "relative.aep"}}));
+    let steps = json!([{"command": "file.exportAep", "params": {"path": "$1.path"}}]);
+    denied(&mut s, "batch", json!({"steps": steps}));
     // Any other absolute path a command is given.
     denied(&mut s, "execute_command", json!({"command": "renderQueue.add", "params": {"output": p(&outside, "movie.mp4")}}));
     // A batch step.

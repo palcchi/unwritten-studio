@@ -32,6 +32,7 @@ pub(crate) fn decode(bytes: &[u8], path: &str, services: &dyn crate::Services, a
     if !result.report.losses.is_empty() {
         warnings.push(format!("AEP content not preserved: {}", result.report.summary()));
     }
+    append_effect_warnings(&result.report, &mut warnings);
     if !result.report.missing_footage.is_empty() {
         warnings.push(format!("{} linked media files are unavailable; transfer and relink the original media.", result.report.missing_footage.len()));
     }
@@ -46,11 +47,31 @@ pub(crate) fn decode(bytes: &[u8], path: &str, services: &dyn crate::Services, a
     Ok((project, result.report, warnings))
 }
 
+fn append_effect_warnings(report: &ImportReport, warnings: &mut Vec<String>) {
+    if let Some(effects) = report.losses.iter().find(|loss| loss.category == unwritten_studio_aep_import::LossCategory::Effects) {
+        warnings.push("Effects are not imported, including built-in effects and third-party plugins such as Sapphire/BCC. Plugin dependencies are separate from missing media and do not mean the AEP container is corrupt; desktop plugins cannot run in this app.".into());
+        warnings.extend(effects.details.iter().take(20).map(|detail| format!("Effect not imported: {detail}")));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
     use std::sync::Arc;
+
+    #[test]
+    fn effect_warnings_name_plugin_dependencies_without_calling_the_project_corrupt() {
+        use unwritten_studio_aep_import::{ImportReport, Loss, LossCategory};
+        let report = ImportReport {
+            losses: vec![Loss { category: LossCategory::Effects, count: 2, details: vec!["effect S_WipeCircle".into(), "effect BCC Video Glitch".into()] }],
+            ..Default::default()
+        };
+        let mut warnings = Vec::new();
+        super::append_effect_warnings(&report, &mut warnings);
+        assert!(warnings.iter().any(|w| w.contains("S_WipeCircle")));
+        assert!(warnings.iter().any(|w| w.contains("BCC Video Glitch")));
+        assert!(warnings.iter().any(|w| w.contains("separate from missing media")));
+    }
 
     fn chunk(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut bytes = id.to_vec();

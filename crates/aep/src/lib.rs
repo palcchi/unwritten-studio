@@ -27,6 +27,7 @@ mod shapes;
 mod textdoc;
 mod typed;
 mod values;
+mod write;
 
 pub use camera::{CameraPosition, DEFAULT_CAMERA_ZOOM};
 pub use chunk::{AepFile, Body, Chunk, LIST, NESTED_IDS, Walk};
@@ -41,3 +42,5 @@ pub use shapes::{GradientType, PolystarType, ShapeDetail, ShapeGroup, ShapeItem,
 pub use textdoc::{Caps, CueType, Justification, Marker, ParagraphRun, StyleRun, TextBox, TextDocument, TextValue, parse_text_dict};
 pub use typed::{Comp, Item, ItemKind, KeyLayout, KeyList, Keyframe, Layer, ListHeader, Project, PropEntry, PropGroup, PropNode, Property, TimeBase};
 pub use values::{TimeRemap, TimeRemapKey, Tracked, Transform, ValueSource};
+
+pub use write::{write, write_to};

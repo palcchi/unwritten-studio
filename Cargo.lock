@@ -4801,6 +4801,21 @@ name = "unwritten-studio-aep"
 version = "0.9.2"
 
 [[package]]
+name = "unwritten-studio-aep-export"
+version = "0.9.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unwritten-studio-aep",
+ "unwritten-studio-aep-import",
+ "unwritten-studio-color",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-time",
+]
+
+[[package]]
 name = "unwritten-studio-aep-import"
 version = "0.9.2"
 dependencies = [
@@ -4904,6 +4919,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "unwritten-studio-aep-export",
  "unwritten-studio-aep-import",
  "unwritten-studio-color",
  "unwritten-studio-effects",

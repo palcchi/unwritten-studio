@@ -143,7 +143,7 @@ pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
 }
 
-/// Native binary AEP is read-only. AEPX and native AEP writing are not implemented.
+/// Native saves must not disguise JSON as AEP. Binary AEP export has its own copy-only command.
 pub(super) fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext.eq_ignore_ascii_case("aep") && matches!(operation, "open" | "import") {
@@ -151,143 +151,10 @@ pub(super) fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
     }
     if ext.eq_ignore_ascii_case("aep") || ext.eq_ignore_ascii_case("aepx") {
         return Err(EngineError::Other(format!(
-            "cannot {operation} `{path}`: this operation is not supported. Native binary .aep import is experimental and read-only; .aepx is not supported. Save editable projects as .unw. For AE output use File > After Effects Bridge to export JSX and save .aep in AE desktop"
+            "cannot {operation} `{path}`: this operation is not supported. Native binary .aep import is experimental; .aepx is not supported. Save editable projects as .unw. For a genuine binary AEP copy use File > Export > Export Project to After Effects AEP. The After Effects Bridge JSX route remains an alternative"
         )));
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod format_tests {
-    use super::reject_after_effects;
-    use crate::Session;
-    use serde_json::json;
-
-    #[test]
-    fn missing_ae_project_import_does_not_touch_current_work() {
-        let mut session = Session::default();
-        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
-        let before = session.project.to_json();
-        for path in ["missing.AEP", "missing.AePx"] {
-            let error = session.execute("file.importProject", json!({"path":path})).unwrap_err().to_string();
-            assert!(error.contains("cannot read") || error.contains("After Effects Bridge"), "{error}");
-            let result = session.execute("file.import", json!({"paths":[path]})).unwrap();
-            let errors = result["errors"].as_array().unwrap();
-            assert_eq!(errors.len(), 1, "{result}");
-            assert!(errors[0].as_str().unwrap().contains("cannot read") || errors[0].as_str().unwrap().contains("After Effects Bridge"), "{result}");
-            assert_eq!(session.project.to_json(), before);
-            assert!(session.path.is_none());
-        }
-    }
-
-    #[test]
-    fn ae_bridge_open_activates_root_composition_instead_of_first_precomp() {
-        let dir = std::env::temp_dir().join(format!("unwritten-bridge-root-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("converted.unwae");
-        let document = json!({"format":"unwritten-after-effects","version":1,"comps":[
-            {"id":"nested","name":"Nested first","width":32,"height":24,"fps":24,"duration":1},
-            {"id":"root","name":"Final composition","width":32,"height":24,"fps":24,"duration":1,
-             "layers":[{"name":"Precomp","kind":"comp","source":"nested","width":32,"height":24,"outPoint":1}]}
-        ]});
-        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
-        let mut session = Session::default();
-        session.execute("file.open", json!({"path":path.to_string_lossy()})).unwrap();
-        let active = session.state.active_comp.unwrap();
-        assert_eq!(session.project.item(active).unwrap().name, "Final composition");
-        assert!(session.path.is_none(), "converted interchange must remain an untitled native project");
-        assert_eq!(std::fs::read(&path).unwrap(), serde_json::to_vec(&document).unwrap());
-        let mut destination = Session::default();
-        let result = destination.execute("file.importProject", json!({"path":path.to_string_lossy()})).unwrap();
-        assert!(result["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|w| w.contains("Experimental AE bridge"))), "{result}");
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn native_unw_round_trips() {
-        let dir = std::env::temp_dir().join(format!("unwritten-unw-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("roundtrip.unw");
-        let mut a = Session::default();
-        a.execute("comp.new", json!({"name":"Canonical", "width":32, "height":24, "duration":1})).unwrap();
-        a.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
-        let mut b = Session::default();
-        b.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
-        assert_eq!(b.path.as_deref(), Some(path.to_string_lossy().as_ref()));
-        assert!(b.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
-        assert!(super::super::import_project::is_project_path("ROUNDTRIP.UNW"));
-        let mut imported = Session::default();
-        let result = imported.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
-        assert!(result["errors"].as_array().is_none_or(Vec::is_empty), "{result}");
-        assert!(imported.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn malformed_ae_bridge_keeps_document_and_native_save_cannot_overwrite_interchange() {
-        let dir = std::env::temp_dir().join(format!("unwritten-bridge-transaction-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("source.unwae");
-        let original = br#"{"format":"unwritten-after-effects","version":99,"comps":[]}"#;
-        std::fs::write(&path, original).unwrap();
-        let mut session = Session::default();
-        session.execute("comp.new", json!({"name":"Keep my work","width":32,"height":24,"duration":1})).unwrap();
-        let before = session.project.to_json();
-        assert!(session.execute("file.open", json!({"path":path.to_string_lossy()})).is_err());
-        assert_eq!(session.project.to_json(), before);
-        assert!(session.execute("file.saveAs", json!({"path":path.to_string_lossy()})).is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), original);
-        assert!(session.path.is_none());
-        assert!(super::super::import_project::is_project_path("SOURCE.UNWAE"));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn ae_script_exports_reject_native_aep_destinations_without_writing() {
-        let dir = std::env::temp_dir().join(format!("unwritten-ae-export-guard-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("Original.AEP");
-        let original = b"RIFX\0\0\0\x04Egg!";
-        std::fs::write(&path, original).unwrap();
-        let mut session = Session::default();
-        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
-        let before = session.project.to_json();
-        for command in ["file.exportAfterEffects", "file.exportAfterEffectsExporter"] {
-            let error = session.execute(command, json!({"path":path.to_string_lossy()})).unwrap_err().to_string();
-            assert!(error.contains(".jsx"), "{error}");
-            assert_eq!(std::fs::read(&path).unwrap(), original);
-            assert_eq!(session.project.to_json(), before);
-            assert!(session.path.is_none());
-            let missing = dir.join("NeverCreate.aepx");
-            assert!(session.execute(command, json!({"path":missing.to_string_lossy()})).is_err());
-            assert!(!missing.exists());
-        }
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn proprietary_after_effects_paths_are_rejected_before_io() {
-        assert!(reject_after_effects("project.aep", "save").is_err());
-        assert!(reject_after_effects("project.AEP", "open").is_ok());
-        assert!(reject_after_effects("project.AEP", "import").is_ok());
-        assert!(reject_after_effects("project.aepx", "open").is_err());
-        assert!(reject_after_effects("project.UNW", "save").is_ok());
-        assert!(reject_after_effects("project.uwproj", "save").is_ok());
-        let dir = std::env::temp_dir().join(format!("unwritten-aep-guard-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("Existing.AEP");
-        let original = b"RIFX\0\0\0\x04Egg!";
-        std::fs::write(&path, original).unwrap();
-        let mut session = Session::default();
-        let error = session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap_err().to_string();
-        assert!(error.contains("not supported") && error.contains(".unw"), "{error}");
-        assert_eq!(std::fs::read(&path).unwrap(), original);
-        let missing = dir.join("Unsupported.aepx");
-        assert!(session.execute("file.saveAs", json!({"path": missing.to_string_lossy()})).is_err());
-        assert!(!missing.exists());
-        let _ = std::fs::remove_dir_all(dir);
-    }
 }
 
 fn save_to(s: &mut Session, path: &str) -> Result<Value> {
@@ -990,4 +857,137 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("file.cycleBitDepth", "Cycle Project Bit Depth", [], None, "{}", always, cycle_depth),
         cmd!("render.backend", "Video Rendering and Effects", [], None, "{backend?: gpu|cpu}", always, render_backend),
     ]
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::reject_after_effects;
+    use crate::Session;
+    use serde_json::json;
+
+    #[test]
+    fn missing_ae_project_import_does_not_touch_current_work() {
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        for path in ["missing.AEP", "missing.AePx"] {
+            let error = session.execute("file.importProject", json!({"path":path})).unwrap_err().to_string();
+            assert!(error.contains("cannot read") || error.contains("After Effects Bridge"), "{error}");
+            let result = session.execute("file.import", json!({"paths":[path]})).unwrap();
+            let errors = result["errors"].as_array().unwrap();
+            assert_eq!(errors.len(), 1, "{result}");
+            assert!(errors[0].as_str().unwrap().contains("cannot read") || errors[0].as_str().unwrap().contains("After Effects Bridge"), "{result}");
+            assert_eq!(session.project.to_json(), before);
+            assert!(session.path.is_none());
+        }
+    }
+
+    #[test]
+    fn ae_bridge_open_activates_root_composition_instead_of_first_precomp() {
+        let dir = std::env::temp_dir().join(format!("unwritten-bridge-root-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("converted.unwae");
+        let document = json!({"format":"unwritten-after-effects","version":1,"comps":[
+            {"id":"nested","name":"Nested first","width":32,"height":24,"fps":24,"duration":1},
+            {"id":"root","name":"Final composition","width":32,"height":24,"fps":24,"duration":1,
+             "layers":[{"name":"Precomp","kind":"comp","source":"nested","width":32,"height":24,"outPoint":1}]}
+        ]});
+        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        let mut session = Session::default();
+        session.execute("file.open", json!({"path":path.to_string_lossy()})).unwrap();
+        let active = session.state.active_comp.unwrap();
+        assert_eq!(session.project.item(active).unwrap().name, "Final composition");
+        assert!(session.path.is_none(), "converted interchange must remain an untitled native project");
+        assert_eq!(std::fs::read(&path).unwrap(), serde_json::to_vec(&document).unwrap());
+        let mut destination = Session::default();
+        let result = destination.execute("file.importProject", json!({"path":path.to_string_lossy()})).unwrap();
+        assert!(result["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|w| w.contains("Experimental AE bridge"))), "{result}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn native_unw_round_trips() {
+        let dir = std::env::temp_dir().join(format!("unwritten-unw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("roundtrip.unw");
+        let mut a = Session::default();
+        a.execute("comp.new", json!({"name":"Canonical", "width":32, "height":24, "duration":1})).unwrap();
+        a.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
+        let mut b = Session::default();
+        b.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert_eq!(b.path.as_deref(), Some(path.to_string_lossy().as_ref()));
+        assert!(b.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
+        assert!(super::super::import_project::is_project_path("ROUNDTRIP.UNW"));
+        let mut imported = Session::default();
+        let result = imported.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
+        assert!(result["errors"].as_array().is_none_or(Vec::is_empty), "{result}");
+        assert!(imported.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn malformed_ae_bridge_keeps_document_and_native_save_cannot_overwrite_interchange() {
+        let dir = std::env::temp_dir().join(format!("unwritten-bridge-transaction-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("source.unwae");
+        let original = br#"{"format":"unwritten-after-effects","version":99,"comps":[]}"#;
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep my work","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        assert!(session.execute("file.open", json!({"path":path.to_string_lossy()})).is_err());
+        assert_eq!(session.project.to_json(), before);
+        assert!(session.execute("file.saveAs", json!({"path":path.to_string_lossy()})).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(session.path.is_none());
+        assert!(super::super::import_project::is_project_path("SOURCE.UNWAE"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn ae_script_exports_reject_native_aep_destinations_without_writing() {
+        let dir = std::env::temp_dir().join(format!("unwritten-ae-export-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Original.AEP");
+        let original = b"RIFX\0\0\0\x04Egg!";
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        for command in ["file.exportAfterEffects", "file.exportAfterEffectsExporter"] {
+            let error = session.execute(command, json!({"path":path.to_string_lossy()})).unwrap_err().to_string();
+            assert!(error.contains(".jsx"), "{error}");
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+            assert_eq!(session.project.to_json(), before);
+            assert!(session.path.is_none());
+            let missing = dir.join("NeverCreate.aepx");
+            assert!(session.execute(command, json!({"path":missing.to_string_lossy()})).is_err());
+            assert!(!missing.exists());
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn proprietary_after_effects_paths_are_rejected_before_io() {
+        assert!(reject_after_effects("project.aep", "save").is_err());
+        assert!(reject_after_effects("project.AEP", "open").is_ok());
+        assert!(reject_after_effects("project.AEP", "import").is_ok());
+        assert!(reject_after_effects("project.aepx", "open").is_err());
+        assert!(reject_after_effects("project.UNW", "save").is_ok());
+        assert!(reject_after_effects("project.uwproj", "save").is_ok());
+        let dir = std::env::temp_dir().join(format!("unwritten-aep-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Existing.AEP");
+        let original = b"RIFX\0\0\0\x04Egg!";
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        let error = session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap_err().to_string();
+        assert!(error.contains("not supported") && error.contains(".unw"), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        let missing = dir.join("Unsupported.aepx");
+        assert!(session.execute("file.saveAs", json!({"path": missing.to_string_lossy()})).is_err());
+        assert!(!missing.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

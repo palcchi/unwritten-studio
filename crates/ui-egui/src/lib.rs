@@ -275,6 +275,7 @@ pub struct UnwrittenStudioApp {
     pub frames: Frames,
     pub playback: Playback,
     pub dialog: Option<Dialog>,
+    pub(crate) aep_export_review: Option<panels::aep_export::Review>,
     pub hooks: Hooks,
     pub fps: f32,
     last_time: f64,
@@ -385,6 +386,7 @@ impl UnwrittenStudioApp {
             frames: Frames::default(),
             playback: Playback::default(),
             dialog: None,
+            aep_export_review: None,
             hooks: Hooks::default(),
             fps: 60.0,
             last_time: 0.0,
@@ -1714,6 +1716,7 @@ impl UnwrittenStudioApp {
         panels::precomp::mini_flowchart(self, &ctx);
         panels::home::capture_thumbnail(self);
         panels::dialogs::show(self, &ctx);
+        panels::aep_export::show(self, &ctx);
         panels::scriptui_view::sync_panels(self);
         panels::scriptui_view::show_windows(self, &ctx);
         panels::learn::coach(self, &ctx);

@@ -559,6 +559,7 @@ File
     Add to Render Queue | renderQueue.add
     Adobe Premiere Pro Project... | file.exportTimeline
     Lottie JSON... | file.exportLottie
+    Export Project to After Effects AEP... | file.exportAep
     Essential Graphics Template... | essential.exportTemplate
   ---
   Find | app.find

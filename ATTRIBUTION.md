@@ -109,3 +109,8 @@ configuration from these Apache-2.0 projects:
 - Appearance theme previews, drawn procedurally from original shapes: `crates/ui-egui/src/panels/settings.rs` (original work, MIT OR Apache-2.0).
 
 - After Effects desktop interchange helpers, `crates/engine/scripts/Export Unwritten AE Bridge.jsx` and `Import Unwritten AE Bridge.jsx`: original clean-room code, Unwritten Studio contributors, MIT OR Apache-2.0; sidecars alongside scripts.
+
+## Binary AEP export structures
+
+- `crates/aep-export/template/base.aep`: original contributor-generated synthetic composition and solid, vangel76, [EffectCraft PR #1422](https://github.com/vangel76/effectcraft/pull/1422), pinned `02b490ef95dd345b098822367847cbfdfb80da48`, MIT OR Apache-2.0. Not an Adobe sample project; no third-party media, presets or artwork. Attribution sidecar alongside the file.
+- `crates/aep-export/template/protos.aep`: original contributor-generated synthetic transform and null-layer prototype structures, vangel76, same pinned source and license; no third-party media, presets or artwork. Attribution sidecar alongside the file.

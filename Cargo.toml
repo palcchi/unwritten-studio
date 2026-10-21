@@ -13,6 +13,7 @@ repository = "https://github.com/palcchi/unwritten-studio"
 [workspace.dependencies]
 # internal
 unwritten-studio-aep = { path = "crates/aep" }
+unwritten-studio-aep-export = { path = "crates/aep-export" }
 unwritten-studio-aep-import = { path = "crates/aep-import" }
 unwritten-studio-time = { path = "crates/time" }
 unwritten-studio-geom = { path = "crates/geom" }

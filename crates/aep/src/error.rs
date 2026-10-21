@@ -45,7 +45,7 @@ impl fmt::Display for AepError {
             Self::Malformed { offset, what } => write!(f, "malformed chunk structure at offset {offset}: {what}"),
             Self::TooDeep => write!(f, "chunks are nested too deeply"),
             Self::TooManyChunks => write!(f, "too many chunks"),
-            Self::TooLarge => write!(f, "chunk too large for the 32-bit size field"),
+            Self::TooLarge => write!(f, "chunk or file exceeds the supported size/allocation limit"),
         }
     }
 }

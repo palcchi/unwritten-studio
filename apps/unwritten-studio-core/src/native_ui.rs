@@ -19,6 +19,10 @@ const MAX_EVENTS: usize = 1024;
 #[derive(Default)]
 struct ExternalProjects(VecDeque<String>);
 impl ExternalProjects {
+    const CAPACITY: usize = 8;
+    fn available_capacity(&self) -> usize {
+        Self::CAPACITY.saturating_sub(self.0.len())
+    }
     fn receive(&mut self, input: &Value) -> Result<(), String> {
         let Some(value) = input.get("externalProjectPath") else { return Ok(()) };
         let path = value.as_str().ok_or("External project path must be a string")?;
@@ -30,7 +34,7 @@ impl ExternalProjects {
         if path.len() > 16384 || path.contains('\0') || !file.is_absolute() || !supported {
             return Err("Choose a supported local project file (.aep or .unw) from Files".into());
         }
-        if self.0.len() >= 8 {
+        if self.available_capacity() == 0 {
             return Err("Too many projects are waiting to open. Finish or cancel the current Open operation, then try again.".into());
         }
         self.0.push_back(path.to_owned());
@@ -42,6 +46,9 @@ impl ExternalProjects {
         }
         let Some(path) = self.0.pop_front() else { return Ok(()) };
         // Never call session.execute directly: the frontend owns the unsaved-changes prompt.
+        // An import error is a terminal, visibly reported result for this attempt,
+        // not a capacity rejection. Requeueing it every frame would retry corrupt
+        // files forever and starve later documents. A fresh Files handoff can retry.
         unwritten_studio_ui_egui::menus::invoke(app, ctx, "file.open", json!({"path":path}))?;
         Ok(())
     }
@@ -367,6 +374,7 @@ impl NativeUi {
     fn host_output(&self, out: &egui::PlatformOutput) {
         let Ok(mut h) = self.host.lock() else { return };
         let mut v = json!({"ok":true,"wantsKeyboard":self.ctx.egui_wants_keyboard_input()});
+        v["externalProjectCapacity"] = json!(self.external_projects.available_capacity());
         for cmd in &out.commands {
             match cmd {
                 egui::OutputCommand::CopyText(s) => v["copiedText"] = json!(s),
@@ -584,6 +592,60 @@ mod tests {
         assert_eq!(queue.0.len(), 8);
     }
     #[test]
+    fn external_project_capacity_tracks_receive_rejection_and_dequeue() {
+        let mut queue = ExternalProjects::default();
+        assert_eq!(queue.available_capacity(), 8, "the first native frame must advertise initial capacity");
+        assert!(queue.receive(&json!({"externalProjectPath":"relative.aep"})).is_err());
+        assert_eq!(queue.available_capacity(), 8, "invalid paths do not consume credit");
+        for i in 0..ExternalProjects::CAPACITY {
+            queue.receive(&json!({"externalProjectPath":format!("/tmp/{i}.unw")})).unwrap();
+            assert_eq!(queue.available_capacity(), ExternalProjects::CAPACITY - i - 1);
+        }
+        let before = queue.0.clone();
+        assert!(queue.receive(&json!({"externalProjectPath":"/tmp/overflow.unw"})).is_err());
+        assert_eq!(queue.0, before, "a full queue must preserve every accepted path");
+        assert_eq!(queue.available_capacity(), 0);
+        assert_eq!(queue.0.pop_front().as_deref(), Some("/tmp/0.unw"));
+        assert_eq!(queue.available_capacity(), 1);
+        queue.receive(&json!({"externalProjectPath":"/tmp/retry.unw"})).unwrap();
+        assert_eq!(queue.available_capacity(), 0);
+        assert_eq!(queue.0.back().map(String::as_str), Some("/tmp/retry.unw"));
+    }
+    #[test]
+    fn external_project_capacity_backpressures_a_64_file_burst_without_loss() {
+        let mut queue = ExternalProjects::default();
+        let mut producer: VecDeque<String> = (0..64).map(|i| format!("/tmp/burst-{i}.unw")).collect();
+        let expected: Vec<_> = producer.iter().cloned().collect();
+        let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+        let ctx = egui::Context::default();
+        // Model the serial Swift frame producer while a native picker is open.
+        for _ in 0..64 {
+            if queue.available_capacity() > 0
+                && let Some(path) = producer.pop_front()
+            {
+                queue.receive(&json!({"externalProjectPath":path})).unwrap();
+            }
+            queue.dispatch(&mut app, &ctx, true).unwrap();
+        }
+        assert_eq!(queue.0.len(), 8);
+        assert_eq!(producer.len(), 56, "the ninth URL must stay upstream, not be dropped");
+        let mut consumed = Vec::new();
+        while !producer.is_empty() || !queue.0.is_empty() {
+            if queue.available_capacity() > 0
+                && let Some(path) = producer.pop_front()
+            {
+                queue.receive(&json!({"externalProjectPath":path})).unwrap();
+            }
+            // Consumption itself is covered by the guarded importer tests below;
+            // here release a slot to model a completed Open/Cancel decision.
+            if let Some(path) = queue.0.pop_front() {
+                consumed.push(path);
+            }
+        }
+        assert_eq!(consumed, expected, "all 64 URLs survive blocking and resume in FIFO order");
+        assert_eq!(queue.available_capacity(), ExternalProjects::CAPACITY);
+    }
+    #[test]
     fn external_project_open_waits_for_picker_and_unsaved_decision() {
         let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
         let ctx = egui::Context::default();
@@ -600,6 +662,33 @@ mod tests {
         queue.dispatch(&mut app, &ctx, false).unwrap();
         assert_eq!(queue.0.len(), 1, "a second handoff cannot overwrite the first Save/Cancel decision");
         assert_eq!(app.session.project.to_json(), before);
+    }
+    #[test]
+    fn external_project_failed_open_is_visible_one_shot_and_can_be_retried() {
+        let root = std::env::temp_dir().join(format!("unwritten-handoff-retry-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("Retry project.unw");
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+        let ctx = egui::Context::default();
+        let before = app.session.project.to_json();
+        let mut queue = ExternalProjects::default();
+        queue.receive(&json!({"externalProjectPath":path})).unwrap();
+        let error = queue.dispatch(&mut app, &ctx, false).expect_err("missing files must report failure to the native host");
+        assert!(!error.is_empty());
+        assert_eq!(app.session.project.to_json(), before, "a failed import cannot replace the current document");
+        assert!(queue.0.is_empty(), "terminal failures must not auto-retry every frame");
+        queue.dispatch(&mut app, &ctx, false).unwrap();
+        let mut source = unwritten_studio_host::session();
+        source.execute("comp.new", json!({"name":"Retried handoff","width":64,"height":64})).unwrap();
+        source.execute("file.saveAs", json!({"path":path})).unwrap();
+        queue.receive(&json!({"externalProjectPath":path})).unwrap();
+        queue.dispatch(&mut app, &ctx, false).unwrap();
+        assert!(!app.session.project.items.is_empty(), "the same URL is retryable after the failure is resolved");
+        assert_eq!(app.session.path.as_deref(), path.to_str());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn external_project_open_uses_native_unw_and_aep_importers_once() {

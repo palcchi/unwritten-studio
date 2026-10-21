@@ -450,8 +450,8 @@ fn portrait_fills_viewport_without_replacing_saved_landscape_dock() {
     }
     let composition = rect(&h, "panel.Composition");
     let timeline = rect(&h, "panel.Timeline");
-    assert!(composition.width() >= 1000.0 && composition.height() >= 1000.0, "{composition:?}");
-    assert!(timeline.width() >= 1000.0 && timeline.height() >= 700.0, "{timeline:?}");
+    assert!(composition.width() >= 1000.0 && composition.height() >= 800.0, "{composition:?}");
+    assert!(timeline.width() >= 1000.0 && timeline.height() >= 400.0, "{timeline:?}");
     assert_eq!(h.state().ui.dock, landscape);
     let at = rect(&h, "panel.tab.Timeline").center();
     h.event(Event::PointerMoved(at));
@@ -462,7 +462,7 @@ fn portrait_fills_viewport_without_replacing_saved_landscape_dock() {
     }
     h.run_steps(3);
     let timeline = rect(&h, "panel.Timeline");
-    assert!(timeline.width() >= 1000.0 && timeline.height() >= 700.0, "{timeline:?}");
+    assert!(timeline.width() >= 1000.0 && timeline.height() >= 400.0, "{timeline:?}");
     h.set_size(vec2(1024.0, 440.0));
     h.run_steps(4);
     assert_eq!(h.state().ui.dock, landscape);
@@ -471,6 +471,90 @@ fn portrait_fills_viewport_without_replacing_saved_landscape_dock() {
     assert!(std::sync::Arc::ptr_eq(&project, &h.state().session.project));
 }
 
+#[test]
+fn portrait_keeps_effects_and_project_bodies_reachable() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Portrait","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(768.0, 1024.0)).build_eframe(move |_| app);
+    for size in [vec2(768.0, 1024.0), vec2(1024.0, 1400.0)] {
+        h.set_size(size);
+        h.run_steps(4);
+        for panel in ["Composition", "Timeline", "Project", "EffectControls", "EffectsPresets"] {
+            let r = rect(&h, &format!("panel.{panel}"));
+            assert!(r.width() >= 120.0 && r.height() >= 80.0, "{panel} must have a usable body at {size:?}: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn responsive_divider_geometry_is_session_only_and_persists_across_frames() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Responsive resize","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1440.0, 900.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let desktop = h.state().ui.dock.clone();
+
+    h.set_size(vec2(768.0, 1024.0));
+    h.run_steps(4);
+    let root = rect(&h, "dock.gutter.");
+    let root_to = root.center() + if root.width() > root.height() { vec2(0.0, 24.0) } else { vec2(24.0, 0.0) };
+    let root_before = rect(&h, "panel.Composition");
+    drag(&mut h, root.center(), root_to, Modifiers::NONE);
+    let root_after = rect(&h, "panel.Composition");
+    assert_ne!(root_before, root_after, "root divider drag must resize the responsive projection");
+    h.run_steps(4);
+    assert_eq!(rect(&h, "panel.Composition"), root_after, "responsive root resize must persist across frames");
+    assert_eq!(h.state().ui.dock, desktop, "portrait resize must not alter the desktop tree");
+
+    let nested_id = ["dock.gutter.a", "dock.gutter.b", "dock.gutter.ba", "dock.gutter.ab"]
+        .into_iter()
+        .find(|id| h.state().auto.find(id).is_some())
+        .expect("responsive profile must expose a nested utility divider");
+    let nested = rect(&h, nested_id);
+    let nested_to = nested.center() + if nested.width() > nested.height() { vec2(0.0, 20.0) } else { vec2(20.0, 0.0) };
+    let nested_before = rect(&h, "panel.EffectControls");
+    drag(&mut h, nested.center(), nested_to, Modifiers::NONE);
+    let nested_after = rect(&h, "panel.EffectControls");
+    assert_ne!(nested_before, nested_after, "nested divider drag must resize utility geometry");
+    h.run_steps(4);
+    assert_eq!(rect(&h, "panel.EffectControls"), nested_after, "nested responsive resize must persist across frames");
+    assert_eq!(h.state().ui.dock, desktop, "nested portrait resize must remain session-only");
+
+    h.set_size(vec2(1440.0, 900.0));
+    h.run_steps(4);
+    assert_eq!(h.state().ui.dock, desktop, "rotation back to desktop must restore the saved tree");
+}
+#[test]
+fn responsive_cache_tracks_focus_and_does_not_replace_maximized_panel() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Responsive focus","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.dock =
+        DockNode::Tabs { panels: vec![PanelKind::Composition, PanelKind::Timeline, PanelKind::Project, PanelKind::Info, PanelKind::ScriptConsole], active: 0 };
+    let mut h = Harness::builder().with_size(vec2(768.0, 1024.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let desktop = h.state().ui.dock.clone();
+    for focused in [PanelKind::Info, PanelKind::ScriptConsole, PanelKind::Project] {
+        h.state_mut().ui.focused = focused;
+        h.run_steps(4);
+        let body = rect(&h, &format!("panel.{}", focused.id()));
+        assert!(body.width() > 120.0 && body.height() > 80.0);
+        assert_eq!(h.state().ui.dock, desktop);
+    }
+    h.state_mut().ui.maximized = Some(PanelKind::Composition);
+    h.run_steps(4);
+    let viewer = rect(&h, "panel.Composition");
+    assert!(viewer.width() > 700.0 && viewer.height() > 800.0);
+    assert!(h.state().auto.find("panel.Project").is_none());
+    assert_eq!(h.state().ui.dock, desktop);
+}
 #[test]
 fn compact_landscape_prioritizes_composition_and_keeps_timeline_visible() {
     let mut session = Session::default();
@@ -512,4 +596,113 @@ fn tablet_landscape_uses_wide_viewer_and_preserves_desktop_layout() {
     h.run_steps(4);
     assert_eq!(h.state().ui.dock, desktop);
     assert!(h.state().auto.find("panel.Properties").is_some());
+}
+
+#[test]
+fn portrait_divider_drag_survives_same_mode_resize_without_changing_desktop_tree() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"M2 portrait","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1024.0, 1366.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let desktop = h.state().ui.dock.clone();
+    let gutter = rect(&h, "dock.gutter.");
+    let before = rect(&h, "panel.Composition");
+    let direction = if gutter.width() > gutter.height() { vec2(0.0, 28.0) } else { vec2(28.0, 0.0) };
+    drag(&mut h, gutter.center(), gutter.center() + direction, Modifiers::NONE);
+    let after = rect(&h, "panel.Composition");
+    assert_ne!(before, after, "portrait divider drag must change the projected body");
+    let initial_ratio = after.height() / rect(&h, "panel.Timeline").height();
+
+    h.set_size(vec2(1024.0, 1536.0));
+    h.run_steps(4);
+    let composition = rect(&h, "panel.Composition");
+    let timeline = rect(&h, "panel.Timeline");
+    let resized_ratio = composition.height() / timeline.height();
+    assert!((resized_ratio - initial_ratio).abs() < 0.08, "same responsive mode must preserve divider ratio: {initial_ratio} -> {resized_ratio}");
+    for body in [composition, timeline] {
+        assert!(body.min.x >= 0.0 && body.min.y >= 0.0 && body.max.x <= 1024.0 && body.max.y <= 1536.0, "body out of bounds: {body:?}");
+        assert!(body.width() >= 120.0 && body.height() >= 80.0, "body is not usable: {body:?}");
+    }
+    assert_eq!(h.state().ui.dock, desktop, "portrait projection must not persist into the desktop tree");
+}
+
+#[test]
+fn portrait_saved_tree_mutation_invalidates_projection_cache_for_close_and_reopen() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"M2 cache","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1024.0, 1366.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let desktop = h.state().ui.dock.clone();
+    assert!(h.state().auto.find("panel.Project").is_some());
+
+    h.state_mut().close_panel(PanelKind::Project);
+    h.run_steps(4);
+    assert!(!h.state().ui.dock.contains(PanelKind::Project));
+    assert!(h.state().auto.find("panel.Project").is_none(), "closed panel must not survive a cached portrait projection");
+
+    h.state_mut().ui.dock = desktop;
+    h.run_steps(4);
+    assert!(h.state().ui.dock.contains(PanelKind::Project));
+    assert!(h.state().auto.find("panel.Project").is_some(), "reopened panel must appear after the saved tree changes back");
+}
+
+#[test]
+fn portrait_pointer_tab_drop_updates_saved_tree_and_refreshes_projection() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"M2 tab drop","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1024.0, 1366.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let before = h.state().ui.dock.clone();
+    let from = rect(&h, "panel.tab.Project").center();
+    let to = rect(&h, "panel.Composition").center();
+    drag(&mut h, from, to, Modifiers::NONE);
+    assert_ne!(h.state().ui.dock, before, "real portrait tab drop must mutate the saved desktop tree");
+    assert!(same_group(&h.state().ui.dock, PanelKind::Project, PanelKind::Composition));
+    let moved = h.state().ui.dock.clone();
+    h.run_steps(4);
+    assert!(h.state().auto.find("panel.Project").is_some(), "cache refresh must keep the moved panel reachable");
+    assert_eq!(h.state().ui.dock, moved, "saved tree remains stable after cache refresh");
+}
+
+#[test]
+fn portrait_pointer_tab_click_updates_projection_without_resetting_divider() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"M2 tab click","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    app.ui.dock = DockNode::Tabs { panels: vec![PanelKind::Composition, PanelKind::Timeline, PanelKind::Project, PanelKind::Info], active: 0 };
+    let mut h = Harness::builder().with_size(vec2(1024.0, 1366.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+
+    let saved = h.state().ui.dock.clone();
+    assert!(h.state().auto.find("panel.Info").is_none(), "the target must begin inactive");
+    let initial_gutter = rect(&h, "dock.gutter.");
+    drag(&mut h, initial_gutter.center(), initial_gutter.center() + vec2(0.0, 60.0), Modifiers::NONE);
+    h.run_steps(4);
+    let gutter = rect(&h, "dock.gutter.");
+    assert_ne!(gutter, initial_gutter, "the divider must move before testing tab activation");
+    let composition_before = rect(&h, "panel.Composition");
+    let tab = rect(&h, "panel.tab.Info").center();
+    h.event(Event::PointerMoved(tab));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton { pos: tab, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(4);
+
+    assert_eq!(h.state().ui.dock, saved, "projected tab activation must not mutate the desktop tree");
+    assert!(h.state().auto.find("panel.Info").is_some(), "clicked projected tab must remain active");
+    assert_eq!(rect(&h, "dock.gutter."), gutter, "tab activation must not reset divider geometry");
+    assert_eq!(rect(&h, "panel.Composition"), composition_before, "tab activation must not reset the projection layout");
 }

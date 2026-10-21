@@ -33,7 +33,7 @@ jobs:
 
       - name: Test Files document handoff and production Swift inbox
         run: |
-          python3 scripts/test-ios-document-handoff.py
+          python3 scripts/test-ios-document-handoff.py --require-swift-runtime
           cargo test --locked -p unwritten-studio-core --lib external_project
 
       - name: Test native engine workflows

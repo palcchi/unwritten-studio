@@ -854,17 +854,72 @@ fn responsive_panels(root: &DockNode) -> Vec<PanelKind> {
 /// persisted workspace intact, but reserve a substantial lower pane for the Timeline.
 pub(crate) fn portrait_profile(root: &DockNode, focused: PanelKind) -> DockNode {
     let panels = responsive_panels(root);
-    let primary: Vec<_> = panels.iter().copied().filter(|p| *p != PanelKind::Timeline).collect();
     let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) else {
         // Do not invent a Composition panel (or draw the only panel twice) for
         // reduced layouts such as a newly opened, timeline-only workspace.
-        return DockNode::Tabs { panels, active: 0 };
+        let active = panels.iter().position(|panel| *panel == focused).unwrap_or(0);
+        return DockNode::Tabs { panels, active };
     };
-    if primary.is_empty() {
+    if !panels.iter().any(|p| *p != timeline) {
         return DockNode::Tabs { panels: vec![timeline], active: 0 };
     }
+
+    // A portrait viewport cannot fit the desktop tree, but putting every
+    // non-timeline panel in one tab group makes the Project/Effects controls
+    // effectively disappear: only one tab body can be visible and the tab
+    // strip overflows on an iPad. Keep the primary viewer in its own group and
+    // give the three editing utility families their own horizontal bodies. The
+    // groups are deliberately tabs (rather than an accordion): each body gets
+    // the full utility height, while miscellaneous panels remain reachable in
+    // the Project group without stealing space from the editing controls.
+    let primary: Vec<_> = panels.iter().copied().filter(|p| matches!(p, PanelKind::Composition | PanelKind::Layer | PanelKind::Viewer(_))).collect();
+    if primary.is_empty() {
+        let utilities: Vec<_> = panels.iter().copied().filter(|p| *p != timeline).collect();
+        let active = utilities.iter().position(|panel| *panel == focused).unwrap_or(0);
+        return vsplit(SplitSize::Ratio(0.76), DockNode::Tabs { panels: utilities, active }, DockNode::Tabs { panels: vec![timeline], active: 0 });
+    }
+    let mut project = vec![];
+    let mut controls = vec![];
+    let mut presets = vec![];
+    for panel in panels.iter().copied().filter(|p| *p != timeline && !primary.contains(p)) {
+        match panel {
+            PanelKind::EffectControls | PanelKind::Properties => controls.push(panel),
+            PanelKind::EffectsPresets => presets.push(panel),
+            _ => project.push(panel),
+        }
+    }
+    let mut utility_groups = Vec::with_capacity(3);
+    if !project.is_empty() {
+        let active = project.iter().position(|panel| *panel == focused).unwrap_or(0);
+        utility_groups.push(DockNode::Tabs { panels: project, active });
+    }
+    if !controls.is_empty() {
+        let active = controls.iter().position(|panel| *panel == focused).unwrap_or(0);
+        utility_groups.push(DockNode::Tabs { panels: controls, active });
+    }
+    if !presets.is_empty() {
+        utility_groups.push(DockNode::Tabs { panels: presets, active: 0 });
+    }
     let active = primary.iter().position(|panel| *panel == focused).unwrap_or(0);
-    vsplit(SplitSize::Ratio(0.58), DockNode::Tabs { panels: primary, active }, DockNode::Tabs { panels: vec![timeline], active: 0 })
+    let main = DockNode::Tabs { panels: primary, active };
+    let utility_node = if utility_groups.is_empty() {
+        None
+    } else {
+        let mut groups = utility_groups.into_iter().rev();
+        let Some(mut utility) = groups.next() else { return DockNode::Tabs { panels, active: 0 } };
+        for (index, group) in groups.enumerate() {
+            // Build from the right so three groups receive 1/3, 1/3, 1/3 of
+            // the utility row instead of exponentially shrinking nested panes.
+            let count = index + 2;
+            utility = hsplit(SplitSize::Ratio(1.0 / count as f32), group, utility);
+        }
+        Some(utility)
+    };
+    let content = match utility_node {
+        Some(utility) => vsplit(SplitSize::Ratio(0.58), main, utility),
+        None => main,
+    };
+    vsplit(SplitSize::Ratio(0.76), content, DockNode::Tabs { panels: vec![timeline], active: 0 })
 }
 
 /// Short landscape windows need a composition-first arrangement rather than the desktop's
@@ -1197,7 +1252,7 @@ fn resize_motion_delta(delta: f32, dragging: bool, precision: bool) -> f32 {
     if !delta.is_finite() {
         return 0.0;
     }
-    if dragging && precision { delta * 0.65 } else { delta }
+    if dragging && precision { delta * 0.35 } else { delta }
 }
 fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHandle<'static> {
     let axis = if vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
@@ -1206,7 +1261,8 @@ fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHan
     // Native iPad input reports a primary pointer drag, just like a mouse, but a 4-point gutter
     // is too easy to miss with a finger. Expand along the movement axis without changing the
     // divider's visual geometry; this also benefits pen and high-DPI touch devices.
-    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style).hit_margin(12.0)
+    let margin = if cfg!(target_os = "ios") { 18.0 } else { 12.0 };
+    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style).hit_margin(margin)
 }
 /// Minimum usable pane size.  The shared splitter relaxes this to half the available space in
 /// very small windows, keeping the layout finite and non-inverting while remaining responsive.
@@ -1680,8 +1736,13 @@ mod tests {
         let landscape = landscape_profile(&desktop, PanelKind::Layer);
         assert_eq!(desktop, workspace("Default"));
 
-        let DockNode::Split { a: portrait_top, b: portrait_bottom, .. } = portrait else { panic!("portrait profile must reserve a lower pane") };
+        let DockNode::Split { a: portrait_content, b: portrait_bottom, .. } = portrait else { panic!("portrait profile must reserve a lower pane") };
+        let DockNode::Split { a: portrait_top, b: portrait_utilities, .. } = *portrait_content else { panic!("portrait content must reserve a utility row") };
         let DockNode::Tabs { panels: portrait_primary, .. } = *portrait_top else { panic!("portrait primary pane must be tabbed") };
+        assert!(portrait_utilities.contains(PanelKind::Project));
+        assert!(portrait_utilities.contains(PanelKind::EffectControls));
+        assert!(portrait_utilities.contains(PanelKind::Properties));
+        assert!(portrait_utilities.contains(PanelKind::EffectsPresets));
         let DockNode::Tabs { panels: portrait_timeline, .. } = *portrait_bottom else { panic!("portrait lower pane must be tabbed") };
         assert!(portrait_primary.contains(&PanelKind::Composition));
         assert_eq!(portrait_timeline, vec![PanelKind::Timeline]);
@@ -1709,6 +1770,12 @@ mod tests {
         assert_eq!(portrait_profile(&timeline_only, PanelKind::Timeline), timeline_only);
         assert_eq!(landscape_profile(&timeline_only, PanelKind::Timeline), timeline_only);
 
+        for utility in [PanelKind::Project, PanelKind::EffectControls, PanelKind::EffectsPresets] {
+            let reduced = DockNode::Tabs { panels: vec![utility, PanelKind::Timeline], active: 0 };
+            let mut actual = Vec::new();
+            portrait_profile(&reduced, utility).panels(&mut actual);
+            assert_eq!(actual, vec![utility, PanelKind::Timeline], "No viewer means no duplicate utility pane");
+        }
         let utilities_only = DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::Info], active: 1 };
         let portrait = portrait_profile(&utilities_only, PanelKind::Info);
         let landscape = landscape_profile(&utilities_only, PanelKind::Info);
@@ -1718,6 +1785,39 @@ mod tests {
             panels.sort_by_key(|panel| panel.id());
             panels.dedup();
             assert_eq!(panels, vec![PanelKind::Info, PanelKind::Project]);
+        }
+    }
+
+    #[test]
+    fn portrait_keeps_focused_utility_visible() {
+        for focused in [PanelKind::Info, PanelKind::Preview, PanelKind::ScriptConsole, PanelKind::Viewer(42)] {
+            for panels in [
+                vec![PanelKind::Project, focused, PanelKind::Composition, PanelKind::Timeline],
+                vec![PanelKind::Project, focused, PanelKind::Timeline],
+                vec![PanelKind::Project, focused],
+            ] {
+                let desktop = DockNode::Tabs { panels, active: 0 };
+                assert!(portrait_profile(&desktop, focused).is_visible(focused), "focused {focused:?} must have a body");
+            }
+        }
+    }
+
+    #[test]
+    fn portrait_keeps_dynamic_viewers_in_primary_pane() {
+        for primary in [vec![PanelKind::Composition, PanelKind::Viewer(42)], vec![PanelKind::Viewer(42)]] {
+            let mut panels = primary.clone();
+            panels.extend([PanelKind::Project, PanelKind::Timeline]);
+            let desktop = DockNode::Tabs { panels, active: 0 };
+            let before = desktop.clone();
+            let portrait = portrait_profile(&desktop, PanelKind::Viewer(42));
+            let DockNode::Split { a: content, .. } = portrait else { panic!("portrait must retain timeline") };
+            let DockNode::Split { a: viewer, b: utility, .. } = *content else { panic!("viewer needs a separate utility row") };
+            let DockNode::Tabs { panels, active } = *viewer else { panic!("primary viewer must be tabbed") };
+            assert_eq!(panels, primary);
+            assert_eq!(panels.get(active), Some(&PanelKind::Viewer(42)));
+            assert!(utility.is_visible(PanelKind::Project));
+            assert!(!utility.contains(PanelKind::Viewer(42)));
+            assert_eq!(desktop, before, "projection must not mutate the saved workspace");
         }
     }
 
@@ -1741,12 +1841,15 @@ mod tests {
 
     #[test]
     fn ios_resize_precision_damps_motion_without_changing_keyboard_steps() {
-        assert_eq!(resize_motion_delta(20.0, true, true), 13.0);
-        assert_eq!(resize_motion_delta(-20.0, true, true), -13.0);
+        assert_eq!(resize_motion_delta(20.0, true, true), 7.0);
+        assert_eq!(resize_motion_delta(-20.0, true, true), -7.0);
         assert_eq!(resize_motion_delta(0.0, true, true), 0.0);
         assert_eq!(resize_motion_delta(8.0, false, true), 8.0);
         assert_eq!(resize_motion_delta(20.0, true, false), 20.0);
         assert_eq!(resize_motion_delta(f32::NAN, true, true), 0.0);
+        // A stationary finger adds no movement on subsequent render frames.
+        let motion: f32 = [5.0, 5.0, 0.0, 5.0, 0.0, 5.0].into_iter().map(|d| resize_motion_delta(d, true, true)).sum();
+        assert_eq!(motion, 7.0);
     }
 
     #[test]

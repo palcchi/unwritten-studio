@@ -278,6 +278,7 @@ pub(crate) fn submenu(app: &UnwrittenStudioApp, source: &str, shown: String) -> 
 /// Chinese After Effects documentation and the catalogs the sibling Craft apps ship; see the
 /// pull request for the rows taken from #321.
 const SIMPLIFIED_CHINESE: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "将项目导出为 After Effects AEP..."),
     ("", "After Effects Bridge", "After Effects 互通"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "保存 AE 导入助手 JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "将项目导出为 AE JSX..."),
@@ -866,7 +867,6 @@ const SIMPLIFIED_CHINESE: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "效果和预设"),
     ("window.panel", "Essential Graphics", "基本图形"),
     ("window.panel", "Info", "信息"),
-    ("help.inAppTutorials", "Learn", "学习"),
     ("window.panel", "Lumetri Scopes", "Lumetri 范围"),
     ("window.panel", "Mask Interpolation", "蒙版插值"),
     ("window.panel", "Media Browser", "媒体浏览器"),
@@ -898,20 +898,18 @@ const SIMPLIFIED_CHINESE: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "效果参考..."),
     ("anim.browsePresets", "Animation Presets...", "动画预设..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "键盘快捷键..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "应用内教程..."),
-    ("help.onlineTutorials", "Online Tutorials...", "在线教程..."),
     ("help.systemReport", "System Compatibility Report...", "系统兼容性报告..."),
     ("help.enableLogging", "Enable Logging", "启用日志记录"),
     ("help.revealLogFile", "Reveal Logging File", "显示日志记录文件"),
     ("help.reportIssue", "Provide Feedback...", "提供反馈..."),
     ("help.github", "Unwritten Studio on GitHub", "GitHub 上的 Unwritten Studio"),
-    ("file.openDemoProject", "Open Demo Project", "打开示例项目"),
 ];
 
 /// Traditional Chinese (zh-hant): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu row of the engine's menu tree, mirroring `SIMPLIFIED_CHINESE` in the
 /// vocabulary the sibling Craft apps' zh-hant catalogs use.
 const TRADITIONAL_CHINESE: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "將專案匯出為 After Effects AEP..."),
     ("", "After Effects Bridge", "After Effects 互通"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "儲存 AE 匯入輔助 JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "將專案匯出為 AE JSX..."),
@@ -1500,7 +1498,6 @@ const TRADITIONAL_CHINESE: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "效果和預設集"),
     ("window.panel", "Essential Graphics", "基本圖形"),
     ("window.panel", "Info", "資訊"),
-    ("help.inAppTutorials", "Learn", "學習"),
     ("window.panel", "Lumetri Scopes", "Lumetri 示波器"),
     ("window.panel", "Mask Interpolation", "遮色片插補"),
     ("window.panel", "Media Browser", "媒體瀏覽器"),
@@ -1532,17 +1529,15 @@ const TRADITIONAL_CHINESE: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "效果參考..."),
     ("anim.browsePresets", "Animation Presets...", "動畫預設集..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "鍵盤快速鍵..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "應用程式內教學課程..."),
-    ("help.onlineTutorials", "Online Tutorials...", "線上教學課程..."),
     ("help.systemReport", "System Compatibility Report...", "系統相容性報告..."),
     ("help.enableLogging", "Enable Logging", "啟用日誌記錄"),
     ("help.revealLogFile", "Reveal Logging File", "顯示日誌檔案"),
     ("help.reportIssue", "Provide Feedback...", "提供意見..."),
     ("help.github", "Unwritten Studio on GitHub", "GitHub 上的 Unwritten Studio"),
-    ("file.openDemoProject", "Open Demo Project", "開啟範例專案"),
 ];
 
 const JAPANESE: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "プロジェクトを After Effects AEP に書き出し..."),
     ("", "After Effects Bridge", "After Effects 連携"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "AE インポート用 JSX を保存..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "プロジェクトを AE JSX に書き出す..."),
@@ -2131,7 +2126,6 @@ const JAPANESE: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "エフェクト＆プリセット"),
     ("window.panel", "Essential Graphics", "エッセンシャルグラフィックス"),
     ("window.panel", "Info", "情報"),
-    ("help.inAppTutorials", "Learn", "学習"),
     ("window.panel", "Lumetri Scopes", "Lumetriスコープ"),
     ("window.panel", "Mask Interpolation", "マスク補間"),
     ("window.panel", "Media Browser", "メディアブラウザー"),
@@ -2163,20 +2157,18 @@ const JAPANESE: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "エフェクトリファレンス..."),
     ("anim.browsePresets", "Animation Presets...", "アニメーションプリセット..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "キーボードショートカット..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "アプリ内チュートリアル..."),
-    ("help.onlineTutorials", "Online Tutorials...", "オンラインチュートリアル..."),
     ("help.systemReport", "System Compatibility Report...", "システム互換性レポート..."),
     ("help.enableLogging", "Enable Logging", "ログ記録を有効化"),
     ("help.revealLogFile", "Reveal Logging File", "ログファイルを表示"),
     ("help.reportIssue", "Provide Feedback...", "フィードバックを送信..."),
     ("help.github", "Unwritten Studio on GitHub", "GitHubのUnwritten Studio"),
-    ("file.openDemoProject", "Open Demo Project", "デモプロジェクトを開く"),
 ];
 
 /// Ukrainian (uk): original translations of the English menu labels, using ordinary
 /// Ukrainian motion-graphics vocabulary. Product names and technical identifiers stay verbatim.
 /// The (command, source) keys match the other catalogs; no proprietary localization was used.
 const UKRAINIAN: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Експортувати проєкт у After Effects AEP..."),
     ("", "After Effects Bridge", "Обмін з After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Зберегти помічник імпорту AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Експортувати проєкт у AE JSX..."),
@@ -2765,7 +2757,6 @@ const UKRAINIAN: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Ефекти та набори"),
     ("window.panel", "Essential Graphics", "Основна графіка"),
     ("window.panel", "Info", "Інформація"),
-    ("help.inAppTutorials", "Learn", "Навчання"),
     ("window.panel", "Lumetri Scopes", "Вимірювачі Lumetri"),
     ("window.panel", "Mask Interpolation", "Інтерполяція маски"),
     ("window.panel", "Media Browser", "Браузер медіа"),
@@ -2797,14 +2788,11 @@ const UKRAINIAN: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Довідник ефектів..."),
     ("anim.browsePresets", "Animation Presets...", "Набори анімації..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Клавіатурні скорочення..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Уроки в програмі..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Онлайн-уроки..."),
     ("help.systemReport", "System Compatibility Report...", "Звіт про сумісність системи..."),
     ("help.enableLogging", "Enable Logging", "Увімкнути журналювання"),
     ("help.revealLogFile", "Reveal Logging File", "Показати файл журналу"),
     ("help.reportIssue", "Provide Feedback...", "Надіслати відгук..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio на GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Відкрити демонстраційний проєкт"),
 ];
 
 /// Spanish (es): the same (command, English label) keys as `JAPANESE`, one entry per fixed menu
@@ -2812,6 +2800,7 @@ const UKRAINIAN: &[(&str, &str, &str)] = &[
 /// Wording follows Adobe's Spanish After Effects documentation (helpx.adobe.com/es) where it
 /// names the feature, and macOS Spanish for the app menu.
 const SPANISH: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Exportar proyecto a After Effects AEP..."),
     ("", "After Effects Bridge", "Intercambio con After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Guardar asistente de importación AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportar proyecto a AE JSX..."),
@@ -3400,7 +3389,6 @@ const SPANISH: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Efectos y ajustes preestablecidos"),
     ("window.panel", "Essential Graphics", "Gráficos esenciales"),
     ("window.panel", "Info", "Información"),
-    ("help.inAppTutorials", "Learn", "Aprender"),
     ("window.panel", "Lumetri Scopes", "Ámbitos de Lumetri"),
     ("window.panel", "Mask Interpolation", "Interpolación de máscara"),
     ("window.panel", "Media Browser", "Navegador de medios"),
@@ -3432,19 +3420,17 @@ const SPANISH: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Referencia de efectos..."),
     ("anim.browsePresets", "Animation Presets...", "Ajustes preestablecidos de animación..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Métodos abreviados de teclado..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Tutoriales en la aplicación..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Tutoriales en línea..."),
     ("help.systemReport", "System Compatibility Report...", "Informe de compatibilidad del sistema..."),
     ("help.enableLogging", "Enable Logging", "Habilitar registro"),
     ("help.revealLogFile", "Reveal Logging File", "Mostrar archivo de registro"),
     ("help.reportIssue", "Provide Feedback...", "Enviar comentarios..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio en GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Abrir proyecto de demostración"),
 ];
 
 /// Brazilian Portuguese: the same (command, English label) keys as `JAPANESE`, one entry
 /// per fixed menu row of the engine's menu tree.
 const PORTUGUESE: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Exportar projeto para After Effects AEP..."),
     ("", "After Effects Bridge", "Integração com After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Salvar auxiliar de importação AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportar projeto para AE JSX..."),
@@ -4033,7 +4019,6 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Efeitos e predefinições"),
     ("window.panel", "Essential Graphics", "Gráficos essenciais"),
     ("window.panel", "Info", "Informações"),
-    ("help.inAppTutorials", "Learn", "Aprender"),
     ("window.panel", "Lumetri Scopes", "Escopos Lumetri"),
     ("window.panel", "Mask Interpolation", "Interpolação de máscara"),
     ("window.panel", "Media Browser", "Navegador de mídia"),
@@ -4065,14 +4050,11 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Referência de efeitos..."),
     ("anim.browsePresets", "Animation Presets...", "Predefinições de animação..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Atalhos de teclado..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Tutoriais no aplicativo..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Tutoriais online..."),
     ("help.systemReport", "System Compatibility Report...", "Relatório de compatibilidade do sistema..."),
     ("help.enableLogging", "Enable Logging", "Ativar registro em log"),
     ("help.revealLogFile", "Reveal Logging File", "Revelar arquivo de log"),
     ("help.reportIssue", "Provide Feedback...", "Enviar comentários..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio no GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Abrir projeto de demonstração"),
 ];
 
 // >>> Russian, French and German menu catalogs
@@ -4080,6 +4062,7 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
 /// Russian (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const RUSSIAN: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Экспортировать проект в After Effects AEP..."),
     ("", "After Effects Bridge", "Обмен с After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Сохранить помощник импорта AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Экспортировать проект в AE JSX..."),
@@ -4668,7 +4651,6 @@ const RUSSIAN: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Эффекты и заготовки"),
     ("window.panel", "Essential Graphics", "Основная графика"),
     ("window.panel", "Info", "Информация"),
-    ("help.inAppTutorials", "Learn", "Обучение"),
     ("window.panel", "Lumetri Scopes", "Измерители Lumetri"),
     ("window.panel", "Mask Interpolation", "Интерполяция маски"),
     ("window.panel", "Media Browser", "Обозреватель медиа"),
@@ -4700,19 +4682,17 @@ const RUSSIAN: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Справочник по эффектам..."),
     ("anim.browsePresets", "Animation Presets...", "Заготовки анимации..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Сочетания клавиш..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Уроки в приложении..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Онлайн-уроки..."),
     ("help.systemReport", "System Compatibility Report...", "Отчет о совместимости системы..."),
     ("help.enableLogging", "Enable Logging", "Включить ведение журнала"),
     ("help.revealLogFile", "Reveal Logging File", "Показать файл журнала"),
     ("help.reportIssue", "Provide Feedback...", "Оставить отзыв..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio на GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Открыть демонстрационный проект"),
 ];
 
 /// French (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const FRENCH: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Exporter le projet vers After Effects AEP..."),
     ("", "After Effects Bridge", "Passerelle After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Enregistrer l’assistant d’importation AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Exporter le projet vers AE JSX..."),
@@ -5301,7 +5281,6 @@ const FRENCH: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Effets et programmes"),
     ("window.panel", "Essential Graphics", "Graphiques essentiels"),
     ("window.panel", "Info", "Informations"),
-    ("help.inAppTutorials", "Learn", "Apprentissage"),
     ("window.panel", "Lumetri Scopes", "Oscilloscopes Lumetri"),
     ("window.panel", "Mask Interpolation", "Interpolation de masque"),
     ("window.panel", "Media Browser", "Navigateur multimédia"),
@@ -5333,19 +5312,17 @@ const FRENCH: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Référence des effets..."),
     ("anim.browsePresets", "Animation Presets...", "Programmes d’animation..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Raccourcis clavier..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Tutoriels dans l’application..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Tutoriels en ligne..."),
     ("help.systemReport", "System Compatibility Report...", "Rapport de compatibilité du système..."),
     ("help.enableLogging", "Enable Logging", "Activer la journalisation"),
     ("help.revealLogFile", "Reveal Logging File", "Révéler le fichier journal"),
     ("help.reportIssue", "Provide Feedback...", "Envoyer des commentaires..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio sur GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Ouvrir le projet de démonstration"),
 ];
 
 /// German (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const GERMAN: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Projekt nach After Effects AEP exportieren..."),
     ("", "After Effects Bridge", "After-Effects-Austausch"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "AE-Importhilfe als JSX speichern..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Projekt als AE-JSX exportieren..."),
@@ -5934,7 +5911,6 @@ const GERMAN: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Effekte und Presets"),
     ("window.panel", "Essential Graphics", "Essential-Grafik"),
     ("window.panel", "Info", "Info"),
-    ("help.inAppTutorials", "Learn", "Lernen"),
     ("window.panel", "Lumetri Scopes", "Lumetri-Scopes"),
     ("window.panel", "Mask Interpolation", "Maskeninterpolation"),
     ("window.panel", "Media Browser", "Medienbrowser"),
@@ -5966,20 +5942,18 @@ const GERMAN: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Effektreferenz..."),
     ("anim.browsePresets", "Animation Presets...", "Animations-Presets..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Tastenkürzel..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "In-App-Tutorials..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Online-Tutorials..."),
     ("help.systemReport", "System Compatibility Report...", "Bericht zur Systemkompatibilität..."),
     ("help.enableLogging", "Enable Logging", "Protokollierung aktivieren"),
     ("help.revealLogFile", "Reveal Logging File", "Protokolldatei anzeigen"),
     ("help.reportIssue", "Provide Feedback...", "Feedback senden..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio auf GitHub"),
-    ("file.openDemoProject", "Open Demo Project", "Demoprojekt öffnen"),
 ];
 
 // <<< generated i18n catalogs
 
 /// Czech (cs): original phrase translations of every fixed menu entry.
 const CZECH: &[(&str, &str, &str)] = &[
+    ("file.exportAep", "Export Project to After Effects AEP...", "Exportovat projekt do After Effects AEP..."),
     ("", "After Effects Bridge", "Propojení s After Effects"),
     ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Uložit pomocníka importu AE JSX..."),
     ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportovat projekt do AE JSX..."),
@@ -6568,7 +6542,6 @@ const CZECH: &[(&str, &str, &str)] = &[
     ("window.panel", "Effects & Presets", "Efekty a přednastavení"),
     ("window.panel", "Essential Graphics", "Základní grafika"),
     ("window.panel", "Info", "Informace"),
-    ("help.inAppTutorials", "Learn", "Výuka"),
     ("window.panel", "Lumetri Scopes", "Měřicí přístroje Lumetri"),
     ("window.panel", "Mask Interpolation", "Interpolace masek"),
     ("window.panel", "Media Browser", "Prohlížeč médií"),
@@ -6600,14 +6573,11 @@ const CZECH: &[(&str, &str, &str)] = &[
     ("help.docs", "Effect Reference...", "Referenční příručka efektů..."),
     ("anim.browsePresets", "Animation Presets...", "Přednastavení animace..."),
     ("app.keyboardShortcuts", "Keyboard Shortcuts...", "Klávesové zkratky..."),
-    ("help.inAppTutorials", "In-App Tutorials...", "Výukové lekce v aplikaci..."),
-    ("help.onlineTutorials", "Online Tutorials...", "Výukové lekce online..."),
     ("help.systemReport", "System Compatibility Report...", "Zpráva o kompatibilitě systému..."),
     ("help.enableLogging", "Enable Logging", "Povolit protokolování"),
     ("help.revealLogFile", "Reveal Logging File", "Zobrazit soubor protokolu"),
     ("help.reportIssue", "Provide Feedback...", "Poskytnout zpětnou vazbu..."),
     ("help.github", "Unwritten Studio on GitHub", "Unwritten Studio na GitHubu"),
-    ("file.openDemoProject", "Open Demo Project", "Otevřít ukázkový projekt"),
 ];
 
 #[cfg(test)]

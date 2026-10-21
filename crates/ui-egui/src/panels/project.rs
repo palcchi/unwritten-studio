@@ -1132,9 +1132,9 @@ mod tests {
         let mut kids = p.children(None);
         sort_items(&mut kids, "name", false);
         let names: Vec<&str> = kids.iter().map(|i| i.name.as_str()).collect();
-        assert_eq!(names, ["Unwritten Studio Intro", "Precomps", "Solids"]);
+        assert_eq!(names, ["Precomps", "Solids", "Unwritten Studio Intro"]);
         sort_items(&mut kids, "name", true);
-        assert_eq!(kids[0].name, "Solids");
+        assert_eq!(kids[0].name, "Unwritten Studio Intro");
     }
 
     #[test]

@@ -3,13 +3,15 @@ import UIKit
 import UniformTypeIdentifiers
 import PhotosUI
 import ImageIO
+import Darwin
 
 /// Main-thread inbox for URLs delivered by SwiftUI. It intentionally outlives the
 /// representable so cold-launch delivery cannot race controller construction.
 final class ExternalProjectInbox: ObservableObject {
     private static let maximumPendingURLs = 64
     private var pending: [URL] = []
-    private var receiver: ((URL) -> Void)?
+    private var receiver: ((URL) -> Bool)?
+    private var flushing = false
     private var errorReceiver: ((String) -> Void)?
     @Published private(set) var pendingError: String?
 
@@ -24,17 +26,19 @@ final class ExternalProjectInbox: ObservableObject {
         flush()
     }
 
-    func register(_ receiver: @escaping (URL) -> Void, onError: ((String) -> Void)? = nil) {
+    func register(_ receiver: @escaping (URL) -> Bool, onError: ((String) -> Void)? = nil) {
         self.receiver = receiver
         self.errorReceiver = onError
         flush()
-        if let pendingError {
-            onError?(pendingError)
+        if let pendingError, let onError {
+            onError(pendingError)
             self.pendingError = nil
         }
     }
 
     func unregister() { receiver = nil; errorReceiver = nil }
+
+    func retryDelivery() { flush() }
 
     private func reportError(_ message: String) {
         if let errorReceiver {
@@ -45,11 +49,109 @@ final class ExternalProjectInbox: ObservableObject {
     }
 
     private func flush() {
-        guard let receiver else { return }
-        while !pending.isEmpty {
-            let url = pending.removeFirst()
-            receiver(url)
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        while let url = pending.first, let receiver {
+            guard receiver(url) else { return }
+            pending.removeFirst()
         }
+    }
+}
+
+/// A bounded, thread-safe bridge. The main thread must not wait for a GPU frame
+/// merely to enqueue a Files URL or inspect the worker's available slots.
+private final class ExternalProjectBuffer {
+    private let lock = NSLock()
+    private let capacity: Int
+    private var paths: [String] = []
+
+    init(capacity: Int = 64) { self.capacity = max(0, capacity) }
+    var hasCapacity: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return paths.count < capacity
+    }
+    func append(_ path: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !path.isEmpty, paths.count < capacity else { return false }
+        paths.append(path)
+        return true
+    }
+    func popFirst() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return paths.isEmpty ? nil : paths.removeFirst()
+    }
+}
+
+/// Foundation-only reader, also executed by the macOS regression harness.
+private enum ExternalAEPStaging {
+    private static let sessionName = UUID().uuidString
+    private static let directoryLock = NSLock()
+    private static let ownerMarker = ".unwritten-aep-staging-owner"
+    private static let ownerVersion = "unwritten-aep-staging-v1"
+
+    // UUID shape alone is not ownership. Only remove a marked session belonging
+    // to a process that no longer exists; preserve unmarked/legacy data, native
+    // Save destinations, symlinks and every live process's session.
+    static func sessionDirectory(in root: URL) throws -> URL {
+        directoryLock.lock()
+        defer { directoryLock.unlock() }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+            where child.lastPathComponent != sessionName {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true, values.isDirectory == true,
+                  UUID(uuidString: child.lastPathComponent) != nil else { continue }
+            let marker = child.appendingPathComponent(ownerMarker)
+            guard let markerValues = try? marker.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                  markerValues.isRegularFile == true, markerValues.isSymbolicLink != true,
+                  let size = markerValues.fileSize, size <= 128,
+                  let text = try? String(contentsOf: marker, encoding: .utf8) else { continue }
+            let parts = text.split(separator: "\n")
+            guard parts.count == 2, parts[0] == ownerVersion,
+                  let pid = Int32(parts[1]), pid > 0 else { continue }
+            // A permission error, a reused PID or an unknown status is not
+            // proof of abandonment. Fail safe and leave that directory alone.
+            if kill(pid, 0) == -1, errno == ESRCH {
+                try FileManager.default.removeItem(at: child)
+            }
+        }
+        let directory = root.appendingPathComponent(sessionName, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let marker = directory.appendingPathComponent(ownerMarker)
+        try Data("\(ownerVersion)\n\(ProcessInfo.processInfo.processIdentifier)\n".utf8).write(to: marker, options: .atomic)
+        return directory
+    }
+
+    static func copy(_ fileURL: URL, into directory: URL, maximumBytes: Int = 64 * 1024 * 1024) throws -> URL {
+        guard fileURL.isFileURL, fileURL.pathExtension.lowercased() == "aep" else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+        var coordinationError: NSError?
+        var stagedURL: URL?
+        var stagingError: Error?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        coordinator.coordinate(readingItemAt: fileURL, options: [], error: &coordinationError) { coordinatedURL in
+            let destination = directory.appendingPathComponent("\(UUID().uuidString)-\(fileURL.lastPathComponent)", isDirectory: false)
+            do {
+                let values = try coordinatedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                guard values.isRegularFile == true, let bytes = values.fileSize, bytes <= maximumBytes else {
+                    throw NSError(domain: "UnwrittenStudio.ProjectImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an AEP file no larger than 64 MiB."])
+                }
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+                stagedURL = destination
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                stagingError = error
+            }
+        }
+        if let error = stagingError ?? coordinationError {
+            if let stagedURL { try? FileManager.default.removeItem(at: stagedURL) }
+            throw error
+        }
+        guard let stagedURL else { throw CocoaError(.fileReadUnknown) }
+        return stagedURL
     }
 }
 
@@ -106,12 +208,16 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private var saveNames: [UInt64: String] = [:]
     private var activeExportFolders: [String: URL] = [:]
     private var lastError: String?
+    private var pendingErrors: [String] = []
     private var smokeFrames = 0
     private var smokeReady = false
     private var workerReady = false
     private var externalProjectURLs: [URL] = []
     private var externalProjectInbox: ExternalProjectInbox?
     private var processingExternalProject = false
+    private var stagedExternalProjectURLs: [URL] = []
+    private var pendingAEPStaging = 0
+    private var confirmedExternalAEPs = Set<URL>()
 
     init(externalProjectInbox: ExternalProjectInbox? = nil) {
         self.externalProjectInbox = externalProjectInbox
@@ -157,7 +263,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             DispatchQueue.main.async { self?.consume(result) }
         }
         externalProjectInbox?.register({ [weak self] url in
-            self?.queueExternalProject(url)
+            self?.queueExternalProject(url) ?? false
         }, onError: { [weak self] message in self?.showErrorOnce(message) })
         NotificationCenter.default.addObserver(self, selector: #selector(pausePresentation), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(resumePresentation), name: UIApplication.willEnterForegroundNotification, object: nil)
@@ -200,6 +306,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         _ = canvas.becomeFirstResponder()
         worker.start()
         workerReady = true
+        presentPendingError()
         drainExternalProjects()
         if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape"),
            let scene = view.window?.windowScene,
@@ -234,6 +341,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         for project in activeProjectURLs { project.stopAccessingSecurityScopedResource() }
         activeFolderURL?.stopAccessingSecurityScopedResource()
         worker?.stopAndDestroy()
+        for staged in stagedExternalProjectURLs { try? FileManager.default.removeItem(at: staged) }
     }
 
     private func consume(_ result: FrameResult) {
@@ -261,6 +369,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
             showErrorOnce(error)
         }
+        presentPendingError()
         if let dialog = output.fileDialog, !dialogIDs.contains(dialog.id), presentedViewController == nil {
             dialogIDs.insert(dialog.id)
             present(dialog: dialog)
@@ -271,18 +380,24 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private static let supportedExternalProjectExtensions: Set<String> = ["aep", "unw"]
     private static let maximumPendingExternalProjects = 64
 
-    private func queueExternalProject(_ url: URL) {
-        guard externalProjectURLs.count < Self.maximumPendingExternalProjects else {
-            showErrorOnce("Too many projects are waiting to open. Finish the current operation, then open the remaining files again.")
-            return
+    private func queueExternalProject(_ url: URL) -> Bool {
+        let key = url.standardizedFileURL
+        guard !externalProjectURLs.contains(where: { $0.standardizedFileURL == key }) else { return true }
+        // Reserve the removed head's slot while its provider read is in flight;
+        // it may need to return to the head if another dialog appears meanwhile.
+        guard externalProjectURLs.count + (processingExternalProject ? 1 : 0) < Self.maximumPendingExternalProjects else {
+            return false
         }
         externalProjectURLs.append(url)
         drainExternalProjects()
+        return true
     }
 
     private func drainExternalProjects() {
-        guard workerReady, !processingExternalProject, presentedViewController == nil, let url = externalProjectURLs.first else { return }
+        guard workerReady, !processingExternalProject, presentedViewController == nil,
+              worker.canQueueExternalProject, let url = externalProjectURLs.first else { return }
         externalProjectURLs.removeFirst()
+        DispatchQueue.main.async { [weak self] in self?.externalProjectInbox?.retryDelivery() }
         let fileURL = url.standardizedFileURL
         guard fileURL.isFileURL else {
             showErrorOnce("Open Project could not use this item because it is not a local file.")
@@ -295,42 +410,72 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
             return
         }
-        guard retainProjectURL(fileURL) else {
-            showErrorOnce("Could not keep access to \(fileURL.lastPathComponent). Try opening it again from Files.")
+        // Native projects keep their original Save destination. Never open a
+        // temporary .unw path that will later be removed during teardown.
+        if extensionName == "unw" {
+            if !acceptExternalProject(fileURL) {
+                showErrorOnce("Could not keep access to \(fileURL.lastPathComponent). Try opening it again from Files.")
+            }
             DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
             return
         }
+        // A provider read can finish while another modal is presented. Its
+        // queued result is already durable; never copy/rename that copy again.
+        if stagedExternalProjectURLs.contains(fileURL) {
+            if confirmedExternalAEPs.remove(fileURL) != nil {
+                if !acceptExternalProject(fileURL) {
+                    discardStagedAEP(fileURL)
+                    showErrorOnce("Could not queue this AEP copy. Try opening the original file again from Files.")
+                }
+                DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
+                return
+            }
+            confirmExternalAEPImport(fileURL)
+            return
+        }
         processingExternalProject = true
-        // File-provider coordination can synchronously materialize a document. Never
-        // let that provider work block the main thread or the editor's frame loop.
+        stageExternalAEP(fileURL) { [weak self] result in
+            guard let self else { return }
+            self.processingExternalProject = false
+            switch result {
+            case .success(let stagedURL):
+                guard self.presentedViewController == nil else {
+                    self.externalProjectURLs.insert(stagedURL, at: 0)
+                    return
+                }
+                self.confirmExternalAEPImport(stagedURL)
+            case .failure(let error):
+                self.showErrorOnce("Could not read \(fileURL.lastPathComponent) from Files (\(error.localizedDescription)). Keep the file available and try again.")
+                self.drainExternalProjects()
+            }
+        }
+    }
+
+    private func stageExternalAEP(_ fileURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+        guard stagedExternalProjectURLs.count + pendingAEPStaging < Self.maximumPendingExternalProjects else {
+            completion(.failure(NSError(domain: "UnwrittenStudio.ProjectImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "The session's staged import limit has been reached. Save your work and reopen the app before importing more AEP files."])))
+            return
+        }
+        pendingAEPStaging += 1
+        // A provider URL is only a capability, not a durable filesystem path. Read
+        // it while the security scope and coordination callback are both active,
+        // then give Rust an app-owned copy. This also avoids a later cold read
+        // failing with EPERM after Files has released its provider transaction.
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            var coordinationError: NSError?
-            var available = false
-            let coordinator = NSFileCoordinator(filePresenter: nil)
-            coordinator.coordinate(readingItemAt: fileURL, options: [], error: &coordinationError) { coordinatedURL in
-                available = FileManager.default.fileExists(atPath: coordinatedURL.path)
+            guard let self else { return }
+            let access = fileURL.startAccessingSecurityScopedResource()
+            let result = Result {
+                defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
+                let root = self.applicationSupportDirectory().appendingPathComponent("External Projects", isDirectory: true)
+                let directory = try ExternalAEPStaging.sessionDirectory(in: root)
+                return try ExternalAEPStaging.copy(fileURL, into: directory)
             }
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.processingExternalProject = false
-                guard coordinationError == nil, available else {
-                    self.showErrorOnce("Could not access \(fileURL.lastPathComponent). Keep the file in Files and try again.")
-                    self.drainExternalProjects()
-                    return
+                self.pendingAEPStaging -= 1
+                if case .success(let stagedURL) = result {
+                    self.stagedExternalProjectURLs.append(stagedURL)
                 }
-                guard self.presentedViewController == nil else {
-                    // Another native picker may have appeared while the provider downloaded.
-                    self.externalProjectURLs.insert(fileURL, at: 0)
-                    return
-                }
-                if extensionName == "aep" {
-                    self.confirmExternalAEPImport(fileURL)
-                } else if self.acceptExternalProject(fileURL) {
-                    self.drainExternalProjects()
-                } else {
-                    self.showErrorOnce("Could not keep access to \(fileURL.lastPathComponent). Try opening it again from Files.")
-                    self.drainExternalProjects()
-                }
+                completion(result)
             }
         }
     }
@@ -345,24 +490,41 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func acceptExternalProject(_ url: URL) -> Bool {
-        guard retainProjectURL(url) else { return false }
-        // Keep every provider scope alive for this session: AEP relative media is
-        // resolved beside its source, including while another queued URL opens.
-        worker.enqueueExternalProject(path: url.path)
+        // App-owned AEP copies need no provider scope and must not consume the
+        // native project scope budget. Retain them until the worker is destroyed:
+        // Rust may still need the bytes after an unsaved-changes decision.
+        guard stagedExternalProjectURLs.contains(url) || retainProjectURL(url) else { return false }
+        guard worker.enqueueExternalProject(path: url.path) else { return false }
         worker.enqueue(.wake)
         return true
     }
 
+    private func discardStagedAEP(_ url: URL) {
+        guard stagedExternalProjectURLs.contains(url) else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+            stagedExternalProjectURLs.removeAll { $0 == url }
+        } catch {
+            showErrorOnce("Could not remove a cancelled AEP copy (\(error.localizedDescription)). It will be retried when the session closes.")
+        }
+    }
+
     private func confirmExternalAEPImport(_ url: URL) {
+        processingExternalProject = true
         let alert = UIAlertController(title: "Experimental After Effects Import", message: "This native .aep import is experimental. Unsupported shapes, text, effects, masks, 3D and other features may be omitted. Missing media must be relinked. Your original file will not be changed. Open a copy, then save the result as a .unw copy.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.processingExternalProject = false
+            self?.discardStagedAEP(url)
+            // Cancel terminates this attempt. Retry only other URLs held by
+            // inbox backpressure; a new Files delivery can reopen this URL.
+            self?.externalProjectInbox?.retryDelivery()
             self?.drainExternalProjects()
         })
         alert.addAction(UIAlertAction(title: "Open Copy", style: .default) { [weak self] _ in
             guard let self else { return }
-            if !self.acceptExternalProject(url) {
-                self.showErrorOnce("Could not keep access to \(url.lastPathComponent). Try opening it again from Files.")
-            }
+            self.confirmedExternalAEPs.insert(url)
+            self.externalProjectURLs.insert(url, at: 0)
+            self.processingExternalProject = false
             self.drainExternalProjects()
         })
         present(alert, animated: true)
@@ -488,8 +650,15 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
 
     private func showErrorOnce(_ message: String) {
         guard lastError != message else { return }
+        if !pendingErrors.contains(message) { pendingErrors.append(message) }
+        presentPendingError()
+    }
+
+    private func presentPendingError() {
+        guard viewIfLoaded?.window != nil, presentedViewController == nil else { return }
+        guard !pendingErrors.isEmpty else { return }
+        let message = pendingErrors.removeFirst()
         lastError = message
-        guard presentedViewController == nil else { return }
         let alert = UIAlertController(title: "Unwritten Studio", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
@@ -662,7 +831,11 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         }
         if projectDialogIDs.remove(id) != nil, let projectURL = urls.first {
             if projectURL.pathExtension.caseInsensitiveCompare("aep") == .orderedSame {
-                confirmAEPImport(projectURL, id: id)
+                // Present the warning only after the native picker is gone;
+                // presenting during its dismissal can silently lose Open Copy.
+                controller.dismiss(animated: true) { [weak self] in
+                    self?.confirmAEPImport(projectURL, id: id)
+                }
                 return
             }
             guard retainProjectURL(projectURL) else {
@@ -700,12 +873,16 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         })
         alert.addAction(UIAlertAction(title: "Open Copy", style: .default) { [weak self] _ in
             guard let self else { return }
-            guard self.retainProjectURL(url) else {
-                self.finishDialog(id, paths: [])
-                self.showErrorOnce("Could not keep access to \(url.lastPathComponent). Choose the project again from Files.")
-                return
+            self.stageExternalAEP(url) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let stagedURL):
+                    self.finishDialog(id, paths: [stagedURL.path])
+                case .failure(let error):
+                    self.finishDialog(id, paths: [])
+                    self.showErrorOnce("Could not read \(url.lastPathComponent) from Files (\(error.localizedDescription)).")
+                }
             }
-            self.finishDialog(id, paths: [url.path])
         })
         present(alert, animated: true)
     }
@@ -896,7 +1073,10 @@ private final class OriginalWorkspaceWorker {
     private var running = false
     private var frameInFlight = false
     private var events: [InputEvent] = []
-    private var pendingExternalProjectPaths: [String] = []
+    private let externalProjectPaths = ExternalProjectBuffer()
+    // A successful native frame advertises space after dispatching its queue.
+    // Until then (including startup/error frames), do not remove a queued URL.
+    private var externalProjectCapacity = 0
     private var logicalSize = CGSize(width: 320, height: 240)
     private var screenScale: CGFloat = 1
     private let deliver: (FrameResult) -> Void
@@ -969,16 +1149,10 @@ private final class OriginalWorkspaceWorker {
         self.events.append(event)
     } }
     func setDialogResponse(_ response: DialogResponse?) { queue.async { [weak self] in self?.pendingResponse = response } }
-    func enqueueExternalProject(path: String) {
-        queue.async { [weak self] in
-            guard let self, !path.isEmpty else { return }
-            guard self.pendingExternalProjectPaths.count < 8 else {
-                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: "Too many projects are queued for the workspace. Finish the current open operation, then try again.", wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
-                return
-            }
-            self.pendingExternalProjectPaths.append(path)
-        }
-    }
+    // Main-thread callers reserve a slot atomically; a void async enqueue
+    // could reject a URL after the controller had already removed its only copy.
+    var canQueueExternalProject: Bool { externalProjectPaths.hasCapacity }
+    func enqueueExternalProject(path: String) -> Bool { externalProjectPaths.append(path) }
 
     private func frame() {
         guard running, !frameInFlight, let handle else { return }
@@ -989,9 +1163,9 @@ private final class OriginalWorkspaceWorker {
         events.removeAll(keepingCapacity: true)
         if forceCheckpoint { payload["checkpoint"] = true; forceCheckpoint = false }
         if let response = pendingResponse { payload["dialog"] = response.json; pendingResponse = nil }
-        if !pendingExternalProjectPaths.isEmpty {
-            let externalProjectPath = pendingExternalProjectPaths.removeFirst()
+        if externalProjectCapacity > 0, let externalProjectPath = externalProjectPaths.popFirst() {
             payload["externalProjectPath"] = externalProjectPath
+            externalProjectCapacity -= 1
         }
         let jsonData = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
         let json = String(decoding: jsonData, as: UTF8.self)
@@ -1026,6 +1200,7 @@ private final class OriginalWorkspaceWorker {
             result = FrameResult(image: makeImage(data: data, width: Int(width), height: Int(height)), output: output, wantsKeyboard: output?.wantsKeyboard ?? false, audioRunning: audio?.isRunning == true)
         }
         frameInFlight = false
+        externalProjectCapacity = max(0, min(8, result.output?.externalProjectCapacity ?? 0))
         deliver(result)
     }
 
@@ -1071,8 +1246,7 @@ private struct FileDialog: Decodable { let id: UInt64; let kind: String; let ext
         return extensions.contains { media.contains($0.lowercased()) }
     }
 }
-private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog?; var recoveryError: String? = nil }
-
+private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog?; var recoveryError: String? = nil; var externalProjectCapacity: Int? = nil }
 private enum InputEvent {
     case move(CGPoint), button(CGPoint, Bool), scroll(CGPoint, CGPoint), text(String), paste(String), key(String, Bool, UIKeyModifierFlags), wake
     var json: [String: Any] {

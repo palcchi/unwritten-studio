@@ -33,7 +33,7 @@ fn export_aep(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let result = exporter::export(&s.project, &ExportOptions { allow_losses }).map_err(|e| EngineError::Other(format!("cannot export AEP: {e}")))?;
     let bytes = result.bytes.len();
-    s.services.write_file(path, &result.bytes).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
+    s.services.write_new_file(path, &result.bytes).map_err(|e| EngineError::Other(format!("cannot write new AEP copy {path}: {e}")))?;
     s.toast(format!("Exported AEP copy {path} ({bytes} bytes)"));
     Ok(json!({"format":"aep", "path":path, "dryRun":false, "written":true, "bytes":bytes, "report":result.report, "allowLosses":allow_losses}))
 }
@@ -141,6 +141,9 @@ mod tests {
             fn write_file(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
                 Err(std::io::Error::other("synthetic full disk"))
             }
+            fn write_new_file(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+                Err(std::io::Error::other("synthetic full disk"))
+            }
             fn exists(&self, _: &str) -> bool {
                 false
             }
@@ -160,5 +163,32 @@ mod tests {
         let mut s = Session::default();
         assert!(s.execute("file.exportAep", json!({"path":"copy.aep","dryRun":"true"})).is_err());
         assert!(s.execute("file.exportAep", json!({"path":"copy.aep","allowLosses":1})).is_err());
+    }
+
+    #[test]
+    fn destination_appearing_after_preflight_is_never_overwritten() {
+        struct RacingDestination;
+        impl crate::Services for RacingDestination {
+            fn read_file(&self, _: &str) -> std::io::Result<Vec<u8>> {
+                Err(std::io::ErrorKind::NotFound.into())
+            }
+            fn write_file(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+                panic!("copy-only export must never call the overwriting writer");
+            }
+            fn write_new_file(&self, _: &str, _: &[u8]) -> std::io::Result<()> {
+                Err(std::io::ErrorKind::AlreadyExists.into())
+            }
+            fn exists(&self, _: &str) -> bool {
+                false // The destination appears only after this preflight.
+            }
+        }
+        let mut s = Session { services: std::sync::Arc::new(RacingDestination), ..Session::default() };
+        s.execute("comp.new", json!({"width":320,"height":180,"duration":2,"frameRate":30})).unwrap();
+        let before = s.project.to_json();
+        let dirty = s.is_dirty();
+        assert!(s.execute("file.exportAep", json!({"path":"copy.aep"})).is_err());
+        assert_eq!(s.project.to_json(), before);
+        assert_eq!(s.is_dirty(), dirty);
+        assert!(s.path.is_none());
     }
 }

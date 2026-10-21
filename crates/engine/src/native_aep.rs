@@ -153,4 +153,17 @@ mod tests {
         s.execute("edit.undo", json!({})).unwrap();
         assert_eq!(s.project.to_json(), before);
     }
+
+    #[test]
+    fn native_aep_open_rejects_non_boolean_loss_permission_without_replacing_edits() {
+        let mut s = session(synthetic_comp());
+        s.execute("comp.new", json!({"name":"Existing edit","width":32,"height":24})).unwrap();
+        let before = s.project.to_json();
+        for invalid in [json!("false"), json!(0), json!(null)] {
+            let error = s.execute("file.open", json!({"path":"source.aep","allowLosses":invalid})).unwrap_err();
+            assert!(error.to_string().contains("must be a boolean"));
+            assert_eq!(s.project.to_json(), before);
+            assert!(s.path.is_none() && s.is_dirty());
+        }
+    }
 }

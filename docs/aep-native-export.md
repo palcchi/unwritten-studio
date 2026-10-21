@@ -20,6 +20,10 @@ An imported AEP has already passed through a partial importer. Its export report
 
 `file.exportAep` accepts `path`, optional `dryRun`, and optional `allowLosses` (default `false`). Use a fresh `.aep` destination. A dry run returns the report without writing. Existing destinations are refused; choose a new filename. A failed or refused export must leave the current edit and existing destination unchanged. The container writer preflights all sizes and nesting before reserving output memory, and limits output including metadata to 64 MiB.
 
+On native hosts, publication uses a fully written, flushed, exclusive staging file and a same-directory hard link that cannot replace an existing destination. Another process creating the destination after preflight therefore cannot cause an overwrite; existing symlinks are refused too. Filesystems that do not support hard links return an error instead of falling back to an overwriting rename: export to local storage first. Browser storage reserves the normalized destination under its store lock. Custom hosts must explicitly implement the new-file service; an ordinary overwrite-capable writer is not used as a fallback.
+
+The browser prepares the download before claiming the new storage path, then starts it only after the exclusive write succeeds. A reported preparation failure therefore leaves the name available for retry, and a storage collision never starts a download. Browsers do not report whether the user ultimately saves or cancels an offered download; a successful command means the copy is stored and the download was offered, not that a file was confirmed on the user's disk.
+
 ```json
 {"command":"file.exportAep","params":{"path":"My animation.aep","dryRun":true}}
 ```
@@ -41,5 +45,7 @@ cargo run -p unwritten-studio-engine --example aep_exchange_check -- /tmp/new-ae
 ```
 
 The example creates an original small solid/null animation, saves a `.unw` master, exports an AEP through the real command, then reopens both and checks that the export did not alter the current document. The output directory must not already exist. It can also read a private source AEP using the example's second argument; that mode tests dry-run/default refusal only and never exports a lossy copy automatically.
+
+It also retries the export to the existing AEP and to the native master: both must be refused without changing either file or clearing the unsaved document state. Reopened native and AEP files are checked for the demo's position keyframes and opacity, not merely their composition and layer counts.
 
 No new IPA, iOS simulator build, physical-device test, or local After Effects desktop test is implied by adding this source feature.

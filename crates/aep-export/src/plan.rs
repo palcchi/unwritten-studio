@@ -594,6 +594,9 @@ fn plan_layer(cx: &PlanCx<'_>, comp_name: &str, comp: &Comp, cp: &CompPlan, laye
     let start = units(layer.start_time, col, "start time");
     let in_abs = units(layer.in_point, col, "in point");
     let out_abs = units(layer.out_point, col, "out point");
+    if rounded {
+        col.lose(LossCategory::RoundedTimes, what("layer times moved to the composition time base"));
+    }
     let stretch_ok = (layer.stretch - 100.0).abs() < 1e-9;
     if !stretch_ok {
         col.lose(LossCategory::TimeStretch, what(&format!("stretch {:.2} % on layer", layer.stretch)));
@@ -681,8 +684,8 @@ fn plan_layer(cx: &PlanCx<'_>, comp_name: &str, comp: &Comp, cp: &CompPlan, laye
         label: label_index(layer.label),
         quality: if layer.switches.quality == Quality::Draft { 1 } else { 2 },
         start,
-        in_rel: in_abs.saturating_sub(start),
-        out_rel: out_abs.saturating_sub(start),
+        in_rel: relative_time(in_abs, start, &what("in point"), col),
+        out_rel: relative_time(out_abs, start, &what("out point"), col),
         blend,
         parent,
         ec_id: layer.id,
@@ -698,6 +701,19 @@ fn plan_layer(cx: &PlanCx<'_>, comp_name: &str, comp: &Comp, cp: &CompPlan, laye
         props,
         source_size,
     })
+}
+
+/// Layer in/out points are signed offsets from the layer start in the AEP header. Ordinary
+/// negative offsets are valid. Subtraction outside i32 must be reported rather than silently
+/// saturating to an endpoint and falsely claiming a lossless export.
+fn relative_time(absolute: i32, start: i32, what: &str, col: &mut Collector) -> i32 {
+    match absolute.checked_sub(start) {
+        Some(relative) => relative,
+        None => {
+            col.lose(LossCategory::InvalidValues, format!("{what} is outside the signed layer-time range, written as 0"));
+            0
+        }
+    }
 }
 
 fn prop_group_differs(actual: &PropGroup, default: &PropGroup) -> bool {

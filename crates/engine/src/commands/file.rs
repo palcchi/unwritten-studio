@@ -40,6 +40,9 @@ fn demo(s: &mut Session, _: &Value) -> Result<Value> {
 pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
     reject_after_effects(path, "open")?;
+    if crate::native_aep::is_aep_path(path) && p.get("allowLosses").is_some_and(|value| !value.is_boolean()) {
+        return Err(bad("file.open", "`allowLosses` must be a boolean"));
+    }
     crate::native_aep::check_file_size(path, s.services.as_ref()).map_err(EngineError::Other)?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
     if crate::native_aep::is_aep_path(path) {

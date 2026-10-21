@@ -313,7 +313,9 @@ fn build_layers(project: &mut Project, cx: &mut Ctx<'_>, p: &PendingComp<'_, '_>
         let mut l: Layer = build::layer(project, &comp, &name, source.clone(), size, None);
         l.name = name.clone();
         l.label = Label::ALL.get(usize::from(h.label)).copied().unwrap_or(Label::None);
-        apply_timing(&mut l, &h, &tm);
+        if !apply_timing(&mut l, &h, &tm) {
+            cx.col.lose(LossCategory::DamagedData, format!("{comp_name}: '{name}' has invalid layer timing; safe timing fallback used"));
+        }
         apply_switches(&mut l, &h);
         match blend(h.blend_mode) {
             Some(b) => l.blend_mode = b,
@@ -367,14 +369,25 @@ fn would_loop(uses: &HashMap<ItemId, Vec<ItemId>>, from: ItemId, to: ItemId) -> 
     false
 }
 
-fn apply_timing(l: &mut Layer, h: &LayerHeader, tm: &TimeMap) {
+/// Applies layer timing and returns whether every stored timing rational was usable.
+///
+/// A malformed denominator used to be converted to zero by `TimeMap::ticks`, which made a
+/// damaged layer look valid and could move its in/out points to the composition start. Keep the
+/// safe fallback, but make the loss visible to callers.
+fn apply_timing(l: &mut Layer, h: &LayerHeader, tm: &TimeMap) -> bool {
     // The exact ratio `stretch / stretch_den` (50 % is 1/2); a zero or unreadable one is 100 %.
+    let stretch_ok = h.stretch_ratio().is_some_and(|r| r.num != 0);
     let stretch = h.stretch_ratio().filter(|r| r.num != 0).unwrap_or(Rational { num: 1, den: 1 });
     l.stretch = stretch.to_f64().map_or(100.0, |r| r * 100.0);
     l.start_time = tm.ticks(h.start.num, h.start.den);
     let abs = |offset: Rational, reduced: Option<Rational>| absolute(h.start, offset, stretch, reduced).map_or(Tick::ZERO, |(n, d)| tm.ticks(n, d));
     l.in_point = abs(h.in_relative, h.in_point());
     l.out_point = abs(h.out_relative, h.out_point()).max(l.in_point);
+    timing_is_valid(h, stretch_ok)
+}
+
+fn timing_is_valid(h: &LayerHeader, stretch_ok: bool) -> bool {
+    stretch_ok && h.start.den != 0 && h.in_relative.den != 0 && h.out_relative.den != 0 && h.in_point().is_some() && h.out_point().is_some()
 }
 
 fn apply_switches(l: &mut Layer, h: &LayerHeader) {
@@ -463,5 +476,40 @@ fn resolve_parents(
         if let Some(l) = comp.layer_mut(layer) {
             l.parent = Some(parent);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header(stretch_den: u32, start_den: i64) -> LayerHeader {
+        LayerHeader {
+            id: 1,
+            quality: AepQuality::Best,
+            stretch: 1,
+            stretch_den,
+            start: Rational { num: 0, den: start_den },
+            in_relative: Rational { num: 0, den: 1 },
+            out_relative: Rational { num: 1, den: 1 },
+            flag_bytes: [0; 3],
+            source_id: None,
+            label: 0,
+            name_copy: String::new(),
+            blend_mode: AepBlend::Normal,
+            layer_type: LayerType::Av,
+            parent_id: None,
+            light_type_code: 0,
+        }
+    }
+
+    #[test]
+    fn malformed_layer_timing_is_not_reported_as_valid() {
+        let bad_stretch = header(0, 1);
+        assert!(!timing_is_valid(&bad_stretch, false));
+        let bad_start = header(1, 0);
+        assert!(!timing_is_valid(&bad_start, true));
+        let good = header(1, 1);
+        assert!(timing_is_valid(&good, true));
     }
 }

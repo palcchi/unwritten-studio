@@ -101,6 +101,12 @@ pub type Result<T> = std::result::Result<T, EngineError>;
 pub trait Services: Send + Sync {
     fn read_file(&self, path: &str) -> std::io::Result<Vec<u8>>;
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()>;
+    /// Publish a complete new file without replacing any existing destination, even if it
+    /// appeared after an existence check. Hosts must implement this explicitly; falling back
+    /// to `write_file` would make copy-only exports unsafe.
+    fn write_new_file(&self, _path: &str, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "this host cannot safely publish a new file without overwriting"))
+    }
     /// Whether a file exists (the background footage check after open).
     fn exists(&self, path: &str) -> bool {
         std::path::Path::new(path).exists()
@@ -144,6 +150,9 @@ impl Services for FsServices {
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
         config::atomic_write(std::path::Path::new(path), data)
+    }
+    fn write_new_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        config::atomic_write_new(std::path::Path::new(path), data)
     }
 }
 

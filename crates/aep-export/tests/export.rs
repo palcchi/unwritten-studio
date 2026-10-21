@@ -9,7 +9,7 @@ use unwritten_studio_aep_export::{AepExportError, ExportOptions, LossCategory, a
 use unwritten_studio_color::{BlendMode, Label};
 use unwritten_studio_keyframe::{Ease, Interp, Value};
 use unwritten_studio_project::{ItemKind, LayerSource, Project, Quality};
-use unwritten_studio_time::FrameRate;
+use unwritten_studio_time::{FrameRate, Tick};
 
 fn close(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-9
@@ -149,6 +149,66 @@ fn layer_header_fields() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), 4);
+}
+
+#[test]
+fn layer_in_and_out_points_keep_signed_offsets_from_start() {
+    let mut p = Project::default();
+    let c = add_comp(&mut p, "C", 800, 600, FrameRate::new(25, 1), 10.0, None);
+    let s = add_solid(&mut p, "S", 800, 600, [1.0, 0.0, 0.0], None);
+    add_layer(&mut p, c, "S", LayerSource::Solid { item: s }, (800, 600));
+    with_layer(&mut p, c, 0, |layer| {
+        layer.start_time = secs(3.0);
+        layer.in_point = secs(1.0);
+        layer.out_point = secs(6.0);
+    });
+
+    let result = export_all(&p);
+    assert!(result.report.is_lossless(), "{}", result.report.summary());
+    let file = parse(&result.bytes).expect("parse");
+    let view = unwritten_studio_aep::Project::new(&file).expect("project");
+    let comp = view.all_items().into_iter().find(|item| item.comp().is_some()).expect("comp");
+    let layer = comp.comp().expect("comp").layers().next().expect("layer");
+    let header = layer.header().expect("header");
+    assert_eq!((header.start.num, header.start.den), (76_800, 25_600));
+    assert_eq!(header.in_point_seconds(), Some(1.0));
+    assert_eq!(header.out_point_seconds(), Some(6.0));
+}
+
+#[test]
+fn layer_time_offset_overflow_is_reported_and_refused_by_default() {
+    let mut p = Project::default();
+    let c = add_comp(&mut p, "C", 800, 600, FrameRate::new(25, 1), 10.0, None);
+    let s = add_solid(&mut p, "S", 800, 600, [1.0, 0.0, 0.0], None);
+    add_layer(&mut p, c, "S", LayerSource::Solid { item: s }, (800, 600));
+    with_layer(&mut p, c, 0, |layer| {
+        // Each absolute time fits i32 at 25,600 units/sec, but their difference does not.
+        layer.start_time = secs(80_000.0);
+        layer.in_point = secs(-80_000.0);
+        layer.out_point = secs(6.0);
+    });
+    let report = analyze(&p);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.category == LossCategory::InvalidValues && loss.details.iter().any(|detail| detail.contains("signed layer-time range")))
+    );
+    assert!(export(&p, &ExportOptions::default()).is_err());
+}
+
+#[test]
+fn layer_time_rounding_is_reported() {
+    let mut p = Project::default();
+    let c = add_comp(&mut p, "C", 800, 600, FrameRate::new(25, 1), 10.0, None);
+    let s = add_solid(&mut p, "S", 800, 600, [1.0, 0.0, 0.0], None);
+    add_layer(&mut p, c, "S", LayerSource::Solid { item: s }, (800, 600));
+    with_layer(&mut p, c, 0, |layer| {
+        layer.start_time = Tick(secs(1.0).0 + 1);
+    });
+
+    let report = analyze(&p);
+    assert_eq!(report.count(LossCategory::RoundedTimes), 1);
 }
 
 #[test]

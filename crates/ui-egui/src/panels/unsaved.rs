@@ -288,6 +288,25 @@ mod tests {
     }
 
     #[test]
+    fn external_handoff_readiness_waits_for_save_cancel_and_export_review() {
+        let (mut app, ctx) = app();
+        assert!(app.external_project_open_ready());
+        modified(&mut app);
+        crate::menus::invoke(&mut app, &ctx, "file.open", json!({"path":"not-read.aep"})).unwrap();
+        assert!(!app.external_project_open_ready());
+        answer_with(&mut app, &ctx, Answer::Cancel);
+        assert!(app.external_project_open_ready());
+        let done = async_save(&mut app, &ctx);
+        assert!(app.dialog.is_none(), "native picker is not an egui modal");
+        assert!(!app.external_project_open_ready(), "pending save must still block a new handoff");
+        done(vec![]);
+        app.run_dialog_answers(&ctx);
+        assert!(app.external_project_open_ready());
+        app.aep_export_review = Some(crate::panels::aep_export::Review { report: json!({}) });
+        assert!(!app.external_project_open_ready());
+    }
+
+    #[test]
     fn asynchronous_save_continues_once_only_after_successful_write() {
         let (mut app, ctx) = app();
         modified(&mut app);

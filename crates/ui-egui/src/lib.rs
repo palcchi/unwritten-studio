@@ -1858,6 +1858,11 @@ impl UnwrittenStudioApp {
         std::mem::take(&mut self.synthetic)
     }
 
+    /// External documents wait until native picker answers and Save/Cancel decisions settle.
+    /// Embedded hosts call this after `embedded_logic` has consumed picker answers.
+    pub fn external_project_open_ready(&self) -> bool {
+        self.dialog.is_none() && self.aep_export_review.is_none() && self.dialog_state.unsaved.command.is_none() && !self.dialog_state.unsaved.awaiting_save
+    }
     /// Run the frontend's frame-independent logic for an embedded egui host.
     pub fn embedded_logic(&mut self, ctx: &egui::Context) {
         self.apply_gpu_failure(ctx);

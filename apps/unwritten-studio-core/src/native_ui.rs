@@ -15,6 +15,37 @@ use std::{
 use unwritten_studio_ui_egui::{DialogDone, FileDialog, UnwrittenStudioApp};
 const MAX_DIM: u32 = 4096;
 const MAX_EVENTS: usize = 1024;
+/// Files handoffs are one-shot inputs, independent of native picker dialog IDs.
+#[derive(Default)]
+struct ExternalProjects(VecDeque<String>);
+impl ExternalProjects {
+    fn receive(&mut self, input: &Value) -> Result<(), String> {
+        let Some(value) = input.get("externalProjectPath") else { return Ok(()) };
+        let path = value.as_str().ok_or("External project path must be a string")?;
+        let file = std::path::Path::new(path);
+        let supported = file
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ["aep", "unw", "unwae", "uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|candidate| ext.eq_ignore_ascii_case(candidate)));
+        if path.len() > 16384 || path.contains('\0') || !file.is_absolute() || !supported {
+            return Err("Choose a supported local project file (.aep or .unw) from Files".into());
+        }
+        if self.0.len() >= 8 {
+            return Err("Too many projects are waiting to open. Finish or cancel the current Open operation, then try again.".into());
+        }
+        self.0.push_back(path.to_owned());
+        Ok(())
+    }
+    fn dispatch(&mut self, app: &mut UnwrittenStudioApp, ctx: &egui::Context, native_picker_pending: bool) -> Result<(), String> {
+        if native_picker_pending || !app.external_project_open_ready() {
+            return Ok(());
+        }
+        let Some(path) = self.0.pop_front() else { return Ok(()) };
+        // Never call session.execute directly: the frontend owns the unsaved-changes prompt.
+        unwritten_studio_ui_egui::menus::invoke(app, ctx, "file.open", json!({"path":path}))?;
+        Ok(())
+    }
+}
 struct PendingDialog {
     id: u64,
     metadata: Value,
@@ -35,6 +66,7 @@ pub struct NativeUi {
     gpu: Gpu,
     host: Arc<Mutex<HostState>>,
     smoke_opened: bool,
+    external_projects: ExternalProjects,
     modifiers: Modifiers,
     recovery: NativeSessionRecovery,
 }
@@ -189,7 +221,17 @@ impl NativeUi {
             let id = h.next_id;
             h.pending.push_back(PendingDialog { id, metadata: dialog_metadata(id, dialog), done });
         }));
-        Ok(Self { app, audio_bridge, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default(), recovery })
+        Ok(Self {
+            app,
+            audio_bridge,
+            ctx: egui::Context::default(),
+            gpu: Gpu::new()?,
+            host,
+            smoke_opened: false,
+            external_projects: ExternalProjects::default(),
+            modifiers: Modifiers::default(),
+            recovery,
+        })
     }
     #[cfg(test)]
     fn new_for_test(config_dir: std::path::PathBuf) -> Result<Self, String> {
@@ -217,6 +259,7 @@ impl NativeUi {
     fn frame(&mut self, input: &Value) -> Result<FramePixels, String> {
         let (w, h, scale, pw, ph) = geometry(input)?;
         self.complete_dialog(input);
+        self.external_projects.receive(input)?;
         if input["smoke"].as_bool().unwrap_or(false) && !self.smoke_opened {
             #[cfg(target_os = "ios")]
             smoke_export_to_ios_storage()?;
@@ -294,8 +337,14 @@ impl NativeUi {
                 }
             }
         }
+        let mut external_error = None;
         let mut full = self.ctx.run_ui(raw, |ui| {
             self.app.embedded_logic(ui.ctx());
+            let picker_pending = self.host.lock().map(|host| !host.pending.is_empty()).unwrap_or(true);
+            if let Err(error) = self.external_projects.dispatch(&mut self.app, ui.ctx(), picker_pending) {
+                self.app.ui.status = error.clone();
+                external_error = Some(error);
+            }
             self.app.embedded_ui(ui);
         });
         if let Err(error) = self.recovery.tick(&self.app.session, input["checkpoint"].as_bool().unwrap_or(false))
@@ -304,6 +353,14 @@ impl NativeUi {
             host.recovery_error = Some(format!("{error}. Save your project manually to Files."));
         }
         self.host_output(&full.platform_output);
+        if let Some(error) = external_error
+            && let Ok(mut host) = self.host.lock()
+        {
+            let mut output: Value = serde_json::from_str(&host.output).unwrap_or_else(|_| json!({}));
+            output["error"] = json!(error);
+            output["ok"] = json!(false);
+            host.output = output.to_string();
+        }
         let bytes = self.gpu.render(&self.ctx, &mut full, pw, ph)?;
         Ok(FramePixels { bytes, width: pw, height: ph })
     }
@@ -510,6 +567,70 @@ pub unsafe extern "C" fn unwritten_studio_ui_output_json(p: *mut NativeUi) -> *m
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn external_project_paths_are_bounded_and_validated() {
+        let mut queue = ExternalProjects::default();
+        queue.receive(&json!({})).unwrap();
+        assert!(queue.0.is_empty());
+        for path in ["relative.aep", "/tmp/file.aepx", "/tmp/video.mp4", "/tmp/nul\0.unw", ""] {
+            assert!(queue.receive(&json!({"externalProjectPath":path})).is_err(), "{path:?}");
+        }
+        assert!(queue.receive(&json!({"externalProjectPath":42})).is_err());
+        assert!(queue.receive(&json!({"externalProjectPath":format!("/{}.unw", "a".repeat(16384))})).is_err());
+        for i in 0..8 {
+            queue.receive(&json!({"externalProjectPath":format!("/tmp/Space 名 {i}.AEP")})).unwrap();
+        }
+        assert!(queue.receive(&json!({"externalProjectPath":"/tmp/overflow.unw"})).is_err());
+        assert_eq!(queue.0.len(), 8);
+    }
+    #[test]
+    fn external_project_open_waits_for_picker_and_unsaved_decision() {
+        let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+        let ctx = egui::Context::default();
+        let mut queue = ExternalProjects::default();
+        queue.receive(&json!({"externalProjectPath":"/tmp/not-read-before-consent.aep"})).unwrap();
+        queue.dispatch(&mut app, &ctx, true).unwrap();
+        assert_eq!(queue.0.len(), 1);
+        app.session.execute("comp.new", json!({"name":"Keep my work","width":64,"height":64})).unwrap();
+        let before = app.session.project.to_json();
+        queue.dispatch(&mut app, &ctx, false).unwrap();
+        assert_eq!(app.dialog, Some(unwritten_studio_ui_egui::Dialog::UnsavedChanges));
+        assert_eq!(app.session.project.to_json(), before);
+        queue.receive(&json!({"externalProjectPath":"/tmp/second.unw"})).unwrap();
+        queue.dispatch(&mut app, &ctx, false).unwrap();
+        assert_eq!(queue.0.len(), 1, "a second handoff cannot overwrite the first Save/Cancel decision");
+        assert_eq!(app.session.project.to_json(), before);
+    }
+    #[test]
+    fn external_project_open_uses_native_unw_and_aep_importers_once() {
+        let root = std::env::temp_dir().join(format!("unwritten-handoff-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let unw = root.join("My project.unw");
+        let aep = root.join("My project.aep");
+        let mut source = unwritten_studio_host::session();
+        source.execute("comp.new", json!({"name":"Handoff fixture","width":64,"height":64,"frameRate":24,"duration":1})).unwrap();
+        source.execute("file.saveAs", json!({"path":unw})).unwrap();
+        source.execute("file.exportAep", json!({"path":aep})).unwrap();
+        let original_aep = std::fs::read(&aep).unwrap();
+        let ctx = egui::Context::default();
+        for path in [&unw, &aep] {
+            let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+            let mut queue = ExternalProjects::default();
+            queue.receive(&json!({"externalProjectPath":path})).unwrap();
+            queue.dispatch(&mut app, &ctx, false).unwrap();
+            assert!(!app.session.project.items.is_empty());
+            assert!(!app.ui.start_screen);
+            assert!(queue.0.is_empty());
+            let opened = app.session.project.to_json();
+            queue.dispatch(&mut app, &ctx, false).unwrap();
+            assert_eq!(opened, app.session.project.to_json());
+            if path == &aep {
+                assert!(app.session.path.is_none(), "AEP must open as an untitled copy");
+            }
+        }
+        assert_eq!(std::fs::read(&aep).unwrap(), original_aep);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn native_project_dialogs_offer_unw_without_losing_legacy_extensions() {
         let open = dialog_metadata(3, FileDialog::OpenProject);

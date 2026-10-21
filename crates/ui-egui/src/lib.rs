@@ -125,7 +125,7 @@ impl FileDialog {
         let ext = std::path::Path::new(default).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
         Self::Save {
             default: default.to_string(),
-            project: ["uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)),
+            project: ["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)),
             ext,
         }
     }
@@ -185,7 +185,7 @@ impl Hooks {
         let path = std::path::Path::new(default);
         let ext = path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
         match (&self.pick_save_file, &self.pick_save) {
-            (Some(pick), _) if !["uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)) => {
+            (Some(pick), _) if !["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)) => {
                 Some(pick(default, &ext))
             }
             (_, Some(pick)) => Some(pick(&path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),

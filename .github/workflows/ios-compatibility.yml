@@ -32,7 +32,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Test native engine workflows
-        run: cargo test --locked -p unwritten-studio-core -- --include-ignored
+        run: cargo test --locked -p unwritten-studio-core --lib -- --include-ignored
+
+      - name: Test iPad sandbox output policy
+        run: cargo test --locked -p unwritten-studio-engine --lib ipad_render_defaults_stay_inside_documents_even_for_external_projects
+
+      - name: Test native project formats and safe AE refusal
+        run: cargo test --locked -p unwritten-studio-engine --lib format_tests
+
+      - name: Test draggable workspace panels
+        run: cargo test --locked -p unwritten-studio-ui-egui --test ui_dock_resize
 
       - name: Test original frontend lifecycle
         run: cargo test --locked -p unwritten-studio-ui-egui --lib embedded_original_ui_bootstraps_fonts_and_renders_without_panicking

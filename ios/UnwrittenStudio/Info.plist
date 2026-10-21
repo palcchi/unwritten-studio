@@ -44,7 +44,7 @@
             <key>UTTypeDescription</key><string>Unwritten Studio Project</string>
             <key>UTTypeConformsTo</key><array><string>public.json</string></array>
             <key>UTTypeTagSpecification</key>
-            <dict><key>public.filename-extension</key><array><string>uwproj</string></array><key>public.mime-type</key><string>application/vnd.unwrittenstudio.project+json</string></dict>
+            <dict><key>public.filename-extension</key><array><string>unw</string><string>uwproj</string><string>ecproj</string></array><key>public.mime-type</key><string>application/vnd.unwrittenstudio.project+json</string></dict>
         </dict>
     </array>
     <key>UTImportedTypeDeclarations</key>

@@ -58,10 +58,10 @@ then to go further in a few places where it matters to us:
 
 - **Lottie import and export built in**, so animations can go straight to the web and apps
   without a plugin.
-- **A project file you can read.** Projects are versioned JSON (`.uwproj`), so they diff cleanly
+- **A project file you can read.** Projects are versioned JSON (`.unw`), so they diff cleanly
   in version control.
-- **Older projects remain readable.** Existing `.ecproj` / `.ecprojx` projects and `.ectemplate`
-  templates can still be opened; new saves use the Unwritten Studio extensions.
+- **Older projects remain readable.** Existing `.uwproj` / `.ecproj` / `.ecprojx` projects and
+  `.ectemplate` templates can still be opened; new saves use canonical `.unw` JSON.
 - **Everything is scriptable.** Every menu item, timeline drag and property edit goes through one
   command registry, so the same actions are reachable from a command line, a JSON control
   channel and an MCP server for agents.
@@ -210,8 +210,9 @@ exists, including all of its effects, but existing is not the same as behaving e
 Effects, and we haven't measured that yet. Today it's a good place to try things and to tell us
 what breaks. It isn't yet a replacement for After Effects on client work. In particular:
 
-- **After Effects projects can't be opened.** Projects are saved as `.uwproj`, readable versioned
-  JSON, but Unwritten Studio can't open `.aep` / `.aepx` files, and After Effects plug-ins don't run.
+- **After Effects projects can't be opened.** Projects are saved as `.unw`, readable versioned
+  JSON, but Unwritten Studio can't open or write proprietary `.aep` / `.aepx` files, and After
+  Effects plug-ins don't run.
 - **Behaviour still differs from After Effects in places.** Nothing yet compares our renders with
   After Effects automatically, so please report differences.
 - **macOS is the most tested platform.** Linux and Windows users have hit basic interaction

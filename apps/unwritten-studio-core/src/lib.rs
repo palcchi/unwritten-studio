@@ -426,4 +426,35 @@ mod tests {
         assert_eq!(value["activeComp"]["width"], 640);
         assert_eq!(value["renderer"], "CPU (host validation)");
     }
+
+    #[test]
+    fn native_render_queue_writes_mp4_to_app_storage_and_reimports_it() {
+        let root = std::env::temp_dir().join(format!("unwritten-native-export-{}", std::process::id()));
+        let exports = root.join("Documents").join("Exports");
+        let mut session = make_session();
+        command(&mut session, "comp.new", json!({"name":"iPad Render", "width":32, "height":24, "frameRate":2, "duration":1})).unwrap();
+        command(&mut session, "layer.newSolid", json!({"color":"#E85D45", "width":32, "height":24})).unwrap();
+        command(&mut session, "prefs.set", json!({"key":"export.defaultOutputFolder", "value":exports.to_string_lossy()})).unwrap();
+        command(&mut session, "renderQueue.add", json!({"format":"h264"})).unwrap();
+        let rendered = command(&mut session, "renderQueue.render", json!({"wait":true})).unwrap();
+        assert_eq!(rendered["items"][0]["statusLabel"], "Done", "{rendered}");
+        let output = exports.join("iPad Render.mp4");
+        let bytes = std::fs::read(&output).expect("completed MP4 in Documents/Exports");
+        assert_eq!(bytes.get(4..8), Some(b"ftyp".as_slice()));
+        assert!(bytes.len() > 128);
+        let imported = command(&mut session, "file.import", json!({"paths":[output.to_string_lossy()]})).unwrap();
+        assert_eq!(imported["errors"].as_array().unwrap().len(), 0, "{imported}");
+        assert_eq!(imported["items"].as_array().unwrap().len(), 1, "{imported}");
+        // An unwritable destination is reported, never confused with a chip/GPU
+        // limitation, and a failed export must not destroy the current project.
+        let blocked = root.join("not-a-directory");
+        std::fs::write(&blocked, b"keep").unwrap();
+        command(&mut session, "renderQueue.add", json!({"format":"h264", "output":blocked.join("failed.mp4").to_string_lossy()})).unwrap();
+        let failed = command(&mut session, "renderQueue.render", json!({"wait":true})).unwrap();
+        assert_eq!(failed["items"][0]["statusLabel"], "Failed", "{failed}");
+        assert!(failed["items"][0]["status"].to_string().contains("Cannot prepare output folder"), "{failed}");
+        assert_eq!(std::fs::read(&blocked).unwrap(), b"keep");
+        assert_eq!(session.active_comp().unwrap().layers.len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

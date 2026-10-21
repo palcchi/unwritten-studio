@@ -22,8 +22,8 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 | Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
-| Project `.aep` | R/W (native) | none | none | Main file format; needs an owner decision on clean-room scope (#190; #248, closed as its duplicate: py-aep as an external converter; open PRs #251 and #860). Blocks beta | — |
-| XML project `.aepx` | R/W | none | none | Same decision as `.aep` | — |
+| Project `.aep` | R/W (native) | none | none | Proprietary format is explicitly rejected; no clean-room reader or writer. Use native `.unw`, or an external conversion workflow when approved. Blocks beta | — |
+| XML project `.aepx` | R/W | none | none | Proprietary format is explicitly rejected; not the native XML project format (`.uwprojx`). No reader or writer | — |
 | Templates `.aet` / `.aetx` | R/W | none | none | Own `.uwtemplate` (Home ▸ Templates, Save as Template) | `templates.rs` tests |
 | Motion Graphics template `.mogrt` | W (and R in Premiere) | none | none | Own `.uwtemplate` Essential Graphics templates; FilmCraft rejects our `.fcgt` export (#611) | `essential.rs` tests |
 | Animation preset `.ffx` | R/W, 621 bundled | none | none | Own JSON `.ecpreset`; `.ffx` is out of clean-room scope (AGENTS.md §2) | `animation.rs` tests |
@@ -32,7 +32,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | Binary scripts `.jsxbin` | R (run) | none | — | No public specification: out of scope | — |
 | Motion graphics JSON `.mgjson` | R (data) | none | none | Media Browser lists it; import accepts only `.json` / `.csv` / `.tsv` data | — |
 | Captions `.aecap`, graphics `.aegraphic` | R/W | none | none | — | — |
-| Native `.uwproj` | — | yes | yes | Versioned JSON; schema migrations tested; absolute footage paths, no relinking (gap 18) | engine project tests |
+| Native `.unw` (preferred; `.uwproj` / `.ecproj` aliases) | — | yes | yes | Versioned canonical JSON; schema migrations and `.unw` round-trip tested. `.uwprojx` / `.ecprojx` remain native XML copies | engine project tests |
 
 ## Footage: stills
 

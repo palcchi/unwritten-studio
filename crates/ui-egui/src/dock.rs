@@ -1027,38 +1027,82 @@ fn layout_inner(
         }
         DockNode::Split { vertical, size, a, b } => {
             let axis = if *vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
-            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, 20.0) else { return };
-            let response = resize_handle(split.divider, *vertical, path, t).value(split.first_size(), 0.0..=split.available()).show(ui);
-            reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
-            if response.delta != 0.0
-                && let Some(resized) = split.resized(size.shared(), response.delta, 40.0)
-            {
-                actions.push(craft_ui::docking::Action::ResizeSplit { path: tree_path.to_vec(), size: resized });
-            }
+            // Keep the layout and drag constraints in sync.  A smaller layout minimum used to
+            // let a pane collapse to 20 points while dragging stopped at 40 points, which made
+            // the divider jump back on compact/iPad-sized canvases.  `split_rect` relaxes this
+            // to half the available space when both panes cannot fit.
+            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, SPLIT_MIN) else { return };
+            paint_splitter_grip(ui, split.divider, *vertical, t);
             let mut first_path = tree_path.to_vec();
             first_path.push(false);
             let mut second_path = tree_path.to_vec();
             second_path.push(true);
             layout_inner(ui, a, split.first, t, &format!("{path}a"), &first_path, out, reg, actions);
             layout_inner(ui, b, split.second, t, &format!("{path}b"), &second_path, out, reg, actions);
+            // Register this after both child panels.  The enlarged touch target overlaps the
+            // pane by design; egui gives later interactions precedence, so registering it before
+            // the children lets a pane control steal an iPad drag that starts eight points away
+            // from the visual four-point gutter.
+            let response = show_resize_handle(
+                ui,
+                split.divider,
+                egui::Id::new(("dock-overlay", path.to_string())),
+                resize_handle(split.divider, *vertical, path, t).value(split.first_size(), 0.0..=split.available()),
+            );
+            reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
+            if response.delta != 0.0
+                && let Some(resized) = split.resized(size.shared(), response.delta, SPLIT_MIN)
+            {
+                actions.push(craft_ui::docking::Action::ResizeSplit { path: tree_path.to_vec(), size: resized });
+            }
         }
     }
+}
+
+fn paint_splitter_grip(ui: &egui::Ui, divider: Rect, vertical: bool, t: &Tokens) {
+    // Hover is unavailable on touchscreens, so leave a quiet, theme-aware affordance at rest.
+    let color = t.text_faint.gamma_multiply(0.7);
+    let center = divider.center();
+    let (a, b) = if vertical {
+        (pos2(center.x, center.y - 7.0), pos2(center.x, center.y + 7.0))
+    } else {
+        (pos2(center.x - 7.0, center.y), pos2(center.x + 7.0, center.y))
+    };
+    ui.painter().line_segment([a, b], Stroke::new(1.0, color));
 }
 
 /// A gap between dock areas that drags to resize them (`vertical`: up and down), with a slightly
 /// larger hit area than the gap. Returns the drag this frame.
 fn gutter(ui: &mut egui::Ui, gap: Rect, vertical: bool, path: &str, t: &Tokens, reg: &mut crate::automation::Registry) -> Option<f32> {
-    let response = resize_handle(gap, vertical, path, t).show(ui);
+    let response = show_resize_handle(ui, gap, egui::Id::new(("dock-overlay", path.to_string())), resize_handle(gap, vertical, path, t));
     reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
     (response.delta != 0.0).then_some(response.delta)
+}
+
+/// Show a handle on a foreground layer so overlapping panel controls cannot steal a touch drag.
+fn show_resize_handle(ui: &mut egui::Ui, rect: Rect, id: egui::Id, handle: ResizeHandle<'static>) -> craft_ui::layout::ResizeResponse {
+    egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.min)
+        .show(ui.ctx(), |overlay| {
+            overlay.set_min_size(rect.size());
+            handle.show(overlay)
+        })
+        .inner
 }
 
 fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHandle<'static> {
     let axis = if vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
     let style = ResizeHandleStyle { hovered: t.focus.gamma_multiply(0.4), dragged: t.focus.gamma_multiply(0.9), focused: t.focus };
     let label = if vertical { crate::i18n::tr("Height:") } else { crate::i18n::tr("Width:") };
-    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style)
+    // Native iPad input reports a primary pointer drag, just like a mouse, but a 4-point gutter
+    // is too easy to miss with a finger.  Expand along the movement axis without changing the
+    // divider's visual geometry; this also benefits pen and high-DPI touch devices.
+    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style).hit_margin(12.0)
 }
+/// Minimum usable pane size.  The shared splitter relaxes this to half the available space in
+/// very small windows, keeping the layout finite and non-inverting while remaining responsive.
+const SPLIT_MIN: f32 = 40.0;
 
 /// The least body height of an open stacked panel (when the stack has room for it).
 const STACK_MIN: f32 = 40.0;

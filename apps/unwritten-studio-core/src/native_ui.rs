@@ -95,10 +95,37 @@ fn presentation_limits(supported: wgpu::Limits) -> wgpu::Limits {
     wgpu::Limits::downlevel_defaults().using_resolution(supported)
 }
 
+#[cfg(target_os = "ios")]
+fn smoke_export_to_ios_storage() -> Result<(), String> {
+    // The regular macOS tests cannot reproduce iOS file permissions. Exercise
+    // the real default output policy inside the simulator's app container too.
+    // Use a separate tiny project so the visible demo remains untouched.
+    let mut session = unwritten_studio_host::session();
+    let name = format!("UISmoke-Storage-{}", std::process::id());
+    session.execute("comp.new", json!({"name":name,"width":32,"height":24,"frameRate":2,"duration":1})).map_err(|e| e.to_string())?;
+    session.execute("layer.newSolid", json!({"color":"#E85D45","width":32,"height":24})).map_err(|e| e.to_string())?;
+    let item = session.execute("renderQueue.add", json!({"format":"h264"})).map_err(|e| e.to_string())?;
+    let path = item["outputPath"].as_str().ok_or("iOS smoke render has no output path")?;
+    let result = (|| {
+        session.execute("renderQueue.render", json!({"wait":true})).map_err(|e| e.to_string())?;
+        let Some(queued) = session.project.render_queue.first() else { return Err("iOS smoke render queue is empty".into()) };
+        if queued.status != unwritten_studio_project::render_queue::RenderStatus::Done {
+            return Err(format!("iOS sandbox render failed at {path}: {:?}", queued.status));
+        }
+        let imported = session.execute("file.import", json!({"paths":[path]})).map_err(|e| e.to_string())?;
+        if imported["items"].as_array().is_none_or(|items| items.len() != 1) || imported["errors"].as_array().is_some_and(|errors| !errors.is_empty()) {
+            return Err(format!("iOS smoke render could not be reimported: {imported}"));
+        }
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(path);
+    result
+}
+
 fn dialog_metadata(id: u64, dialog: FileDialog) -> Value {
     match dialog {
         FileDialog::Open { exts, many } => json!({"id":id,"kind":"open","extensions":exts,"many":many,"project":false}),
-        FileDialog::OpenProject => json!({"id":id,"kind":"open","extensions":["uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true}),
+        FileDialog::OpenProject => json!({"id":id,"kind":"open","extensions":["unw","uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true}),
         FileDialog::Folder => json!({"id":id,"kind":"folder","extensions":[],"many":false,"project":false}),
         FileDialog::Save { default, ext, project } => {
             let name = std::path::Path::new(&default).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or(default);
@@ -155,6 +182,8 @@ impl NativeUi {
         let (w, h, scale, pw, ph) = geometry(input)?;
         self.complete_dialog(input);
         if input["smoke"].as_bool().unwrap_or(false) && !self.smoke_opened {
+            #[cfg(target_os = "ios")]
+            smoke_export_to_ios_storage()?;
             self.app.session.execute("file.openDemoProject", json!({})).map_err(|e| e.to_string())?;
             self.app.ui.start_screen = false;
             self.smoke_opened = true;
@@ -426,6 +455,20 @@ pub unsafe extern "C" fn unwritten_studio_ui_output_json(p: *mut NativeUi) -> *m
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn native_project_dialogs_offer_unw_without_losing_legacy_extensions() {
+        let open = dialog_metadata(3, FileDialog::OpenProject);
+        let extensions = open["extensions"].as_array().unwrap();
+        for ext in ["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"] {
+            assert!(extensions.contains(&json!(ext)));
+        }
+        let save = dialog_metadata(4, FileDialog::save("Untitled Project.unw"));
+        assert_eq!(save["defaultName"], "Untitled Project.unw");
+        assert_eq!(save["extensions"], json!(["unw"]));
+        assert_eq!(save["project"], true);
+        assert_eq!(dialog_metadata(5, FileDialog::save("Render.mp4"))["project"], false);
+    }
+
     #[test]
     fn presentation_limits_fit_ios_metal_inter_stage_cap() {
         let supported = wgpu::Limits { max_inter_stage_shader_variables: 15, ..Default::default() };

@@ -39,6 +39,7 @@ fn demo(s: &mut Session, _: &Value) -> Result<Value> {
 
 pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
+    reject_after_effects(path, "open")?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
     let text = String::from_utf8(bytes).map_err(|_| EngineError::Other("not a text project file".into()))?;
     // XML copies (File ▸ Save a Copy As XML…) open like the JSON project.
@@ -94,12 +95,73 @@ fn resolve_relative_footage(p: &mut Project, project_path: &str, services: &dyn 
     }
 }
 
-/// The project file's text for `path`: `.uwproj` JSON, or XML for `.uwprojx` / `.xml` (a
+/// The project file's text for `path`: `.unw` (or legacy `.uwproj`) JSON, or XML for `.uwprojx` / `.xml` (a
 /// project opened from an XML copy saves as XML again). Fails, writing nothing, when the project
 /// wouldn't read back.
 pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
+    reject_after_effects(path, "save")?;
     let json = s.project.to_file_json_with_view(&s.saved_view())?;
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
+}
+
+/// AEP/AEPX are proprietary formats; this clean-room project has no codec for them.
+fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
+    let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext.eq_ignore_ascii_case("aep") || ext.eq_ignore_ascii_case("aepx") {
+        return Err(EngineError::Other(format!(
+            "cannot {operation} `{path}`: After Effects .aep/.aepx is not supported; use .unw (native JSON) or .uwprojx (native XML)"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::reject_after_effects;
+    use crate::Session;
+    use serde_json::json;
+
+    #[test]
+    fn native_unw_round_trips() {
+        let dir = std::env::temp_dir().join(format!("unwritten-unw-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("roundtrip.unw");
+        let mut a = Session::default();
+        a.execute("comp.new", json!({"name":"Canonical", "width":32, "height":24, "duration":1})).unwrap();
+        a.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap();
+        let mut b = Session::default();
+        b.execute("file.open", json!({"path": path.to_string_lossy()})).unwrap();
+        assert_eq!(b.path.as_deref(), Some(path.to_string_lossy().as_ref()));
+        assert!(b.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
+        assert!(super::super::import_project::is_project_path("ROUNDTRIP.UNW"));
+        let mut imported = Session::default();
+        let result = imported.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
+        assert!(result["errors"].as_array().is_none_or(Vec::is_empty), "{result}");
+        assert!(imported.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn proprietary_after_effects_paths_are_rejected_before_io() {
+        assert!(reject_after_effects("project.aep", "save").is_err());
+        assert!(reject_after_effects("project.aepx", "open").is_err());
+        assert!(reject_after_effects("project.UNW", "save").is_ok());
+        assert!(reject_after_effects("project.uwproj", "save").is_ok());
+        let dir = std::env::temp_dir().join(format!("unwritten-aep-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Existing.AEP");
+        let original = b"RIFX\0\0\0\x04Egg!";
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        let error = session.execute("file.saveAs", json!({"path": path.to_string_lossy()})).unwrap_err().to_string();
+        assert!(error.contains("not supported") && error.contains(".unw"), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        let missing = dir.join("Unsupported.aepx");
+        assert!(session.execute("file.saveAs", json!({"path": missing.to_string_lossy()})).is_err());
+        assert!(!missing.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 fn save_to(s: &mut Session, path: &str) -> Result<Value> {
@@ -573,7 +635,13 @@ pub(crate) fn data_footage(services: &dyn crate::Services, path: &str) -> Option
         if ext == "json" {
             serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')).map_err(|e| format!("invalid JSON: {e}"))?;
         }
-        Ok(unwritten_studio_project::Footage { path: path.to_string(), kind: FootageKind::Data, codec: ext.to_uppercase(), data: Some(text), ..Default::default() })
+        Ok(unwritten_studio_project::Footage {
+            path: path.to_string(),
+            kind: FootageKind::Data,
+            codec: ext.to_uppercase(),
+            data: Some(text),
+            ..Default::default()
+        })
     })())
 }
 

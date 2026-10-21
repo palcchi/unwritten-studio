@@ -1,6 +1,8 @@
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import PhotosUI
+import ImageIO
 
 /// The iOS host for the real egui workspace.  It deliberately contains no SwiftUI
 /// recreation of the editor: every visible pixel comes from the Rust egui frame.
@@ -12,7 +14,7 @@ struct OriginalWorkspaceView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: OriginalWorkspaceController, context: Context) {}
 }
 
-final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDelegate, UIScrollViewDelegate {
+final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIScrollViewDelegate {
     private let viewport = UIScrollView()
     private let canvas = OriginalWorkspaceCanvas()
     private var lastViewportSize = CGSize.zero
@@ -35,6 +37,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     override func loadView() {
         viewport.backgroundColor = .black
         viewport.delegate = self
+        viewport.delaysContentTouches = false
         viewport.panGestureRecognizer.minimumNumberOfTouches = 2
         viewport.panGestureRecognizer.maximumNumberOfTouches = 2
         viewport.addSubview(canvas)
@@ -214,11 +217,53 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func presentOpen(_ dialog: FileDialog) {
+        // PhotosPicker is deliberately offered only for media imports. Project and
+        // generic open dialogs must stay in Files so their provider URLs retain the
+        // semantics expected by the engine.
+        if dialog.isMediaImport {
+            presentMediaSourceChoice(for: dialog)
+        } else {
+            presentDocumentPicker(for: dialog)
+        }
+    }
+
+    private func presentMediaSourceChoice(for dialog: FileDialog) {
+        let alert = UIAlertController(title: "Import Footage", message: "Choose a source", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "Files", style: .default) { [weak self] _ in
+            self?.presentDocumentPicker(for: dialog)
+        })
+        alert.addAction(UIAlertAction(title: "Photos", style: .default) { [weak self] _ in
+            self?.presentPhotoPicker(for: dialog)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.finishDialog(dialog.id, paths: [])
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        }
+        present(alert, animated: true)
+    }
+
+    private func presentDocumentPicker(for dialog: FileDialog) {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: dialog.contentTypes, asCopy: false)
         picker.allowsMultipleSelection = dialog.many
         picker.delegate = self
         picker.modalPresentationStyle = .formSheet
         picker.view.accessibilityIdentifier = "unwritten-file-dialog-\(dialog.id)"
+        objc_setAssociatedObject(picker, &DialogAssociation.key, dialog.id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        present(picker, animated: true)
+    }
+
+    private func presentPhotoPicker(for dialog: FileDialog) {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.filter = .any(of: [.images, .videos])
+        configuration.selectionLimit = dialog.many ? 0 : 1
+        configuration.preferredAssetRepresentationMode = .compatible
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
+        picker.view.accessibilityIdentifier = "unwritten-photo-dialog-\(dialog.id)"
         objc_setAssociatedObject(picker, &DialogAssociation.key, dialog.id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         present(picker, animated: true)
     }
@@ -233,9 +278,9 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func presentSave(_ dialog: FileDialog) {
-        let alert = UIAlertController(title: "Save Project", message: nil, preferredStyle: .alert)
+        let alert = UIAlertController(title: dialog.project ? "Save Project" : "Output File", message: nil, preferredStyle: .alert)
         alert.addTextField { field in
-            field.text = dialog.defaultName ?? "Untitled.uwproj"
+            field.text = dialog.defaultName ?? "Untitled.unw"
             field.placeholder = "File name"
             field.clearButtonMode = .whileEditing
         }
@@ -246,6 +291,13 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             }
             var safeName = self.safeFileName(name)
             if URL(fileURLWithPath: safeName).pathExtension.isEmpty, let ext = dialog.extensions.first, !ext.isEmpty { safeName += "." + ext }
+            if dialog.project, ["aep", "aepx"].contains(URL(fileURLWithPath: safeName).pathExtension.lowercased()) {
+                self.finishDialog(dialog.id, paths: [])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                    self?.showErrorOnce("After Effects project export (.aep/.aepx) is not supported. Save an Unwritten Studio project as .unw instead.")
+                }
+                return
+            }
             let exportDirectory = self.applicationDocuments()
                 .appendingPathComponent("Exports", isDirectory: true)
                 .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -297,7 +349,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         let name = URL(fileURLWithPath: value).lastPathComponent
             .replacingOccurrences(of: "/", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? "Untitled.uwproj" : name
+        return name.isEmpty ? "Untitled.unw" : name
     }
 
     private func presentExport(url: URL, name: String) {
@@ -336,50 +388,151 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             _ = folder.startAccessingSecurityScopedResource()
             finishDialog(id, paths: [folder.path])
         } else {
-            finishDialog(id, paths: copyToImportedMedia(urls))
+            // iCloud/document-provider coordination can block while materialising a file.
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let paths = self?.copyToImportedMedia(urls) ?? []
+                DispatchQueue.main.async { self?.finishDialog(id, paths: paths) }
+            }
         }
     }
 
     private func copyToImportedMedia(_ urls: [URL]) -> [String] {
-        // The engine keeps the paths returned by this dialog in the project.  A
-        // security-scoped URL is only valid while its access scope is open, so
-        // never hand the engine the provider's URL.  Keep project URLs and
-        // folder URLs untouched above: those are deliberately used as the
-        // base for project-relative references.  Individual media selections
-        // are copied into our container and the copied path is returned.
-        let root = applicationSupportDirectory().appendingPathComponent("Imported Media", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
-                                                     attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+            let root = try prepareImportedMediaDirectory()
+            var failures: [String] = []
+            let paths = urls.compactMap { copyMediaFile($0, into: root, failures: &failures) }
+            if !failures.isEmpty {
+                let message = "Some media could not be imported: " + failures.joined(separator: "; ")
+                DispatchQueue.main.async { [weak self] in self?.showErrorOnce(message) }
+            }
+            return paths
         } catch {
-            showErrorOnce("Could not prepare imported media storage: \(error.localizedDescription)")
+            let message = "Could not prepare imported media storage: \(error.localizedDescription)"
+            DispatchQueue.main.async { [weak self] in self?.showErrorOnce(message) }
             return []
         }
-        var failures: [String] = []
-        let paths = urls.compactMap { source -> String? in
-            guard source.isFileURL, !source.hasDirectoryPath else {
-                failures.append("\(source.lastPathComponent): folders are not media files")
-                return nil
-            }
-            let access = source.startAccessingSecurityScopedResource()
-            defer { if access { source.stopAccessingSecurityScopedResource() } }
-            do {
-                guard FileManager.default.isReadableFile(atPath: source.path) else {
-                    throw CocoaError(.fileReadNoPermission)
+    }
+
+    private func prepareImportedMediaDirectory() throws -> URL {
+        let root = applicationSupportDirectory().appendingPathComponent("Imported Media", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                 attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        return root
+    }
+
+    private func copyMediaFile(_ source: URL, into root: URL, failures: inout [String]) -> String? {
+        guard source.isFileURL, !source.hasDirectoryPath else {
+            failures.append("\(source.lastPathComponent): folders are not media files")
+            return nil
+        }
+        let access = source.startAccessingSecurityScopedResource()
+        defer { if access { source.stopAccessingSecurityScopedResource() } }
+        do {
+            // Do not preflight with isReadableFile: iCloud/document providers can
+            // materialize a not-yet-downloaded file during coordinated reading.
+            var coordinationError: NSError?
+            var copyError: Error?
+            var importedPath: String?
+            let coordinator = NSFileCoordinator(filePresenter: nil)
+            coordinator.coordinate(readingItemAt: source, options: [], error: &coordinationError) { coordinatedURL in
+                // Keep supported images byte-for-byte, including animated GIF,
+                // layered PSD, high-bit-depth TIFF and transparent PNG. Only
+                // normalize HEIF images the Rust media decoder cannot read.
+                if ["heic", "heif", "hif"].contains(coordinatedURL.pathExtension.lowercased()) {
+                    importedPath = copyImageFile(coordinatedURL, into: root, failures: &failures)
+                } else {
+                    do {
+                        let destination = try uniqueImportedMediaURL(for: source, in: root)
+                        try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+                        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+                        importedPath = destination.path
+                    } catch { copyError = error }
                 }
-                let destination = try uniqueImportedMediaURL(for: source, in: root)
-                try FileManager.default.copyItem(at: source, to: destination)
-                try FileManager.default.setAttributes(
-                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-                    ofItemAtPath: destination.path)
-                return destination.path
+            }
+            if let coordinationError { throw coordinationError }
+            if let copyError { throw copyError }
+            return importedPath
+        } catch {
+            failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static let maxImageDimension = 8_192
+    private static let maxImagePixels = 40_000_000
+    private static let maxEncodedImageBytes = 128 * 1024 * 1024
+
+    private func copyImageFile(_ source: URL, into root: URL, failures: inout [String]) -> String? {
+        do {
+            guard let sourceImage = CGImageSourceCreateWithURL(source as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(sourceImage, 0, nil) as? [CFString: Any],
+                  let width = props[kCGImagePropertyPixelWidth] as? Int, let height = props[kCGImagePropertyPixelHeight] as? Int,
+                  width > 0, height > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            guard width <= Self.maxImageDimension, height <= Self.maxImageDimension, width <= Self.maxImagePixels / max(1, height) else {
+                throw NSError(domain: "UnwrittenStudio.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "HEIF image is too large to convert safely (maximum 8192 pixels per side and 40 megapixels)."])
+            }
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: Self.maxImageDimension]
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(sourceImage, 0, options as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+            let image = UIImage(cgImage: cg)
+            let alpha = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(cg.alphaInfo)
+            let ext = alpha ? "png" : "jpg"
+            guard let data = alpha ? image.pngData() : image.jpegData(compressionQuality: 0.9), data.count <= Self.maxEncodedImageBytes else {
+                throw NSError(domain: "UnwrittenStudio.MediaImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Image encoding exceeded the 128 MB safety limit."])
+            }
+            let stem = source.deletingPathExtension().lastPathComponent
+            let destination = try uniqueImportedMediaURL(forName: "\(stem.isEmpty ? "Imported Media" : stem).\(ext)", in: root)
+            try data.write(to: destination, options: .atomic)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+            return destination.path
+        } catch { failures.append("\(source.lastPathComponent): \(error.localizedDescription)"); return nil }
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        guard let id = objc_getAssociatedObject(picker, &DialogAssociation.key) as? UInt64 else { return }
+        picker.dismiss(animated: true)
+        guard !results.isEmpty else { finishDialog(id, paths: []); return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let root = try self.prepareImportedMediaDirectory()
+                let group = DispatchGroup()
+                let resultQueue = DispatchQueue(label: "org.unwritten.studio.photo-import-results")
+                var paths = Array(repeating: "", count: results.count)
+                var failures: [String] = []
+                for (index, result) in results.enumerated() {
+                    let provider = result.itemProvider
+                    guard let typeIdentifier = provider.registeredTypeIdentifiers.first(where: { $0 == UTType.jpeg.identifier })
+                        ?? provider.registeredTypeIdentifiers.first(where: { $0 == UTType.png.identifier })
+                        ?? provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true })
+                        ?? provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) else {
+                        resultQueue.sync { failures.append("Photo \(index + 1): no supported image or video representation") }
+                        continue
+                    }
+                    group.enter()
+                    provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] url, error in
+                        defer { group.leave() }
+                        guard let self, let url else {
+                            resultQueue.sync { failures.append("Photo \(index + 1): \(error?.localizedDescription ?? "the provider returned no file")") }
+                            return
+                        }
+                        resultQueue.sync {
+                            if let path = self.copyMediaFile(url, into: root, failures: &failures) { paths[index] = path }
+                        }
+                    }
+                }
+                group.wait()
+                let imported = paths.filter { !$0.isEmpty }
+                DispatchQueue.main.async {
+                    if !failures.isEmpty { self.showErrorOnce("Some photos could not be imported: " + failures.joined(separator: "; ")) }
+                    self.finishDialog(id, paths: imported)
+                }
             } catch {
-                failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
-                return nil
+                DispatchQueue.main.async {
+                    self.showErrorOnce("Could not prepare imported media storage: \(error.localizedDescription)")
+                    self.finishDialog(id, paths: [])
+                }
             }
         }
-        if !failures.isEmpty { showErrorOnce("Some media could not be imported: " + failures.joined(separator: "; ")) }
-        return paths
     }
 
     private func applicationSupportDirectory() -> URL {
@@ -395,6 +548,10 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private func uniqueImportedMediaURL(for source: URL, in root: URL) throws -> URL {
         let originalName = source.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = originalName.isEmpty ? "Imported Media" : originalName
+        return try uniqueImportedMediaURL(forName: name, in: root)
+    }
+
+    private func uniqueImportedMediaURL(forName name: String, in root: URL) throws -> URL {
         var destination = root.appendingPathComponent(name, isDirectory: false)
         guard FileManager.default.fileExists(atPath: destination.path) else { return destination }
 
@@ -564,7 +721,16 @@ private struct FrameResult {
 }
 private struct DialogResponse { let id: UInt64; let paths: [String]; var json: [String: Any] { ["id": id, "paths": paths] } }
 private struct FileDialog: Decodable { let id: UInt64; let kind: String; let extensions: [String]; let many: Bool; let defaultName: String?; let project: Bool
-    var contentTypes: [UTType] { let types = extensions.compactMap { UTType(filenameExtension: $0) }; return types.isEmpty ? [.data] : types }
+    var contentTypes: [UTType] {
+        let accepted = isMediaImport ? extensions + ["heic", "heif", "hif"] : extensions
+        let types = accepted.compactMap { UTType(filenameExtension: $0) }
+        return types.isEmpty ? [.data] : types
+    }
+    var isMediaImport: Bool {
+        guard !project, kind != "save", kind != "folder" else { return false }
+        let media = Set(["mp4", "mov", "m4v", "mkv", "webm", "mxf", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "dpx", "cin", "wav", "aif", "aiff", "mp3", "flac", "ogg", "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "tga", "hdr", "gltf", "glb", "obj", "stl", "fbx", "json", "csv", "tsv"])
+        return extensions.contains { media.contains($0.lowercased()) }
+    }
 }
 private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog? }
 

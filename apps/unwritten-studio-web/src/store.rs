@@ -243,7 +243,7 @@ impl Store {
 /// What a stored file is (Settings ▸ Disk ▸ Browser Storage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
-    /// A saved project (`.uwproj` outside the auto-save folder).
+    /// A saved project (`.unw` or a legacy project extension outside the auto-save folder).
     Project,
     /// Imported footage and everything else.
     Media,
@@ -254,7 +254,7 @@ pub enum FileKind {
 impl FileKind {
     pub fn of(path: &str) -> FileKind {
         let lower = path.to_ascii_lowercase();
-        if ![".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext)) {
+        if ![".unw", ".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext)) {
             return FileKind::Media;
         }
         let name = lower.rsplit('/').next().unwrap_or(&lower);

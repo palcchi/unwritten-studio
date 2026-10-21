@@ -10,10 +10,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use unwritten_studio_project::render_queue::{OutputFormat, OutputModule, PostRenderAction, RenderQueueItem, RenderStatus, TemplateVars, expand_template};
 use unwritten_studio_project::{ItemId, ItemKind, LayerSource, Project};
 use unwritten_studio_render::{ExprHost, FootageSource};
-use serde::{Deserialize, Serialize};
 
 use crate::{Event, Session};
 
@@ -163,6 +163,24 @@ pub(crate) fn default_output_base(home: Option<std::path::PathBuf>) -> Option<st
     let home = home.filter(|h| !h.as_os_str().is_empty())?;
     let movies = home.join("Movies");
     Some(if movies.is_dir() { movies } else { home })
+}
+
+/// iOS grants access to a selected document, not necessarily write access to its
+/// parent directory. Keep automatic renders in the app's Files-visible container.
+/// The platform argument also lets desktop tests exercise the sandbox policy.
+pub(crate) fn relative_output_base(folder: &str, project: Option<&str>, home: Option<std::path::PathBuf>, sandboxed_ios: bool) -> Option<std::path::PathBuf> {
+    let folder = folder.trim();
+    if !folder.is_empty() {
+        return Some(folder.into());
+    }
+    if sandboxed_ios {
+        return home.filter(|h| !h.as_os_str().is_empty()).map(|h| h.join("Documents").join("Exports"));
+    }
+    project
+        .and_then(|s| std::path::Path::new(s).parent())
+        .filter(|d| !d.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| default_output_base(home))
 }
 
 /// Bits per channel an output format writes for a project bit depth (named in the file when
@@ -359,17 +377,19 @@ impl Session {
         if path.is_absolute() {
             return Some(p);
         }
-        // Settings ▸ Export ▸ Default Output Folder, else the project's folder.
-        let folder = self.prefs.export.default_output_folder.trim();
-        let base = (!folder.is_empty()).then(|| std::path::PathBuf::from(folder));
-        let base =
-            base.or_else(|| self.path.as_deref().and_then(|s| std::path::Path::new(s).parent().map(|d| d.to_path_buf())).filter(|d| !d.as_os_str().is_empty()));
-        // Unsaved project: ~/Movies, else the home folder (as FilmCraft's exports do). The working directory
-        // is `/` for an app started from the macOS Finder, where nothing can be written (#446).
+        // iOS must not infer permission to write beside a Files document from
+        // permission to open that document. Use Documents/Exports unless the
+        // user explicitly chose a default output folder. Desktop keeps its
+        // project-folder / Movies / home policy (#446).
         let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
-        let base = base.or_else(|| default_output_base(home));
-        // (the web has no working directory: relative outputs land in its virtual root)
-        let base = base.or_else(|| std::env::current_dir().ok()).or_else(|| cfg!(target_arch = "wasm32").then(|| "/".into()))?;
+        let base = relative_output_base(&self.prefs.export.default_output_folder, self.path.as_deref(), home, cfg!(target_os = "ios"));
+        // Never fall back to a bundle/root working directory inside the iOS
+        // sandbox. The web has no cwd: relative outputs land in its virtual root.
+        let base = if cfg!(target_os = "ios") {
+            base
+        } else {
+            base.or_else(|| std::env::current_dir().ok()).or_else(|| cfg!(target_arch = "wasm32").then(|| "/".into()))
+        }?;
         Some(base.join(path).to_string_lossy().to_string())
     }
 

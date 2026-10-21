@@ -710,6 +710,20 @@ fn unsaved_project_renders_to_movies_or_home_not_the_working_directory() {
 }
 
 #[test]
+fn ipad_render_defaults_stay_inside_documents_even_for_external_projects() {
+    use crate::render_queue::relative_output_base;
+    let home = tmp("ipad-render-home");
+    let expected = home.join("Documents").join("Exports");
+    // Opening a Files document does not grant write access to its parent.
+    assert_eq!(relative_output_base("", None, Some(home.clone()), true), Some(expected.clone()));
+    assert_eq!(relative_output_base("", Some("/provider/Read Only/project.uwproj"), Some(home.clone()), true), Some(expected));
+    // Explicit output-folder choices and desktop project paths are preserved.
+    assert_eq!(relative_output_base(" /chosen/output ", None, Some(home.clone()), true), Some("/chosen/output".into()));
+    assert_eq!(relative_output_base("", Some("/desktop/project.uwproj"), Some(home), false), Some("/desktop".into()));
+    assert_eq!(relative_output_base("", None, None, true), None);
+}
+
+#[test]
 fn replace_with_precomp_swaps_every_use_of_the_item_for_one_new_comp() {
     let mut s = session();
     let main = s.active_comp_id().unwrap();

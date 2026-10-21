@@ -58,14 +58,14 @@ pub fn on_close_requested(app: &mut UnwrittenStudioApp, ctx: &egui::Context) {
     }
 }
 
-/// The project's display name: its file name, or `Untitled Project.uwproj`.
+/// The project's display name: its file name, or `Untitled Project.unw`.
 pub fn project_name(app: &UnwrittenStudioApp) -> String {
     app.session
         .path
         .as_deref()
         .and_then(|p| std::path::Path::new(p).file_name())
         .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Untitled Project.uwproj".into())
+        .unwrap_or_else(|| "Untitled Project.unw".into())
 }
 
 /// The window title: the project's path (or name) and `*` while it has unsaved changes.
@@ -219,7 +219,7 @@ mod tests {
         crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
         assert!(app.dialog.is_none());
         modified(&mut app);
-        assert!(window_title(&app).ends_with("Untitled Project.uwproj *"), "{}", window_title(&app));
+        assert!(window_title(&app).ends_with("Untitled Project.unw *"), "{}", window_title(&app));
         let r = crate::menus::invoke(&mut app, &ctx, "file.newProject", json!({})).unwrap();
         assert_eq!(r, json!({"dialog": "unsavedChanges"}));
         assert_eq!(app.dialog, Some(Dialog::UnsavedChanges));

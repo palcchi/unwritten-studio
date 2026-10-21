@@ -1206,7 +1206,6 @@ Window
   Effects & Presets | window.panel {"panel":"effectsPresets"} | Cmd+5
   Essential Graphics | window.panel {"panel":"essentialGraphics"}
   Info | window.panel {"panel":"info"} | Cmd+2
-  Learn | help.inAppTutorials
   Lumetri Scopes | window.panel {"panel":"lumetriScopes"}
   Mask Interpolation | window.panel {"panel":"maskInterpolation"}
   Media Browser | window.panel {"panel":"mediaBrowser"}
@@ -1244,16 +1243,12 @@ Help
   Animation Presets... | anim.browsePresets
   Keyboard Shortcuts... | app.keyboardShortcuts
   ---
-  In-App Tutorials... | help.inAppTutorials
-  Online Tutorials... | help.onlineTutorials
-  ---
   System Compatibility Report... | help.systemReport
   Enable Logging | help.enableLogging
   Reveal Logging File | help.revealLogFile
   ---
   Provide Feedback... | help.reportIssue
   Unwritten Studio on GitHub | help.github
-  Open Demo Project | file.openDemoProject
   [!mac] ---
   [!mac] About Unwritten Studio... | app.about
 "#;

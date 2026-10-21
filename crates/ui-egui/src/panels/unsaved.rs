@@ -26,6 +26,10 @@ pub struct Pending {
     pub answered: bool,
     /// The window closes without asking (the user answered the Quit prompt).
     pub quitting: bool,
+    /// A native Save picker is open for the guarded command.
+    pub awaiting_save: bool,
+    pub save_revision: Option<u64>,
+    pub save_token: u64,
 }
 
 /// Whether `id` needs the prompt first. When it does, the prompt opens holding the command and
@@ -33,6 +37,9 @@ pub struct Pending {
 pub fn guard(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> bool {
     if !CLOSING.contains(&id) || std::mem::take(&mut app.dialog_state.unsaved.answered) {
         return false;
+    }
+    if app.dialog_state.unsaved.awaiting_save {
+        return true;
     }
     ask(app, id, params)
 }
@@ -154,13 +161,28 @@ fn answer_with(app: &mut UnwrittenStudioApp, ctx: &egui::Context, a: Answer) {
         Answer::Cancel => return,
         Answer::Save => {
             // An untitled project asks for a path; cancelling that dialog cancels the command.
+            app.dialog_state.unsaved.save_token = app.dialog_state.unsaved.save_token.saturating_add(1);
+            app.dialog_state.unsaved.command = Some((id.clone(), params.clone()));
+            app.dialog_state.unsaved.awaiting_save = true;
+            app.dialog_state.unsaved.save_revision = Some(app.session.revision);
             if let Err(e) = crate::menus::invoke(app, ctx, "file.save", json!({})) {
                 app.ui.status = e;
+                app.dialog_state.unsaved.awaiting_save = false;
+                app.dialog_state.unsaved.save_revision = None;
+                app.dialog_state.unsaved.command = None;
                 return;
             }
             if app.session.is_dirty() {
+                if app.hooks.file_dialog_async.is_none() || app.session.path.is_some() {
+                    app.dialog_state.unsaved.awaiting_save = false;
+                    app.dialog_state.unsaved.save_revision = None;
+                    app.dialog_state.unsaved.command = None;
+                }
                 return;
             }
+            app.dialog_state.unsaved.awaiting_save = false;
+            app.dialog_state.unsaved.save_revision = None;
+            app.dialog_state.unsaved.command = None;
         }
         Answer::Discard => {}
     }
@@ -175,6 +197,32 @@ fn answer_with(app: &mut UnwrittenStudioApp, ctx: &egui::Context, a: Answer) {
         app.ui.status = e;
     }
     // Leave Home once something opened from it (not when its file dialog was cancelled).
+    if (app.session.path.clone(), app.session.revision) != before {
+        app.ui.start_screen = false;
+    }
+}
+
+/// Finish the Save answer that opened a native asynchronous picker.
+pub(crate) fn save_finished(app: &mut UnwrittenStudioApp, ctx: &egui::Context, success: bool) {
+    if !app.dialog_state.unsaved.awaiting_save {
+        return;
+    }
+    app.dialog_state.unsaved.awaiting_save = false;
+    let revision = app.dialog_state.unsaved.save_revision.take();
+    let Some((id, params)) = app.dialog_state.unsaved.command.take() else { return };
+    if !success || revision != Some(app.session.revision) || app.session.is_dirty() {
+        return;
+    }
+    if id == "app.quit" {
+        app.dialog_state.unsaved.quitting = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        return;
+    }
+    app.dialog_state.unsaved.answered = true;
+    let before = (app.session.path.clone(), app.session.revision);
+    if let Err(e) = crate::menus::invoke(app, ctx, &id, params) {
+        app.ui.status = e;
+    }
     if (app.session.path.clone(), app.session.revision) != before {
         app.ui.start_screen = false;
     }
@@ -210,6 +258,99 @@ mod tests {
     fn modified(app: &mut UnwrittenStudioApp) {
         app.session.execute("comp.new", json!({"name": "Main", "width": 64, "height": 64})).unwrap();
         assert!(app.session.is_dirty());
+    }
+
+    #[test]
+    fn every_project_switch_route_guards_unsaved_changes() {
+        for id in ["file.newProject", "file.open", "file.openRecent", "file.closeProject", "file.revert"] {
+            let (mut app, ctx) = app();
+            modified(&mut app);
+            let before = app.session.project.to_json();
+            let result = crate::menus::invoke(&mut app, &ctx, id, json!({"path":"not-opened.aep","index":0})).unwrap();
+            assert_eq!(result, json!({"dialog":"unsavedChanges"}), "{id}");
+            assert_eq!(app.session.project.to_json(), before, "{id} ran before user consent");
+            answer_with(&mut app, &ctx, Answer::Cancel);
+            assert_eq!(app.session.project.to_json(), before);
+            assert!(app.session.is_dirty());
+        }
+    }
+
+    fn async_save(app: &mut UnwrittenStudioApp, ctx: &egui::Context) -> crate::DialogDone {
+        use std::sync::{Arc, Mutex};
+        let pending: Arc<Mutex<Vec<crate::DialogDone>>> = Arc::default();
+        let queue = pending.clone();
+        app.hooks.file_dialog_async = Some(Box::new(move |_, done| queue.lock().unwrap().push(done)));
+        crate::menus::invoke(app, ctx, "file.newProject", json!({})).unwrap();
+        answer_with(app, ctx, Answer::Save);
+        assert!(app.dialog_state.unsaved.awaiting_save);
+        assert!(app.dialog_state.unsaved.command.is_some());
+        pending.lock().unwrap().pop().unwrap()
+    }
+
+    #[test]
+    fn asynchronous_save_continues_once_only_after_successful_write() {
+        let (mut app, ctx) = app();
+        modified(&mut app);
+        let done = async_save(&mut app, &ctx);
+        let token = app.dialog_state.unsaved.save_token;
+        let dir = std::env::temp_dir().join(format!("unwritten-async-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Saved.unw");
+        done(vec![path.to_string_lossy().into_owned()]);
+        assert_eq!(app.session.project.comps().count(), 1, "old project stays until callback is processed");
+        app.run_dialog_answers(&ctx);
+        assert!(path.is_file());
+        assert_eq!(unwritten_studio_engine::project::Project::from_json(&std::fs::read_to_string(&path).unwrap()).unwrap().comps().count(), 1);
+        assert_eq!(app.session.project.comps().count(), 0, "new project runs after save");
+        assert!(!app.dialog_state.unsaved.awaiting_save && app.dialog_state.unsaved.command.is_none());
+        modified(&mut app);
+        crate::menus::dialog_answered(
+            &mut app,
+            &ctx,
+            crate::DialogAnswer {
+                command: "file.save".into(),
+                key: "path",
+                params: json!({}),
+                paths: vec![path.to_string_lossy().into_owned()],
+                unsaved_save: Some(token),
+            },
+        );
+        assert!(app.session.is_dirty() && app.session.path.is_none(), "duplicate callback neither saves nor switches");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn asynchronous_save_cancel_and_failure_preserve_the_current_project() {
+        for failure in [false, true] {
+            let (mut app, ctx) = app();
+            modified(&mut app);
+            let before = app.session.project.to_json();
+            let done = async_save(&mut app, &ctx);
+            let dir = std::env::temp_dir().join(format!("unwritten-async-failed-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            done(if failure { vec![dir.to_string_lossy().into_owned()] } else { vec![] });
+            app.run_dialog_answers(&ctx);
+            assert_eq!(app.session.project.to_json(), before);
+            assert!(app.session.is_dirty() && app.session.path.is_none());
+            assert!(!app.dialog_state.unsaved.awaiting_save && app.dialog_state.unsaved.command.is_none());
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn asynchronous_save_does_not_write_or_switch_if_the_document_changed() {
+        let (mut app, ctx) = app();
+        modified(&mut app);
+        let done = async_save(&mut app, &ctx);
+        app.session.execute("layer.newNull", json!({})).unwrap();
+        let before = app.session.project.to_json();
+        let path = std::env::temp_dir().join(format!("unwritten-stale-save-{}.unw", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        done(vec![path.to_string_lossy().into_owned()]);
+        app.run_dialog_answers(&ctx);
+        assert_eq!(app.session.project.to_json(), before);
+        assert!(app.session.is_dirty() && !path.exists());
+        assert!(!app.dialog_state.unsaved.awaiting_save && app.dialog_state.unsaved.command.is_none());
     }
 
     #[test]

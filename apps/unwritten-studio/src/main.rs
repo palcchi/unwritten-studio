@@ -55,6 +55,7 @@ fn is_project_file(path: &str) -> bool {
             || ext.eq_ignore_ascii_case("uwprojx")
             || ext.eq_ignore_ascii_case("ecproj")
             || ext.eq_ignore_ascii_case("ecprojx")
+            || ext.eq_ignore_ascii_case("aep")
     })
 }
 
@@ -294,7 +295,7 @@ fn main() -> eframe::Result {
             }
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new()
-                    .add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"])
+                    .add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx", "unwae", "aep"])
                     .pick_file()
                     .map(|p| p.to_string_lossy().to_string())
             }));

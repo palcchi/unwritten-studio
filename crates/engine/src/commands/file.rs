@@ -40,7 +40,25 @@ fn demo(s: &mut Session, _: &Value) -> Result<Value> {
 pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
     reject_after_effects(path, "open")?;
+    crate::native_aep::check_file_size(path, s.services.as_ref()).map_err(EngineError::Other)?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
+    if crate::native_aep::is_aep_path(path) {
+        let allow_losses = b_p(p, "allowLosses").unwrap_or(true);
+        let (mut project, report, warnings) = crate::native_aep::decode(&bytes, path, s.services.as_ref(), allow_losses).map_err(EngineError::Other)?;
+        resolve_relative_footage(&mut project, path, s.services.as_ref());
+        s.replace_project(project, None);
+        s.mark_unsaved();
+        if let Some(root) = super::import_project::root_comps(&s.project).first().copied() {
+            s.open_comp(root);
+        }
+        for warning in &warnings {
+            s.toast(warning.clone());
+        }
+        if s.check_footage_on_open {
+            crate::footage_check::start(s, None, false)?;
+        }
+        return Ok(json!({"path": path, "format": "aep", "experimental": true, "report": report, "warnings": warnings}));
+    }
     if path.to_ascii_lowercase().ends_with(".unwae") {
         let (mut project, warnings) = crate::ae_bridge::import_unwae(&bytes).map_err(EngineError::Other)?;
         resolve_relative_footage(&mut project, path, s.services.as_ref());
@@ -125,12 +143,15 @@ pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
 }
 
-/// AEP/AEPX are proprietary formats; this clean-room project has no codec for them.
+/// Native binary AEP is read-only. AEPX and native AEP writing are not implemented.
 pub(super) fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("");
+    if ext.eq_ignore_ascii_case("aep") && matches!(operation, "open" | "import") {
+        return Ok(());
+    }
     if ext.eq_ignore_ascii_case("aep") || ext.eq_ignore_ascii_case("aepx") {
         return Err(EngineError::Other(format!(
-            "cannot {operation} `{path}`: direct After Effects .aep/.aepx is not supported. Use .unw (native), or File > After Effects Bridge: run its exporter in AE desktop, open the resulting .unwae here; export JSX back to AE to reconstruct supported layers and save a new .aep"
+            "cannot {operation} `{path}`: this operation is not supported. Native binary .aep import is experimental and read-only; .aepx is not supported. Save editable projects as .unw. For AE output use File > After Effects Bridge to export JSX and save .aep in AE desktop"
         )));
     }
     Ok(())
@@ -143,17 +164,17 @@ mod format_tests {
     use serde_json::json;
 
     #[test]
-    fn ae_project_import_reports_conversion_without_touching_current_work() {
+    fn missing_ae_project_import_does_not_touch_current_work() {
         let mut session = Session::default();
         session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
         let before = session.project.to_json();
         for path in ["missing.AEP", "missing.AePx"] {
             let error = session.execute("file.importProject", json!({"path":path})).unwrap_err().to_string();
-            assert!(error.contains("After Effects Bridge") && error.contains(".unwae"), "{error}");
+            assert!(error.contains("cannot read") || error.contains("After Effects Bridge"), "{error}");
             let result = session.execute("file.import", json!({"paths":[path]})).unwrap();
             let errors = result["errors"].as_array().unwrap();
             assert_eq!(errors.len(), 1, "{result}");
-            assert!(errors[0].as_str().unwrap().contains("After Effects Bridge"), "{result}");
+            assert!(errors[0].as_str().unwrap().contains("cannot read") || errors[0].as_str().unwrap().contains("After Effects Bridge"), "{result}");
             assert_eq!(session.project.to_json(), before);
             assert!(session.path.is_none());
         }
@@ -248,6 +269,8 @@ mod format_tests {
     #[test]
     fn proprietary_after_effects_paths_are_rejected_before_io() {
         assert!(reject_after_effects("project.aep", "save").is_err());
+        assert!(reject_after_effects("project.AEP", "open").is_ok());
+        assert!(reject_after_effects("project.AEP", "import").is_ok());
         assert!(reject_after_effects("project.aepx", "open").is_err());
         assert!(reject_after_effects("project.UNW", "save").is_ok());
         assert!(reject_after_effects("project.uwproj", "save").is_ok());
@@ -929,7 +952,8 @@ fn export_after_effects_exporter(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("file.newProject", "New Project", ["File", "New"], Some("Cmd+Alt+N"), "{}", always, new_project),
-        cmd!("file.openDemoProject", "Open Demo Project", ["Help"], None, "{}", always, demo),
+        // Retained for internal tests/automation; the bundled demo is no longer exposed in menus.
+        cmd!("file.openDemoProject", "Open Demo Project", [], None, "{}", always, demo),
         cmd!("file.open", "Open Project...", ["File"], Some("Cmd+O"), "{path}", always, open),
         cmd!(
             "file.exportAfterEffectsExporter",

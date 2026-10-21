@@ -127,9 +127,12 @@ fn smoke_export_to_ios_storage() -> Result<(), String> {
 
 fn dialog_metadata(id: u64, dialog: FileDialog) -> Value {
     match dialog {
-        FileDialog::Open { exts, many } => json!({"id":id,"kind":"open","extensions":exts,"many":many,"project":false}),
+        FileDialog::Open { exts, many } => {
+            let project = exts.iter().any(|e| e == "unw" || e == "aep" || e == "unwae");
+            json!({"id":id,"kind":"open","extensions":exts,"many":many,"project":project})
+        }
         FileDialog::OpenProject => {
-            json!({"id":id,"kind":"open","extensions":["unw","unwae","uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true})
+            json!({"id":id,"kind":"open","extensions":["aep","unw","unwae","uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true})
         }
         FileDialog::Folder => json!({"id":id,"kind":"folder","extensions":[],"many":false,"project":false}),
         FileDialog::Save { default, ext, project } => {
@@ -500,9 +503,12 @@ mod tests {
     fn native_project_dialogs_offer_unw_without_losing_legacy_extensions() {
         let open = dialog_metadata(3, FileDialog::OpenProject);
         let extensions = open["extensions"].as_array().unwrap();
-        for ext in ["unw", "unwae", "uwproj", "uwprojx", "ecproj", "ecprojx"] {
+        for ext in ["aep", "unw", "unwae", "uwproj", "uwprojx", "ecproj", "ecprojx"] {
             assert!(extensions.contains(&json!(ext)));
         }
+        let import = dialog_metadata(6, FileDialog::Open { exts: vec!["aep".into(), "unw".into()], many: false });
+        assert_eq!(import["project"], true, "project import must keep scoped access and show the experimental AEP warning");
+        assert!(!extensions.contains(&json!("aepx")));
         let save = dialog_metadata(4, FileDialog::save("Untitled Project.unw"));
         assert_eq!(save["defaultName"], "Untitled Project.unw");
         assert_eq!(save["extensions"], json!(["unw"]));

@@ -142,6 +142,7 @@ pub(crate) struct DialogAnswer {
     pub key: &'static str,
     pub params: serde_json::Value,
     pub paths: Vec<String>,
+    pub unsaved_save: Option<u64>,
 }
 
 /// Host hooks provided by the native app (file pickers etc.).
@@ -756,9 +757,9 @@ impl UnwrittenStudioApp {
     }
 
     /// Run the commands whose non-blocking file dialogs have been answered.
-    pub(crate) fn run_dialog_answers(&mut self) {
+    pub(crate) fn run_dialog_answers(&mut self, ctx: &egui::Context) {
         while let Ok(answer) = self.dialog_answers.1.try_recv() {
-            menus::dialog_answered(self, answer);
+            menus::dialog_answered(self, ctx, answer);
         }
     }
 
@@ -1620,7 +1621,7 @@ impl UnwrittenStudioApp {
     fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.apply_gpu_failure(&ctx);
-        self.run_dialog_answers();
+        self.run_dialog_answers(&ctx);
         self.auto.begin_frame();
         self.frames.set_context(&ctx);
         if self.session.render_job.is_some() {

@@ -167,7 +167,7 @@ fn m3_13_entries_follow_after_effects() {
         // Composition Flowchart Ctrl+Shift+F11, Window ▸ Flowchart Ctrl+F11; Window ▸ Learn.
         assert_eq!(find(mac, &["Composition"], "Composition Flowchart").unwrap().shortcut.as_deref(), Some("Cmd+Shift+F11"));
         assert_eq!(find(mac, &["Window"], "Flowchart").unwrap().shortcut.as_deref(), Some("Cmd+F11"));
-        assert_eq!(find(mac, &["Window"], "Learn").unwrap().command, "help.inAppTutorials");
+        assert!(find(mac, &["Window"], "Learn").is_none());
         assert_eq!(find(mac, &["Layer", "Transform"], "Center In View").unwrap().shortcut.as_deref(), Some("Cmd+Home"));
     }
     // "Reveal in Finder" names the platform's file browser.

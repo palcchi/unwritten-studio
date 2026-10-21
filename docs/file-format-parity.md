@@ -22,9 +22,9 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 | Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
-| Project `.aep` | R/W (native) | none (direct) | none (direct) | No native binary reader or writer. Experimental desktop bridge: AE exports `.unwae` for import here; generated JSX reconstructs supported layers in AE, which can save a new `.aep`. See the bridge workflow below; not a full-fidelity round trip. Blocks native-format parity | Synthetic bridge and format-guard tests; not verified in real AE |
+| Project `.aep` | R/W (native) | experimental native Rust | none (direct) | Bounded read-only RIFX parser and partial project adapter run inside iOS; no AE desktop or Python needed for import. Opens an untitled native copy, reports unsupported content and missing media. [Native import scope](aep-native-import.md). JSX desktop bridge remains the output route; not a full-fidelity round trip | Synthetic reader/adapter tests and private read-only workflow check; no real-AE visual certification |
 | XML project `.aepx` | R/W | none (direct) | none (direct) | XML with embedded hexadecimal binary data, not the native XML project format (`.uwprojx`). AE desktop can open it for bridge conversion; no native reader or writer | Synthetic helper tests; not verified in real AE |
-| Templates `.aet` / `.aetx` | R/W | none | none | Own `.uwtemplate` (Home ▸ Templates, Save as Template) | `templates.rs` tests |
+| Templates `.aet` / `.aetx` | R/W | none | none | User-created `.uwtemplate` save/create support remains; bundled Home template gallery is removed | `templates.rs` tests |
 | Motion Graphics template `.mogrt` | W (and R in Premiere) | none | none | Own `.uwtemplate` Essential Graphics templates; FilmCraft rejects our `.fcgt` export (#611) | `essential.rs` tests |
 | Animation preset `.ffx` | R/W, 621 bundled | none | none | Own JSON `.ecpreset`; `.ffx` is out of clean-room scope (AGENTS.md §2) | `animation.rs` tests |
 | Render Settings / Output Module templates `.ars` / `.aom` | R/W | none | none | Templates are stored in the project and settings instead | `render_templates.rs` tests |
@@ -120,11 +120,11 @@ relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel wit
 
 ## After Effects desktop bridge (experimental, partial)
 
-Direct `.aep` / `.aepx` reading and writing remain **unsupported**. Those files are never renamed to `.unw`, decoded by this bridge or overwritten. The bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for conversion; it does not run on iOS.
+Binary `.aep` can now be read directly through the separate [native importer](aep-native-import.md). Direct `.aep` writing and `.aepx` reading/writing remain **unsupported**. Those files are never renamed to `.unw`, decoded by this bridge or overwritten. The optional bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for this bridge, not for native binary AEP import.
 
 Adobe documents `.aep` as binary and `.aepx` as XML containing some hexadecimal-encoded binary data. An XML extension alone therefore does not make arbitrary project properties readable by this app. AE can open `.aepx` and save it as `.aep`; that does not establish a native iOS codec. See [Adobe's project-format documentation](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).
 
-The supplied `marblesoda.aep` was inspected only as a container: its 1,501,872-byte header is `RIFX … Egg!`, a native binary AEP container rather than JSON or a documented interchange stream. It is therefore a valid example for the **select-and-convert-through-After-Effects** workflow, not an input that Unwritten can decode directly. No sample bytes or proprietary decoder are included.
+The supplied private `marblesoda.aep` is a 1,501,872-byte `RIFX … Egg!` binary container. The native reader accepts it and identifies 14 items / 4 compositions. Container recognition alone does not prove faithful layer import or rendered output. Sample bytes are not included or modified.
 
 ### Bring an AE project into Unwritten Studio
 

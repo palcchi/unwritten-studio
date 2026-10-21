@@ -15,13 +15,18 @@ const C: &str = "file.importProject";
 /// Whether `path` names a project Unwritten Studio imports as a project (not as footage).
 pub(crate) fn is_project_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    [".unw", ".unwae", ".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext))
+    [".aep", ".unw", ".unwae", ".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext))
 }
 
 /// Read a project file (JSON or its XML copy), as File ▸ Open does.
 fn read_project(s: &mut Session, path: &str) -> Result<(Project, Option<String>, Vec<String>)> {
     super::file::reject_after_effects(path, "import")?;
+    crate::native_aep::check_file_size(path, s.services.as_ref()).map_err(EngineError::Other)?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
+    if crate::native_aep::is_aep_path(path) {
+        let (project, _, warnings) = crate::native_aep::decode(&bytes, path, s.services.as_ref(), true).map_err(EngineError::Other)?;
+        return Ok((project, None, warnings));
+    }
     if path.to_ascii_lowercase().ends_with(".unwae") {
         let (project, warnings) = crate::ae_bridge::import_unwae(&bytes).map_err(EngineError::Other)?;
         for warning in warnings.iter().take(10) {

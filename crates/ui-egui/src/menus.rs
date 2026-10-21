@@ -1353,7 +1353,7 @@ fn file_dialog(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> Option
         "view.importGuides" => ("path", Ask::Open(&["json"])),
         "file.exportLottie" => ("path", Ask::Save("Animation.json")),
         "file.importLottie" => ("path", Ask::Open(&["json", "lottie"])),
-        "file.importProject" => ("path", Ask::Open(&["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"])),
+        "file.importProject" => ("path", Ask::Open(&["aep", "unwae", "unw", "uwproj", "uwprojx", "ecproj", "ecprojx"])),
         "file.importTimeline" => ("path", Ask::Open(&["xml", "fcpxml", "otio", "edl", "aaf", "omf"])),
         "render.saveCurrentPreview" => ("path", Ask::Save("Preview.mp4")),
         "file.runScript" if params.get("name").is_none() => ("path", Ask::Open(&["jsx", "js", "jsonl", "json", "txt"])),
@@ -1393,7 +1393,13 @@ fn file_dialog(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> Option
             Ask::Save(default) => crate::FileDialog::save(default),
         };
         let tx = app.dialog_answers.0.clone();
-        let answer = crate::DialogAnswer { command: id.to_string(), key, params: params.clone(), paths: Vec::new() };
+        let answer = crate::DialogAnswer {
+            command: id.to_string(),
+            key,
+            params: params.clone(),
+            paths: Vec::new(),
+            unsaved_save: (id == "file.save" && app.dialog_state.unsaved.awaiting_save).then_some(app.dialog_state.unsaved.save_token),
+        };
         spawn(
             request,
             Box::new(move |paths| {
@@ -1439,10 +1445,34 @@ fn picked_value(key: &str, paths: Vec<String>) -> Option<Value> {
 
 /// A file dialog shown without blocking ([`crate::Hooks::file_dialog_async`]) answered: run its
 /// command with the picked path (nothing when it was cancelled).
-pub(crate) fn dialog_answered(app: &mut UnwrittenStudioApp, answer: crate::DialogAnswer) {
-    let Some(v) = picked_value(answer.key, answer.paths) else { return };
-    if let Err(e) = run_with_picked(app, &answer.command, answer.key, &answer.params, v) {
-        app.ui.status = e;
+pub(crate) fn dialog_answered(app: &mut UnwrittenStudioApp, ctx: &egui::Context, answer: crate::DialogAnswer) {
+    if let Some(token) = answer.unsaved_save {
+        if !app.dialog_state.unsaved.awaiting_save || app.dialog_state.unsaved.save_token != token {
+            return;
+        }
+        if app.dialog_state.unsaved.save_revision != Some(app.session.revision) {
+            app.ui.status = "Project changed while Save was open. Save again before changing projects.".into();
+            crate::panels::unsaved::save_finished(app, ctx, false);
+            return;
+        }
+    }
+    let Some(v) = picked_value(answer.key, answer.paths) else {
+        if answer.unsaved_save.is_some() {
+            crate::panels::unsaved::save_finished(app, ctx, false);
+        }
+        return;
+    };
+    match run_with_picked(app, &answer.command, answer.key, &answer.params, v) {
+        Ok(_) if answer.unsaved_save.is_some() => {
+            crate::panels::unsaved::save_finished(app, ctx, true);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            app.ui.status = e;
+            if answer.unsaved_save.is_some() {
+                crate::panels::unsaved::save_finished(app, ctx, false);
+            }
+        }
     }
 }
 
@@ -2487,7 +2517,7 @@ mod tests {
         let path = dir.join("Answered.uwproj");
         // Answered from another thread, as the host's dialog does.
         std::thread::spawn(move || done(vec![path.to_string_lossy().to_string()])).join().unwrap();
-        app.run_dialog_answers();
+        app.run_dialog_answers(&ctx);
         assert_eq!(app.session.path.as_deref(), Some(dir.join("Answered.uwproj").to_string_lossy().as_ref()));
         assert!(dir.join("Answered.uwproj").is_file());
         // Cancelled: nothing runs.
@@ -2495,7 +2525,7 @@ mod tests {
         let (dialog, done) = pending.lock().unwrap().pop().expect("a dialog was shown");
         assert_eq!(dialog, crate::FileDialog::Save { default: "Frame.png".into(), ext: "png".into(), project: false });
         done(Vec::new());
-        app.run_dialog_answers();
+        app.run_dialog_answers(&ctx);
         assert!(!dir.join("Frame.png").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }

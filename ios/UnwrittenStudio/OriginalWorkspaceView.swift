@@ -462,6 +462,10 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             return
         }
         if projectDialogIDs.remove(id) != nil, let projectURL = urls.first {
+            if projectURL.pathExtension.caseInsensitiveCompare("aep") == .orderedSame {
+                confirmAEPImport(projectURL, id: id)
+                return
+            }
             activeProjectURL?.stopAccessingSecurityScopedResource()
             activeProjectURL = projectURL
             _ = projectURL.startAccessingSecurityScopedResource()
@@ -482,6 +486,21 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
                 DispatchQueue.main.async { self?.finishDialog(id, paths: paths) }
             }
         }
+    }
+
+    private func confirmAEPImport(_ url: URL, id: UInt64) {
+        let alert = UIAlertController(title: "Experimental After Effects Import", message: "This native .aep import is experimental. Unsupported shapes, text, effects, masks, 3D and other features may be omitted. Missing media must be relinked. Your original file will not be changed. Open a copy, then save the result as a .unw copy.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.finishDialog(id, paths: [])
+        })
+        alert.addAction(UIAlertAction(title: "Open Copy", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.activeProjectURL?.stopAccessingSecurityScopedResource()
+            self.activeProjectURL = url
+            _ = url.startAccessingSecurityScopedResource()
+            self.finishDialog(id, paths: [url.path])
+        })
+        present(alert, animated: true)
     }
 
     private func copyToImportedMedia(_ urls: [URL]) -> [String] {

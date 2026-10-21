@@ -232,6 +232,7 @@ Issues #41–#47 (all from the Linux AppImage 0.1.1, 5 October): panning the vie
 
 ### G4. Open After Effects projects
 
+- **Local fork update:** the owner authorized file-format reverse engineering and permissively licensed GitHub readers. Experimental native binary `.aep` import is now implemented in Rust, including iOS, with loss and missing-media reports. [Scope and provenance](aep-native-import.md). `.aepx`, direct `.aep` writing and full feature fidelity remain open; this workstream is not complete. The decision discussion below is retained as upstream history.
 - `.aep` / `.aepx` import is the largest single barrier to switching. It needs an **owner
   decision** on clean-room scope (whether and how the format may be studied), like the open
   `.prproj` question in `plan/STATUS.md`.

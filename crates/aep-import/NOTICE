@@ -1,0 +1,9 @@
+Unwritten Studio aep-import
+
+This crate is derived from EffectCraft's effectcraft-aep-import crate,
+Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors,
+from storytold/effectcraft commit b8ed19ad689328d357db83237992fc09def3d9ff
+(PR #1378), under the MIT License and Apache License, Version 2.0.
+
+The importer implementation was adapted for Unwritten Studio by renaming
+crate namespaces and using the local project/time/color/keyframe APIs.

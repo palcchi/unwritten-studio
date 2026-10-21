@@ -4797,6 +4797,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "unwritten-studio-aep"
+version = "0.9.2"
+
+[[package]]
+name = "unwritten-studio-aep-import"
+version = "0.9.2"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "unwritten-studio-aep",
+ "unwritten-studio-color",
+ "unwritten-studio-keyframe",
+ "unwritten-studio-project",
+ "unwritten-studio-time",
+]
+
+[[package]]
 name = "unwritten-studio-automation"
 version = "0.9.2"
 dependencies = [
@@ -4887,6 +4904,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "unwritten-studio-aep-import",
  "unwritten-studio-color",
  "unwritten-studio-effects",
  "unwritten-studio-geom",

@@ -37,8 +37,17 @@ jobs:
       - name: Test iPad sandbox output policy
         run: cargo test --locked -p unwritten-studio-engine --lib ipad_render_defaults_stay_inside_documents_even_for_external_projects
 
-      - name: Test native project formats and safe AE refusal
+      - name: Test native project formats and safe AE writes
         run: cargo test --locked -p unwritten-studio-engine --lib format_tests
+
+      - name: Test experimental native AEP import
+        run: |
+          cargo test --locked -p unwritten-studio-aep
+          cargo test --locked -p unwritten-studio-aep-import
+          cargo test --locked -p unwritten-studio-engine --lib native_aep
+
+      - name: Test save prompt before changing projects
+        run: cargo test --locked -p unwritten-studio-ui-egui --lib panels::unsaved
 
       - name: Test experimental After Effects bridge
         run: |

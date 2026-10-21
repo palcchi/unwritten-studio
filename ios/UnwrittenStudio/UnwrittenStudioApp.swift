@@ -3,14 +3,7 @@ import UIKit
 
 final class UnwrittenStudioAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
-        // Apply the smoke orientation at the window root before presentation.
-        // A child representable's geometry request alone can leave iPad in its
-        // previous orientation. Normal launches retain every declared orientation.
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--ui-smoke") {
-            if arguments.contains("--smoke-portrait") { return .portrait }
-            if arguments.contains("--smoke-landscape") { return .landscapeRight }
-        }
+        // Device rotation, including UI automation, retains the production mask.
         return UIDevice.current.userInterfaceIdiom == .pad ? .all : .allButUpsideDown
     }
 }

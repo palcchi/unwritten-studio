@@ -14,8 +14,10 @@ xcodebuild -project "$ROOT/ios/UnwrittenStudio.xcodeproj" \
   -scheme UnwrittenStudio -configuration Release -sdk iphonesimulator \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DERIVED" \
   ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build-for-testing
 APP="$DERIVED/Build/Products/Release-iphonesimulator/UnwrittenStudio.app"
+xcodebuild -version > "$OUT/xcode-version.txt"
+xcrun simctl list runtimes --json > "$OUT/runtimes.json"
 xcrun simctl list devices available --json > "$OUT/devices.json"
 python3 - "$OUT/devices.json" > "$OUT/selected.tsv" <<'PY'
 import json, sys
@@ -42,30 +44,34 @@ while IFS=$'\t' read -r family device; do
     label="$family-$orientation"
     echo "Launching original workspace: $label"
     rm -f "$checks/workspace-ready.json" "$checks/workspace-error.json"
-    xcrun simctl launch --terminate-running-process "$device" "$BUNDLE" --ui-smoke "--smoke-$orientation" | tee "$OUT/$label-launch.txt"
-    pid="$(awk -F': ' 'NF>1 {print $NF}' "$OUT/$label-launch.txt" | tail -1)"
-    [[ "$pid" =~ ^[0-9]+$ ]] || { echo 'error: launch returned no process ID' >&2; exit 3; }
+    test_method=testPortrait
+    [[ "$orientation" == landscape ]] && test_method=testLandscape
+    result="$OUT/$label.xcresult"
+    rm -rf "$result"
     ready=0
-    for second in $(seq 1 120); do
-      if [[ -f "$checks/workspace-error.json" ]]; then
-        cp "$checks/workspace-error.json" "$OUT/$label-error.json"
-        cat "$OUT/$label-error.json"
-        break
-      fi
-      if ! kill -0 "$pid" 2>/dev/null; then
-        echo "error: $label editor process crashed before rendering" >&2
-        break
-      fi
-      if [[ -f "$checks/workspace-ready.json" ]]; then
+    # XCTest rotates the simulated device, then waits for the real renderer. The
+    # result bundle contains a full-screen screenshot taken BEFORE app teardown.
+    if xcodebuild test-without-building -project "$ROOT/ios/UnwrittenStudio.xcodeproj" \
+      -scheme UnwrittenStudio -configuration Release -derivedDataPath "$DERIVED" \
+      -destination "platform=iOS Simulator,id=$device" \
+      -parallel-testing-enabled NO -maximum-concurrent-test-simulator-destinations 1 \
+      -disable-concurrent-destination-testing -resultBundlePath "$result" \
+      "-only-testing:UnwrittenStudioUITests/WorkspaceOrientationTests/$test_method" \
+      CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$OUT/$label-test.txt"; then
+      if [[ -f "$checks/workspace-ready.json" && ! -f "$checks/workspace-error.json" ]]; then
         cp "$checks/workspace-ready.json" "$OUT/$label-ready.json"
         ready=1
-        break
       fi
-      sleep 1
-    done
-    xcrun simctl io "$device" screenshot "$OUT/$label-workspace.png"
+    fi
+    if [[ -f "$checks/workspace-error.json" ]]; then
+      cp "$checks/workspace-error.json" "$OUT/$label-error.json"
+      cat "$OUT/$label-error.json"
+    fi
+    # Keep both the original xcresult and convenient exported screenshot files.
+    if [[ -d "$result" ]]; then
+      xcrun xcresulttool export attachments --path "$result" --output-path "$OUT/$label-attachments"
+    fi
     if [[ "$ready" == 1 ]]; then
-      ps -p "$pid" -o pid=,comm= > "$OUT/$label-process.txt"
       if ! python3 - "$OUT/$label-ready.json" "$orientation" "$container" <<'PY'
 import json, math, sys
 from pathlib import Path
@@ -77,7 +83,7 @@ vw, vh = status.get("viewportWidth", 0), status.get("viewportHeight", 0)
 cw, ch = status.get("canvasWidth", 0), status.get("canvasHeight", 0)
 fit = status.get("fitZoom", 0)
 assert all(math.isfinite(x) and x > 0 for x in (vw, vh, cw, ch, fit)), status
-assert (vh > vw) == (sys.argv[2] == "portrait"), status
+assert (vh > vw if sys.argv[2] == "portrait" else vw > vh), status
 assert abs(cw * fit - vw) <= 2 and abs(ch * fit - vh) <= 2, status
 assert abs(status["width"] / status["height"] - cw / ch) < 0.01, status
 recovery = Path(sys.argv[3]) / "Library/Application Support/Unwritten Studio/embedded-session-recovery.json"

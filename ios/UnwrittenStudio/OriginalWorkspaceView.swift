@@ -247,6 +247,11 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             viewport.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor),
             viewport.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor)
         ])
+        if ProcessInfo.processInfo.arguments.contains("--ui-smoke") {
+            rootView.isAccessibilityElement = true
+            rootView.accessibilityIdentifier = "workspace-smoke-status"
+            rootView.accessibilityValue = "waiting"
+        }
         view = rootView
     }
 
@@ -308,17 +313,6 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         workerReady = true
         presentPendingError()
         drainExternalProjects()
-        if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape"),
-           let scene = view.window?.windowScene,
-           #available(iOS 16.0, *) {
-            let orientation: UIInterfaceOrientationMask = ProcessInfo.processInfo.arguments.contains("--smoke-portrait") ? .portrait : .landscapeRight
-            // SwiftUI's root hosting controller owns the window's orientation.
-            view.window?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
-            setNeedsUpdateOfSupportedInterfaceOrientations()
-            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { [weak self] error in
-                self?.recordSmokeStatus(["ok": false, "error": "Orientation request failed: \(error.localizedDescription)"], name: "workspace-error.json")
-            }
-        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -537,6 +531,11 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
             try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+            if name == "workspace-error.json" {
+                rootView.accessibilityValue = "error: \(value["error"] ?? "Unknown editor failure")"
+            } else if name == "workspace-ready.json" {
+                rootView.accessibilityValue = "ready"
+            }
         } catch { NSLog("Unwritten Studio smoke evidence: %@", error.localizedDescription) }
     }
 
@@ -545,17 +544,22 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape") {
             let isPortrait = viewport.bounds.height >= viewport.bounds.width
             let wantsPortrait = ProcessInfo.processInfo.arguments.contains("--smoke-portrait")
-            guard isPortrait == wantsPortrait else { return }
+            guard isPortrait == wantsPortrait else { smokeFrames = 0; return }
         }
-        smokeFrames += 1
-        guard smokeFrames >= 10, audioRunning, let cg = image.cgImage,
-              let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return }
+        // Worker frames can lag a UIKit rotation. Never count an old-aspect
+        // framebuffer as one of the ten valid frames in the new viewport.
+        guard let cg = image.cgImage, viewport.bounds.width > 0, viewport.bounds.height > 0,
+              abs(CGFloat(cg.width) / CGFloat(cg.height) - viewport.bounds.width / viewport.bounds.height) < 0.01,
+              audioRunning else { smokeFrames = 0; return }
+        guard let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { smokeFrames = 0; return }
         let count = CFDataGetLength(data)
         guard count >= 4 else { return }
         let hasVisibleContent = stride(from: 0, to: count - 3, by: 64).contains { index in
             bytes[index] > 80 || bytes[index + 1] > 80 || bytes[index + 2] > 80
         }
-        guard hasVisibleContent else { return }
+        guard hasVisibleContent else { smokeFrames = 0; return }
+        smokeFrames += 1
+        guard smokeFrames >= 10 else { return }
         smokeReady = true
         recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true, "audioEngineRunning": audioRunning,
                            "viewportWidth": viewport.bounds.width, "viewportHeight": viewport.bounds.height,

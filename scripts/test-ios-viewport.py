@@ -47,14 +47,21 @@ def check_host_contract() -> None:
     assert "lastViewportSafeAreaInsets" in source
     assert "rootView.safeAreaLayoutGuide" in source
     assert "contentInsetAdjustmentBehavior = .never" in source
-    assert "rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()" in source
-    assert "Orientation request failed:" in source
+    assert "requestGeometryUpdate" not in source, "Device rotation belongs to XCUITest, not iPad window geometry requests"
+    assert 'rootView.accessibilityIdentifier = "workspace-smoke-status"' in source
 
     app = (root / "ios/UnwrittenStudio/UnwrittenStudioApp.swift").read_text()
     assert "@UIApplicationDelegateAdaptor(UnwrittenStudioAppDelegate.self)" in app
-    assert 'arguments.contains("--ui-smoke")' in app
-    assert 'arguments.contains("--smoke-landscape")' in app
-    assert 'return .landscapeRight' in app
+    assert 'return .landscapeRight' not in app, "Smoke must exercise the production orientation mask"
+
+    driver = (root / "ios/UnwrittenStudioUITests/WorkspaceOrientationTests.swift").read_text()
+    assert "XCUIDevice.shared.orientation" in driver
+    assert "func testPortrait()" in driver and "func testLandscape()" in driver
+    assert "screenshot.image.size.height > screenshot.image.size.width" in driver
+    assert "app.frame.height > app.frame.width" in driver
+    assert "XCTAssertEqual(app.state, .runningForeground" in driver
+    assert 'XCTAssertEqual(status.value as? String, "ready"' in driver
+    assert "attachment.lifetime = .keepAlways" in driver
     assert 'userInterfaceIdiom == .pad ? .all : .allButUpsideDown' in app
 
     with (root / "ios/UnwrittenStudio/Info.plist").open("rb") as handle:

@@ -63,7 +63,9 @@ jobs:
           node scripts/test-ae-bridge.cjs
 
       - name: Test portrait and landscape viewport geometry
-        run: python3 scripts/test-ios-viewport.py
+        run: |
+          python3 scripts/test-ios-viewport.py
+          python3 scripts/test-ios-smoke-gate.py
 
       - name: Test workspace docking persistence
         run: cargo test --locked -p unwritten-studio-ui-egui --test shared_docking_ui

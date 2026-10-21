@@ -8,7 +8,11 @@
     </BuildActionEntries>
   </BuildAction>
   <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher" shouldUseLaunchSchemeArgsEnv="YES" shouldAutocreateTestPlan="YES">
-    <Testables />
+    <Testables>
+      <TestableReference skipped="NO" parallelizable="NO">
+        <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="AA0000000000000000000004" BuildableName="UnwrittenStudioUITests.xctest" BlueprintName="UnwrittenStudioUITests" ReferencedContainer="container:UnwrittenStudio.xcodeproj" />
+      </TestableReference>
+    </Testables>
   </TestAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" enableGPUFrameCaptureMode="3" allowLocationSimulation="YES">
     <BuildableProductRunnable runnableDebuggingMode="0">

@@ -1,0 +1,19 @@
+[package]
+name = "unwritten-studio-aep-import"
+description = "After Effects project (.aep) importer with explicit loss reporting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+unwritten-studio-aep = { path = "../aep" }
+unwritten-studio-time = { path = "../time" }
+unwritten-studio-color = { path = "../color" }
+unwritten-studio-keyframe = { path = "../keyframe" }
+unwritten-studio-project = { path = "../project" }
+serde = { workspace = true }
+thiserror = { workspace = true }

@@ -22,9 +22,9 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 | Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
-| Project `.aep` | R/W (native) | none | none | Main file format; needs an owner decision on clean-room scope (#190; #248, closed as its duplicate: py-aep as an external converter; open PRs #251 and #860). Blocks beta | — |
-| XML project `.aepx` | R/W | none | none | Same decision as `.aep` | — |
-| Templates `.aet` / `.aetx` | R/W | none | none | Own `.uwtemplate` (Home ▸ Templates, Save as Template) | `templates.rs` tests |
+| Project `.aep` | R/W (native) | experimental native Rust | experimental native Rust | Bounded RIFX parser and partial adapter run inside iOS; narrow binary export supports solids/nulls/transforms and refuses losses by default. Keep `.unw` master and original AEP. [Import](aep-native-import.md), [export](aep-native-export.md). Not full fidelity | Local synthetic/round-trip tests; upstream AE2026 read-back evidence, not local AE certification |
+| XML project `.aepx` | R/W | none (direct) | none (direct) | XML with embedded hexadecimal binary data, not the native XML project format (`.uwprojx`). AE desktop can open it for bridge conversion; no native reader or writer | Synthetic helper tests; not verified in real AE |
+| Templates `.aet` / `.aetx` | R/W | none | none | User-created `.uwtemplate` save/create support remains; bundled Home template gallery is removed | `templates.rs` tests |
 | Motion Graphics template `.mogrt` | W (and R in Premiere) | none | none | Own `.uwtemplate` Essential Graphics templates; FilmCraft rejects our `.fcgt` export (#611) | `essential.rs` tests |
 | Animation preset `.ffx` | R/W, 621 bundled | none | none | Own JSON `.ecpreset`; `.ffx` is out of clean-room scope (AGENTS.md §2) | `animation.rs` tests |
 | Render Settings / Output Module templates `.ars` / `.aom` | R/W | none | none | Templates are stored in the project and settings instead | `render_templates.rs` tests |
@@ -32,7 +32,7 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 | Binary scripts `.jsxbin` | R (run) | none | — | No public specification: out of scope | — |
 | Motion graphics JSON `.mgjson` | R (data) | none | none | Media Browser lists it; import accepts only `.json` / `.csv` / `.tsv` data | — |
 | Captions `.aecap`, graphics `.aegraphic` | R/W | none | none | — | — |
-| Native `.uwproj` | — | yes | yes | Versioned JSON; schema migrations tested; absolute footage paths, no relinking (gap 18) | engine project tests |
+| Native `.unw` (preferred; `.uwproj` / `.ecproj` aliases) | — | yes | yes | Versioned canonical JSON; schema migrations and `.unw` round-trip tested. `.uwprojx` / `.ecprojx` remain native XML copies | engine project tests |
 
 ## Footage: stills
 
@@ -117,3 +117,35 @@ relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel wit
 |---|---|---|
 | 2026-10-12 | minor | #324 and #514 marked closed; open `.aep` PRs #251 and #860 noted |
 | 2026-10-10 | major | First file format parity document, from the After Effects 26.5 bundle and this repository's import/export registries |
+
+## Native binary AEP export (experimental, partial)
+
+A separate Rust writer exports genuine `RIFX` / `Egg!` `.aep` files for a narrow subset of compositions, solids/nulls and transforms. It refuses detected losses by default and preserves the native `.unw` document. See [native AEP export](aep-native-export.md) for the supported subset, command, provenance and the distinction between upstream After Effects read-back and local testing. The older JSX bridge below remains available and is not required for this native export.
+
+## After Effects desktop bridge (experimental, partial)
+
+Binary `.aep` can now be read directly through the separate [native importer](aep-native-import.md). A narrow [native binary AEP exporter](aep-native-export.md) is also available; `.aepx` reading/writing remains **unsupported**. Native JSON is never disguised under an Adobe extension, and this bridge does not decode binary project data. The optional bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for this bridge, not for native binary AEP import.
+
+Adobe documents `.aep` as binary and `.aepx` as XML containing some hexadecimal-encoded binary data. An XML extension alone therefore does not make arbitrary project properties readable by this app. AE can open `.aepx` and save it as `.aep`; that does not establish a native iOS codec. See [Adobe's project-format documentation](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).
+
+The supplied private `marblesoda.aep` is a 1,501,872-byte `RIFX … Egg!` binary container. The native reader accepts it and identifies 14 items / 4 compositions. Container recognition alone does not prove faithful layer import or rendered output. Sample bytes are not included or modified.
+
+### Bring an AE project into Unwritten Studio
+
+1. Choose **File > After Effects Bridge > Save AE Import Helper JSX…** and save the script using Files on iOS (or the native desktop save dialog).
+2. On a computer with After Effects, run that helper through **File > Scripts > Run Script File…**. It offers the current project or an existing `.aep` / `.aepx` chosen with the public AE file dialog. Selecting another project opens it only after the current project is confirmed clean; an unsaved current project is never closed or discarded. The source project is read without edits and the helper asks where to save a `.unwae` interchange.
+3. Open or import `.unwae` in Unwritten Studio. Opening creates an **untitled native project**, so Save asks for a new `.unw`; it cannot overwrite the interchange or source AEP. Transfer footage separately and relink unavailable paths.
+
+### Take a native project into AE
+
+Choose **File > After Effects Bridge > Export Project to AE JSX…**. Run the generated JSX on AE desktop. It creates compositions in the current AE project (start with an empty project for a clean reconstruction), reports warnings, and optionally asks for a new `.aep` name. It refuses to overwrite the currently opened source AEP and asks before replacing another existing destination. Cancelling the optional save keeps the imported compositions open without writing an AEP.
+
+### What transfers
+
+The v1 subset is composition dimensions/rate/duration/background, nested precomps, solids, nulls, footage references, static base text content/font/size/fill, layer order and timing, and unparented 2D anchor/position/scale/rotation/opacity with linear or hold transform keys. Key times are converted between AE composition time and native layer time, including positive time stretch. Bezier easing/spatial curves are approximated as linear with warnings.
+
+Audio, colour management, plugins/effects, masks, expressions, 3D/cameras/lights, shapes, parenting, mattes, adjustment layers, reverse stretch, time remapping, sequences, markers and advanced/mixed text styling are **not preserved**. Unsupported layers are omitted or the affected features are explicitly warned about, not silently replaced by invented content. Footage metadata/interpretation is approximate; media is not embedded. Keep the native project and original AEP; this is not a fidelity-preserving round trip. No successful conversion of an arbitrary binary AEP is claimed.
+
+Incoming `.unwae` is fully validated before replacement: version, bounded dimensions/times, positive stretch, finite values, monotonic keys, unique composition ids and an acyclic precomp graph. Limits: 32 MiB input, 512 compositions, 20,000 layers, 100,000 transform keys, 64 nesting levels. Corrupt/newer schemas fail without replacing the current document.
+
+Synthetic coverage: `cargo test -p unwritten-studio-engine ae_bridge`, native-format/overwrite guards, and `node scripts/test-ae-bridge.cjs` (a mock AE DOM without a JSON global). These are not certification against a real After Effects installation. Public API behaviour: [AE project scripting](https://ae-scripting.docsforadobe.dev/general/project/), [Adobe project formats](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).

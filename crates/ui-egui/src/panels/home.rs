@@ -1,10 +1,7 @@
-//! The Home screen, laid out like After Effects' (shown over the whole workspace at launch, from
-//! the Tools bar's Home button and by the Learn workspace). A left rail holds New Project / Open
-//! Project, the Home / Templates / Learn pages and, at its foot, the project links.
-//! The Home page welcomes you with quick-start tiles (New Composition, the demo project, Import,
-//! New from Template) over the recent projects (File ▸ Open Recent, from Settings): a filterable
-//! table with thumbnails and Name / Opened / Size / Kind columns. Templates is the New from
-//! Template gallery (`templates`), Learn the guided tutorials (`learn`).
+//! The Home screen, laid out like After Effects and shown over the whole workspace at launch.
+//! A left rail holds New Project / Open Project and, at its foot, the project links. The Home
+//! page offers core quick-start actions over recent projects (File ▸ Open Recent, from Settings):
+//! a filterable table with thumbnails and Name / Opened / Size / Kind columns.
 //!
 //! Thumbnails: when a project is opened or saved and the viewer has its frame, a 96×54 RGB
 //! thumbnail is stored in the config store (`thumb-<hash>.txt`, hex) and shown here.
@@ -116,7 +113,7 @@ pub fn format_size(bytes: u64) -> String {
 /// The Kind column: what a recent file is, by its extension, in the interface language.
 fn kind_of(path: &str) -> &'static str {
     tr(match std::path::Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
-        Some("uwproj") => "Unwritten Studio project",
+        Some("unw" | "uwproj" | "ecproj") => "Unwritten Studio project",
         Some("aep" | "aepx") => "After Effects project",
         Some("json" | "lottie") => "Lottie animation",
         _ => "Project",
@@ -220,13 +217,7 @@ pub fn show(app: &mut UnwrittenStudioApp, ui: &mut egui::Ui, rect: Rect) {
     p.line_segment([rail.right_top(), rail.right_bottom()], Stroke::new(1.0, t.separator));
     rail_ui(app, ui, &p, rail, &mut actions);
     let main = Rect::from_min_max(pos2(rail.max.x + 40.0, rect.min.y + 32.0), pos2(rect.max.x - 40.0, rect.max.y - 16.0));
-    if app.ui.home_learn {
-        super::learn::home_tab(app, ui, main);
-    } else if app.ui.home_templates {
-        super::templates::home_tab(app, ui, main);
-    } else {
-        home_page(app, ui, &p, main, &ctx, &mut actions);
-    }
+    home_page(app, ui, &p, main, &ctx, &mut actions);
     run_actions(app, &ctx, actions);
 }
 
@@ -245,28 +236,19 @@ fn rail_ui(app: &mut UnwrittenStudioApp, ui: &mut egui::Ui, p: &egui::Painter, r
         y += 42.0;
     }
     y += 10.0;
-    // Pages.
-    let page = if app.ui.home_learn {
-        2
-    } else if app.ui.home_templates {
-        1
-    } else {
-        0
-    };
-    for (k, (label, icon)) in [("Home", Icon::Home), ("Templates", Icon::Grid), ("Learn", Icon::Sparkle)].into_iter().enumerate() {
+    // No bundled demo, template-gallery, or tutorial pages are exposed here.
+    {
+        let (label, icon) = ("Home", Icon::Home);
         let r = Rect::from_min_size(pos2(rail.min.x + 8.0, y), vec2(rail.width() - 16.0, 34.0));
         let resp = ui.interact(r, egui::Id::new(("home-tab", label)), Sense::click());
-        let on = page == k;
-        if on || resp.hovered() {
-            p.rect_filled(r, 6.0, if on { t.row_selected } else { t.hover });
-        }
-        let col = if on { t.tab_text_active } else { t.text_dim };
+        p.rect_filled(r, 6.0, t.row_selected);
+        let col = t.tab_text_active;
         icons::paint(p, Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(16.0, 16.0)), icon, col);
         p.text(pos2(r.min.x + 40.0, r.center().y), Align2::LEFT_CENTER, tr(label), Tokens::medium(13.0), col);
         app.auto.add(&format!("home.tab.{}", label.to_ascii_lowercase()), r, label);
         if resp.clicked() {
-            app.ui.home_learn = k == 2;
-            app.ui.home_templates = k == 1;
+            app.ui.home_learn = false;
+            app.ui.home_templates = false;
         }
         y += 38.0;
     }
@@ -320,14 +302,9 @@ fn home_page(
     );
     y += 36.0;
     // Quick start.
-    let tiles = [
-        ("New Composition", "app.newComp", Icon::NewComp),
-        ("Open Demo Project", "file.openDemoProject", Icon::Play),
-        ("Import Footage…", "file.import", Icon::Footage),
-        ("New from Template", "templates", Icon::Grid),
-    ];
+    let tiles = [("New Composition", "app.newComp", Icon::NewComp), ("Import Footage…", "file.import", Icon::Footage)];
     let gap = 12.0;
-    let tw = ((w - gap * 3.0) / 4.0).clamp(120.0, 220.0);
+    let tw = ((w - gap * (tiles.len() - 1) as f32) / tiles.len() as f32).clamp(120.0, 220.0);
     for (k, (label, id, icon)) in tiles.into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(x0 + k as f32 * (tw + gap), y), vec2(tw, 64.0));
         let resp = ui.interact(r, egui::Id::new(("home-tile", id)), Sense::click());
@@ -339,12 +316,7 @@ fn home_page(
         p.with_clip_rect(r.shrink(2.0)).text(pos2(ir.max.x + 12.0, r.center().y), Align2::LEFT_CENTER, tr(label), Tokens::medium(12.5), t.text);
         app.auto.add(&format!("home.{id}"), r, label);
         if resp.clicked() {
-            if id == "templates" {
-                app.ui.home_templates = true;
-                app.ui.home_learn = false;
-            } else {
-                actions.push((id, json!({})));
-            }
+            actions.push((id, json!({})));
         }
     }
     y += 64.0 + 36.0;
@@ -383,7 +355,7 @@ fn home_page(
         let c = pos2(area.center().x, y + 90.0);
         icons::paint(p, Rect::from_center_size(c, vec2(40.0, 40.0)), Icon::Folder, t.text_faint);
         let (head, sub) = if entries.is_empty() {
-            ("Your recent files will show here", "Create a new project, or open the demo project to look around.")
+            ("Your recent files will show here", "Create a new project, or open an existing project.")
         } else {
             ("No recent files match the filter", "Try another name or folder.")
         };
@@ -548,24 +520,20 @@ mod tests {
             "home.file.newProject",
             "home.file.open",
             "home.app.newComp",
-            "home.file.openDemoProject",
             "home.help.reportIssue",
             "home.help.docs",
             "home.help.github",
             "home.recent.0",
             "home.filter",
             "home.file.import",
-            "home.templates",
             "home.tab.home",
-            "home.tab.templates",
-            "home.tab.learn",
         ] {
             assert!(app.auto.find(id).is_some(), "{id}");
         }
     }
 
     #[test]
-    fn learn_tab_lists_and_starts_tutorials() {
+    fn home_hides_bundled_tutorials() {
         let mut app = UnwrittenStudioApp::new(unwritten_studio_engine::Session::default());
         app.ui.start_screen = true;
         app.ui.home_learn = true;
@@ -582,11 +550,11 @@ mod tests {
         };
         frame(&mut app);
         frame(&mut app);
-        for t in unwritten_studio_engine::learn::tutorials() {
-            assert!(app.auto.find(&format!("home.learn.{}.start", t.id)).is_some(), "{}", t.id);
-        }
+        assert!(app.auto.find("home.tab.learn").is_none());
+        assert!(app.auto.find("home.file.openDemoProject").is_none());
+        assert!(app.auto.find("home.templates").is_none());
         assert!(app.auto.find("home.recent.0").is_none());
-        // Start through the session (as the Start button does); the coach card appears.
+        // The learn command remains available to internal tests/automation, but is not shipped in the Home UI.
         app.session.execute("learn.start", json!({"id": "animate-title"})).unwrap();
         app.ui.start_screen = false;
         frame(&mut app);

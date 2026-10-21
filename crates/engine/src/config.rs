@@ -193,3 +193,86 @@ pub fn atomic_write_with(path: &Path, data: &[u8], write: impl FnOnce(&Path, &[u
     }
     std::fs::rename(&tmp, path)
 }
+
+/// Publish a fully flushed new file without replacing an existing file or symlink.
+/// A same-directory hard link atomically claims the destination only after staging succeeds.
+/// Filesystems without hard-link support fail closed; there is no unsafe rename fallback.
+pub fn atomic_write_new(path: &Path, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| Path::new("."));
+    for _ in 0..32 {
+        let tmp = parent.join(format!(".unwritten-copy-{}-{}.tmp", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        let mut file = match std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        };
+        let result = (|| {
+            file.write_all(data)?;
+            file.sync_all()?;
+            std::fs::hard_link(&tmp, path)
+        })();
+        drop(file);
+        // Never remove the destination on failure: it may belong to another writer.
+        let _ = std::fs::remove_file(&tmp);
+        return result;
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "could not reserve a staging file for the new copy"))
+}
+
+#[cfg(test)]
+mod new_file_tests {
+    use super::atomic_write_new;
+
+    #[test]
+    fn concurrent_publish_has_exactly_one_winner_and_leaves_no_staging_files() {
+        let dir = std::env::temp_dir().join(format!("unwritten-new-file-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("copy.aep");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles: Vec<_> = (0..8u8)
+            .map(|n| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let data = vec![n; 8192];
+                    (n, atomic_write_new(&path, &data))
+                })
+            })
+            .collect();
+        let mut winners = Vec::new();
+        for handle in handles {
+            let (n, result) = handle.join().unwrap();
+            match result {
+                Ok(()) => winners.push(n),
+                Err(e) => assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists),
+            }
+        }
+        assert_eq!(winners.len(), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), vec![winners[0]; 8192]);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        assert_eq!(atomic_write_new(&path, b"replacement").unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&path).unwrap(), vec![winners[0]; 8192]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_replaced_or_followed() {
+        let dir = std::env::temp_dir().join(format!("unwritten-new-file-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir(&dir).unwrap();
+        let target = dir.join("absent-original.aep");
+        let path = dir.join("copy.aep");
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+        assert_eq!(atomic_write_new(&path, b"copy").unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_link(&path).unwrap(), target);
+        assert!(!target.exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

@@ -178,7 +178,7 @@ fn install_hooks(app: &mut UnwrittenStudioApp) {
         None
     }));
     // Saving downloads the file: the chosen name is all a "save dialog" needs.
-    app.hooks.pick_save = Some(Box::new(|name: &str| Some(files::path_for(if name.is_empty() { "Untitled Project.uwproj" } else { name }))));
+    app.hooks.pick_save = Some(Box::new(|name: &str| Some(files::path_for(if name.is_empty() { "Untitled Project.unw" } else { name }))));
     app.hooks.audio_device = Some(Box::new(audio::open));
     app.hooks.audio_devices = Some(Box::new(|| vec!["Browser default output".into()]));
 }

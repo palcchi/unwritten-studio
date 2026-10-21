@@ -4,11 +4,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use serde_json::json;
 use unwritten_studio_keyframe::Value as KV;
 use unwritten_studio_project::render_queue::{OutputFormat, PostRenderAction};
 use unwritten_studio_project::{FeatherFalloff, Footage, FootageKind, GroupKind, LayerId, LayerSource, MaskMotionBlur};
 use unwritten_studio_time::{FrameRate, Tick};
-use serde_json::json;
 
 use crate::{Event, ExportJob, ExportResult, Exporter, Importer, Session};
 
@@ -475,4 +475,67 @@ fn implemented_stubs_are_enabled_and_workspaces_are_frontend() {
     for id in ["layer.autoTrace", "layer.sceneEditDetection"] {
         assert!(!s.is_enabled(id), "{id}");
     }
+}
+
+#[test]
+fn render_overwrite_guard_preserves_old_movie_and_requires_explicit_approval() {
+    let (mut s, ex) = rq();
+    let path = std::env::temp_dir().join(format!("unwritten-movie-overwrite-{}.mp4", std::process::id()));
+    std::fs::write(&path, b"old render must survive").unwrap();
+    s.execute("renderQueue.add", json!({"output": path.to_string_lossy(), "format":"h264"})).unwrap();
+    assert_eq!(s.render_output_collisions(), vec![path.to_string_lossy().to_string()]);
+    let error = s.execute("renderQueue.render", json!({"wait":true})).unwrap_err().to_string();
+    assert!(error.to_ascii_lowercase().contains("replace"), "{error}");
+    assert!(ex.log.lock().unwrap().is_empty());
+    assert_eq!(std::fs::read(&path).unwrap(), b"old render must survive");
+    s.execute("renderQueue.render", json!({"wait":true,"overwrite":true})).unwrap();
+    assert_eq!(ex.log.lock().unwrap().len(), 1);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn render_overwrite_guard_checks_extra_output_modules() {
+    let (mut s, ex) = rq();
+    let path = std::env::temp_dir().join(format!("unwritten-module-overwrite-{}.mp4", std::process::id()));
+    std::fs::write(&path, b"existing second module").unwrap();
+    s.execute("renderQueue.add", json!({"output": tmp_out("new-first.mp4")})).unwrap();
+    s.execute("render.addOutputModule", json!({"format":"h264"})).unwrap();
+    s.execute("renderQueue.setOutput", json!({"index":1,"module":2,"path":path.to_string_lossy()})).unwrap();
+    assert!(s.execute("renderQueue.render", json!({"wait":true})).is_err());
+    assert!(ex.log.lock().unwrap().is_empty());
+    assert_eq!(std::fs::read(&path).unwrap(), b"existing second module");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn render_overwrite_guard_checks_real_sequence_frames_and_allows_skip_existing() {
+    use unwritten_studio_project::render_queue::sequence_path;
+    let (mut s, ex) = rq();
+    let template = tmp_out(&format!("sequence-overwrite-{}/frame_[#####].png", std::process::id()));
+    s.execute("renderQueue.add", json!({"output":template,"format":"png"})).unwrap();
+    let item = s.project.render_queue.first().unwrap();
+    let resolved = s.resolve_output(item).unwrap();
+    let comp = s.project.comp(item.comp).unwrap();
+    let existing = sequence_path(&resolved, item.settings.first_frame(comp));
+    std::fs::create_dir_all(std::path::Path::new(&existing).parent().unwrap()).unwrap();
+    std::fs::write(&existing, b"old frame").unwrap();
+    assert!(s.render_output_collisions().contains(&existing));
+    assert!(s.execute("renderQueue.render", json!({"wait":true})).is_err());
+    assert!(ex.log.lock().unwrap().is_empty());
+    s.execute("renderQueue.setRenderSettings", json!({"index":1,"skipExisting":true})).unwrap();
+    assert!(s.render_output_collisions().is_empty());
+    s.execute("renderQueue.render", json!({"wait":true})).unwrap();
+    assert_eq!(std::fs::read(&existing).unwrap(), b"old frame");
+    let _ = std::fs::remove_file(existing);
+}
+
+#[test]
+fn render_overwrite_guard_rejects_duplicate_queue_destinations_even_when_confirmed() {
+    let (mut s, ex) = rq();
+    let path = tmp_out("duplicate-destination.mp4");
+    s.execute("renderQueue.add", json!({"output":path,"format":"h264"})).unwrap();
+    s.execute("renderQueue.add", json!({"output":path,"format":"h264"})).unwrap();
+    let error = s.execute("renderQueue.render", json!({"wait":true,"overwrite":true})).unwrap_err().to_string();
+    assert!(error.contains("same output") || error.contains("duplicate"), "{error}");
+    assert!(ex.log.lock().unwrap().is_empty());
 }

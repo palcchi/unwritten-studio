@@ -10,6 +10,7 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod ae_bridge;
 pub mod autosave;
 pub mod camera_track;
 pub mod commands;
@@ -28,6 +29,8 @@ pub mod media_browser;
 pub mod media_cache;
 pub mod menus;
 pub mod models;
+mod native_aep;
+mod native_aep_export;
 pub mod offload;
 pub mod perf;
 pub mod prefs;
@@ -51,14 +54,16 @@ pub mod xml_project;
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use unwritten_studio_project::{Comp, ItemId, Layer, LayerId, Project, Uid};
 use unwritten_studio_raster::Image;
 use unwritten_studio_render::{ExprHost, FootageSource, LayerCache, NoFootage, RenderOpts, Renderer};
 use unwritten_studio_time::Tick;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 pub use commands::{CommandSpec, command_specs, find as find_command};
+pub use history::{Branch, History, HistoryNode};
+pub use render_queue::{ExportJob, ExportResult, Exporter, JobState};
 pub use unwritten_studio_color as color;
 pub use unwritten_studio_effects as effects;
 pub use unwritten_studio_geom as geom;
@@ -70,8 +75,6 @@ pub use unwritten_studio_segment as segment;
 pub use unwritten_studio_text as text;
 pub use unwritten_studio_time as time;
 pub use unwritten_studio_track as track;
-pub use history::{Branch, History, HistoryNode};
-pub use render_queue::{ExportJob, ExportResult, Exporter, JobState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -98,6 +101,12 @@ pub type Result<T> = std::result::Result<T, EngineError>;
 pub trait Services: Send + Sync {
     fn read_file(&self, path: &str) -> std::io::Result<Vec<u8>>;
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()>;
+    /// Publish a complete new file without replacing any existing destination, even if it
+    /// appeared after an existence check. Hosts must implement this explicitly; falling back
+    /// to `write_file` would make copy-only exports unsafe.
+    fn write_new_file(&self, _path: &str, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "this host cannot safely publish a new file without overwriting"))
+    }
     /// Whether a file exists (the background footage check after open).
     fn exists(&self, path: &str) -> bool {
         std::path::Path::new(path).exists()
@@ -141,6 +150,9 @@ impl Services for FsServices {
     }
     fn write_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
         config::atomic_write(std::path::Path::new(path), data)
+    }
+    fn write_new_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        config::atomic_write_new(std::path::Path::new(path), data)
     }
 }
 

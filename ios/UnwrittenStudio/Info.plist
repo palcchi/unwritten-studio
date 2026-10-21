@@ -12,10 +12,24 @@
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.graphics-design</string>
+    <key>UIAppFonts</key>
+    <array>
+        <string>Inter-Regular.ttf</string>
+        <string>Inter-Medium.ttf</string>
+        <string>Inter-SemiBold.ttf</string>
+        <string>Inter-Bold.ttf</string>
+        <string>JetBrainsMono-Regular.ttf</string>
+    </array>
     <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
     <key>UIApplicationSupportsIndirectInputEvents</key><true/>
     <key>UIFileSharingEnabled</key><true/>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -30,11 +44,23 @@
             <key>UTTypeDescription</key><string>Unwritten Studio Project</string>
             <key>UTTypeConformsTo</key><array><string>public.json</string></array>
             <key>UTTypeTagSpecification</key>
-            <dict><key>public.filename-extension</key><array><string>uwproj</string></array><key>public.mime-type</key><string>application/vnd.unwrittenstudio.project+json</string></dict>
+            <dict><key>public.filename-extension</key><array><string>unw</string><string>uwproj</string><string>ecproj</string></array><key>public.mime-type</key><string>application/vnd.unwrittenstudio.project+json</string></dict>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key><string>works.valliant.unwrittenstudio.aebridge</string>
+            <key>UTTypeDescription</key><string>Unwritten Studio After Effects Bridge</string>
+            <key>UTTypeConformsTo</key><array><string>public.json</string></array>
+            <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>unwae</string></array></dict>
         </dict>
     </array>
     <key>UTImportedTypeDeclarations</key>
     <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>works.valliant.unwrittenstudio.aep</string>
+            <key>UTTypeDescription</key><string>Adobe After Effects Project</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+            <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>aep</string></array></dict>
+        </dict>
         <dict>
             <key>UTTypeIdentifier</key><string>works.valliant.unwrittenstudio.xmlproject</string>
             <key>UTTypeDescription</key><string>Unwritten Studio XML Project</string>
@@ -48,7 +74,13 @@
             <key>CFBundleTypeName</key><string>Unwritten Studio Project</string>
             <key>CFBundleTypeRole</key><string>Editor</string>
             <key>LSHandlerRank</key><string>Owner</string>
-            <key>LSItemContentTypes</key><array><string>works.valliant.unwrittenstudio.project</string><string>works.valliant.unwrittenstudio.xmlproject</string></array>
+            <key>LSItemContentTypes</key><array><string>works.valliant.unwrittenstudio.project</string><string>works.valliant.unwrittenstudio.xmlproject</string><string>works.valliant.unwrittenstudio.aebridge</string></array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeName</key><string>Adobe After Effects Project</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Alternate</string>
+            <key>LSItemContentTypes</key><array><string>works.valliant.unwrittenstudio.aep</string></array>
         </dict>
     </array>
 </dict>

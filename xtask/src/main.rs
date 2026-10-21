@@ -23,6 +23,7 @@ use serde_json::Value;
 
 /// (crate name without the `unwritten-studio-` prefix, layer). See `docs/architecture.md` §1.
 const LAYERS: &[(&str, u8)] = &[
+    ("aep", 0),
     ("time", 0),
     ("geom", 0),
     ("color", 0),
@@ -44,6 +45,8 @@ const LAYERS: &[(&str, u8)] = &[
     ("pdf", 2),
     ("model", 2),
     ("render", 3),
+    ("aep-import", 3),
+    ("aep-export", 3),
     ("media", 3),
     ("expr", 3),
     ("export", 3),
@@ -60,6 +63,7 @@ const LAYERS: &[(&str, u8)] = &[
     ("unwritten-studio", 6),
     ("cli", 6),
     ("web", 6),
+    ("core", 6),
 ];
 
 /// Allowed same-layer edges (from, to).

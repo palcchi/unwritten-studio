@@ -1,0 +1,1383 @@
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+import PhotosUI
+import ImageIO
+import Darwin
+
+/// Main-thread inbox for URLs delivered by SwiftUI. It intentionally outlives the
+/// representable so cold-launch delivery cannot race controller construction.
+final class ExternalProjectInbox: ObservableObject {
+    private static let maximumPendingURLs = 64
+    private var pending: [URL] = []
+    private var receiver: ((URL) -> Bool)?
+    private var flushing = false
+    private var errorReceiver: ((String) -> Void)?
+    @Published private(set) var pendingError: String?
+
+    func receive(_ url: URL) {
+        let key = url.standardizedFileURL.absoluteString
+        guard !key.isEmpty, !pending.contains(where: { $0.standardizedFileURL.absoluteString == key }) else { return }
+        guard pending.count < Self.maximumPendingURLs else {
+            reportError("Too many projects are waiting to open. Finish the current operation, then open the remaining files again.")
+            return
+        }
+        pending.append(url)
+        flush()
+    }
+
+    func register(_ receiver: @escaping (URL) -> Bool, onError: ((String) -> Void)? = nil) {
+        self.receiver = receiver
+        self.errorReceiver = onError
+        flush()
+        if let pendingError, let onError {
+            onError(pendingError)
+            self.pendingError = nil
+        }
+    }
+
+    func unregister() { receiver = nil; errorReceiver = nil }
+
+    func retryDelivery() { flush() }
+
+    private func reportError(_ message: String) {
+        if let errorReceiver {
+            errorReceiver(message)
+        } else {
+            pendingError = message
+        }
+    }
+
+    private func flush() {
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        while let url = pending.first, let receiver {
+            guard receiver(url) else { return }
+            pending.removeFirst()
+        }
+    }
+}
+
+/// A bounded, thread-safe bridge. The main thread must not wait for a GPU frame
+/// merely to enqueue a Files URL or inspect the worker's available slots.
+private final class ExternalProjectBuffer {
+    private let lock = NSLock()
+    private let capacity: Int
+    private var paths: [String] = []
+
+    init(capacity: Int = 64) { self.capacity = max(0, capacity) }
+    var hasCapacity: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return paths.count < capacity
+    }
+    func append(_ path: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !path.isEmpty, paths.count < capacity else { return false }
+        paths.append(path)
+        return true
+    }
+    func popFirst() -> String? {
+        lock.lock(); defer { lock.unlock() }
+        return paths.isEmpty ? nil : paths.removeFirst()
+    }
+}
+
+/// Foundation-only reader, also executed by the macOS regression harness.
+private enum ExternalAEPStaging {
+    private static let sessionName = UUID().uuidString
+    private static let directoryLock = NSLock()
+    private static let ownerMarker = ".unwritten-aep-staging-owner"
+    private static let ownerVersion = "unwritten-aep-staging-v1"
+
+    // UUID shape alone is not ownership. Only remove a marked session belonging
+    // to a process that no longer exists; preserve unmarked/legacy data, native
+    // Save destinations, symlinks and every live process's session.
+    static func sessionDirectory(in root: URL) throws -> URL {
+        directoryLock.lock()
+        defer { directoryLock.unlock() }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for child in try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+            where child.lastPathComponent != sessionName {
+            let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isSymbolicLink != true, values.isDirectory == true,
+                  UUID(uuidString: child.lastPathComponent) != nil else { continue }
+            let marker = child.appendingPathComponent(ownerMarker)
+            guard let markerValues = try? marker.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                  markerValues.isRegularFile == true, markerValues.isSymbolicLink != true,
+                  let size = markerValues.fileSize, size <= 128,
+                  let text = try? String(contentsOf: marker, encoding: .utf8) else { continue }
+            let parts = text.split(separator: "\n")
+            guard parts.count == 2, parts[0] == ownerVersion,
+                  let pid = Int32(parts[1]), pid > 0 else { continue }
+            // A permission error, a reused PID or an unknown status is not
+            // proof of abandonment. Fail safe and leave that directory alone.
+            if kill(pid, 0) == -1, errno == ESRCH {
+                try FileManager.default.removeItem(at: child)
+            }
+        }
+        let directory = root.appendingPathComponent(sessionName, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let marker = directory.appendingPathComponent(ownerMarker)
+        try Data("\(ownerVersion)\n\(ProcessInfo.processInfo.processIdentifier)\n".utf8).write(to: marker, options: .atomic)
+        return directory
+    }
+
+    static func copy(_ fileURL: URL, into directory: URL, maximumBytes: Int = 64 * 1024 * 1024) throws -> URL {
+        guard fileURL.isFileURL, fileURL.pathExtension.lowercased() == "aep" else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+        var coordinationError: NSError?
+        var stagedURL: URL?
+        var stagingError: Error?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        coordinator.coordinate(readingItemAt: fileURL, options: [], error: &coordinationError) { coordinatedURL in
+            let destination = directory.appendingPathComponent("\(UUID().uuidString)-\(fileURL.lastPathComponent)", isDirectory: false)
+            do {
+                let values = try coordinatedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                guard values.isRegularFile == true, let bytes = values.fileSize, bytes <= maximumBytes else {
+                    throw NSError(domain: "UnwrittenStudio.ProjectImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "Choose an AEP file no larger than 64 MiB."])
+                }
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+                stagedURL = destination
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                stagingError = error
+            }
+        }
+        if let error = stagingError ?? coordinationError {
+            if let stagedURL { try? FileManager.default.removeItem(at: stagedURL) }
+            throw error
+        }
+        guard let stagedURL else { throw CocoaError(.fileReadUnknown) }
+        return stagedURL
+    }
+}
+
+/// The iOS host for the real egui workspace.  It deliberately contains no SwiftUI
+/// recreation of the editor: every visible pixel comes from the Rust egui frame.
+struct OriginalWorkspaceView: UIViewControllerRepresentable {
+    let externalProjectInbox: ExternalProjectInbox
+
+    func makeUIViewController(context: Context) -> OriginalWorkspaceController {
+        OriginalWorkspaceController(externalProjectInbox: externalProjectInbox)
+    }
+
+    func updateUIViewController(_ controller: OriginalWorkspaceController, context: Context) {}
+}
+
+private enum WorkspaceViewportGeometry {
+    static let minimumLogicalWidth: CGFloat = 1024
+    static let maximumRenderSide: CGFloat = 4096
+
+    /// Returns a finite, aspect-matched logical canvas for a safe viewport.
+    static func canvasSize(for viewport: CGSize) -> CGSize? {
+        guard viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0 else { return nil }
+        var width = max(minimumLogicalWidth, viewport.width)
+        var height = width * viewport.height / viewport.width
+        let side = max(width, height)
+        if side > maximumRenderSide {
+            let factor = maximumRenderSide / side
+            width *= factor
+            height *= factor
+        }
+        guard width.isFinite, height.isFinite, width > 0, height > 0,
+              width <= maximumRenderSide, height <= maximumRenderSide else { return nil }
+        return CGSize(width: width, height: height)
+    }
+}
+
+final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIScrollViewDelegate {
+    private let rootView = UIView()
+    private let viewport = UIScrollView()
+    private let canvas = OriginalWorkspaceCanvas()
+    private var lastViewportSize = CGSize.zero
+    private var lastViewportSafeAreaInsets = UIEdgeInsets.zero
+    private var fitZoom: CGFloat = 1
+    private var hasLaidOutViewport = false
+    private var userZoomed = false
+    private var applyingViewportLayout = false
+    private var worker: OriginalWorkspaceWorker!
+    private var dialogIDs = Set<UInt64>()
+    private var dialogResponse: DialogResponse?
+    private var activeFolderURL: URL?
+    private var activeProjectURLs: [URL] = []
+    private var projectDialogIDs = Set<UInt64>()
+    private var saveNames: [UInt64: String] = [:]
+    private var activeExportFolders: [String: URL] = [:]
+    private var lastError: String?
+    private var pendingErrors: [String] = []
+    private var smokeFrames = 0
+    private var smokeReady = false
+    private var workerReady = false
+    private var externalProjectURLs: [URL] = []
+    private var externalProjectInbox: ExternalProjectInbox?
+    private var processingExternalProject = false
+    private var stagedExternalProjectURLs: [URL] = []
+    private var pendingAEPStaging = 0
+    private var confirmedExternalAEPs = Set<URL>()
+
+    init(externalProjectInbox: ExternalProjectInbox? = nil) {
+        self.externalProjectInbox = externalProjectInbox
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    override func loadView() {
+        rootView.backgroundColor = .black
+        viewport.backgroundColor = .black
+        viewport.delegate = self
+        // The viewport is already constrained to the safe-area layout guide. Automatic
+        // adjustment would apply the notch/home-indicator inset a second time.
+        viewport.contentInsetAdjustmentBehavior = .never
+        viewport.delaysContentTouches = false
+        viewport.panGestureRecognizer.minimumNumberOfTouches = 2
+        viewport.panGestureRecognizer.maximumNumberOfTouches = 2
+        viewport.addSubview(canvas)
+        rootView.addSubview(viewport)
+        viewport.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            viewport.leadingAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.leadingAnchor),
+            viewport.trailingAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.trailingAnchor),
+            viewport.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor),
+            viewport.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor)
+        ])
+        if ProcessInfo.processInfo.arguments.contains("--ui-smoke") {
+            rootView.isAccessibilityElement = true
+            rootView.accessibilityIdentifier = "workspace-smoke-status"
+            rootView.accessibilityValue = "waiting"
+        }
+        view = rootView
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        canvas.onEvent = { [weak self] event in self?.worker?.enqueue(event) }
+        canvas.onNeedKeyboard = { [weak self] wants in
+            guard let self else { return }
+            if !self.canvas.isFirstResponder { _ = self.canvas.becomeFirstResponder() }
+            self.canvas.wantsKeyboard = wants
+            self.canvas.reloadInputViews()
+        }
+        worker = OriginalWorkspaceWorker { [weak self] result in
+            DispatchQueue.main.async { self?.consume(result) }
+        }
+        externalProjectInbox?.register({ [weak self] url in
+            self?.queueExternalProject(url) ?? false
+        }, onError: { [weak self] message in self?.showErrorOnce(message) })
+        NotificationCenter.default.addObserver(self, selector: #selector(pausePresentation), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resumePresentation), name: UIApplication.willEnterForegroundNotification, object: nil)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
+    }
+
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        // A rotation can briefly keep the old bounds while UIKit is animating
+        // the safe-area change. Invalidate both dimensions so the final layout
+        // is fitted to the new usable area rather than retaining old centering
+        // insets (especially visible on notched iPhones in landscape).
+        lastViewportSize = .zero
+        lastViewportSafeAreaInsets = .zero
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            self.lastViewportSize = .zero
+            self.lastViewportSafeAreaInsets = .zero
+            self.layoutViewport(preservingZoom: self.hasLaidOutViewport && self.userZoomed)
+        }
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        // A scene can receive a new safe area without changing its bounds (for
+        // example when the home indicator or a call/status bar appears). Force
+        // the canvas and its centering insets to follow that new usable area.
+        lastViewportSize = .zero
+        lastViewportSafeAreaInsets = .zero
+        layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
+        _ = canvas.becomeFirstResponder()
+        worker.start()
+        workerReady = true
+        presentPendingError()
+        drainExternalProjects()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        worker.stop()
+    }
+
+    @objc private func pausePresentation() { worker?.stop() }
+    @objc private func resumePresentation() {
+        if viewIfLoaded?.window != nil {
+            worker?.start()
+            drainExternalProjects()
+        }
+    }
+
+    deinit {
+        externalProjectInbox?.unregister()
+        NotificationCenter.default.removeObserver(self)
+        for folder in activeExportFolders.values { folder.stopAccessingSecurityScopedResource() }
+        for project in activeProjectURLs { project.stopAccessingSecurityScopedResource() }
+        activeFolderURL?.stopAccessingSecurityScopedResource()
+        worker?.stopAndDestroy()
+        for staged in stagedExternalProjectURLs { try? FileManager.default.removeItem(at: staged) }
+    }
+
+    private func consume(_ result: FrameResult) {
+        if let image = result.image {
+            canvas.image = image
+            recordSmokeFrame(image, audioRunning: result.audioRunning)
+        }
+        if result.wantsKeyboard != canvas.wantsKeyboard {
+            canvas.wantsKeyboard = result.wantsKeyboard
+            canvas.onNeedKeyboard?(result.wantsKeyboard)
+        }
+        guard let output = result.output else { return }
+        if let text = output.copiedText { UIPasteboard.general.string = text }
+        if let urlString = output.openURL, let url = URL(string: urlString), UIApplication.shared.canOpenURL(url) {
+            UIApplication.shared.open(url)
+        }
+        if let error = output.recoveryError, !error.isEmpty {
+            recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
+            showErrorOnce("Local recovery: \(error). Save a .unw copy to Files; existing recovery data has not been discarded.")
+        }
+        if let error = output.error, !error.isEmpty {
+            // A failed native command must win over an old/stale staged file.
+            // Do not let the polling fallback turn that file into a false
+            // success confirmation.
+            recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
+            showErrorOnce(error)
+        }
+        presentPendingError()
+        if let dialog = output.fileDialog, !dialogIDs.contains(dialog.id), presentedViewController == nil {
+            dialogIDs.insert(dialog.id)
+            present(dialog: dialog)
+        }
+        drainExternalProjects()
+    }
+
+    private static let supportedExternalProjectExtensions: Set<String> = ["aep", "unw"]
+    private static let maximumPendingExternalProjects = 64
+
+    private func queueExternalProject(_ url: URL) -> Bool {
+        let key = url.standardizedFileURL
+        guard !externalProjectURLs.contains(where: { $0.standardizedFileURL == key }) else { return true }
+        // Reserve the removed head's slot while its provider read is in flight;
+        // it may need to return to the head if another dialog appears meanwhile.
+        guard externalProjectURLs.count + (processingExternalProject ? 1 : 0) < Self.maximumPendingExternalProjects else {
+            return false
+        }
+        externalProjectURLs.append(url)
+        drainExternalProjects()
+        return true
+    }
+
+    private func drainExternalProjects() {
+        guard workerReady, !processingExternalProject, presentedViewController == nil,
+              worker.canQueueExternalProject, let url = externalProjectURLs.first else { return }
+        externalProjectURLs.removeFirst()
+        DispatchQueue.main.async { [weak self] in self?.externalProjectInbox?.retryDelivery() }
+        let fileURL = url.standardizedFileURL
+        guard fileURL.isFileURL else {
+            showErrorOnce("Open Project could not use this item because it is not a local file.")
+            DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
+            return
+        }
+        let extensionName = fileURL.pathExtension.lowercased()
+        guard Self.supportedExternalProjectExtensions.contains(extensionName) else {
+            showErrorOnce("Open Project supports native .unw files and experimental .aep files only.")
+            DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
+            return
+        }
+        // Native projects keep their original Save destination. Never open a
+        // temporary .unw path that will later be removed during teardown.
+        if extensionName == "unw" {
+            if !acceptExternalProject(fileURL) {
+                showErrorOnce("Could not keep access to \(fileURL.lastPathComponent). Try opening it again from Files.")
+            }
+            DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
+            return
+        }
+        // A provider read can finish while another modal is presented. Its
+        // queued result is already durable; never copy/rename that copy again.
+        if stagedExternalProjectURLs.contains(fileURL) {
+            if confirmedExternalAEPs.remove(fileURL) != nil {
+                if !acceptExternalProject(fileURL) {
+                    discardStagedAEP(fileURL)
+                    showErrorOnce("Could not queue this AEP copy. Try opening the original file again from Files.")
+                }
+                DispatchQueue.main.async { [weak self] in self?.drainExternalProjects() }
+                return
+            }
+            confirmExternalAEPImport(fileURL)
+            return
+        }
+        processingExternalProject = true
+        stageExternalAEP(fileURL) { [weak self] result in
+            guard let self else { return }
+            self.processingExternalProject = false
+            switch result {
+            case .success(let stagedURL):
+                guard self.presentedViewController == nil else {
+                    self.externalProjectURLs.insert(stagedURL, at: 0)
+                    return
+                }
+                self.confirmExternalAEPImport(stagedURL)
+            case .failure(let error):
+                self.showErrorOnce("Could not read \(fileURL.lastPathComponent) from Files (\(error.localizedDescription)). Keep the file available and try again.")
+                self.drainExternalProjects()
+            }
+        }
+    }
+
+    private func stageExternalAEP(_ fileURL: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+        guard stagedExternalProjectURLs.count + pendingAEPStaging < Self.maximumPendingExternalProjects else {
+            completion(.failure(NSError(domain: "UnwrittenStudio.ProjectImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "The session's staged import limit has been reached. Save your work and reopen the app before importing more AEP files."])))
+            return
+        }
+        pendingAEPStaging += 1
+        // A provider URL is only a capability, not a durable filesystem path. Read
+        // it while the security scope and coordination callback are both active,
+        // then give Rust an app-owned copy. This also avoids a later cold read
+        // failing with EPERM after Files has released its provider transaction.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            let access = fileURL.startAccessingSecurityScopedResource()
+            let result = Result {
+                defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
+                let root = self.applicationSupportDirectory().appendingPathComponent("External Projects", isDirectory: true)
+                let directory = try ExternalAEPStaging.sessionDirectory(in: root)
+                return try ExternalAEPStaging.copy(fileURL, into: directory)
+            }
+            DispatchQueue.main.async {
+                self.pendingAEPStaging -= 1
+                if case .success(let stagedURL) = result {
+                    self.stagedExternalProjectURLs.append(stagedURL)
+                }
+                completion(result)
+            }
+        }
+    }
+
+    private func retainProjectURL(_ url: URL) -> Bool {
+        guard !activeProjectURLs.contains(where: { $0 == url }) else { return true }
+        guard activeProjectURLs.count < 64 else { return false }
+        let hasScope = url.startAccessingSecurityScopedResource()
+        guard hasScope || FileManager.default.fileExists(atPath: url.path) else { return false }
+        activeProjectURLs.append(url)
+        return true
+    }
+
+    private func acceptExternalProject(_ url: URL) -> Bool {
+        // App-owned AEP copies need no provider scope and must not consume the
+        // native project scope budget. Retain them until the worker is destroyed:
+        // Rust may still need the bytes after an unsaved-changes decision.
+        guard stagedExternalProjectURLs.contains(url) || retainProjectURL(url) else { return false }
+        guard worker.enqueueExternalProject(path: url.path) else { return false }
+        worker.enqueue(.wake)
+        return true
+    }
+
+    private func discardStagedAEP(_ url: URL) {
+        guard stagedExternalProjectURLs.contains(url) else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+            stagedExternalProjectURLs.removeAll { $0 == url }
+        } catch {
+            showErrorOnce("Could not remove a cancelled AEP copy (\(error.localizedDescription)). It will be retried when the session closes.")
+        }
+    }
+
+    private func confirmExternalAEPImport(_ url: URL) {
+        processingExternalProject = true
+        let alert = UIAlertController(title: "Experimental After Effects Import", message: "This native .aep import is experimental. Unsupported shapes, text, effects, masks, 3D and other features may be omitted. Missing media must be relinked. Your original file will not be changed. Open a copy, then save the result as a .unw copy.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.processingExternalProject = false
+            self?.discardStagedAEP(url)
+            // Cancel terminates this attempt. Retry only other URLs held by
+            // inbox backpressure; a new Files delivery can reopen this URL.
+            self?.externalProjectInbox?.retryDelivery()
+            self?.drainExternalProjects()
+        })
+        alert.addAction(UIAlertAction(title: "Open Copy", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.confirmedExternalAEPs.insert(url)
+            self.externalProjectURLs.insert(url, at: 0)
+            self.processingExternalProject = false
+            self.drainExternalProjects()
+        })
+        present(alert, animated: true)
+    }
+
+    private func recordSmokeStatus(_ value: [String: Any], name: String) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-smoke") else { return }
+        let directory = applicationDocuments().appendingPathComponent("UISmoke", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+            try data.write(to: directory.appendingPathComponent(name), options: .atomic)
+            if name == "workspace-error.json" {
+                rootView.accessibilityValue = "error: \(value["error"] ?? "Unknown editor failure")"
+            } else if name == "workspace-ready.json" {
+                rootView.accessibilityValue = "ready"
+            }
+        } catch { NSLog("Unwritten Studio smoke evidence: %@", error.localizedDescription) }
+    }
+
+    private func recordSmokeFrame(_ image: UIImage, audioRunning: Bool) {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-smoke"), !smokeReady else { return }
+        if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape") {
+            let isPortrait = viewport.bounds.height >= viewport.bounds.width
+            let wantsPortrait = ProcessInfo.processInfo.arguments.contains("--smoke-portrait")
+            guard isPortrait == wantsPortrait else { smokeFrames = 0; return }
+        }
+        // Worker frames can lag a UIKit rotation. Never count an old-aspect
+        // framebuffer as one of the ten valid frames in the new viewport.
+        guard let cg = image.cgImage, viewport.bounds.width > 0, viewport.bounds.height > 0,
+              abs(CGFloat(cg.width) / CGFloat(cg.height) - viewport.bounds.width / viewport.bounds.height) < 0.01,
+              audioRunning else { smokeFrames = 0; return }
+        guard let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { smokeFrames = 0; return }
+        let count = CFDataGetLength(data)
+        guard count >= 4 else { return }
+        let hasVisibleContent = stride(from: 0, to: count - 3, by: 64).contains { index in
+            bytes[index] > 80 || bytes[index + 1] > 80 || bytes[index + 2] > 80
+        }
+        guard hasVisibleContent else { smokeFrames = 0; return }
+        smokeFrames += 1
+        guard smokeFrames >= 10 else { return }
+        smokeReady = true
+        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true, "audioEngineRunning": audioRunning,
+                           "viewportWidth": viewport.bounds.width, "viewportHeight": viewport.bounds.height,
+                           "canvasWidth": canvas.bounds.width, "canvasHeight": canvas.bounds.height,
+                           "fitZoom": fitZoom, "aspectMatched": abs((canvas.bounds.width / canvas.bounds.height) - (viewport.bounds.width / viewport.bounds.height)) < 0.001], name: "workspace-ready.json")
+    }
+
+    private func layoutViewport(preservingZoom: Bool) {
+        guard viewport.bounds.width > 0, viewport.bounds.height > 0 else { return }
+        let safeAreaInsets = rootView.safeAreaInsets
+        guard !hasLaidOutViewport || lastViewportSize != viewport.bounds.size ||
+                lastViewportSafeAreaInsets != safeAreaInsets else { return }
+        let oldZoom = max(viewport.zoomScale, 0.01)
+        let oldCenter = CGPoint(
+            x: (viewport.contentOffset.x + viewport.bounds.width * 0.5) / oldZoom,
+            y: (viewport.contentOffset.y + viewport.bounds.height * 0.5) / oldZoom
+        )
+        lastViewportSize = viewport.bounds.size
+        lastViewportSafeAreaInsets = safeAreaInsets
+        let oldFit = fitZoom
+        let oldRelativeZoom = oldFit > 0 ? viewport.zoomScale / oldFit : 1
+        // Keep a desktop-friendly logical width, but derive both dimensions from
+        // the actual safe viewport aspect.  Independent minimums (1024x640)
+        // letterboxed portrait and made the lower controls unreachable.  Bound
+        // the logical canvas as well as the framebuffer: native egui rejects a
+        // side above 4096, and a very tall phone must not rely on clipping.
+        guard let canvasSize = WorkspaceViewportGeometry.canvasSize(for: viewport.bounds.size) else { return }
+        fitZoom = max(0.01, min(viewport.bounds.width / canvasSize.width, viewport.bounds.height / canvasSize.height, 1))
+        applyingViewportLayout = true
+        viewport.setZoomScale(1, animated: false)
+        canvas.frame = CGRect(origin: .zero, size: canvasSize)
+        viewport.contentSize = canvasSize
+        viewport.minimumZoomScale = fitZoom
+        viewport.maximumZoomScale = 2
+        let newZoom = preservingZoom ? min(max(fitZoom * oldRelativeZoom, fitZoom), 2) : fitZoom
+        viewport.zoomScale = newZoom
+        updateViewportInsets()
+        if preservingZoom {
+            let newOffset = CGPoint(x: oldCenter.x * newZoom - viewport.bounds.width * 0.5,
+                                    y: oldCenter.y * newZoom - viewport.bounds.height * 0.5)
+            viewport.contentOffset = clampedContentOffset(newOffset)
+        } else {
+            viewport.contentOffset = clampedContentOffset(viewport.contentOffset)
+        }
+        applyingViewportLayout = false
+        hasLaidOutViewport = true
+        updateGestureOwnership()
+        worker?.setGeometry(canvas.bounds.size, scale: view.window?.screen.scale ?? UIScreen.main.scale)
+    }
+
+    private func clampedContentOffset(_ proposed: CGPoint) -> CGPoint {
+        let minX = -viewport.contentInset.left
+        let minY = -viewport.contentInset.top
+        let maxX = max(minX, viewport.contentSize.width - viewport.bounds.width + viewport.contentInset.right)
+        let maxY = max(minY, viewport.contentSize.height - viewport.bounds.height + viewport.contentInset.bottom)
+        return CGPoint(x: min(max(proposed.x, minX), maxX), y: min(max(proposed.y, minY), maxY))
+    }
+
+    private func updateViewportInsets() {
+        let scaled = CGSize(width: canvas.bounds.width * viewport.zoomScale, height: canvas.bounds.height * viewport.zoomScale)
+        let horizontal = max(0, (viewport.bounds.width - scaled.width) / 2)
+        let vertical = max(0, (viewport.bounds.height - scaled.height) / 2)
+        let insets = UIEdgeInsets(top: vertical, left: horizontal, bottom: vertical, right: horizontal)
+        viewport.contentInset = insets
+        viewport.scrollIndicatorInsets = insets
+    }
+
+    private func updateGestureOwnership() {
+        let narrow = viewport.bounds.width < 1024
+        let viewportPans = narrow || viewport.zoomScale > fitZoom + 0.001
+        // Re-enabling resets a recognizer cleanly after a rotation or zoom
+        // transition and avoids two independent two-finger scroll owners.
+        viewport.panGestureRecognizer.isEnabled = false
+        viewport.panGestureRecognizer.isEnabled = viewportPans
+        canvas.internalScrollEnabled = !narrow && !viewportPans
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { canvas }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        if !applyingViewportLayout { userZoomed = abs(scrollView.zoomScale - fitZoom) > 0.001 }
+        updateViewportInsets()
+        updateGestureOwnership()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // The outer recognizer can cancel the canvas' touch callbacks before
+        // the canvas receives touchesCancelled.  Release egui's primary
+        // pointer explicitly so a drag cannot leave a button held down.
+        canvas.cancelPrimaryTouch()
+    }
+
+    private func showErrorOnce(_ message: String) {
+        guard lastError != message else { return }
+        if !pendingErrors.contains(message) { pendingErrors.append(message) }
+        presentPendingError()
+    }
+
+    private func presentPendingError() {
+        guard viewIfLoaded?.window != nil, presentedViewController == nil else { return }
+        guard !pendingErrors.isEmpty else { return }
+        let message = pendingErrors.removeFirst()
+        lastError = message
+        let alert = UIAlertController(title: "Unwritten Studio", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+
+    private func present(dialog: FileDialog) {
+        if dialog.project { projectDialogIDs.insert(dialog.id) }
+        switch dialog.kind {
+        case "save": presentSave(dialog)
+        case "folder": presentFolder(dialog)
+        default: presentOpen(dialog)
+        }
+    }
+
+    private func presentOpen(_ dialog: FileDialog) {
+        // PhotosPicker is deliberately offered only for media imports. Project and
+        // generic open dialogs must stay in Files so their provider URLs retain the
+        // semantics expected by the engine.
+        if dialog.isMediaImport {
+            presentMediaSourceChoice(for: dialog)
+        } else {
+            presentDocumentPicker(for: dialog)
+        }
+    }
+
+    private func presentMediaSourceChoice(for dialog: FileDialog) {
+        let alert = UIAlertController(title: "Import Footage", message: "Choose a source", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "Files", style: .default) { [weak self] _ in
+            self?.presentDocumentPicker(for: dialog)
+        })
+        alert.addAction(UIAlertAction(title: "Photos", style: .default) { [weak self] _ in
+            self?.presentPhotoPicker(for: dialog)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.finishDialog(dialog.id, paths: [])
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        }
+        present(alert, animated: true)
+    }
+
+    private func presentDocumentPicker(for dialog: FileDialog) {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: dialog.contentTypes, asCopy: false)
+        picker.allowsMultipleSelection = dialog.many
+        picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
+        picker.view.accessibilityIdentifier = "unwritten-file-dialog-\(dialog.id)"
+        objc_setAssociatedObject(picker, &DialogAssociation.key, dialog.id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        present(picker, animated: true)
+    }
+
+    private func presentPhotoPicker(for dialog: FileDialog) {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.filter = .any(of: [.images, .videos])
+        configuration.selectionLimit = dialog.many ? 0 : 1
+        configuration.preferredAssetRepresentationMode = .compatible
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
+        picker.view.accessibilityIdentifier = "unwritten-photo-dialog-\(dialog.id)"
+        objc_setAssociatedObject(picker, &DialogAssociation.key, dialog.id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        present(picker, animated: true)
+    }
+
+    private func presentFolder(_ dialog: FileDialog) {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        picker.allowsMultipleSelection = false
+        picker.delegate = self
+        picker.modalPresentationStyle = .formSheet
+        objc_setAssociatedObject(picker, &DialogAssociation.key, dialog.id, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        present(picker, animated: true)
+    }
+
+    private func presentSave(_ dialog: FileDialog) {
+        let message = "Enter a name, then choose the destination folder in Files. Existing files require confirmation; rendering does not start until you press Render."
+        let alert = UIAlertController(title: dialog.project ? "Save Project" : "Output File", message: message, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.text = dialog.defaultName ?? "Untitled.unw"
+            field.placeholder = "File name"
+            field.clearButtonMode = .whileEditing
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in self?.finishDialog(dialog.id, paths: []) })
+        alert.addAction(UIAlertAction(title: "Choose Folder…", style: .default) { [weak self, weak alert] _ in
+            guard let self, let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                self?.finishDialog(dialog.id, paths: []); return
+            }
+            var name = self.safeFileName(raw)
+            if URL(fileURLWithPath: name).pathExtension.isEmpty, let ext = dialog.extensions.first, !ext.isEmpty { name += "." + ext }
+            if !dialog.extensions.isEmpty {
+                let suffix = URL(fileURLWithPath: name).pathExtension.lowercased()
+                if !dialog.extensions.contains(where: { $0.lowercased() == suffix }) {
+                    self.finishDialog(dialog.id, paths: [])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                        self?.showErrorOnce("Choose a .\(dialog.extensions.first ?? "supported") filename for this export.")
+                    }
+                    return
+                }
+            }
+            if dialog.project, ["aep", "aepx", "unwae"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) {
+                self.finishDialog(dialog.id, paths: [])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                    self?.showErrorOnce("Save native projects as .unw. To transfer supported layers to After Effects, use File > Export > After Effects AEP. For the legacy JSX bridge, use File > After Effects Bridge > Export Project to AE JSX.")
+                }
+                return
+            }
+            self.saveNames[dialog.id] = name
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.presentFolder(dialog)
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func completeSaveFolder(_ folder: URL, id: UInt64, name: String) {
+        // Keep each explicitly chosen directory scoped while queued renders use it.
+        // Selecting another folder must not revoke an earlier queue item's permission.
+        if activeExportFolders[folder.path] == nil {
+            guard activeExportFolders.count < 64 else {
+                finishDialog(id, paths: [])
+                showErrorOnce("Too many output folders are open. Reopen the app before choosing another folder.")
+                return
+            }
+            guard folder.startAccessingSecurityScopedResource() else {
+                finishDialog(id, paths: [])
+                showErrorOnce("Could not keep access to \(folder.lastPathComponent). Choose the destination folder again.")
+                return
+            }
+            activeExportFolders[folder.path] = folder
+        }
+        let destination = folder.appendingPathComponent(name, isDirectory: false)
+        let submit: () -> Void = { [weak self] in self?.finishDialog(id, paths: [destination.path]) }
+        guard FileManager.default.fileExists(atPath: destination.path) else { submit(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            let alert = UIAlertController(title: "Replace existing file?", message: "\(name) already exists in this folder. Keeping it requires a different name or folder. Render outputs are checked again before rendering.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in self?.finishDialog(id, paths: []) })
+            alert.addAction(UIAlertAction(title: "Replace", style: .destructive) { _ in submit() })
+            self.present(alert, animated: true)
+        }
+    }
+
+    private func applicationDocuments() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+    }
+
+    private func safeFileName(_ value: String) -> String {
+        let name = URL(fileURLWithPath: value).lastPathComponent
+            .replacingOccurrences(of: "/", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "Untitled.unw" : name
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if let id = objc_getAssociatedObject(controller, &DialogAssociation.key) as? UInt64 {
+            saveNames.removeValue(forKey: id)
+            projectDialogIDs.remove(id)
+            finishDialog(id, paths: [])
+        }
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let id = objc_getAssociatedObject(controller, &DialogAssociation.key) as? UInt64 else { return }
+        if let name = saveNames.removeValue(forKey: id) {
+            projectDialogIDs.remove(id)
+            guard let folder = urls.first else { finishDialog(id, paths: []); return }
+            completeSaveFolder(folder, id: id, name: name)
+            return
+        }
+        if projectDialogIDs.remove(id) != nil, let projectURL = urls.first {
+            if projectURL.pathExtension.caseInsensitiveCompare("aep") == .orderedSame {
+                // Present the warning only after the native picker is gone;
+                // presenting during its dismissal can silently lose Open Copy.
+                controller.dismiss(animated: true) { [weak self] in
+                    self?.confirmAEPImport(projectURL, id: id)
+                }
+                return
+            }
+            guard retainProjectURL(projectURL) else {
+                finishDialog(id, paths: [])
+                showErrorOnce("Could not keep access to \(projectURL.lastPathComponent). Choose the project again from Files.")
+                return
+            }
+            // Keep the security-scoped source URL so relative media remains resolvable for this session.
+            finishDialog(id, paths: [projectURL.path])
+            return
+        }
+        let isFolder = urls.first?.hasDirectoryPath == true
+        if isFolder, let folder = urls.first {
+            guard folder.startAccessingSecurityScopedResource() else {
+                finishDialog(id, paths: [])
+                showErrorOnce("Could not keep access to \(folder.lastPathComponent). Choose the folder again from Files.")
+                return
+            }
+            activeFolderURL?.stopAccessingSecurityScopedResource()
+            activeFolderURL = folder
+            finishDialog(id, paths: [folder.path])
+        } else {
+            // iCloud/document-provider coordination can block while materialising a file.
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let paths = self?.copyToImportedMedia(urls) ?? []
+                DispatchQueue.main.async { self?.finishDialog(id, paths: paths) }
+            }
+        }
+    }
+
+    private func confirmAEPImport(_ url: URL, id: UInt64) {
+        let alert = UIAlertController(title: "Experimental After Effects Import", message: "This native .aep import is experimental. Unsupported shapes, text, effects, masks, 3D and other features may be omitted. Missing media must be relinked. Your original file will not be changed. Open a copy, then save the result as a .unw copy.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.finishDialog(id, paths: [])
+        })
+        alert.addAction(UIAlertAction(title: "Open Copy", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.stageExternalAEP(url) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let stagedURL):
+                    self.finishDialog(id, paths: [stagedURL.path])
+                case .failure(let error):
+                    self.finishDialog(id, paths: [])
+                    self.showErrorOnce("Could not read \(url.lastPathComponent) from Files (\(error.localizedDescription)).")
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func copyToImportedMedia(_ urls: [URL]) -> [String] {
+        do {
+            let root = try prepareImportedMediaDirectory()
+            var failures: [String] = []
+            let paths = urls.compactMap { copyMediaFile($0, into: root, failures: &failures) }
+            if !failures.isEmpty {
+                let message = "Some media could not be imported: " + failures.joined(separator: "; ")
+                DispatchQueue.main.async { [weak self] in self?.showErrorOnce(message) }
+            }
+            return paths
+        } catch {
+            let message = "Could not prepare imported media storage: \(error.localizedDescription)"
+            DispatchQueue.main.async { [weak self] in self?.showErrorOnce(message) }
+            return []
+        }
+    }
+
+    private func prepareImportedMediaDirectory() throws -> URL {
+        let root = applicationSupportDirectory().appendingPathComponent("Imported Media", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                 attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
+        return root
+    }
+
+    private func copyMediaFile(_ source: URL, into root: URL, failures: inout [String]) -> String? {
+        guard source.isFileURL, !source.hasDirectoryPath else {
+            failures.append("\(source.lastPathComponent): folders are not media files")
+            return nil
+        }
+        let access = source.startAccessingSecurityScopedResource()
+        defer { if access { source.stopAccessingSecurityScopedResource() } }
+        do {
+            // Do not preflight with isReadableFile: iCloud/document providers can
+            // materialize a not-yet-downloaded file during coordinated reading.
+            var coordinationError: NSError?
+            var copyError: Error?
+            var importedPath: String?
+            let coordinator = NSFileCoordinator(filePresenter: nil)
+            coordinator.coordinate(readingItemAt: source, options: [], error: &coordinationError) { coordinatedURL in
+                // Keep supported images byte-for-byte, including animated GIF,
+                // layered PSD, high-bit-depth TIFF and transparent PNG. Only
+                // normalize HEIF images the Rust media decoder cannot read.
+                if ["heic", "heif", "hif"].contains(coordinatedURL.pathExtension.lowercased()) {
+                    importedPath = copyImageFile(coordinatedURL, into: root, failures: &failures)
+                } else {
+                    do {
+                        let destination = try uniqueImportedMediaURL(for: source, in: root)
+                        try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+                        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+                        importedPath = destination.path
+                    } catch { copyError = error }
+                }
+            }
+            if let coordinationError { throw coordinationError }
+            if let copyError { throw copyError }
+            return importedPath
+        } catch {
+            failures.append("\(source.lastPathComponent): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static let maxImageDimension = 8_192
+    private static let maxImagePixels = 40_000_000
+    private static let maxEncodedImageBytes = 128 * 1024 * 1024
+
+    private func copyImageFile(_ source: URL, into root: URL, failures: inout [String]) -> String? {
+        do {
+            guard let sourceImage = CGImageSourceCreateWithURL(source as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(sourceImage, 0, nil) as? [CFString: Any],
+                  let width = props[kCGImagePropertyPixelWidth] as? Int, let height = props[kCGImagePropertyPixelHeight] as? Int,
+                  width > 0, height > 0 else { throw CocoaError(.fileReadCorruptFile) }
+            guard width <= Self.maxImageDimension, height <= Self.maxImageDimension, width <= Self.maxImagePixels / max(1, height) else {
+                throw NSError(domain: "UnwrittenStudio.MediaImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "HEIF image is too large to convert safely (maximum 8192 pixels per side and 40 megapixels)."])
+            }
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: Self.maxImageDimension]
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(sourceImage, 0, options as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+            let image = UIImage(cgImage: cg)
+            let alpha = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(cg.alphaInfo)
+            let ext = alpha ? "png" : "jpg"
+            guard let data = alpha ? image.pngData() : image.jpegData(compressionQuality: 0.9), data.count <= Self.maxEncodedImageBytes else {
+                throw NSError(domain: "UnwrittenStudio.MediaImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Image encoding exceeded the 128 MB safety limit."])
+            }
+            let stem = source.deletingPathExtension().lastPathComponent
+            let destination = try uniqueImportedMediaURL(forName: "\(stem.isEmpty ? "Imported Media" : stem).\(ext)", in: root)
+            try data.write(to: destination, options: .atomic)
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+            return destination.path
+        } catch { failures.append("\(source.lastPathComponent): \(error.localizedDescription)"); return nil }
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        guard let id = objc_getAssociatedObject(picker, &DialogAssociation.key) as? UInt64 else { return }
+        picker.dismiss(animated: true)
+        guard !results.isEmpty else { finishDialog(id, paths: []); return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                let root = try self.prepareImportedMediaDirectory()
+                let group = DispatchGroup()
+                let resultQueue = DispatchQueue(label: "org.unwritten.studio.photo-import-results")
+                var paths = Array(repeating: "", count: results.count)
+                var failures: [String] = []
+                for (index, result) in results.enumerated() {
+                    let provider = result.itemProvider
+                    guard let typeIdentifier = provider.registeredTypeIdentifiers.first(where: { $0 == UTType.jpeg.identifier })
+                        ?? provider.registeredTypeIdentifiers.first(where: { $0 == UTType.png.identifier })
+                        ?? provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true })
+                        ?? provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) else {
+                        resultQueue.sync { failures.append("Photo \(index + 1): no supported image or video representation") }
+                        continue
+                    }
+                    group.enter()
+                    provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { [weak self] url, error in
+                        defer { group.leave() }
+                        guard let self, let url else {
+                            resultQueue.sync { failures.append("Photo \(index + 1): \(error?.localizedDescription ?? "the provider returned no file")") }
+                            return
+                        }
+                        resultQueue.sync {
+                            if let path = self.copyMediaFile(url, into: root, failures: &failures) { paths[index] = path }
+                        }
+                    }
+                }
+                group.wait()
+                let imported = paths.filter { !$0.isEmpty }
+                DispatchQueue.main.async {
+                    if !failures.isEmpty { self.showErrorOnce("Some photos could not be imported: " + failures.joined(separator: "; ")) }
+                    self.finishDialog(id, paths: imported)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.showErrorOnce("Could not prepare imported media storage: \(error.localizedDescription)")
+                    self.finishDialog(id, paths: [])
+                }
+            }
+        }
+    }
+
+    private func applicationSupportDirectory() -> URL {
+        if let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            return directory.appendingPathComponent("Unwritten Studio", isDirectory: true)
+        }
+        // This fallback is still app-owned and avoids returning a transient
+        // security-scoped provider URL.  It should only be reached on a
+        // severely misconfigured system container.
+        return applicationDocuments().appendingPathComponent("Application Support", isDirectory: true)
+    }
+
+    private func uniqueImportedMediaURL(for source: URL, in root: URL) throws -> URL {
+        let originalName = source.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = originalName.isEmpty ? "Imported Media" : originalName
+        return try uniqueImportedMediaURL(forName: name, in: root)
+    }
+
+    private func uniqueImportedMediaURL(forName name: String, in root: URL) throws -> URL {
+        var destination = root.appendingPathComponent(name, isDirectory: false)
+        guard FileManager.default.fileExists(atPath: destination.path) else { return destination }
+
+        let stem = destination.deletingPathExtension().lastPathComponent
+        let suffix = destination.pathExtension
+        for index in 1...1000 {
+            let candidateName = suffix.isEmpty ? "\(stem)-\(index)" : "\(stem)-\(index).\(suffix)"
+            destination = root.appendingPathComponent(candidateName, isDirectory: false)
+            if !FileManager.default.fileExists(atPath: destination.path) { return destination }
+        }
+        throw CocoaError(.fileWriteFileExists)
+    }
+
+    private func finishDialog(_ id: UInt64, paths: [String]) {
+        dialogResponse = DialogResponse(id: id, paths: paths)
+        worker.setDialogResponse(dialogResponse)
+        worker.enqueue(.wake)
+    }
+}
+
+private enum DialogAssociation { static var key: UInt8 = 0 }
+
+private final class OriginalWorkspaceWorker {
+    private let queue = DispatchQueue(label: "org.unwritten.studio.egui", qos: .userInitiated)
+    private var handle: OpaquePointer?
+    private var audio: OriginalWorkspaceAudio?
+    private var timer: DispatchSourceTimer?
+    private var running = false
+    private var frameInFlight = false
+    private var events: [InputEvent] = []
+    private let externalProjectPaths = ExternalProjectBuffer()
+    // A successful native frame advertises space after dispatching its queue.
+    // Until then (including startup/error frames), do not remove a queued URL.
+    private var externalProjectCapacity = 0
+    private var logicalSize = CGSize(width: 320, height: 240)
+    private var screenScale: CGFloat = 1
+    private let deliver: (FrameResult) -> Void
+
+    init(deliver: @escaping (FrameResult) -> Void) { self.deliver = deliver }
+    func setGeometry(_ size: CGSize, scale: CGFloat) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            let logicalWidth = max(1, size.width)
+            let logicalHeight = max(1, size.height)
+            self.logicalSize = CGSize(width: logicalWidth, height: logicalHeight)
+            // native_ui rejects any framebuffer dimension above 4096.  Keep
+            // portrait canvases valid instead of allowing a 2x Retina scale
+            // to make the worker fail silently on a tall device.
+            let framebufferLimit = WorkspaceViewportGeometry.maximumRenderSide / max(logicalWidth, logicalHeight)
+            let maximumScale = max(0.25, min(2, framebufferLimit))
+            self.screenScale = min(max(0.25, scale), maximumScale)
+        }
+    }
+
+    func start() {
+        queue.async { [weak self] in
+            guard let self, !self.running else { return }
+            if self.handle == nil { self.handle = unwritten_studio_ui_create() }
+            self.running = self.handle != nil
+            guard self.running else {
+                var reason = "The original workspace could not start."
+                if let message = unwritten_studio_ui_last_error() {
+                    reason += " " + String(cString: message)
+                    unwritten_studio_string_free(message)
+                }
+                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: reason, wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
+                return
+            }
+            do {
+                if self.audio == nil, let handle = self.handle {
+                    self.audio = try OriginalWorkspaceAudio(handle: unwritten_studio_ui_audio_handle(handle))
+                }
+                try self.audio?.start()
+            } catch {
+                self.deliver(FrameResult(image: nil, output: UIOutput(ok: false, error: error.localizedDescription, wantsKeyboard: false, copiedText: nil, openURL: nil, fileDialog: nil), wantsKeyboard: false))
+            }
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(34), leeway: .milliseconds(4))
+            timer.setEventHandler { [weak self] in autoreleasepool { self?.frame() } }
+            self.timer = timer
+            timer.resume()
+        }
+    }
+
+    func stop() { queue.async { [weak self] in
+        if let self { self.forceCheckpoint = true; self.frame() }
+        self?.timer?.suspendIfNeeded()
+        self?.timer = nil
+        self?.audio?.stop()
+        self?.running = false
+    } }
+
+    func stopAndDestroy() {
+        queue.sync {
+            running = false
+            timer?.cancel(); timer = nil
+            audio?.destroy(); audio = nil
+            if let handle { unwritten_studio_ui_destroy(handle); self.handle = nil }
+        }
+    }
+
+    func enqueue(_ event: InputEvent) { queue.async { [weak self] in
+        guard let self, self.events.count < 1024 else { return }
+        self.events.append(event)
+    } }
+    func setDialogResponse(_ response: DialogResponse?) { queue.async { [weak self] in self?.pendingResponse = response } }
+    // Main-thread callers reserve a slot atomically; a void async enqueue
+    // could reject a URL after the controller had already removed its only copy.
+    var canQueueExternalProject: Bool { externalProjectPaths.hasCapacity }
+    func enqueueExternalProject(path: String) -> Bool { externalProjectPaths.append(path) }
+
+    private func frame() {
+        guard running, !frameInFlight, let handle else { return }
+        frameInFlight = true
+        // Geometry is captured on the main thread and consumed here on the worker.
+        let size = logicalSize
+        var payload: [String: Any] = ["width": max(1, Int(size.width)), "height": max(1, Int(size.height)), "scale": screenScale, "time": ProcessInfo.processInfo.systemUptime, "events": events.map(\.json), "smoke": ProcessInfo.processInfo.arguments.contains("--ui-smoke")]
+        events.removeAll(keepingCapacity: true)
+        if forceCheckpoint { payload["checkpoint"] = true; forceCheckpoint = false }
+        if let response = pendingResponse { payload["dialog"] = response.json; pendingResponse = nil }
+        if externalProjectCapacity > 0, let externalProjectPath = externalProjectPaths.popFirst() {
+            payload["externalProjectPath"] = externalProjectPath
+            externalProjectCapacity -= 1
+        }
+        let jsonData = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
+        let json = String(decoding: jsonData, as: UTF8.self)
+        var width: UInt32 = 0; var height: UInt32 = 0
+        var result = FrameResult(image: nil, output: nil, wantsKeyboard: false)
+        json.withCString { input in
+            guard let pixels = unwritten_studio_ui_frame(handle, input, &width, &height), width > 0, height > 0 else {
+                let output = readOutput(handle)
+                result = FrameResult(image: nil, output: output, wantsKeyboard: output?.wantsKeyboard ?? false)
+                return
+            }
+            let w = UInt64(width), h = UInt64(height)
+            let area = w.multipliedReportingOverflow(by: h)
+            let byteCount = area.partialValue.multipliedReportingOverflow(by: 4)
+            guard !area.overflow, !byteCount.overflow, byteCount.partialValue <= UInt64(Int.max) else {
+                // The dimensions are invalid for a Swift allocation; do not attempt one.
+                // An invalid length must never be passed to Rust's boxed-slice deallocator.
+                running = false
+                let output = readOutput(handle)
+                result = FrameResult(image: nil, output: output, wantsKeyboard: output?.wantsKeyboard ?? false)
+                return
+            }
+            let count = Int(byteCount.partialValue)
+            defer { unwritten_studio_bytes_free(pixels, count) }
+            guard width <= 16384, height <= 16384, count <= 512 * 1024 * 1024 else {
+                let output = readOutput(handle)
+                result = FrameResult(image: nil, output: output, wantsKeyboard: output?.wantsKeyboard ?? false)
+                return
+            }
+            let data = Data(bytes: pixels, count: count)
+            let output = readOutput(handle)
+            result = FrameResult(image: makeImage(data: data, width: Int(width), height: Int(height)), output: output, wantsKeyboard: output?.wantsKeyboard ?? false, audioRunning: audio?.isRunning == true)
+        }
+        frameInFlight = false
+        externalProjectCapacity = max(0, min(8, result.output?.externalProjectCapacity ?? 0))
+        deliver(result)
+    }
+
+    // Set by the controller through the next wake event; kept private to the serial worker.
+    private var forceCheckpoint = false
+    private var pendingResponse: DialogResponse?
+    private func readOutput(_ handle: OpaquePointer) -> UIOutput? {
+        guard let ptr = unwritten_studio_ui_output_json(handle) else { return nil }
+        defer { unwritten_studio_string_free(ptr) }
+        let text = String(cString: ptr)
+        guard let data = text.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(UIOutput.self, from: data)
+    }
+}
+
+private func makeImage(data: Data, width: Int, height: Int) -> UIImage? {
+    guard let provider = CGDataProvider(data: data as CFData), let cg = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+    return UIImage(cgImage: cg)
+}
+
+private struct FrameResult {
+    let image: UIImage?
+    let output: UIOutput?
+    let wantsKeyboard: Bool
+    let audioRunning: Bool
+    init(image: UIImage?, output: UIOutput?, wantsKeyboard: Bool, audioRunning: Bool = false) {
+        self.image = image
+        self.output = output
+        self.wantsKeyboard = wantsKeyboard
+        self.audioRunning = audioRunning
+    }
+}
+private struct DialogResponse { let id: UInt64; let paths: [String]; var json: [String: Any] { ["id": id, "paths": paths] } }
+private struct FileDialog: Decodable { let id: UInt64; let kind: String; let extensions: [String]; let many: Bool; let defaultName: String?; let project: Bool
+    var contentTypes: [UTType] {
+        let accepted = isMediaImport ? extensions + ["heic", "heif", "hif"] : extensions
+        let types = accepted.compactMap { UTType(filenameExtension: $0) }
+        return types.isEmpty ? [.data] : types
+    }
+    var isMediaImport: Bool {
+        guard !project, kind != "save", kind != "folder" else { return false }
+        let media = Set(["mp4", "mov", "m4v", "mkv", "webm", "mxf", "png", "jpg", "jpeg", "gif", "webp", "tif", "tiff", "bmp", "exr", "dpx", "cin", "wav", "aif", "aiff", "mp3", "flac", "ogg", "opus", "svg", "pdf", "ai", "eps", "psd", "psb", "tga", "hdr", "gltf", "glb", "obj", "stl", "fbx", "json", "csv", "tsv"])
+        return extensions.contains { media.contains($0.lowercased()) }
+    }
+}
+private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog?; var recoveryError: String? = nil; var externalProjectCapacity: Int? = nil }
+private enum InputEvent {
+    case move(CGPoint), button(CGPoint, Bool), scroll(CGPoint, CGPoint), text(String), paste(String), key(String, Bool, UIKeyModifierFlags), wake
+    var json: [String: Any] {
+        switch self {
+        case let .move(p): return ["type":"move", "x":p.x, "y":p.y]
+        case let .button(p, pressed): return ["type":"button", "x":p.x, "y":p.y, "pressed":pressed]
+        case let .scroll(p, delta): return ["type":"scroll", "x":p.x, "y":p.y, "dx":delta.x, "dy":delta.y]
+        case let .text(value): return ["type":"text", "text":value]
+        case let .paste(value): return ["type":"paste", "text":value]
+        case let .key(key, pressed, modifiers): return ["type":"key", "key":key, "pressed":pressed, "command":modifiers.contains(.command), "shift":modifiers.contains(.shift), "alt":modifiers.contains(.alternate), "ctrl":modifiers.contains(.control)]
+        case .wake: return ["type":"wake"]
+        }
+    }
+}
+
+private final class OriginalWorkspaceCanvas: UIView, UIKeyInput {
+    var image: UIImage? { didSet { imageView.image = image } }
+    var wantsKeyboard = false
+    var onEvent: ((InputEvent) -> Void)?
+    var onNeedKeyboard: ((Bool) -> Void)?
+    var internalScrollEnabled = true {
+        didSet { internalPan?.isEnabled = internalScrollEnabled }
+    }
+    private let imageView = UIImageView()
+    private var primaryTouch: UITouch?
+    private var scrolling = false
+    private let hiddenInputView = UIView(frame: .zero)
+    private var internalPan: UIPanGestureRecognizer?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = false
+        addSubview(imageView)
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(pan(_:)))
+        pan.minimumNumberOfTouches = 2
+        pan.maximumNumberOfTouches = 2
+        pan.cancelsTouchesInView = false
+        addGestureRecognizer(pan)
+        internalPan = pan
+        isMultipleTouchEnabled = true
+    }
+    required init?(coder: NSCoder) { nil }
+    override func layoutSubviews() { super.layoutSubviews(); imageView.frame = bounds }
+    override var canBecomeFirstResponder: Bool { true }
+    override var inputView: UIView? { wantsKeyboard ? nil : hiddenInputView }
+    var hasText: Bool { true }
+    func insertText(_ text: String) {
+        if text == "\n" {
+            onEvent?(.key("Enter", true, [])); onEvent?(.key("Enter", false, []))
+        } else { onEvent?(.text(text)) }
+    }
+    override func paste(_ sender: Any?) {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
+        onEvent?(.paste(text))
+    }
+    func deleteBackward() { onEvent?(.key("Backspace", true, [])); onEvent?(.key("Backspace", false, [])) }
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", true, key.modifierFlags)) } }
+        super.pressesBegan(presses, with: event)
+    }
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", false, key.modifierFlags)) } }
+        super.pressesEnded(presses, with: event)
+    }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses { if let key = press.key { onEvent?(.key(keyName(key) ?? "", false, [])) } }
+        onEvent?(.key("", false, []))
+        super.pressesCancelled(presses, with: event)
+    }
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard !scrolling, primaryTouch == nil, let touch = touches.first else { return }
+        primaryTouch = touch
+        let p = touch.location(in: self)
+        onEvent?(.move(p)); onEvent?(.button(p, true))
+    }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard !scrolling, let touch = primaryTouch, touches.contains(touch) else { return }
+        onEvent?(.move(touch.location(in: self)))
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let primary = primaryTouch, touches.contains(primary) { finishTouch(primary) }
+    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let primary = primaryTouch, touches.contains(primary) { finishTouch(primary) }
+    }
+    func cancelPrimaryTouch() { finishTouch(primaryTouch) }
+    private func finishTouch(_ touch: UITouch?) {
+        guard let primary = primaryTouch, touch === primary else { return }
+        onEvent?(.button(primary.location(in: self), false)); primaryTouch = nil
+    }
+    @objc private func pan(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            scrolling = true
+            if let primary = primaryTouch { onEvent?(.button(primary.location(in: self), false)); primaryTouch = nil }
+        case .changed:
+            let p = gesture.location(in: self), d = gesture.translation(in: self)
+            gesture.setTranslation(.zero, in: self); onEvent?(.scroll(p, d))
+        case .ended, .cancelled, .failed:
+            scrolling = false
+        default: break
+        }
+    }
+    private func keyName(_ key: UIKey) -> String? {
+        switch key.keyCode {
+        case .keyboardDeleteOrBackspace: return "Backspace"
+        case .keyboardReturnOrEnter: return "Enter"
+        case .keyboardEscape: return "Escape"
+        case .keyboardTab: return "Tab"
+        case .keyboardLeftArrow: return "ArrowLeft"
+        case .keyboardRightArrow: return "ArrowRight"
+        case .keyboardUpArrow: return "ArrowUp"
+        case .keyboardDownArrow: return "ArrowDown"
+        case .keyboardSpacebar: return "Space"
+        case .keyboardHome: return "Home"
+        case .keyboardEnd: return "End"
+        case .keyboardPageUp: return "PageUp"
+        case .keyboardPageDown: return "PageDown"
+        default: break
+        }
+        let chars = key.charactersIgnoringModifiers
+        return chars.isEmpty ? nil : (chars.count == 1 ? chars.uppercased() : chars)
+    }
+}
+
+private extension DispatchSourceTimer {
+    func suspendIfNeeded() { /* cancellation is the safe lifecycle operation; kept idempotent by the worker */ cancel() }
+}

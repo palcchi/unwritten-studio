@@ -16,7 +16,7 @@ iconography, images or other Adobe assets; open licences only; every asset attri
 | `assets/fonts/Inter-Italic.ttf` | The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`assets/fonts/OFL-Inter.txt`) |
 | `assets/fonts/NotoSerif-Regular.ttf` | The Noto Project Authors | https://github.com/notofonts/latin-greek-cyrillic | OFL-1.1 (`assets/fonts/OFL-NotoSerif.txt`) |
 | `assets/fonts/JetBrainsMono-Regular.ttf` | The JetBrains Mono Project Authors | https://github.com/JetBrains/JetBrainsMono | OFL-1.1 (`assets/fonts/OFL-JetBrainsMono.txt`) |
-| `ios/UnwrittenStudio/Assets.xcassets/AppIcon.appiconset/UnwrittenStudio-1024.png` | palcchi | Original work: iOS-specific Unwritten Studio U monogram app icon, 1024 px | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) |
+| `ios/UnwrittenStudio/Assets.xcassets/AppIcon.appiconset/UnwrittenStudio-1024.png` | Unwritten Studio contributors | AI-assisted original work: violet ribbon U and diamond keyframe iOS icon, 1024 px; no third-party visual references | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) |
 | `apps/unwritten-studio-web/web/favicon.svg` | Unwritten Studio contributors | Original work: web app icon, a copy of `assets/app-icon/unwritten-studio-small.svg` (the unicorn app icon) | MIT OR Apache-2.0 (`assets/app-icon/LICENSE.txt`) |
 | `packaging/macos/dmg/background.svg` | @XusBadia | Original work: macOS DMG Finder window background, derived from the Unwritten Studio app icon (`assets/app-icon/unwritten-studio.svg`); rendered to a TIFF by `packaging/macos/package.sh` at package time | MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`) |
 | `assets/app-icon/unwritten-studio-1024.png` | Unwritten Studio contributors | Original work: Unwritten Studio app icon, 1024 px (owner's original unicorn drawing, vectorised) | MIT OR Apache-2.0 (`assets/app-icon/LICENSE.txt`) |
@@ -107,3 +107,10 @@ configuration from these Apache-2.0 projects:
   architectures and their Apache-2.0 reference code.
 
 - Appearance theme previews, drawn procedurally from original shapes: `crates/ui-egui/src/panels/settings.rs` (original work, MIT OR Apache-2.0).
+
+- After Effects desktop interchange helpers, `crates/engine/scripts/Export Unwritten AE Bridge.jsx` and `Import Unwritten AE Bridge.jsx`: original clean-room code, Unwritten Studio contributors, MIT OR Apache-2.0; sidecars alongside scripts.
+
+## Binary AEP export structures
+
+- `crates/aep-export/template/base.aep`: original contributor-generated synthetic composition and solid, vangel76, [EffectCraft PR #1422](https://github.com/vangel76/effectcraft/pull/1422), pinned `02b490ef95dd345b098822367847cbfdfb80da48`, MIT OR Apache-2.0. Not an Adobe sample project; no third-party media, presets or artwork. Attribution sidecar alongside the file.
+- `crates/aep-export/template/protos.aep`: original contributor-generated synthetic transform and null-layer prototype structures, vangel76, same pinned source and license; no third-party media, presets or artwork. Attribution sidecar alongside the file.

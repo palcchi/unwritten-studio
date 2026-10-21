@@ -1,5 +1,7 @@
 //! Panel bodies.
 
+pub mod aep_export;
+
 pub mod anim_tools;
 pub mod camera_tracker_ui;
 pub mod comp_settings;
@@ -38,6 +40,7 @@ pub mod precomp;
 pub mod project;
 pub mod properties;
 pub mod puppet_tool;
+pub mod render_overwrite;
 pub mod render_queue;
 pub mod roto_tool;
 pub mod rq_templates;

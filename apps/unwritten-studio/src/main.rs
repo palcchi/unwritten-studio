@@ -1,6 +1,6 @@
 //! Unwritten Studio desktop app.
 //!
-//! Usage: `unwritten-studio [--control <port>] [--demo|--empty|--home] [--] [project.uwproj | media files…]`
+//! Usage: `unwritten-studio [--control <port>] [--demo|--empty|--home] [--] [project.unw | media files…]`
 //!
 //! An unknown option or a bad port prints an error and exits with status 1 before anything starts.
 //!
@@ -49,7 +49,13 @@ fn app_icon() -> egui::IconData {
 /// Keep this classification shared by project opening and the subsequent media-import pass.
 fn is_project_file(path: &str) -> bool {
     std::path::Path::new(path).extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("uwproj") || ext.eq_ignore_ascii_case("uwprojx") || ext.eq_ignore_ascii_case("ecproj") || ext.eq_ignore_ascii_case("ecprojx")
+        ext.eq_ignore_ascii_case("unw")
+            || ext.eq_ignore_ascii_case("unwae")
+            || ext.eq_ignore_ascii_case("uwproj")
+            || ext.eq_ignore_ascii_case("uwprojx")
+            || ext.eq_ignore_ascii_case("ecproj")
+            || ext.eq_ignore_ascii_case("ecprojx")
+            || ext.eq_ignore_ascii_case("aep")
     })
 }
 
@@ -266,7 +272,7 @@ fn main() -> eframe::Result {
             }));
             app.hooks.pick_save = Some(Box::new(|name: &str| {
                 rfd::FileDialog::new()
-                    .add_filter("Unwritten Studio Project", &["uwproj", "uwprojx", "ecproj", "ecprojx"])
+                    .add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"])
                     .set_file_name(name)
                     .save_file()
                     .map(|p| p.to_string_lossy().to_string())
@@ -289,7 +295,7 @@ fn main() -> eframe::Result {
             }
             app.hooks.pick_open_project = Some(Box::new(|| {
                 rfd::FileDialog::new()
-                    .add_filter("Unwritten Studio Project", &["uwproj", "uwprojx", "ecproj", "ecprojx"])
+                    .add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx", "unwae", "aep"])
                     .pick_file()
                     .map(|p| p.to_string_lossy().to_string())
             }));

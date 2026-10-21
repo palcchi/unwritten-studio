@@ -230,27 +230,6 @@ mod tests {
         .clear();
     }
 
-    /// Click the widget registered as `id`, then draw the frame that follows.
-    fn click(app: &mut UnwrittenStudioApp, ctx: &egui::Context, id: &str) {
-        let [x, y, w, h] = app.auto.find(id).unwrap_or_else(|| panic!("{id} is not on screen")).rect;
-        let pos = pos2(x + w / 2.0, y + h / 2.0);
-        let button = |pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        for event in [egui::Event::PointerMoved(pos), button(true), button(false)] {
-            ctx.run_ui(egui::RawInput { events: vec![event], ..Default::default() }, |ui| {
-                app.auto.begin_frame();
-                if app.ui.start_screen {
-                    crate::panels::home::show(app, ui, Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 860.0)));
-                }
-                crate::panels::dialogs::show(app, ui.ctx());
-            })
-            .textures_delta
-            .clear();
-        }
-        // Two more: a new dialog is laid out, and the automation ids of the clicked frame age out.
-        frame(app, ctx);
-        frame(app, ctx);
-    }
-
     fn app_with_store() -> UnwrittenStudioApp {
         let s = unwritten_studio_engine::Session {
             config: Some(std::sync::Arc::new(unwritten_studio_engine::config::MemoryConfig::default())),
@@ -260,71 +239,50 @@ mod tests {
     }
 
     #[test]
-    fn gallery_lists_renders_and_opens_templates() {
+    fn home_does_not_expose_bundled_template_gallery() {
         let mut app = app_with_store();
         let ctx = egui::Context::default();
         crate::theme::install(&ctx, &app.tokens, crate::i18n::language(&app));
-        // File ▸ New ▸ New Project from Template… opens the Templates tab.
-        let ev = app.session.execute("file.newFromTemplate", json!({})).unwrap();
-        assert_eq!(ev["frontend"], "file.newFromTemplate");
-        crate::menus::invoke(&mut app, &ctx, "file.newFromTemplate", json!({})).unwrap();
-        assert!(app.ui.start_screen && app.ui.home_templates && !app.ui.home_learn);
-        // One thumbnail per frame until all are rendered.
-        for _ in 0..12 {
-            frame(&mut app, &ctx);
-        }
-        let list = entries(&mut app);
-        assert!(list.len() >= 8);
-        for t in &list {
-            assert!(app.auto.find(&format!("home.templates.{}", t.id)).is_some(), "{}", t.id);
-            assert!(app.auto.find(&format!("home.templates.{}.open", t.id)).is_some(), "{}", t.id);
-            assert!(app.template_thumbs.get(&t.id).is_some_and(Option::is_some), "{}: no thumbnail", t.id);
-        }
-        for id in ["home.templates.saveCurrent", "home.tab.templates", "home.tab.learn"] {
-            assert!(app.auto.find(id).is_some(), "{id}");
-        }
-        assert!(app.auto.find("home.recent.0").is_none());
-        // Save as Template… opens its form (once there is a comp).
-        app.session.execute("templates.create", json!({"id": "logo-reveal"})).unwrap();
-        crate::menus::invoke(&mut app, &ctx, "templates.saveAs", json!({})).unwrap();
-        assert!(matches!(app.dialog, Some(crate::Dialog::Form)));
-        assert_eq!(app.dialog_state.form.command, "templates.saveAs");
-        app.dialog_state.form.fields[0].kind = crate::panels::forms::FieldKind::Text("Brand Intro".into());
         frame(&mut app, &ctx);
-        for id in ["form.field.name", "form.field.description", "form.field.embedFootage", "form.field.embedLimitMB", "form.ok", "form.cancel"] {
-            assert!(app.auto.find(id).is_some(), "{id}");
-        }
-        let params = app.dialog_state.form.params();
-        assert_eq!((params["embedFootage"].as_bool(), params["embedLimitMB"].as_f64()), (Some(true), Some(256.0)), "{params}");
-        app.session.execute("templates.saveAs", params).unwrap();
-        app.dialog = None;
-        app.ui.start_screen = true;
-        for _ in 0..3 {
-            frame(&mut app, &ctx);
-        }
-        let mine = "user/Brand Intro.uwtemplate";
-        assert!(app.auto.find(&format!("home.templates.{mine}.delete")).is_some());
-        assert!(app.template_thumbs.get(mine).is_some_and(Option::is_some));
-        // Opening makes an untitled copy.
+        // The bundled demo/tutorial/gallery pages were intentionally removed from Home. Keep this
+        // assertion tied to the visible UI rather than to the engine's template data, which still
+        // supports user-created templates and direct template commands.
+        assert!(app.auto.find("home.tab.templates").is_none());
+        assert!(app.auto.find("home.tab.learn").is_none());
+        assert!(app.auto.find("home.recent.0").is_none());
+    }
+
+    #[test]
+    fn user_template_commands_work_without_home_gallery() {
+        let mut app = app_with_store();
+
+        // Exercise the engine workflow directly: Home no longer owns the
+        // bundled gallery, but Save as Template/New from Template remain
+        // supported commands for user templates.
+        app.session.execute("templates.create", json!({"id": "logo-reveal"})).unwrap();
+        let saved = app
+            .session
+            .execute(
+                "templates.saveAs",
+                json!({
+                    "name": "UI Regression Template",
+                    "description": "A user-template command regression",
+                    "category": "Tests",
+                }),
+            )
+            .unwrap();
+        let mine = saved["id"].as_str().expect("saved template id").to_string();
+        assert_eq!(mine, "user/UI Regression Template.uwtemplate");
+        assert!(entries(&mut app).iter().any(|t| t.id == mine && !t.builtin));
+
+        // Opening a user template creates an untitled copy, not a project file.
         app.session.execute("templates.create", json!({"id": mine})).unwrap();
         assert!(app.session.path.is_none());
-        assert!(app.session.active_comp().is_some_and(|c| c.layers.iter().any(|l| l.name == "BRAND NAME")));
-        // The card's delete button asks first: the file can't be brought back.
-        app.ui.start_screen = true;
-        frame(&mut app, &ctx);
-        click(&mut app, &ctx, &format!("home.templates.{mine}.delete"));
-        assert_eq!(app.dialog, Some(Dialog::DeleteTemplate));
-        assert!(app.session.path.is_none() && entries(&mut app).iter().any(|t| t.id == mine), "nothing deleted or opened yet");
-        click(&mut app, &ctx, "dialog.deleteTemplate.cancel");
-        assert!(app.dialog.is_none() && entries(&mut app).iter().any(|t| t.id == mine), "Cancel keeps the template");
-        // Enter is not Delete; Cmd+D is.
-        click(&mut app, &ctx, &format!("home.templates.{mine}.delete"));
-        crate::panels::dialogs::press_key(&mut app, &ctx, egui::Key::Enter, egui::Modifiers::NONE);
-        assert_eq!(app.dialog, Some(Dialog::DeleteTemplate));
-        crate::panels::dialogs::press_key(&mut app, &ctx, egui::Key::D, egui::Modifiers::COMMAND);
-        assert!(app.dialog.is_none() && app.dialog_state.delete_template.is_none());
-        frame(&mut app, &ctx);
-        assert!(app.auto.find(&format!("home.templates.{mine}")).is_none());
+        assert!(app.session.active_comp().is_some());
+
+        // Built-ins are protected; the user template can be deleted by command.
+        assert!(app.session.execute("templates.delete", json!({"id": "title-card"})).is_err());
+        app.session.execute("templates.delete", json!({"id": mine})).unwrap();
         assert!(!entries(&mut app).iter().any(|t| t.id == mine));
     }
 

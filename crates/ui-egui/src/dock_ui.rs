@@ -16,6 +16,13 @@ fn drag_id() -> egui::Id {
     egui::Id::new("dock-tab-drag")
 }
 
+#[derive(Clone)]
+struct ResponsiveDockCache {
+    mode: u8,
+    source: DockNode,
+    dock: DockNode,
+}
+
 impl UnwrittenStudioApp {
     pub(crate) fn dock_command(&mut self, ctx: &egui::Context, action: Action<PanelKind>) -> Result<(), String> {
         let value = serde_json::to_value(action).map_err(|error| error.to_string())?;
@@ -195,10 +202,54 @@ impl UnwrittenStudioApp {
         }
         // The maximized panel fills the area; the tree is kept as it is.
         let maximized = self.ui.maximized.filter(|m| self.ui.dock.contains(*m));
-        let mut dock = match maximized {
+        let desktop_dock = match maximized {
             Some(m) => DockNode::Tabs { panels: vec![m], active: 0 },
             None => std::mem::replace(&mut self.ui.dock, DockNode::Tabs { panels: vec![], active: 0 }),
         };
+        let portrait = body.height() > body.width() * 1.1;
+        // Tablet landscape is not necessarily short: at 1024x768 the desktop's
+        // two 300-point sidebars still squeeze the viewer to a narrow strip.
+        // Adapt built-in layouts at this width, but keep a user's custom dock
+        // and floating-panel targets intact rather than flattening their tabs.
+        let narrow_builtin = body.width() < 1280.0 && self.ui.floating.is_empty() && desktop_dock == dock::workspace(&self.ui.workspace);
+        let compact_landscape = !portrait && (body.height() < 600.0 || narrow_builtin);
+        let responsive_mode = if maximized.is_some() {
+            0
+        } else if portrait {
+            1
+        } else if compact_landscape && body.height() < 600.0 {
+            2
+        } else if compact_landscape {
+            3
+        } else {
+            0
+        };
+        let source = desktop_dock.clone();
+        let cached = if responsive_mode != 0 {
+            ctx.data(|data| data.get_temp::<ResponsiveDockCache>(egui::Id::new("dock-responsive-cache")))
+                .filter(|cache| cache.mode == responsive_mode && cache.source == source)
+                .map(|cache| cache.dock)
+        } else {
+            ctx.data_mut(|data| data.remove::<ResponsiveDockCache>(egui::Id::new("dock-responsive-cache")));
+            None
+        };
+        let mut dock = cached.unwrap_or_else(|| {
+            if maximized.is_none() && portrait {
+                dock::portrait_profile(&desktop_dock, self.ui.focused)
+            } else if maximized.is_none() && compact_landscape {
+                if body.height() >= 600.0 {
+                    dock::tablet_landscape_profile(&desktop_dock, self.ui.focused)
+                } else {
+                    dock::landscape_profile(&desktop_dock, self.ui.focused)
+                }
+            } else {
+                desktop_dock.clone()
+            }
+        });
+        if responsive_mode != 0 {
+            // Reusing divider geometry must not pin the previously selected tab.
+            dock.activate(self.ui.focused);
+        }
         let mut groups = Vec::new();
         let mut layout_actions = Vec::new();
         dock::layout_with_actions(ui, &mut dock, body, &t, "", &mut groups, &mut self.auto, &mut layout_actions);
@@ -216,8 +267,10 @@ impl UnwrittenStudioApp {
             tab_rects.push((g.path.clone(), c.tabs));
         }
         self.label_tab_marks(ui);
-        if maximized.is_none() {
-            self.ui.dock = dock;
+        if maximized.is_none() && !portrait && !compact_landscape {
+            self.ui.dock = dock.clone();
+        } else if maximized.is_none() {
+            self.ui.dock = desktop_dock;
         }
         self.dock_rects = groups.iter().filter_map(|g| Some((*g.panels.get(g.active)?, g.rect))).collect();
         for g in &groups {
@@ -262,15 +315,30 @@ impl UnwrittenStudioApp {
             }
         }
         for action in layout_actions {
-            let _ = self.dock_command(&ctx, action);
+            if responsive_mode == 0 {
+                let _ = self.dock_command(&ctx, action);
+            } else {
+                // Responsive profiles are projections of the desktop tree. Their divider
+                // geometry belongs to this session/mode, never to the saved workspace.
+                let _ = crate::dock_shared::apply_tree(&mut dock, action);
+            }
         }
+        let mut invalidate_responsive_cache = false;
         for a in actions {
             match a {
                 DockAction::Activate(p) => {
-                    let _ = self.dock_command(&ctx, Action::Activate { panel: p });
+                    // A responsive layout is only a projection of the saved desktop tree. Keep
+                    // tab selection in that projection, but let floating groups retain their
+                    // normal persisted activation semantics.
+                    if responsive_mode != 0 && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) && dock.contains(p) {
+                        dock.activate(p);
+                    } else {
+                        let _ = self.dock_command(&ctx, Action::Activate { panel: p });
+                    }
                 }
                 DockAction::ToggleStacked(p) => {
                     let _ = self.dock_command(&ctx, Action::SetStackOpen { panel: p, open: !self.ui.dock.is_visible(p) });
+                    invalidate_responsive_cache = responsive_mode != 0;
                 }
                 DockAction::Focus(p) => {
                     self.ui.focused = p;
@@ -282,6 +350,7 @@ impl UnwrittenStudioApp {
                 }
                 DockAction::Close(p) => {
                     let _ = self.dock_command(&ctx, Action::Close { panel: p });
+                    invalidate_responsive_cache = responsive_mode != 0;
                 }
                 DockAction::PanelMenu(p, pos) => {
                     ctx.data_mut(|d| d.insert_temp(egui::Id::new("panel-menu"), (p, pos)));
@@ -296,7 +365,11 @@ impl UnwrittenStudioApp {
                 }
                 // The Timeline's comp tabs: show that comp / close its Timeline.
                 DockAction::ActivateDoc(p, id) => {
-                    let _ = self.dock_command(&ctx, Action::Activate { panel: p });
+                    if responsive_mode != 0 && !self.ui.floating.iter().any(|group| group.panels.contains(&p)) && dock.contains(p) {
+                        dock.activate(p);
+                    } else {
+                        let _ = self.dock_command(&ctx, Action::Activate { panel: p });
+                    }
                     if self.session.state.active_comp.map(|c| c.0) != Some(id) {
                         let _ = crate::menus::invoke(self, &ctx, "comp.open", serde_json::json!({"comp": id}));
                     }
@@ -306,7 +379,18 @@ impl UnwrittenStudioApp {
                 }
             }
         }
-        self.tab_drag(&ctx, &groups, &float_groups, &tab_rects);
+        let dragged = self.tab_drag(&ctx, &groups, &float_groups, &tab_rects);
+        // Store the projection only after tab actions and drag mutations have been applied.
+        // Structural mutations changed the saved source tree, so discard the old projection.
+        if responsive_mode != 0 {
+            ctx.data_mut(|data| {
+                if invalidate_responsive_cache || dragged {
+                    data.remove::<ResponsiveDockCache>(egui::Id::new("dock-responsive-cache"));
+                } else {
+                    data.insert_temp(egui::Id::new("dock-responsive-cache"), ResponsiveDockCache { mode: responsive_mode, source, dock: dock.clone() });
+                }
+            });
+        }
         panels::panel_menu_popup(self, ui);
     }
 
@@ -523,16 +607,16 @@ impl UnwrittenStudioApp {
     /// will land: an insertion mark between two tabs (a drop there reorders a group's own tabs
     /// too); near a group's edge, the half it will split off. On release it lands there (or
     /// floats with Cmd/Ctrl or outside every group).
-    fn tab_drag(&mut self, ctx: &egui::Context, groups: &[Group], floats: &[Group], tab_rects: &[(String, Vec<(PanelKind, Rect)>)]) {
-        let Some(p) = ctx.data(|d| d.get_temp::<PanelKind>(drag_id())) else { return };
+    fn tab_drag(&mut self, ctx: &egui::Context, groups: &[Group], floats: &[Group], tab_rects: &[(String, Vec<(PanelKind, Rect)>)]) -> bool {
+        let Some(p) = ctx.data(|d| d.get_temp::<PanelKind>(drag_id())) else { return false };
         let t = self.tokens;
         let canceled =
             ctx.input(|input| input.key_pressed(egui::Key::Escape) || !input.focused || (!input.pointer.primary_down() && !input.pointer.primary_released()));
         if canceled || (!self.ui.dock.contains(p) && !self.ui.floating.iter().any(|group| group.panels.contains(&p))) {
             ctx.data_mut(|data| data.remove::<PanelKind>(drag_id()));
-            return;
+            return false;
         }
-        let Some(pos) = ctx.pointer_latest_pos() else { return };
+        let Some(pos) = ctx.pointer_latest_pos() else { return false };
         // The shared resolver receives groups in paint order; a floating group occludes the dock.
         let targets: Vec<_> = groups
             .iter()
@@ -590,7 +674,9 @@ impl UnwrittenStudioApp {
                 self.ui.focused = p;
                 self.show_panel(p);
             }
+            return ok;
         }
+        false
     }
 }
 

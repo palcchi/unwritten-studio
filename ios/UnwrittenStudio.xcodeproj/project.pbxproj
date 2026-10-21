@@ -13,6 +13,16 @@
 		A10000000000000000000005 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* Assets.xcassets */; };
 		A10000000000000000000006 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* LaunchScreen.storyboard */; };
 		A10000000000000000000007 /* libunwritten_studio_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* libunwritten_studio_core.a */; };
+		A30000000000000000000001 /* Inter-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* Inter-Regular.ttf */; };
+		A30000000000000000000002 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000002 /* Inter-Medium.ttf */; };
+		A30000000000000000000003 /* Inter-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000003 /* Inter-SemiBold.ttf */; };
+		A30000000000000000000004 /* Inter-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000004 /* Inter-Bold.ttf */; };
+		A30000000000000000000005 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000005 /* JetBrainsMono-Regular.ttf */; };
+		A30000000000000000000006 /* OFL-Inter.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000006 /* OFL-Inter.txt */; };
+		A30000000000000000000007 /* OFL-JetBrainsMono.txt in Resources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000007 /* OFL-JetBrainsMono.txt */; };
+			A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* OriginalWorkspaceView.swift */; };
+			A10000000000000000000009 /* OriginalWorkspaceAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* OriginalWorkspaceAudio.swift */; };
+		AA0000000000000000000001 = {isa = PBXBuildFile; fileRef = AA0000000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +36,17 @@
 		A20000000000000000000008 /* UnwrittenStudio-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UnwrittenStudio-Bridging-Header.h"; sourceTree = "<group>"; };
 		A20000000000000000000009 /* libunwritten_studio_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "../build/ios/$(PLATFORM_NAME)/libunwritten_studio_core.a"; sourceTree = "<group>"; };
 		A20000000000000000000010 /* UnwrittenStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = UnwrittenStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A40000000000000000000001 /* Inter-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Regular.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000002 /* Inter-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Medium.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000003 /* Inter-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-SemiBold.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000004 /* Inter-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Inter-Bold.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000005 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.ttf"; sourceTree = "<group>"; };
+		A40000000000000000000006 /* OFL-Inter.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-Inter.txt"; sourceTree = "<group>"; };
+		A40000000000000000000007 /* OFL-JetBrainsMono.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OFL-JetBrainsMono.txt"; sourceTree = "<group>"; };
+			A20000000000000000000011 /* OriginalWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalWorkspaceView.swift; sourceTree = "<group>"; };
+			A20000000000000000000012 /* OriginalWorkspaceAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OriginalWorkspaceAudio.swift; sourceTree = "<group>"; };
+		AA0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnwrittenStudioUITests/WorkspaceOrientationTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000003 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = UnwrittenStudioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -37,6 +58,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        AA0000000000000000000007 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -47,6 +69,8 @@
 				C10000000000000000000003 /* Rust */,
 				C10000000000000000000004 /* Frameworks */,
 				C10000000000000000000005 /* Products */,
+				C10000000000000000000006 /* Shared Fonts */,
+				AA0000000000000000000002,
 			);
 			sourceTree = "<group>";
 		};
@@ -59,6 +83,8 @@
 				A20000000000000000000002 /* StudioModel.swift */,
 				A20000000000000000000003 /* ProjectDocument.swift */,
 				A20000000000000000000004 /* WorkspaceView.swift */,
+					A20000000000000000000011 /* OriginalWorkspaceView.swift */,
+					A20000000000000000000012 /* OriginalWorkspaceAudio.swift */,
 				A20000000000000000000005 /* Assets.xcassets */,
 				A20000000000000000000006 /* LaunchScreen.storyboard */,
 				A20000000000000000000007 /* Info.plist */,
@@ -78,8 +104,23 @@
 		};
 		C10000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
-			children = (A20000000000000000000010 /* UnwrittenStudio.app */,);
+			children = (A20000000000000000000010 /* UnwrittenStudio.app */, AA0000000000000000000003,);
 			sourceTree = "<group>";
+		};
+		C10000000000000000000006 /* Shared Fonts */ = {
+			isa = PBXGroup;
+			name = "Shared Fonts";
+			path = "../assets/fonts";
+			sourceTree = "<group>";
+			children = (
+				A40000000000000000000001 /* Inter-Regular.ttf */,
+				A40000000000000000000002 /* Inter-Medium.ttf */,
+				A40000000000000000000003 /* Inter-SemiBold.ttf */,
+				A40000000000000000000004 /* Inter-Bold.ttf */,
+				A40000000000000000000005 /* JetBrainsMono-Regular.ttf */,
+				A40000000000000000000006 /* OFL-Inter.txt */,
+				A40000000000000000000007 /* OFL-JetBrainsMono.txt */,
+			);
 		};
 /* End PBXGroup section */
 
@@ -100,15 +141,32 @@
 			productReference = A20000000000000000000010 /* UnwrittenStudio.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000000000000000000004 /* UnwrittenStudioUITests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = AA0000000000000000000005;
+            buildPhases = (AA0000000000000000000006, AA0000000000000000000007,);
+            buildRules = ();
+            dependencies = (AA0000000000000000000008,);
+            name = UnwrittenStudioUITests;
+            productName = UnwrittenStudioUITests;
+            productReference = AA0000000000000000000003;
+            productType = "com.apple.product-type.bundle.ui-testing";
+        };
 /* End PBXNativeTarget section */
 
+/* Begin PBXContainerItemProxy section */
+        AA0000000000000000000009 = {isa = PBXContainerItemProxy; containerPortal = D10000000000000000000002; proxyType = 1; remoteGlobalIDString = D10000000000000000000001; remoteInfo = UnwrittenStudio; };
+/* End PBXContainerItemProxy section */
+/* Begin PBXTargetDependency section */
+        AA0000000000000000000008 = {isa = PBXTargetDependency; target = D10000000000000000000001; targetProxy = AA0000000000000000000009; };
+/* End PBXTargetDependency section */
 /* Begin PBXProject section */
 		D10000000000000000000002 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {D10000000000000000000001 = {CreatedOnToolsVersion = 16.0; };};
+				TargetAttributes = {D10000000000000000000001 = {CreatedOnToolsVersion = 16.0; }; AA0000000000000000000004 = {CreatedOnToolsVersion = 16.0; TestTargetID = D10000000000000000000001; };};
 			};
 			buildConfigurationList = E30000000000000000000001 /* Build configuration list for PBXProject */;
 			compatibilityVersion = "Xcode 14.0";
@@ -117,7 +175,7 @@
 			productRefGroup = C10000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (D10000000000000000000001 /* UnwrittenStudio */,);
+			targets = (D10000000000000000000001 /* UnwrittenStudio */, AA0000000000000000000004,);
 		};
 /* End PBXProject section */
 
@@ -128,6 +186,13 @@
 			files = (
 				A10000000000000000000005 /* Assets.xcassets in Resources */,
 				A10000000000000000000006 /* LaunchScreen.storyboard in Resources */,
+				A30000000000000000000001 /* Inter-Regular.ttf in Resources */,
+				A30000000000000000000002 /* Inter-Medium.ttf in Resources */,
+				A30000000000000000000003 /* Inter-SemiBold.ttf in Resources */,
+				A30000000000000000000004 /* Inter-Bold.ttf in Resources */,
+				A30000000000000000000005 /* JetBrainsMono-Regular.ttf in Resources */,
+				A30000000000000000000006 /* OFL-Inter.txt in Resources */,
+				A30000000000000000000007 /* OFL-JetBrainsMono.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -139,12 +204,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* UnwrittenStudioApp.swift in Sources */,
-				A10000000000000000000002 /* StudioModel.swift in Sources */,
-				A10000000000000000000003 /* ProjectDocument.swift in Sources */,
-				A10000000000000000000004 /* WorkspaceView.swift in Sources */,
+					A10000000000000000000008 /* OriginalWorkspaceView.swift in Sources */,
+					A10000000000000000000009 /* OriginalWorkspaceAudio.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        AA0000000000000000000006 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA0000000000000000000001,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -209,14 +274,14 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/../build/ios/$(PLATFORM_NAME)");
-				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-lc++");
+				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-framework", UIKit, "-framework", CoreText, "-framework", GameController, "-lc++");
 				PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/UnwrittenStudio/UnwrittenStudio-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 2;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -232,17 +297,37 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = ("$(inherited)", "$(PROJECT_DIR)/../build/ios/$(PLATFORM_NAME)");
-				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-lc++");
+				OTHER_LDFLAGS = ("$(inherited)", "-lunwritten_studio_core", "-framework", Metal, "-framework", MetalKit, "-framework", QuartzCore, "-framework", CoreVideo, "-framework", CoreGraphics, "-framework", CoreFoundation, "-framework", Foundation, "-framework", UIKit, "-framework", CoreText, "-framework", GameController, "-lc++");
 				PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "$(PROJECT_DIR)/UnwrittenStudio/UnwrittenStudio-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 2;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
+        AA0000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {
+            CODE_SIGN_STYLE = Automatic;
+            GENERATE_INFOPLIST_FILE = YES;
+            PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio.uitests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+            TEST_TARGET_NAME = UnwrittenStudio;
+            LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+        }; name = Debug; };
+        AA0000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {
+            CODE_SIGN_STYLE = Automatic;
+            GENERATE_INFOPLIST_FILE = YES;
+            PRODUCT_BUNDLE_IDENTIFIER = works.valliant.unwrittenstudio.uitests;
+            PRODUCT_NAME = "$(TARGET_NAME)";
+            SWIFT_VERSION = 5.0;
+            TARGETED_DEVICE_FAMILY = "1,2";
+            TEST_TARGET_NAME = UnwrittenStudio;
+            LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+        }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -258,6 +343,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+        AA0000000000000000000005 = {isa = XCConfigurationList; buildConfigurations = (AA0000000000000000000010, AA0000000000000000000011,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 	};

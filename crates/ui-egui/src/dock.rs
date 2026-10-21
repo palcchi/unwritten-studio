@@ -450,7 +450,12 @@ pub fn workspace(name: &str) -> DockNode {
         _ => hsplit(
             FixedB(300.0),
             vsplit(Ratio(0.56), hsplit(FixedA(300.0), tabs(&[Project, EffectControls], 0), tabs(&[Composition, Layer], 0)), tabs(&[Timeline, RenderQueue], 0)),
-            stack(&[(Preview, true, Some(46.0)), (Properties, true, None), (Align, false, None), (Audio, false, None), (EffectsPresets, false, None)]),
+            // Keep both utility panels open on a fresh workspace. Previously
+            // Effects & Presets was only a collapsed header below Properties,
+            // which made the initial effect workflow look absent on compact
+            // touch displays. Properties and Effects & Presets share the
+            // remaining column; users can still collapse either panel.
+            stack(&[(Preview, true, Some(46.0)), (Properties, true, None), (Align, false, None), (Audio, false, None), (EffectsPresets, true, None)]),
         ),
     }
 }
@@ -826,6 +831,154 @@ impl DockNode {
     }
 }
 
+/// Collect panels once, preserving the important editing order for responsive profiles.
+fn responsive_panels(root: &DockNode) -> Vec<PanelKind> {
+    let mut panels = vec![];
+    root.panels(&mut panels);
+    panels.sort_by_key(|panel| panel.id());
+    panels.dedup();
+    panels.sort_by_key(|panel| match panel {
+        PanelKind::Composition => 0,
+        PanelKind::Layer => 1,
+        PanelKind::Project => 2,
+        PanelKind::EffectControls => 3,
+        PanelKind::Preview => 4,
+        PanelKind::Timeline => 5,
+        PanelKind::RenderQueue => 6,
+        _ => 7,
+    });
+    panels
+}
+
+/// Portrait phones cannot show the desktop split tree at a useful touch size. Keep the
+/// persisted workspace intact, but reserve a substantial lower pane for the Timeline.
+pub(crate) fn portrait_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    let panels = responsive_panels(root);
+    let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) else {
+        // Do not invent a Composition panel (or draw the only panel twice) for
+        // reduced layouts such as a newly opened, timeline-only workspace.
+        let active = panels.iter().position(|panel| *panel == focused).unwrap_or(0);
+        return DockNode::Tabs { panels, active };
+    };
+    if !panels.iter().any(|p| *p != timeline) {
+        return DockNode::Tabs { panels: vec![timeline], active: 0 };
+    }
+
+    // A portrait viewport cannot fit the desktop tree, but putting every
+    // non-timeline panel in one tab group makes the Project/Effects controls
+    // effectively disappear: only one tab body can be visible and the tab
+    // strip overflows on an iPad. Keep the primary viewer in its own group and
+    // give the three editing utility families their own horizontal bodies. The
+    // groups are deliberately tabs (rather than an accordion): each body gets
+    // the full utility height, while miscellaneous panels remain reachable in
+    // the Project group without stealing space from the editing controls.
+    let primary: Vec<_> = panels.iter().copied().filter(|p| matches!(p, PanelKind::Composition | PanelKind::Layer | PanelKind::Viewer(_))).collect();
+    if primary.is_empty() {
+        let utilities: Vec<_> = panels.iter().copied().filter(|p| *p != timeline).collect();
+        let active = utilities.iter().position(|panel| *panel == focused).unwrap_or(0);
+        return vsplit(SplitSize::Ratio(0.76), DockNode::Tabs { panels: utilities, active }, DockNode::Tabs { panels: vec![timeline], active: 0 });
+    }
+    let mut project = vec![];
+    let mut controls = vec![];
+    let mut presets = vec![];
+    for panel in panels.iter().copied().filter(|p| *p != timeline && !primary.contains(p)) {
+        match panel {
+            PanelKind::EffectControls | PanelKind::Properties => controls.push(panel),
+            PanelKind::EffectsPresets => presets.push(panel),
+            _ => project.push(panel),
+        }
+    }
+    let mut utility_groups = Vec::with_capacity(3);
+    if !project.is_empty() {
+        let active = project.iter().position(|panel| *panel == focused).unwrap_or(0);
+        utility_groups.push(DockNode::Tabs { panels: project, active });
+    }
+    if !controls.is_empty() {
+        let active = controls.iter().position(|panel| *panel == focused).unwrap_or(0);
+        utility_groups.push(DockNode::Tabs { panels: controls, active });
+    }
+    if !presets.is_empty() {
+        utility_groups.push(DockNode::Tabs { panels: presets, active: 0 });
+    }
+    let active = primary.iter().position(|panel| *panel == focused).unwrap_or(0);
+    let main = DockNode::Tabs { panels: primary, active };
+    let utility_node = if utility_groups.is_empty() {
+        None
+    } else {
+        let mut groups = utility_groups.into_iter().rev();
+        let Some(mut utility) = groups.next() else { return DockNode::Tabs { panels, active: 0 } };
+        for (index, group) in groups.enumerate() {
+            // Build from the right so three groups receive 1/3, 1/3, 1/3 of
+            // the utility row instead of exponentially shrinking nested panes.
+            let count = index + 2;
+            utility = hsplit(SplitSize::Ratio(1.0 / count as f32), group, utility);
+        }
+        Some(utility)
+    };
+    let content = match utility_node {
+        Some(utility) => vsplit(SplitSize::Ratio(0.58), main, utility),
+        None => main,
+    };
+    vsplit(SplitSize::Ratio(0.76), content, DockNode::Tabs { panels: vec![timeline], active: 0 })
+}
+
+/// Short landscape windows need a composition-first arrangement rather than the desktop's
+/// three-column tree. The timeline remains visible while secondary panels share one compact tab.
+pub(crate) fn landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    landscape_profile_with_utilities(root, focused, false)
+}
+
+/// Tablets have enough vertical room to expose effects below Project instead
+/// of burying every utility panel in a single overflowing tab strip.
+pub(crate) fn tablet_landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    landscape_profile_with_utilities(root, focused, true)
+}
+
+fn landscape_profile_with_utilities(root: &DockNode, focused: PanelKind, stack_utilities: bool) -> DockNode {
+    let panels = responsive_panels(root);
+    let mut primary: Vec<_> = panels.iter().copied().filter(|p| matches!(p, PanelKind::Composition | PanelKind::Layer)).collect();
+    if primary.is_empty()
+        && let Some(panel) = panels.iter().copied().find(|p| *p != PanelKind::Timeline)
+    {
+        primary.push(panel);
+    }
+    let utility: Vec<_> = panels.iter().copied().filter(|p| !primary.contains(p) && *p != PanelKind::Timeline).collect();
+    if primary.is_empty() {
+        return DockNode::Tabs { panels, active: 0 };
+    }
+    let active = primary.iter().position(|panel| *panel == focused).unwrap_or(0);
+    let top = if utility.is_empty() {
+        DockNode::Tabs { panels: primary, active }
+    } else {
+        let utility = if stack_utilities && utility.contains(&PanelKind::Project) && utility.contains(&PanelKind::EffectsPresets) {
+            let project: Vec<_> = utility.iter().copied().filter(|p| matches!(p, PanelKind::Project | PanelKind::EffectControls)).collect();
+            let mut effects: Vec<_> = utility.iter().copied().filter(|p| !project.contains(p)).collect();
+            effects.sort_by_key(|p| match p {
+                PanelKind::EffectsPresets => 0,
+                PanelKind::Properties => 1,
+                _ => 2,
+            });
+            let project_active = project.iter().position(|p| *p == focused).unwrap_or(0);
+            let effects_active =
+                effects.iter().position(|p| *p == focused).or_else(|| effects.iter().position(|p| *p == PanelKind::EffectsPresets)).unwrap_or(0);
+            vsplit(
+                SplitSize::Ratio(0.5),
+                DockNode::Tabs { panels: project, active: project_active },
+                DockNode::Tabs { panels: effects, active: effects_active },
+            )
+        } else {
+            let active = utility.iter().position(|p| *p == focused).unwrap_or(0);
+            DockNode::Tabs { panels: utility, active }
+        };
+        hsplit(SplitSize::FixedB(280.0), DockNode::Tabs { panels: primary, active }, utility)
+    };
+    if let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) {
+        vsplit(SplitSize::Ratio(0.55), top, DockNode::Tabs { panels: vec![timeline], active: 0 })
+    } else {
+        top
+    }
+}
+
 /// A full layout: the docked tree plus floating panels (what a workspace saves).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Layout {
@@ -1027,38 +1180,93 @@ fn layout_inner(
         }
         DockNode::Split { vertical, size, a, b } => {
             let axis = if *vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
-            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, 20.0) else { return };
-            let response = resize_handle(split.divider, *vertical, path, t).value(split.first_size(), 0.0..=split.available()).show(ui);
-            reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
-            if response.delta != 0.0
-                && let Some(resized) = split.resized(size.shared(), response.delta, 40.0)
-            {
-                actions.push(craft_ui::docking::Action::ResizeSplit { path: tree_path.to_vec(), size: resized });
-            }
+            // Keep the layout and drag constraints in sync.  A smaller layout minimum used to
+            // let a pane collapse to 20 points while dragging stopped at 40 points, which made
+            // the divider jump back on compact/iPad-sized canvases.  `split_rect` relaxes this
+            // to half the available space when both panes cannot fit.
+            let Some(split) = split_rect(rect, axis, size.shared(), t.gap, SPLIT_MIN) else { return };
+            paint_splitter_grip(ui, split.divider, *vertical, t);
             let mut first_path = tree_path.to_vec();
             first_path.push(false);
             let mut second_path = tree_path.to_vec();
             second_path.push(true);
             layout_inner(ui, a, split.first, t, &format!("{path}a"), &first_path, out, reg, actions);
             layout_inner(ui, b, split.second, t, &format!("{path}b"), &second_path, out, reg, actions);
+            // Register this after both child panels.  The enlarged touch target overlaps the
+            // pane by design; egui gives later interactions precedence, so registering it before
+            // the children lets a pane control steal an iPad drag that starts eight points away
+            // from the visual four-point gutter.
+            let response = show_resize_handle(
+                ui,
+                split.divider,
+                egui::Id::new(("dock-overlay", path.to_string())),
+                resize_handle(split.divider, *vertical, path, t).value(split.first_size(), 0.0..=split.available()),
+            );
+            reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
+            if response.delta != 0.0
+                && let Some(resized) = split.resized(size.shared(), response.delta, SPLIT_MIN)
+            {
+                actions.push(craft_ui::docking::Action::ResizeSplit { path: tree_path.to_vec(), size: resized });
+            }
         }
     }
+}
+
+fn paint_splitter_grip(ui: &egui::Ui, divider: Rect, vertical: bool, t: &Tokens) {
+    // Hover is unavailable on touchscreens, so leave a quiet, theme-aware affordance at rest.
+    let color = t.text_faint.gamma_multiply(0.7);
+    let center = divider.center();
+    let (a, b) = if vertical {
+        (pos2(center.x, center.y - 7.0), pos2(center.x, center.y + 7.0))
+    } else {
+        (pos2(center.x - 7.0, center.y), pos2(center.x + 7.0, center.y))
+    };
+    ui.painter().line_segment([a, b], Stroke::new(1.0, color));
 }
 
 /// A gap between dock areas that drags to resize them (`vertical`: up and down), with a slightly
 /// larger hit area than the gap. Returns the drag this frame.
 fn gutter(ui: &mut egui::Ui, gap: Rect, vertical: bool, path: &str, t: &Tokens, reg: &mut crate::automation::Registry) -> Option<f32> {
-    let response = resize_handle(gap, vertical, path, t).show(ui);
+    let response = show_resize_handle(ui, gap, egui::Id::new(("dock-overlay", path.to_string())), resize_handle(gap, vertical, path, t));
     reg.add(&format!("dock.gutter.{path}"), response.response.rect, "gutter");
     (response.delta != 0.0).then_some(response.delta)
 }
 
+/// Show a handle on a foreground layer so overlapping panel controls cannot steal a touch drag.
+fn show_resize_handle(ui: &mut egui::Ui, rect: Rect, id: egui::Id, handle: ResizeHandle<'static>) -> craft_ui::layout::ResizeResponse {
+    let mut response = egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(rect.min)
+        .show(ui.ctx(), |overlay| {
+            overlay.set_min_size(rect.size());
+            handle.show(overlay)
+        })
+        .inner;
+    // UIKit sends finger drags as primary-pointer input. Keep the forgiving
+    // hit target but use a slower precision gain on iPad/iPhone. Keyboard and
+    // accessibility steps retain their size when the handle is not dragged.
+    response.delta = resize_motion_delta(response.delta, response.response.dragged(), cfg!(target_os = "ios"));
+    response
+}
+fn resize_motion_delta(delta: f32, dragging: bool, precision: bool) -> f32 {
+    if !delta.is_finite() {
+        return 0.0;
+    }
+    if dragging && precision { delta * 0.35 } else { delta }
+}
 fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHandle<'static> {
     let axis = if vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
     let style = ResizeHandleStyle { hovered: t.focus.gamma_multiply(0.4), dragged: t.focus.gamma_multiply(0.9), focused: t.focus };
     let label = if vertical { crate::i18n::tr("Height:") } else { crate::i18n::tr("Width:") };
-    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style)
+    // Native iPad input reports a primary pointer drag, just like a mouse, but a 4-point gutter
+    // is too easy to miss with a finger. Expand along the movement axis without changing the
+    // divider's visual geometry; this also benefits pen and high-DPI touch devices.
+    let margin = if cfg!(target_os = "ios") { 18.0 } else { 12.0 };
+    ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style).hit_margin(margin)
 }
+/// Minimum usable pane size.  The shared splitter relaxes this to half the available space in
+/// very small windows, keeping the layout finite and non-inverting while remaining responsive.
+const SPLIT_MIN: f32 = 40.0;
 
 /// The least body height of an open stacked panel (when the stack has room for it).
 const STACK_MIN: f32 = 40.0;
@@ -1233,6 +1441,7 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                     && let Some(next) = entries.get((ai + 1) % entries.len())
                 {
                     out.actions.push(activate(next));
+                    out.actions.push(DockAction::Focus(next.panel));
                 }
                 break;
             }
@@ -1494,7 +1703,122 @@ mod tests {
     fn default_workspace_has_ae_right_column_stack() {
         let d = workspace("Default");
         assert!(d.is_visible(PanelKind::Properties) && d.is_visible(PanelKind::Preview));
-        assert!(d.contains(PanelKind::EffectsPresets) && !d.is_visible(PanelKind::EffectsPresets));
+        assert!(d.is_visible(PanelKind::EffectsPresets));
+    }
+
+    #[test]
+    fn tablet_landscape_keeps_project_effects_and_timeline_visible() {
+        let desktop = workspace("Default");
+        let profile = tablet_landscape_profile(&desktop, PanelKind::Composition);
+        for panel in [PanelKind::Project, PanelKind::EffectsPresets, PanelKind::Composition, PanelKind::Timeline] {
+            assert!(profile.is_visible(panel), "{panel:?} should not be buried in overflow tabs");
+        }
+        assert!(tablet_landscape_profile(&desktop, PanelKind::EffectControls).is_visible(PanelKind::EffectControls));
+        let mut expected = vec![];
+        desktop.panels(&mut expected);
+        let mut actual = vec![];
+        profile.panels(&mut actual);
+        expected.sort_by_key(|p| p.id());
+        actual.sort_by_key(|p| p.id());
+        assert_eq!(actual, expected, "no lost or duplicated panels");
+        assert_eq!(desktop, workspace("Default"), "do not rewrite the saved desktop workspace");
+    }
+
+    #[test]
+    fn responsive_profiles_preserve_panels_without_mutating_workspace() {
+        let desktop = workspace("Default");
+        let mut expected = vec![];
+        desktop.panels(&mut expected);
+        expected.sort_by_key(|panel| panel.id());
+        expected.dedup();
+
+        let portrait = portrait_profile(&desktop, PanelKind::Composition);
+        let landscape = landscape_profile(&desktop, PanelKind::Layer);
+        assert_eq!(desktop, workspace("Default"));
+
+        let DockNode::Split { a: portrait_content, b: portrait_bottom, .. } = portrait else { panic!("portrait profile must reserve a lower pane") };
+        let DockNode::Split { a: portrait_top, b: portrait_utilities, .. } = *portrait_content else { panic!("portrait content must reserve a utility row") };
+        let DockNode::Tabs { panels: portrait_primary, .. } = *portrait_top else { panic!("portrait primary pane must be tabbed") };
+        assert!(portrait_utilities.contains(PanelKind::Project));
+        assert!(portrait_utilities.contains(PanelKind::EffectControls));
+        assert!(portrait_utilities.contains(PanelKind::Properties));
+        assert!(portrait_utilities.contains(PanelKind::EffectsPresets));
+        let DockNode::Tabs { panels: portrait_timeline, .. } = *portrait_bottom else { panic!("portrait lower pane must be tabbed") };
+        assert!(portrait_primary.contains(&PanelKind::Composition));
+        assert_eq!(portrait_timeline, vec![PanelKind::Timeline]);
+
+        let DockNode::Split { a: landscape_top, b: landscape_bottom, .. } = landscape else { panic!("landscape profile must reserve a lower pane") };
+        let DockNode::Split { a: landscape_primary, b: landscape_utility, .. } = *landscape_top else {
+            panic!("landscape upper pane must split primary and utility panels")
+        };
+        let DockNode::Tabs { panels: landscape_primary, .. } = *landscape_primary else { panic!("landscape primary pane must be tabbed") };
+        let DockNode::Tabs { panels: landscape_utility, .. } = *landscape_utility else { panic!("landscape utility pane must be tabbed") };
+        let DockNode::Tabs { panels: landscape_timeline, .. } = *landscape_bottom else { panic!("landscape lower pane must be tabbed") };
+        assert!(landscape_primary.contains(&PanelKind::Layer));
+        assert!(!landscape_utility.is_empty());
+        assert_eq!(landscape_timeline, vec![PanelKind::Timeline]);
+
+        let mut actual = vec![];
+        portrait_profile(&desktop, PanelKind::Composition).panels(&mut actual);
+        actual.sort_by_key(|panel| panel.id());
+        actual.dedup();
+        assert_eq!(actual, expected);
+    }
+    #[test]
+    fn responsive_profiles_do_not_duplicate_or_invent_panels() {
+        let timeline_only = DockNode::Tabs { panels: vec![PanelKind::Timeline], active: 0 };
+        assert_eq!(portrait_profile(&timeline_only, PanelKind::Timeline), timeline_only);
+        assert_eq!(landscape_profile(&timeline_only, PanelKind::Timeline), timeline_only);
+
+        for utility in [PanelKind::Project, PanelKind::EffectControls, PanelKind::EffectsPresets] {
+            let reduced = DockNode::Tabs { panels: vec![utility, PanelKind::Timeline], active: 0 };
+            let mut actual = Vec::new();
+            portrait_profile(&reduced, utility).panels(&mut actual);
+            assert_eq!(actual, vec![utility, PanelKind::Timeline], "No viewer means no duplicate utility pane");
+        }
+        let utilities_only = DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::Info], active: 1 };
+        let portrait = portrait_profile(&utilities_only, PanelKind::Info);
+        let landscape = landscape_profile(&utilities_only, PanelKind::Info);
+        for profile in [portrait, landscape] {
+            let mut panels = vec![];
+            profile.panels(&mut panels);
+            panels.sort_by_key(|panel| panel.id());
+            panels.dedup();
+            assert_eq!(panels, vec![PanelKind::Info, PanelKind::Project]);
+        }
+    }
+
+    #[test]
+    fn portrait_keeps_focused_utility_visible() {
+        for focused in [PanelKind::Info, PanelKind::Preview, PanelKind::ScriptConsole, PanelKind::Viewer(42)] {
+            for panels in [
+                vec![PanelKind::Project, focused, PanelKind::Composition, PanelKind::Timeline],
+                vec![PanelKind::Project, focused, PanelKind::Timeline],
+                vec![PanelKind::Project, focused],
+            ] {
+                let desktop = DockNode::Tabs { panels, active: 0 };
+                assert!(portrait_profile(&desktop, focused).is_visible(focused), "focused {focused:?} must have a body");
+            }
+        }
+    }
+
+    #[test]
+    fn portrait_keeps_dynamic_viewers_in_primary_pane() {
+        for primary in [vec![PanelKind::Composition, PanelKind::Viewer(42)], vec![PanelKind::Viewer(42)]] {
+            let mut panels = primary.clone();
+            panels.extend([PanelKind::Project, PanelKind::Timeline]);
+            let desktop = DockNode::Tabs { panels, active: 0 };
+            let before = desktop.clone();
+            let portrait = portrait_profile(&desktop, PanelKind::Viewer(42));
+            let DockNode::Split { a: content, .. } = portrait else { panic!("portrait must retain timeline") };
+            let DockNode::Split { a: viewer, b: utility, .. } = *content else { panic!("viewer needs a separate utility row") };
+            let DockNode::Tabs { panels, active } = *viewer else { panic!("primary viewer must be tabbed") };
+            assert_eq!(panels, primary);
+            assert_eq!(panels.get(active), Some(&PanelKind::Viewer(42)));
+            assert!(utility.is_visible(PanelKind::Project));
+            assert!(!utility.contains(PanelKind::Viewer(42)));
+            assert_eq!(desktop, before, "projection must not mutate the saved workspace");
+        }
     }
 
     #[test]
@@ -1513,6 +1837,27 @@ mod tests {
             all.dedup();
             assert_eq!(all.len(), n, "{w} has a panel twice");
         }
+    }
+
+    #[test]
+    fn ios_resize_precision_damps_motion_without_changing_keyboard_steps() {
+        assert_eq!(resize_motion_delta(20.0, true, true), 7.0);
+        assert_eq!(resize_motion_delta(-20.0, true, true), -7.0);
+        assert_eq!(resize_motion_delta(0.0, true, true), 0.0);
+        assert_eq!(resize_motion_delta(8.0, false, true), 8.0);
+        assert_eq!(resize_motion_delta(20.0, true, false), 20.0);
+        assert_eq!(resize_motion_delta(f32::NAN, true, true), 0.0);
+        // A stationary finger adds no movement on subsequent render frames.
+        let motion: f32 = [5.0, 5.0, 0.0, 5.0, 0.0, 5.0].into_iter().map(|d| resize_motion_delta(d, true, true)).sum();
+        assert_eq!(motion, 7.0);
+    }
+
+    #[test]
+    fn default_workspace_shows_effect_presets_without_hiding_core_tabs() {
+        let d = workspace("Default");
+        assert!(d.contains(PanelKind::EffectControls));
+        assert!(d.contains(PanelKind::Layer));
+        assert!(d.is_visible(PanelKind::EffectsPresets));
     }
 
     #[test]

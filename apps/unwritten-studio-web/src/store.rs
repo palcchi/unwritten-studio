@@ -186,6 +186,28 @@ impl Store {
         }
     }
 
+    /// Reserve a new file atomically within this store, including normalized path aliases.
+    pub fn put_new_file(&self, path: &str, data: Arc<[u8]>) -> std::io::Result<()> {
+        let key = file_key(path);
+        let now = self.now();
+        {
+            let mut mirror = self.lock();
+            if mirror.get(&key).is_some() {
+                return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "a file already exists at this path"));
+            }
+            mirror.put(&key, data, now, true);
+        }
+        self.changed();
+        Ok(())
+    }
+
+    /// Prepare a value before reserving a new file, dropping it if the destination conflicts.
+    pub fn put_new_file_with<T>(&self, path: &str, data: Arc<[u8]>, prepare: impl FnOnce() -> std::io::Result<T>) -> std::io::Result<T> {
+        let prepared = prepare()?;
+        self.put_new_file(path, data)?;
+        Ok(prepared)
+    }
+
     pub fn file(&self, path: &str) -> Option<Arc<[u8]>> {
         self.lock().get(&file_key(path)).map(|e| e.data.clone())
     }
@@ -243,7 +265,7 @@ impl Store {
 /// What a stored file is (Settings ▸ Disk ▸ Browser Storage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
-    /// A saved project (`.uwproj` outside the auto-save folder).
+    /// A saved project (`.unw` or a legacy project extension outside the auto-save folder).
     Project,
     /// Imported footage and everything else.
     Media,
@@ -254,7 +276,7 @@ pub enum FileKind {
 impl FileKind {
     pub fn of(path: &str) -> FileKind {
         let lower = path.to_ascii_lowercase();
-        if ![".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext)) {
+        if ![".unw", ".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext)) {
             return FileKind::Media;
         }
         let name = lower.rsplit('/').next().unwrap_or(&lower);
@@ -555,5 +577,62 @@ mod tests {
         let t = serde_json::to_string(&m).unwrap();
         assert_eq!(serde_json::from_str::<SnapshotMeta>(&t).unwrap(), m);
         assert_eq!(serde_json::from_str::<SnapshotMeta>("{}").unwrap(), SnapshotMeta::default());
+    }
+}
+
+#[cfg(test)]
+mod new_copy_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    use super::Store;
+
+    #[derive(Debug)]
+    struct DropProbe(Arc<AtomicBool>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn failed_prepare_does_not_write_or_queue() {
+        let store = Store::default();
+        let err = store.put_new_file_with("new.aep", b"new".as_slice().into(), || Err::<(), _>(std::io::Error::other("preparation failed"))).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(store.file("new.aep").is_none());
+        assert!(!store.lock().has_pending());
+    }
+
+    #[test]
+    fn duplicate_drops_prepared_value_without_replacing_destination() {
+        let store = Store::default();
+        store.put_new_file("copy.aep", b"original".as_slice().into()).unwrap();
+        let original = store.file_versioned("/copy.aep").unwrap();
+        assert_eq!(store.lock().take_pending().len(), 1);
+        let dropped = Arc::new(AtomicBool::new(false));
+        let probe = Arc::clone(&dropped);
+        let err = store.put_new_file_with("/copy.aep", b"replacement".as_slice().into(), || Ok(DropProbe(probe))).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert!(dropped.load(Ordering::SeqCst));
+        assert_eq!(store.file_versioned("copy.aep").unwrap(), original);
+        assert!(!store.lock().has_pending());
+    }
+
+    #[test]
+    fn new_file_refuses_alias_without_changing_bytes_or_pending_writes() {
+        let store = Store::default();
+        store.put_new_file("copy.aep", b"original".as_slice().into()).unwrap();
+        let original = store.file_versioned("/copy.aep").unwrap();
+        assert_eq!(store.lock().take_pending().len(), 1);
+        let err = store.put_new_file("/copy.aep", b"replacement".as_slice().into()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(store.file_versioned("copy.aep").unwrap(), original);
+        assert!(!store.lock().has_pending());
+        store.put_new_file("second.aep", b"second".as_slice().into()).unwrap();
+        assert_eq!(store.files().len(), 2);
     }
 }

@@ -95,6 +95,8 @@ pub enum Dialog {
     UnsavedChanges,
     /// Delete Project items that compositions use? (`panels::delete_items`).
     DeleteItems,
+    /// Explicit, one-shot approval before replacing render output files.
+    RenderOverwrite,
     /// A gradient property's Gradient Editor (`panels::gradient_editor`, `prop.editGradient`).
     GradientEditor,
     /// Delete a user template from Home? (`panels::templates`).
@@ -125,7 +127,7 @@ impl FileDialog {
         let ext = std::path::Path::new(default).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
         Self::Save {
             default: default.to_string(),
-            project: ["uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)),
+            project: ["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)),
             ext,
         }
     }
@@ -140,6 +142,7 @@ pub(crate) struct DialogAnswer {
     pub key: &'static str,
     pub params: serde_json::Value,
     pub paths: Vec<String>,
+    pub unsaved_save: Option<u64>,
 }
 
 /// Host hooks provided by the native app (file pickers etc.).
@@ -185,7 +188,7 @@ impl Hooks {
         let path = std::path::Path::new(default);
         let ext = path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
         match (&self.pick_save_file, &self.pick_save) {
-            (Some(pick), _) if !["uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)) => {
+            (Some(pick), _) if !["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"].iter().any(|project_ext| ext.eq_ignore_ascii_case(project_ext)) => {
                 Some(pick(default, &ext))
             }
             (_, Some(pick)) => Some(pick(&path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())),
@@ -272,6 +275,7 @@ pub struct UnwrittenStudioApp {
     pub frames: Frames,
     pub playback: Playback,
     pub dialog: Option<Dialog>,
+    pub(crate) aep_export_review: Option<panels::aep_export::Review>,
     pub hooks: Hooks,
     pub fps: f32,
     last_time: f64,
@@ -382,6 +386,7 @@ impl UnwrittenStudioApp {
             frames: Frames::default(),
             playback: Playback::default(),
             dialog: None,
+            aep_export_review: None,
             hooks: Hooks::default(),
             fps: 60.0,
             last_time: 0.0,
@@ -754,9 +759,9 @@ impl UnwrittenStudioApp {
     }
 
     /// Run the commands whose non-blocking file dialogs have been answered.
-    pub(crate) fn run_dialog_answers(&mut self) {
+    pub(crate) fn run_dialog_answers(&mut self, ctx: &egui::Context) {
         while let Ok(answer) = self.dialog_answers.1.try_recv() {
-            menus::dialog_answered(self, answer);
+            menus::dialog_answered(self, ctx, answer);
         }
     }
 
@@ -1618,7 +1623,7 @@ impl UnwrittenStudioApp {
     fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.apply_gpu_failure(&ctx);
-        self.run_dialog_answers();
+        self.run_dialog_answers(&ctx);
         self.auto.begin_frame();
         self.frames.set_context(&ctx);
         if self.session.render_job.is_some() {
@@ -1711,6 +1716,7 @@ impl UnwrittenStudioApp {
         panels::precomp::mini_flowchart(self, &ctx);
         panels::home::capture_thumbnail(self);
         panels::dialogs::show(self, &ctx);
+        panels::aep_export::show(self, &ctx);
         panels::scriptui_view::sync_panels(self);
         panels::scriptui_view::show_windows(self, &ctx);
         panels::learn::coach(self, &ctx);
@@ -1851,30 +1857,15 @@ impl UnwrittenStudioApp {
     pub fn take_synthetic_input(&mut self) -> Vec<egui::Event> {
         std::mem::take(&mut self.synthetic)
     }
-}
 
-impl eframe::App for UnwrittenStudioApp {
-    fn on_exit(&mut self) {
-        self.save_workspace_state();
-        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
-        // unsaved changes, which are in the auto-save it offers).
-        if self.device_lost_close != Some(true) {
-            self.session.end_recovery();
-        }
+    /// External documents wait until native picker answers and Save/Cancel decisions settle.
+    /// Embedded hosts call this after `embedded_logic` has consumed picker answers.
+    pub fn external_project_open_ready(&self) -> bool {
+        self.dialog.is_none() && self.aep_export_review.is_none() && self.dialog_state.unsaved.command.is_none() && !self.dialog_state.unsaved.awaiting_save
     }
-
-    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        let injected = !self.synthetic.is_empty();
-        self.feed_synthetic(raw_input);
-        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
-            self.session.history.merge_key = None;
-        }
-    }
-
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Run the frontend's frame-independent logic for an embedded egui host.
+    pub fn embedded_logic(&mut self, ctx: &egui::Context) {
         self.apply_gpu_failure(ctx);
-        // The CJK fallback fonts depend on the interface language, so they follow a change of
-        // Settings ▸ General ▸ Language instead of only the first frame.
         let language = crate::i18n::language(self);
         crate::i18n::set_current(language);
         if !self.styled || self.styled_language != language {
@@ -1906,21 +1897,21 @@ impl eframe::App for UnwrittenStudioApp {
         self.collect_screenshots(ctx);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+    /// Draw the original frontend for an embedded egui host.
+    ///
+    /// The host owns renderer initialization and desktop pointer wrapping; this method retains the
+    /// original frame composition and worker/repaint bookkeeping.
+    pub fn embedded_ui(&mut self, ui: &mut egui::Ui) {
         if self.gpu_failure_applied == Some(true) {
             self.close_after_device_loss(ui.ctx());
             return;
         }
-        self.init_gpu(frame);
         if !self.fonts_ready {
             ui.ctx().request_repaint();
             return;
         }
         self.frame(ui);
         let ctx = ui.ctx().clone();
-        #[cfg(not(target_arch = "wasm32"))]
-        pointer_wrap::finish_native(&ctx, frame);
-        // wasm32: no frame threads; render queued frames now, between UI frames.
         if cfg!(target_arch = "wasm32") && self.frames.pump(std::time::Duration::from_millis(if self.playback.playing { 24 } else { 40 })) {
             ctx.request_repaint();
         }
@@ -1936,6 +1927,40 @@ impl eframe::App for UnwrittenStudioApp {
         if self.frames.inflight() > 0 {
             ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
+    }
+}
+
+impl eframe::App for UnwrittenStudioApp {
+    fn on_exit(&mut self) {
+        self.save_workspace_state();
+        // Clean exit: no crash recovery next launch (unless the graphics device was lost with
+        // unsaved changes, which are in the auto-save it offers).
+        if self.device_lost_close != Some(true) {
+            self.session.end_recovery();
+        }
+    }
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let injected = !self.synthetic.is_empty();
+        self.feed_synthetic(raw_input);
+        if pointer_wrap::prepare_input(ctx, raw_input, injected) {
+            self.session.history.merge_key = None;
+        }
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.embedded_logic(ctx);
+    }
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.gpu_failure_applied == Some(true) {
+            self.close_after_device_loss(ui.ctx());
+            return;
+        }
+        self.init_gpu(frame);
+        self.embedded_ui(ui);
+        let ctx = ui.ctx().clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        pointer_wrap::finish_native(&ctx, frame);
     }
 }
 
@@ -2174,5 +2199,26 @@ mod appearance_tests {
         assert_eq!(app.session.prefs.appearance.appearance_mode, "dark");
         assert_eq!(app.session.prefs.appearance.dark_theme, "darker");
         assert_eq!(app.ui.theme, ThemeKind::Darker);
+    }
+}
+
+#[cfg(test)]
+mod embedded_ui_tests {
+    use super::*;
+
+    #[test]
+    fn embedded_original_ui_bootstraps_fonts_and_renders_without_panicking() {
+        let mut app = UnwrittenStudioApp::new(Session::default());
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(input.clone(), |ui| {
+                app.embedded_logic(ui.ctx());
+                app.embedded_ui(ui);
+            });
+            // This lifecycle-only test deliberately does not present its textures.
+            output.textures_delta.clear();
+        }
+        assert!(app.fonts_ready);
     }
 }

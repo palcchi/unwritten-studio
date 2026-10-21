@@ -15,6 +15,7 @@ cpal or muda. Everything in L0 to L4, the egui UI and the web app also build for
 
 | Layer | Crate (`unwritten-studio-…`) | Responsibility |
 |---|---|---|
+| L0 | `aep` | Bounded, safe Rust, read-only AEP RIFX container and typed field reader; no Python, OS or Adobe runtime dependency |
 | L0 | `time` | `Tick` (254 016 000 000 per second), rational frame rates incl. NTSC, SMPTE and drop-frame timecode |
 | L0 | `geom` | Vectors, matrices, quaternions, the layer transform (anchor, position, scale, orientation, rotation) |
 | L0 | `color` | sRGB and linear, HSL/HSV, luminance, the 38 blend modes, label colors |
@@ -34,6 +35,7 @@ cpal or muda. Everything in L0 to L4, the egui UI and the web app also build for
 | L2 | `pdf` | PDF, PDF-compatible Illustrator (`.ai`) and EPS (PostScript subset) vector footage into the `svg` render tree: paths, fills, strokes, shadings, tiling patterns, clipping, text (embedded TrueType / CFF / Type 1 / Type 3 fonts; the bundled `text` fonts for the standard 14), images, blend modes, soft masks, optional-content layers |
 | L2 | `model` | 3D models for Advanced 3D: glTF 2.0 (`.gltf`/`.glb`) and OBJ/MTL import (meshes, PBR metallic-roughness materials and textures, node hierarchy, skins, animations), parametric primitives, extruded/bevelled outline meshes and polygon triangulation |
 | L2 | `track` | Motion tracking: feature/search region point tracking (pyramid normalized cross-correlation, Lucas–Kanade sub-pixel refinement), confidence, homography/affine/similarity solves |
+| L3 | `aep-import` | Experimental native AEP-to-project adapter with per-category loss and missing-media reports; imported sources remain unchanged ([scope](aep-native-import.md)) |
 | L3 | `render` | Evaluation and compositing: sources, masks, effects, transforms, 3D, motion blur, mattes, blending, layer cache, audio mixdown |
 | L3 | `media` | Footage decoding (FilmCraft's pure-Rust codecs), image sequences, Photoshop and SVG stills, frame cache |
 | L3 | `expr` | The expression engine (JavaScript via boa) with the After Effects object model |
@@ -48,6 +50,7 @@ cpal or muda. Everything in L0 to L4, the egui UI and the web app also build for
 | L5 | `ui-egui` | The desktop interface: docking, panels, viewer, timeline, graph editor, dialogs, control channel |
 | L5 | `automation` | The MCP server, headless or bridged to the running app |
 | L6 | apps `unwritten-studio`, `unwritten-studio-cli`, `unwritten-studio-web` | Desktop app; command-line tool (render, exec, get/set, MCP); the browser app (wasm32, [web.md](web.md)) |
+| L6 | app `unwritten-studio-core` | C ABI host for the original egui editor on iOS, including copied-frame presentation, native input/dialogs and callback-safe preview audio |
 
 Allowed same-layer edges: `path → keyframe, raster`, `text → path`, `pdf → svg, text`, `effects → project, text, path, track`,
 `media / expr / export / gpu → render`, `export → media`, `lottie → format`, `host → engine, script`,

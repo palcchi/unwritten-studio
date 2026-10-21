@@ -15,16 +15,29 @@ const C: &str = "file.importProject";
 /// Whether `path` names a project Unwritten Studio imports as a project (not as footage).
 pub(crate) fn is_project_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    [".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext))
+    [".aep", ".unw", ".unwae", ".uwproj", ".uwprojx", ".ecproj", ".ecprojx"].iter().any(|ext| lower.ends_with(ext))
 }
 
 /// Read a project file (JSON or its XML copy), as File ▸ Open does.
-fn read_project(s: &Session, path: &str) -> Result<(Project, Option<String>)> {
+fn read_project(s: &mut Session, path: &str) -> Result<(Project, Option<String>, Vec<String>)> {
+    super::file::reject_after_effects(path, "import")?;
+    crate::native_aep::check_file_size(path, s.services.as_ref()).map_err(EngineError::Other)?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
+    if crate::native_aep::is_aep_path(path) {
+        let (project, _, warnings) = crate::native_aep::decode(&bytes, path, s.services.as_ref(), true).map_err(EngineError::Other)?;
+        return Ok((project, None, warnings));
+    }
+    if path.to_ascii_lowercase().ends_with(".unwae") {
+        let (project, warnings) = crate::ae_bridge::import_unwae(&bytes).map_err(EngineError::Other)?;
+        for warning in warnings.iter().take(10) {
+            s.toast(warning.clone());
+        }
+        return Ok((project, None, warnings));
+    }
     let text = String::from_utf8(bytes).map_err(|_| bad(C, format!("{path} is not a text project file")))?;
     let text = if crate::xml_project::is_xml(&text) { crate::xml_project::from_xml(&text).map_err(EngineError::Other)? } else { text };
     let project = Project::from_json(&text).map_err(|e| bad(C, format!("{path} is not a project Unwritten Studio can open: {e}")))?;
-    Ok((project, unwritten_studio_project::saved_by(&text)))
+    Ok((project, unwritten_studio_project::saved_by(&text), vec![]))
 }
 
 /// Footage paths relative to the imported project's folder become absolute when the file is
@@ -68,7 +81,7 @@ fn resolve_footage(s: &Session, project: &mut Project, dir: &std::path::Path) ->
 }
 
 /// The comps no other comp of `project` nests: the ones to open or place.
-fn root_comps(project: &Project) -> Vec<ItemId> {
+pub(super) fn root_comps(project: &Project) -> Vec<ItemId> {
     let nested: std::collections::HashSet<ItemId> =
         project.comps().flat_map(|(_, c)| c.layers.iter().filter_map(|l| if let LayerSource::Comp { item } = l.source { Some(item) } else { None })).collect();
     project.comps().map(|(id, _)| *id).filter(|id| !nested.contains(id)).collect()
@@ -76,7 +89,7 @@ fn root_comps(project: &Project) -> Vec<ItemId> {
 
 fn import_project(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad(C, "missing `path` (.uwproj)"))?.to_string();
-    let (mut sub, saved_by) = read_project(s, &path)?;
+    let (mut sub, saved_by, mut warnings) = read_project(s, &path)?;
     crate::upgrade_effects(&mut sub);
     let file = std::path::Path::new(&path);
     let dir = file.parent().map(|d| d.to_path_buf()).unwrap_or_default();
@@ -111,7 +124,6 @@ fn import_project(s: &mut Session, p: &Value) -> Result<Value> {
         .map(|(id, _)| json!({"id": id.0, "name": s.project.item(*id).map(|i| i.name.clone()).unwrap_or_default()}))
         .collect();
     let primary = if let [one] = roots.as_slice() { Some(one.0) } else { None };
-    let mut warnings = vec![];
     if let Some(v) = saved_by.as_deref().filter(|v| unwritten_studio_project::is_newer_version(v, unwritten_studio_project::APP_VERSION)) {
         warnings.push(format!("saved by Unwritten Studio {v}, newer than this version ({})", unwritten_studio_project::APP_VERSION));
     }

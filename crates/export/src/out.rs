@@ -21,9 +21,10 @@ pub(crate) fn create<'a>(sink: Option<&'a Sink>, path: &str) -> Result<Out<'a>> 
         Some(sink) => Ok(Out::Mem { path: path.to_string(), cur: Cursor::new(Vec::new()), sink }),
         None => {
             if let Some(dir) = std::path::Path::new(path).parent().filter(|d| !d.as_os_str().is_empty()) {
-                std::fs::create_dir_all(dir).map_err(io)?;
+                std::fs::create_dir_all(dir).map_err(|error| ExportError::Io(format!("Cannot prepare output folder '{}': {error}", dir.display())))?;
             }
-            Ok(Out::File(BufWriter::new(std::fs::File::create(path).map_err(io)?)))
+            let file = std::fs::File::create(path).map_err(|error| ExportError::Io(format!("Cannot write output '{path}': {error}")))?;
+            Ok(Out::File(BufWriter::new(file)))
         }
     }
 }

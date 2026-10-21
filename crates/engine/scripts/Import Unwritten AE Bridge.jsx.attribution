@@ -1,0 +1,8 @@
+asset: Import Unwritten AE Bridge.jsx
+title: Original clean-room After Effects reconstruction bridge
+author: Unwritten Studio contributors
+source: original work
+license: MIT OR Apache-2.0
+license-file: LICENSE-MIT
+added: 2026-10-21 by Unwritten Studio contributors
+notes: Uses only public scripting behaviour; never decodes AEP bytes or replaces the source AEP.

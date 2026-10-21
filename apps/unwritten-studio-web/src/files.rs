@@ -82,28 +82,64 @@ fn mime(name: &str) -> &'static str {
     }
 }
 
-/// Offer `data` as a download named `name`.
-pub fn download(name: &str, data: &[u8]) -> Result<(), JsValue> {
+/// A browser download prepared for an immediate user gesture.
+struct PreparedDownload {
+    anchor: Option<web_sys::HtmlAnchorElement>,
+    url: Option<String>,
+}
+
+impl PreparedDownload {
+    /// Start the download. The click itself cannot fail; the object URL is revoked later.
+    fn start(mut self) {
+        if let Some(a) = self.anchor.take() {
+            a.click();
+            a.remove();
+        }
+        if let Some(url) = self.url.take() {
+            let revoke = Closure::once_into_js(move || {
+                let _ = web_sys::Url::revoke_object_url(&url);
+            });
+            if let Some(w) = web_sys::window() {
+                let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(revoke.unchecked_ref(), 60_000);
+            }
+        }
+    }
+}
+
+impl Drop for PreparedDownload {
+    fn drop(&mut self) {
+        if let Some(a) = self.anchor.take() {
+            a.remove();
+        }
+        if let Some(url) = self.url.take() {
+            let _ = web_sys::Url::revoke_object_url(&url);
+        }
+    }
+}
+
+/// Prepare `data` as a download named `name`.
+fn prepare_download(name: &str, data: &[u8]) -> Result<PreparedDownload, JsValue> {
     let doc = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;
     let parts = js_sys::Array::of1(&js_sys::Uint8Array::from(data));
     let bag = web_sys::BlobPropertyBag::new();
     bag.set_type(mime(name));
     let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &bag)?;
     let url = web_sys::Url::create_object_url_with_blob(&blob)?;
+    let mut prepared = PreparedDownload { anchor: None, url: Some(url) };
     let a: web_sys::HtmlAnchorElement = doc.create_element("a")?.dyn_into()?;
-    a.set_href(&url);
+    prepared.anchor = Some(a);
+    let a = prepared.anchor.as_ref().ok_or("download anchor missing")?;
+    let url = prepared.url.as_ref().ok_or("download URL missing")?;
+    a.set_href(url);
     a.set_download(name);
     a.style().set_property("display", "none")?;
-    doc.body().ok_or("no body")?.append_child(&a)?;
-    a.click();
-    a.remove();
-    // Revoke once the browser has started the download.
-    let revoke = Closure::once_into_js(move || {
-        let _ = web_sys::Url::revoke_object_url(&url);
-    });
-    if let Some(w) = web_sys::window() {
-        let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(revoke.unchecked_ref(), 60_000);
-    }
+    doc.body().ok_or("no body")?.append_child(a)?;
+    Ok(prepared)
+}
+
+/// Offer `data` as a download named `name`.
+pub fn download(name: &str, data: &[u8]) -> Result<(), JsValue> {
+    prepare_download(name, data)?.start();
     Ok(())
 }
 
@@ -129,6 +165,16 @@ impl Services for WebServices {
             return Ok(());
         }
         download(file_name(path), data).map_err(|e| std::io::Error::other(format!("download failed: {e:?}")))
+    }
+    fn write_new_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        if crate::is_worker() {
+            return STORE.put_new_file(path, data.into());
+        }
+        let prepared = STORE.put_new_file_with(path, data.into(), || {
+            prepare_download(file_name(path), data).map_err(|e| std::io::Error::other(format!("download preparation failed: {e:?}")))
+        })?;
+        prepared.start();
+        Ok(())
     }
     fn store_file(&self, path: &str, data: &[u8]) -> std::io::Result<()> {
         put(path, data.into());

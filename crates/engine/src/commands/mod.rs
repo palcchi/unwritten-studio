@@ -88,9 +88,9 @@ pub(crate) use mask::split_segment as split_segment_for_tests;
 
 use std::sync::OnceLock;
 
+use serde_json::Value;
 use unwritten_studio_project::{Comp, ItemId, Layer, LayerId};
 use unwritten_studio_time::Tick;
-use serde_json::Value;
 
 use crate::{EngineError, Result, Session};
 
@@ -157,6 +157,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
     SPECS.get_or_init(|| {
         let mut v = Vec::new();
         v.extend(file::specs());
+        v.extend(crate::native_aep_export::specs());
         v.extend(crate::models::specs());
         v.extend(edit::specs());
         v.extend(comp::specs());

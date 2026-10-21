@@ -40,6 +40,17 @@ jobs:
       - name: Test native project formats and safe AE refusal
         run: cargo test --locked -p unwritten-studio-engine --lib format_tests
 
+      - name: Test experimental After Effects bridge
+        run: |
+          cargo test --locked -p unwritten-studio-engine --lib ae_bridge
+          node scripts/test-ae-bridge.cjs
+
+      - name: Test portrait and landscape viewport geometry
+        run: python3 scripts/test-ios-viewport.py
+
+      - name: Test workspace docking persistence
+        run: cargo test --locked -p unwritten-studio-ui-egui --test shared_docking_ui
+
       - name: Test draggable workspace panels
         run: cargo test --locked -p unwritten-studio-ui-egui --test ui_dock_resize
 

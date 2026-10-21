@@ -1,8 +1,8 @@
 asset:        UnwrittenStudio-1024.png
-title:        Unwritten Studio iOS app icon, 1024 px
-author:       palcchi (Unwritten Studio contributor)
-source:       original work; added in commit dabeb2d4bdbc1b814234b8b7003c64e4415ae9fb
+title:        Unwritten Studio violet ribbon U iOS app icon, 1024 px
+author:       Unwritten Studio contributors (AI-assisted original work)
+source:       original work; generated for Unwritten Studio using GPT Image 2.5 without third-party visual references
 license:      MIT OR Apache-2.0
 license-file: LICENSE-MIT, LICENSE-APACHE
-added:        2026-10-13 by palcchi
-notes:        Original iOS-specific U monogram icon; independent from the cross-platform app icon.
+added:        2026-10-21 by Unwritten Studio contributors
+notes:        Original lavender ribbon U and diamond keyframe symbol on midnight violet; no Adobe marks or artwork. Resized to opaque RGB 1024 px for iOS.

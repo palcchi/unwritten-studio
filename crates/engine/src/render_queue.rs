@@ -11,7 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use unwritten_studio_project::render_queue::{OutputFormat, OutputModule, PostRenderAction, RenderQueueItem, RenderStatus, TemplateVars, expand_template};
+use unwritten_studio_project::render_queue::{
+    OutputFormat, OutputModule, PostRenderAction, RenderQueueItem, RenderStatus, TemplateVars, expand_template, sequence_path,
+};
 use unwritten_studio_project::{ItemId, ItemKind, LayerSource, Project};
 use unwritten_studio_render::{ExprHost, FootageSource};
 
@@ -445,11 +447,55 @@ impl Session {
         self.render_job.as_ref().map(|j| j.shared.snapshot())
     }
 
+    /// Paths that would be replaced by the currently queued outputs. The start method repeats
+    /// this check at the actual start boundary.
+    pub fn render_output_collisions(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        let mut remaining_frames = 100_000u64;
+        for item in self.project.render_queue.iter().filter(|i| i.is_queued()) {
+            for module in item.output_modules() {
+                let mut m = item.clone();
+                m.output = module.clone();
+                let Some(path) = self.resolve_output(&m) else { continue };
+                let bits = output_bits(m.output.format, self.project.settings.bit_depth);
+                let path = self.prefs.output_name(&path, bits);
+                for (segment, p) in self.segments(&m, &path) {
+                    if m.output.format.is_sequence() && m.settings.skip_existing {
+                        continue;
+                    }
+                    let Some(comp) = self.project.comp(m.comp) else { continue };
+                    if m.output.format.is_sequence() {
+                        let frames = segment.settings.frame_count(comp).min(remaining_frames);
+                        remaining_frames = remaining_frames.saturating_sub(frames);
+                        let f0 = segment.settings.first_frame(comp);
+                        for frame in 0..frames {
+                            let Some(number) = f0.checked_add(frame as i64) else { break };
+                            let p = sequence_path(&p, number);
+                            if seen.insert(p.clone()) && self.services.exists(&p) {
+                                out.push(p);
+                            }
+                        }
+                    } else if seen.insert(p.clone()) && self.services.exists(&p) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Start rendering every queued item. `wait`: block until done (otherwise a background thread
     /// renders, or the [`Session::offload`] worker; call [`Session::poll_render`] regularly).
     /// Returns the ids being rendered. Without threads or an offload (wasm32) the render always
     /// runs to completion before this returns.
     pub fn start_render(&mut self, wait: bool) -> Result<Vec<u64>, String> {
+        self.start_render_with_overwrite(wait, false)
+    }
+
+    /// Start rendering after an explicit, user-confirmed overwrite approval.
+    /// The complete queue is checked again immediately before exporter/offload startup.
+    pub fn start_render_with_overwrite(&mut self, wait: bool, overwrite: bool) -> Result<Vec<u64>, String> {
         let offload = self.offload.clone().filter(|_| !wait);
         let wait = wait || (cfg!(target_arch = "wasm32") && offload.is_none());
         if self.is_rendering() {
@@ -498,6 +544,48 @@ impl Session {
         }
         if items.is_empty() {
             return Err("nothing is queued: add a composition (Composition ▸ Add to Render Queue) and tick Render".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut collisions = Vec::new();
+        let mut remaining_frames = 100_000u64;
+        for modules in &items {
+            for (item, path) in modules {
+                let Some(comp) = self.project.comp(item.comp) else { continue };
+                if item.output.format.is_sequence() {
+                    let frames = item.settings.frame_count(comp);
+                    if frames > remaining_frames {
+                        return Err("render output preflight exceeds 100,000 frames; split the render or shorten its time range".into());
+                    }
+                    remaining_frames = remaining_frames.saturating_sub(frames);
+                    let f0 = item.settings.first_frame(comp);
+                    for frame in 0..frames {
+                        let number = f0.checked_add(frame as i64).ok_or("render frame number overflow; shorten the time range")?;
+                        let p = sequence_path(path, number);
+                        if !seen.insert(p.clone()) {
+                            return Err(format!("duplicate render output path {p}; rename the output before rendering"));
+                        }
+                        if !item.settings.skip_existing && self.services.exists(&p) {
+                            collisions.push(p);
+                        }
+                    }
+                } else {
+                    if !seen.insert(path.clone()) {
+                        return Err(format!("duplicate render output path {path}; rename the output before rendering"));
+                    }
+                    if self.services.exists(path) {
+                        collisions.push(path.clone());
+                    }
+                }
+            }
+        }
+        if !overwrite && !collisions.is_empty() {
+            collisions.sort();
+            collisions.dedup();
+            return Err(format!(
+                "render would replace {} existing output{}; confirm Replace or choose a new output path",
+                collisions.len(),
+                if collisions.len() == 1 { "" } else { "s" }
+            ));
         }
         let ids: Vec<u64> = items.iter().filter_map(|m| m.first().map(|(i, _)| i.id)).collect();
         if let Some(off) = offload {

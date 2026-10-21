@@ -10,6 +10,7 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod ae_bridge;
 pub mod autosave;
 pub mod camera_track;
 pub mod commands;
@@ -51,14 +52,16 @@ pub mod xml_project;
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use unwritten_studio_project::{Comp, ItemId, Layer, LayerId, Project, Uid};
 use unwritten_studio_raster::Image;
 use unwritten_studio_render::{ExprHost, FootageSource, LayerCache, NoFootage, RenderOpts, Renderer};
 use unwritten_studio_time::Tick;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 pub use commands::{CommandSpec, command_specs, find as find_command};
+pub use history::{Branch, History, HistoryNode};
+pub use render_queue::{ExportJob, ExportResult, Exporter, JobState};
 pub use unwritten_studio_color as color;
 pub use unwritten_studio_effects as effects;
 pub use unwritten_studio_geom as geom;
@@ -70,8 +73,6 @@ pub use unwritten_studio_segment as segment;
 pub use unwritten_studio_text as text;
 pub use unwritten_studio_time as time;
 pub use unwritten_studio_track as track;
-pub use history::{Branch, History, HistoryNode};
-pub use render_queue::{ExportJob, ExportResult, Exporter, JobState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {

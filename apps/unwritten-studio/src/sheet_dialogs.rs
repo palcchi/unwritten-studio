@@ -48,7 +48,7 @@ fn open(dialog: FileDialog) -> Answer {
             }
         }
         FileDialog::OpenProject => {
-            let f = AsyncFileDialog::new().add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"]).pick_file();
+            let f = AsyncFileDialog::new().add_filter("Unwritten Studio Project", &["unw", "uwproj", "uwprojx", "ecproj", "ecprojx", "unwae"]).pick_file();
             Box::pin(async move { path(f.await) })
         }
         FileDialog::Folder => {

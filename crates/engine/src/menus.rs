@@ -250,7 +250,11 @@ pub fn entry_label(s: &Session, e: &MenuEntry) -> String {
             Some("footage") => {
                 let shown = s.state.footage_panel.as_ref().and_then(|f| s.project.item(f.item));
                 let f = shown.or_else(|| {
-                    s.state.project_selection.iter().filter_map(|i| s.project.item(*i)).find(|i| matches!(i.kind, unwritten_studio_project::ItemKind::Footage(_)))
+                    s.state
+                        .project_selection
+                        .iter()
+                        .filter_map(|i| s.project.item(*i))
+                        .find(|i| matches!(i.kind, unwritten_studio_project::ItemKind::Footage(_)))
                 });
                 format!("Footage: {}", f.map(|i| i.name.clone()).unwrap_or_else(|| "(none)".into()))
             }
@@ -530,6 +534,9 @@ File
     Save As... | file.saveAs
     Save a Copy... | file.saveCopy
     Save a Copy As XML... | file.saveCopyAsXml
+  After Effects Bridge
+    Save AE Import Helper JSX... | file.exportAfterEffectsExporter
+    Export Project to AE JSX... | file.exportAfterEffects
   Save as Template... | templates.saveAs
   Increment and Save | file.incrementAndSave
   Revert | file.revert

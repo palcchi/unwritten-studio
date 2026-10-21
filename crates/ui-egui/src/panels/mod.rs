@@ -38,6 +38,7 @@ pub mod precomp;
 pub mod project;
 pub mod properties;
 pub mod puppet_tool;
+pub mod render_overwrite;
 pub mod render_queue;
 pub mod roto_tool;
 pub mod rq_templates;

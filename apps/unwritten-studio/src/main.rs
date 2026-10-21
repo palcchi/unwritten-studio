@@ -49,7 +49,12 @@ fn app_icon() -> egui::IconData {
 /// Keep this classification shared by project opening and the subsequent media-import pass.
 fn is_project_file(path: &str) -> bool {
     std::path::Path::new(path).extension().and_then(|ext| ext.to_str()).is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("unw") || ext.eq_ignore_ascii_case("uwproj") || ext.eq_ignore_ascii_case("uwprojx") || ext.eq_ignore_ascii_case("ecproj") || ext.eq_ignore_ascii_case("ecprojx")
+        ext.eq_ignore_ascii_case("unw")
+            || ext.eq_ignore_ascii_case("unwae")
+            || ext.eq_ignore_ascii_case("uwproj")
+            || ext.eq_ignore_ascii_case("uwprojx")
+            || ext.eq_ignore_ascii_case("ecproj")
+            || ext.eq_ignore_ascii_case("ecprojx")
     })
 }
 

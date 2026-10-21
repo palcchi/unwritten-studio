@@ -278,6 +278,9 @@ pub(crate) fn submenu(app: &UnwrittenStudioApp, source: &str, shown: String) -> 
 /// Chinese After Effects documentation and the catalogs the sibling Craft apps ship; see the
 /// pull request for the rows taken from #321.
 const SIMPLIFIED_CHINESE: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "After Effects 互通"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "保存 AE 导入助手 JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "将项目导出为 AE JSX..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "关于 Unwritten Studio..."),
     ("", "Settings...", "设置..."),
@@ -909,6 +912,9 @@ const SIMPLIFIED_CHINESE: &[(&str, &str, &str)] = &[
 /// entry per fixed menu row of the engine's menu tree, mirroring `SIMPLIFIED_CHINESE` in the
 /// vocabulary the sibling Craft apps' zh-hant catalogs use.
 const TRADITIONAL_CHINESE: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "After Effects 互通"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "儲存 AE 匯入輔助 JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "將專案匯出為 AE JSX..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "關於 Unwritten Studio..."),
     ("", "Settings...", "設定..."),
@@ -1537,6 +1543,9 @@ const TRADITIONAL_CHINESE: &[(&str, &str, &str)] = &[
 ];
 
 const JAPANESE: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "After Effects 連携"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "AE インポート用 JSX を保存..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "プロジェクトを AE JSX に書き出す..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "Unwritten Studioについて..."),
     ("", "Settings...", "設定..."),
@@ -2168,6 +2177,9 @@ const JAPANESE: &[(&str, &str, &str)] = &[
 /// Ukrainian motion-graphics vocabulary. Product names and technical identifiers stay verbatim.
 /// The (command, source) keys match the other catalogs; no proprietary localization was used.
 const UKRAINIAN: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Обмін з After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Зберегти помічник імпорту AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Експортувати проєкт у AE JSX..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "Про Unwritten Studio..."),
     ("", "Settings...", "Налаштування..."),
@@ -2800,6 +2812,9 @@ const UKRAINIAN: &[(&str, &str, &str)] = &[
 /// Wording follows Adobe's Spanish After Effects documentation (helpx.adobe.com/es) where it
 /// names the feature, and macOS Spanish for the app menu.
 const SPANISH: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Intercambio con After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Guardar asistente de importación AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportar proyecto a AE JSX..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "Acerca de Unwritten Studio..."),
     ("", "Settings...", "Ajustes..."),
@@ -3430,6 +3445,9 @@ const SPANISH: &[(&str, &str, &str)] = &[
 /// Brazilian Portuguese: the same (command, English label) keys as `JAPANESE`, one entry
 /// per fixed menu row of the engine's menu tree.
 const PORTUGUESE: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Integração com After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Salvar auxiliar de importação AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportar projeto para AE JSX..."),
     ("", "Unwritten Studio", "Unwritten Studio"),
     ("app.about", "About Unwritten Studio...", "Sobre o Unwritten Studio..."),
     ("", "Settings...", "Configurações..."),
@@ -4062,6 +4080,9 @@ const PORTUGUESE: &[(&str, &str, &str)] = &[
 /// Russian (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const RUSSIAN: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Обмен с After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Сохранить помощник импорта AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Экспортировать проект в AE JSX..."),
     ("comp.copyFrame", "Copy Frame to Clipboard", "Копировать кадр в буфер обмена"),
     ("", "Front", "Передняя грань"),
     ("", "Bevel", "Фаска"),
@@ -4692,6 +4713,9 @@ const RUSSIAN: &[(&str, &str, &str)] = &[
 /// French (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const FRENCH: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Passerelle After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Enregistrer l’assistant d’importation AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Exporter le projet vers AE JSX..."),
     ("comp.copyFrame", "Copy Frame to Clipboard", "Copier l'image dans le presse-papiers"),
     ("", "Front", "Avant"),
     ("", "Bevel", "Biseau"),
@@ -5322,6 +5346,9 @@ const FRENCH: &[(&str, &str, &str)] = &[
 /// German (addition): the same (command, English label) keys as `JAPANESE`, one
 /// entry per fixed menu entry, in the same order.
 const GERMAN: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "After-Effects-Austausch"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "AE-Importhilfe als JSX speichern..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Projekt als AE-JSX exportieren..."),
     ("comp.copyFrame", "Copy Frame to Clipboard", "Frame in die Zwischenablage kopieren"),
     ("", "Front", "Vorderseite"),
     ("", "Bevel", "Abschrägung"),
@@ -5953,6 +5980,9 @@ const GERMAN: &[(&str, &str, &str)] = &[
 
 /// Czech (cs): original phrase translations of every fixed menu entry.
 const CZECH: &[(&str, &str, &str)] = &[
+    ("", "After Effects Bridge", "Propojení s After Effects"),
+    ("file.exportAfterEffectsExporter", "Save AE Import Helper JSX...", "Uložit pomocníka importu AE JSX..."),
+    ("file.exportAfterEffects", "Export Project to AE JSX...", "Exportovat projekt do AE JSX..."),
     ("", "Front", "Přední strana"),
     ("", "Bevel", "Zkosení"),
     ("", "Side", "Boční strana"),

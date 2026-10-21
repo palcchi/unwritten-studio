@@ -1,6 +1,7 @@
 //! Native presentation/input host for the existing editor, not a second UI.
 #![allow(unsafe_code, unsafe_op_in_unsafe_fn)]
 use super::native_audio::NativeAudioBridge;
+use super::native_session::NativeSessionRecovery;
 use egui::{Event, Key, Modifiers, Pos2, RawInput, Rect, Vec2};
 use egui_wgpu::{Renderer, RendererOptions, ScreenDescriptor};
 use serde_json::{Value, json};
@@ -24,6 +25,7 @@ struct HostState {
     output: String,
     pending: VecDeque<PendingDialog>,
     next_id: u64,
+    recovery_error: Option<String>,
 }
 /// Opaque handle. All operations must use its creating serial queue.
 pub struct NativeUi {
@@ -34,6 +36,7 @@ pub struct NativeUi {
     host: Arc<Mutex<HostState>>,
     smoke_opened: bool,
     modifiers: Modifiers,
+    recovery: NativeSessionRecovery,
 }
 struct Gpu {
     device: wgpu::Device,
@@ -125,7 +128,9 @@ fn smoke_export_to_ios_storage() -> Result<(), String> {
 fn dialog_metadata(id: u64, dialog: FileDialog) -> Value {
     match dialog {
         FileDialog::Open { exts, many } => json!({"id":id,"kind":"open","extensions":exts,"many":many,"project":false}),
-        FileDialog::OpenProject => json!({"id":id,"kind":"open","extensions":["unw","uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true}),
+        FileDialog::OpenProject => {
+            json!({"id":id,"kind":"open","extensions":["unw","unwae","uwproj","uwprojx","ecproj","ecprojx"],"many":false,"project":true})
+        }
         FileDialog::Folder => json!({"id":id,"kind":"folder","extensions":[],"many":false,"project":false}),
         FileDialog::Save { default, ext, project } => {
             let name = std::path::Path::new(&default).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or(default);
@@ -138,7 +143,28 @@ impl NativeUi {
         let host = Arc::new(Mutex::new(HostState::default()));
         let callback_host = Arc::clone(&host);
         let audio_bridge = NativeAudioBridge::new();
-        let mut app = UnwrittenStudioApp::new(unwritten_studio_host::session());
+        // The desktop launcher supplies this through its session setup, but
+        // the embedded iOS host constructs the session directly. Without a
+        // ConfigStore the workspace store is memory-only and layouts disappear
+        // when the native view is recreated. Reuse the host's per-app directory
+        // so the existing debounced/periodic workspace saves cover iOS too.
+        let mut session = unwritten_studio_host::session();
+        if let Some(dir) = unwritten_studio_host::config_dir() {
+            session.config = Some(Arc::new(unwritten_studio_engine::config::DirConfig::new(dir)));
+        }
+        let mut recovery = NativeSessionRecovery::new(unwritten_studio_host::config_dir());
+        let recovery_result = recovery.restore(&mut session);
+        let recovered = recovery_result.as_ref().ok().copied().unwrap_or(false);
+        let recovery_error = recovery_result.err();
+        let mut app = UnwrittenStudioApp::new(session);
+        if recovered {
+            app.ui.start_screen = false;
+        }
+        if let Some(error) = recovery_error
+            && let Ok(mut h) = host.lock()
+        {
+            h.recovery_error = Some(error);
+        }
         app.hooks.audio_device = Some(audio_bridge.factory());
         app.hooks.file_dialog_async = Some(Box::new(move |dialog, done| {
             let mut h = match callback_host.lock() {
@@ -157,7 +183,7 @@ impl NativeUi {
             let id = h.next_id;
             h.pending.push_back(PendingDialog { id, metadata: dialog_metadata(id, dialog), done });
         }));
-        Ok(Self { app, audio_bridge, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default() })
+        Ok(Self { app, audio_bridge, ctx: egui::Context::default(), gpu: Gpu::new()?, host, smoke_opened: false, modifiers: Modifiers::default(), recovery })
     }
     fn set_error(&self, error: impl Into<String>) {
         if let Ok(mut h) = self.host.lock() {
@@ -258,6 +284,11 @@ impl NativeUi {
             self.app.embedded_logic(ui.ctx());
             self.app.embedded_ui(ui);
         });
+        if let Err(error) = self.recovery.tick(&self.app.session, input["checkpoint"].as_bool().unwrap_or(false))
+            && let Ok(mut host) = self.host.lock()
+        {
+            host.recovery_error = Some(format!("{error}. Save your project manually to Files."));
+        }
         self.host_output(&full.platform_output);
         let bytes = self.gpu.render(&self.ctx, &mut full, pw, ph)?;
         Ok(FramePixels { bytes, width: pw, height: ph })
@@ -275,9 +306,19 @@ impl NativeUi {
         if let Some(p) = h.pending.front() {
             v["fileDialog"] = p.metadata.clone();
         }
+        if let Some(error) = h.recovery_error.take() {
+            v["recoveryError"] = json!(error);
+        }
         h.output = v.to_string();
     }
 }
+
+impl Drop for NativeUi {
+    fn drop(&mut self) {
+        let _ = self.recovery.tick(&self.app.session, true);
+    }
+}
+
 impl Gpu {
     fn new() -> Result<Self, String> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle().with_env());
@@ -459,7 +500,7 @@ mod tests {
     fn native_project_dialogs_offer_unw_without_losing_legacy_extensions() {
         let open = dialog_metadata(3, FileDialog::OpenProject);
         let extensions = open["extensions"].as_array().unwrap();
-        for ext in ["unw", "uwproj", "uwprojx", "ecproj", "ecprojx"] {
+        for ext in ["unw", "unwae", "uwproj", "uwprojx", "ecproj", "ecprojx"] {
             assert!(extensions.contains(&json!(ext)));
         }
         let save = dialog_metadata(4, FileDialog::save("Untitled Project.unw"));

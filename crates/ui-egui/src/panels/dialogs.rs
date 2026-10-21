@@ -63,6 +63,7 @@ pub struct DialogState {
     pub unsaved: super::unsaved::Pending,
     /// Deleting Project items in use: the deletion waiting on the prompt.
     pub delete_items: super::delete_items::Pending,
+    pub render_overwrite: super::render_overwrite::Pending,
     /// The Gradient Editor's draft and the property it edits.
     pub gradient: super::gradient_editor::Draft,
     /// The user template the Delete Template prompt asks about: its id and name.
@@ -260,6 +261,7 @@ pub fn show(app: &mut UnwrittenStudioApp, ctx: &egui::Context) {
         Dialog::RenderTemplates => super::rq_templates::show(app, ctx, &t),
         Dialog::UnsavedChanges => super::unsaved::show(app, ctx, &t),
         Dialog::DeleteItems => super::delete_items::show(app, ctx, &t),
+        Dialog::RenderOverwrite => super::render_overwrite::show(app, ctx, &t),
         Dialog::GradientEditor => super::gradient_editor::show(app, ctx, &t),
         Dialog::DeleteTemplate => super::templates::show_delete(app, ctx, &t),
     }

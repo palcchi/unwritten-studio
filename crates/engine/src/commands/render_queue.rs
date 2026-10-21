@@ -5,6 +5,7 @@
 //! Items are addressed by `item` (the stable id from `renderQueue.add` / `renderQueue.list`) or
 //! `index` (1-based, the # column).
 
+use serde_json::{Value, json};
 use unwritten_studio_project::render_queue::{
     AlphaMode, AudioFormat, AudioOutput, Channels, ColorDepth, CurrentOrOff, DEFAULT_SEQUENCE_TEMPLATE, DEFAULT_TEMPLATE, EffectsMode, FieldRender,
     OutputFormat, OutputModule, PostRenderAction, ProResProfile, Pulldown, RESIZE_PRESETS, RenderLog, RenderQuality, RenderQueueItem, RenderSettings,
@@ -12,7 +13,6 @@ use unwritten_studio_project::render_queue::{
 };
 use unwritten_studio_project::render_templates::{RenderTemplates, TemplateKind, TemplateSlot};
 use unwritten_studio_time::{FrameRate, Tick};
-use serde_json::{Value, json};
 
 use super::{CommandSpec, always, b_p, bad, comp_id, f_p, has_comp, str_p};
 use crate::{EngineError, Result, Session, cmd, query};
@@ -670,6 +670,12 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn render(s: &mut Session, p: &Value) -> Result<Value> {
     let wait = b_p(p, "wait").unwrap_or(true);
+    let overwrite = b_p(p, "overwrite").unwrap_or(false);
+    // Refused overwrite preflight must not touch files, including auto-save. The start method
+    // repeats this check after auto-save to close the normal race window.
+    if !overwrite && !s.render_output_collisions().is_empty() {
+        return Err(EngineError::Other("render would replace existing output files; confirm Replace or choose a new output path".into()));
+    }
     // Settings ▸ Project ▸ Auto-Save ▸ Save When Starting Render Queue.
     if s.prefs.auto_save.enabled
         && s.prefs.auto_save.save_on_render_start
@@ -678,7 +684,7 @@ fn render(s: &mut Session, p: &Value) -> Result<Value> {
     {
         log::warn!("{e}");
     }
-    let ids = s.start_render(wait).map_err(EngineError::Other)?;
+    let ids = s.start_render_with_overwrite(wait, overwrite).map_err(EngineError::Other)?;
     let items: Vec<Value> = s.project.render_queue.iter().enumerate().filter(|(_, i)| ids.contains(&i.id)).map(|(k, i)| item_json(s, i, k)).collect();
     Ok(json!({"rendering": s.is_rendering(), "items": items}))
 }
@@ -1045,7 +1051,15 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("render.saveCurrentPreview", "Save Current Preview...", ["Composition"], None, "{comp?, path}", has_comp, save_current_preview),
         cmd!("renderQueue.move", "Move in Render Queue", [], None, "{item?|index?, to: n (1-based)}", has_items, move_item),
         cmd!("renderQueue.duplicate", "Duplicate Render Item", [], None, "{item?|index?}", has_items, duplicate),
-        cmd!("renderQueue.render", "Render", [], None, "{wait?: bool (default true; the UI renders in the background)}", has_queued, render),
+        cmd!(
+            "renderQueue.render",
+            "Render",
+            [],
+            None,
+            "{wait?: bool (default true; the UI renders in the background), overwrite?: bool (explicitly confirmed Replace only)}",
+            has_queued,
+            render
+        ),
         cmd!("renderQueue.stop", "Stop Rendering", [], None, "{}", rendering, stop),
         query!("renderQueue.list", "Render Queue Items", "{}", list),
         query!("renderQueue.templates", "Render Templates", "{}", templates),

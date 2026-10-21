@@ -826,6 +826,69 @@ impl DockNode {
     }
 }
 
+/// Collect panels once, preserving the important editing order for responsive profiles.
+fn responsive_panels(root: &DockNode) -> Vec<PanelKind> {
+    let mut panels = vec![];
+    root.panels(&mut panels);
+    panels.sort_by_key(|panel| panel.id());
+    panels.dedup();
+    panels.sort_by_key(|panel| match panel {
+        PanelKind::Composition => 0,
+        PanelKind::Layer => 1,
+        PanelKind::Project => 2,
+        PanelKind::EffectControls => 3,
+        PanelKind::Preview => 4,
+        PanelKind::Timeline => 5,
+        PanelKind::RenderQueue => 6,
+        _ => 7,
+    });
+    panels
+}
+
+/// Portrait phones cannot show the desktop split tree at a useful touch size. Keep the
+/// persisted workspace intact, but reserve a substantial lower pane for the Timeline.
+pub(crate) fn portrait_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    let panels = responsive_panels(root);
+    let primary: Vec<_> = panels.iter().copied().filter(|p| *p != PanelKind::Timeline).collect();
+    let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) else {
+        // Do not invent a Composition panel (or draw the only panel twice) for
+        // reduced layouts such as a newly opened, timeline-only workspace.
+        return DockNode::Tabs { panels, active: 0 };
+    };
+    if primary.is_empty() {
+        return DockNode::Tabs { panels: vec![timeline], active: 0 };
+    }
+    let active = primary.iter().position(|panel| *panel == focused).unwrap_or(0);
+    vsplit(SplitSize::Ratio(0.58), DockNode::Tabs { panels: primary, active }, DockNode::Tabs { panels: vec![timeline], active: 0 })
+}
+
+/// Short landscape windows need a composition-first arrangement rather than the desktop's
+/// three-column tree. The timeline remains visible while secondary panels share one compact tab.
+pub(crate) fn landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    let panels = responsive_panels(root);
+    let mut primary: Vec<_> = panels.iter().copied().filter(|p| matches!(p, PanelKind::Composition | PanelKind::Layer)).collect();
+    if primary.is_empty()
+        && let Some(panel) = panels.iter().copied().find(|p| *p != PanelKind::Timeline)
+    {
+        primary.push(panel);
+    }
+    let utility: Vec<_> = panels.iter().copied().filter(|p| !primary.contains(p) && *p != PanelKind::Timeline).collect();
+    if primary.is_empty() {
+        return DockNode::Tabs { panels, active: 0 };
+    }
+    let active = primary.iter().position(|panel| *panel == focused).unwrap_or(0);
+    let top = if utility.is_empty() {
+        DockNode::Tabs { panels: primary, active }
+    } else {
+        hsplit(SplitSize::FixedB(280.0), DockNode::Tabs { panels: primary, active }, DockNode::Tabs { panels: utility, active: 0 })
+    };
+    if let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) {
+        vsplit(SplitSize::Ratio(0.55), top, DockNode::Tabs { panels: vec![timeline], active: 0 })
+    } else {
+        top
+    }
+}
+
 /// A full layout: the docked tree plus floating panels (what a workspace saves).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Layout {
@@ -1277,6 +1340,7 @@ pub fn draw_group_chrome(ui: &mut egui::Ui, g: &Group, t: &Tokens, reg: &mut cra
                     && let Some(next) = entries.get((ai + 1) % entries.len())
                 {
                     out.actions.push(activate(next));
+                    out.actions.push(DockAction::Focus(next.panel));
                 }
                 break;
             }
@@ -1539,6 +1603,59 @@ mod tests {
         let d = workspace("Default");
         assert!(d.is_visible(PanelKind::Properties) && d.is_visible(PanelKind::Preview));
         assert!(d.contains(PanelKind::EffectsPresets) && !d.is_visible(PanelKind::EffectsPresets));
+    }
+
+    #[test]
+    fn responsive_profiles_preserve_panels_without_mutating_workspace() {
+        let desktop = workspace("Default");
+        let mut expected = vec![];
+        desktop.panels(&mut expected);
+        expected.sort_by_key(|panel| panel.id());
+        expected.dedup();
+
+        let portrait = portrait_profile(&desktop, PanelKind::Composition);
+        let landscape = landscape_profile(&desktop, PanelKind::Layer);
+        assert_eq!(desktop, workspace("Default"));
+
+        let DockNode::Split { a: portrait_top, b: portrait_bottom, .. } = portrait else { panic!("portrait profile must reserve a lower pane") };
+        let DockNode::Tabs { panels: portrait_primary, .. } = *portrait_top else { panic!("portrait primary pane must be tabbed") };
+        let DockNode::Tabs { panels: portrait_timeline, .. } = *portrait_bottom else { panic!("portrait lower pane must be tabbed") };
+        assert!(portrait_primary.contains(&PanelKind::Composition));
+        assert_eq!(portrait_timeline, vec![PanelKind::Timeline]);
+
+        let DockNode::Split { a: landscape_top, b: landscape_bottom, .. } = landscape else { panic!("landscape profile must reserve a lower pane") };
+        let DockNode::Split { a: landscape_primary, b: landscape_utility, .. } = *landscape_top else {
+            panic!("landscape upper pane must split primary and utility panels")
+        };
+        let DockNode::Tabs { panels: landscape_primary, .. } = *landscape_primary else { panic!("landscape primary pane must be tabbed") };
+        let DockNode::Tabs { panels: landscape_utility, .. } = *landscape_utility else { panic!("landscape utility pane must be tabbed") };
+        let DockNode::Tabs { panels: landscape_timeline, .. } = *landscape_bottom else { panic!("landscape lower pane must be tabbed") };
+        assert!(landscape_primary.contains(&PanelKind::Layer));
+        assert!(!landscape_utility.is_empty());
+        assert_eq!(landscape_timeline, vec![PanelKind::Timeline]);
+
+        let mut actual = vec![];
+        portrait_profile(&desktop, PanelKind::Composition).panels(&mut actual);
+        actual.sort_by_key(|panel| panel.id());
+        actual.dedup();
+        assert_eq!(actual, expected);
+    }
+    #[test]
+    fn responsive_profiles_do_not_duplicate_or_invent_panels() {
+        let timeline_only = DockNode::Tabs { panels: vec![PanelKind::Timeline], active: 0 };
+        assert_eq!(portrait_profile(&timeline_only, PanelKind::Timeline), timeline_only);
+        assert_eq!(landscape_profile(&timeline_only, PanelKind::Timeline), timeline_only);
+
+        let utilities_only = DockNode::Tabs { panels: vec![PanelKind::Project, PanelKind::Info], active: 1 };
+        let portrait = portrait_profile(&utilities_only, PanelKind::Info);
+        let landscape = landscape_profile(&utilities_only, PanelKind::Info);
+        for profile in [portrait, landscape] {
+            let mut panels = vec![];
+            profile.panels(&mut panels);
+            panels.sort_by_key(|panel| panel.id());
+            panels.dedup();
+            assert_eq!(panels, vec![PanelKind::Info, PanelKind::Project]);
+        }
     }
 
     #[test]

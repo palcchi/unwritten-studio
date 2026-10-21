@@ -195,9 +195,23 @@ impl UnwrittenStudioApp {
         }
         // The maximized panel fills the area; the tree is kept as it is.
         let maximized = self.ui.maximized.filter(|m| self.ui.dock.contains(*m));
-        let mut dock = match maximized {
+        let desktop_dock = match maximized {
             Some(m) => DockNode::Tabs { panels: vec![m], active: 0 },
             None => std::mem::replace(&mut self.ui.dock, DockNode::Tabs { panels: vec![], active: 0 }),
+        };
+        let portrait = body.height() > body.width() * 1.1;
+        // Tablet landscape is not necessarily short: at 1024x768 the desktop's
+        // two 300-point sidebars still squeeze the viewer to a narrow strip.
+        // Adapt built-in layouts at this width, but keep a user's custom dock
+        // and floating-panel targets intact rather than flattening their tabs.
+        let narrow_builtin = body.width() < 1280.0 && self.ui.floating.is_empty() && desktop_dock == dock::workspace(&self.ui.workspace);
+        let compact_landscape = !portrait && (body.height() < 600.0 || narrow_builtin);
+        let mut dock = if maximized.is_none() && portrait {
+            dock::portrait_profile(&desktop_dock, self.ui.focused)
+        } else if maximized.is_none() && compact_landscape {
+            dock::landscape_profile(&desktop_dock, self.ui.focused)
+        } else {
+            desktop_dock.clone()
         };
         let mut groups = Vec::new();
         let mut layout_actions = Vec::new();
@@ -216,8 +230,10 @@ impl UnwrittenStudioApp {
             tab_rects.push((g.path.clone(), c.tabs));
         }
         self.label_tab_marks(ui);
-        if maximized.is_none() {
+        if maximized.is_none() && !portrait && !compact_landscape {
             self.ui.dock = dock;
+        } else if maximized.is_none() {
+            self.ui.dock = desktop_dock;
         }
         self.dock_rects = groups.iter().filter_map(|g| Some((*g.panels.get(g.active)?, g.rect))).collect();
         for g in &groups {

@@ -1,14 +1,14 @@
 //! Existing Unwritten Studio workspaces use shared transactions without changing their saved schema.
 use craft_ui::docking::{Action, Placement, Zone};
+use egui::{Event, Modifiers, PointerButton, Rect, pos2, vec2};
+use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT, Queryable};
+use serde_json::json;
 use unwritten_studio_engine::Session;
 use unwritten_studio_ui_egui::{
     UnwrittenStudioApp,
     dock::{self, DockNode, Layout, PanelKind, SplitSize, StackEntry},
 };
-use egui::{Event, Modifiers, PointerButton, Rect, pos2, vec2};
-use egui_kittest::Harness;
-use egui_kittest::kittest::{NodeT, Queryable};
-use serde_json::json;
 
 #[test]
 fn shared_move_preserves_accordion_metadata_and_unrelated_active_tabs() {
@@ -230,8 +230,8 @@ fn same_group(root: &DockNode, first: PanelKind, second: PanelKind) -> bool {
 
 #[test]
 fn current_and_named_floating_layouts_survive_restart() {
-    use unwritten_studio_engine::config::MemoryConfig;
     use std::sync::Arc;
+    use unwritten_studio_engine::config::MemoryConfig;
     let store = Arc::new(MemoryConfig::default());
     let mut app = UnwrittenStudioApp::new(Session { config: Some(store.clone()), ..Default::default() });
     assert!(app.edit_layout(|layout| layout.apply(Action::Float { panel: PanelKind::Project, rect: [45.0, 65.0, 430.0, 310.0] }).is_ok()));
@@ -281,7 +281,8 @@ fn floating_panel_dragged_past_the_window_edge_is_drawn_at_its_rect() {
     let mut h = Harness::builder().with_size(vec2(1600.0, 1000.0)).build_eframe(|_| UnwrittenStudioApp::new(Session::default()));
     h.run_steps(3);
     let ctx = h.ctx.clone();
-    unwritten_studio_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.floatPanel", json!({"panel": "Preview", "rect": [600.0, 400.0, 360.0, 300.0]})).unwrap();
+    unwritten_studio_ui_egui::menus::invoke(h.state_mut(), &ctx, "window.floatPanel", json!({"panel": "Preview", "rect": [600.0, 400.0, 360.0, 300.0]}))
+        .unwrap();
     h.run_steps(3);
     let strip = rect(&h, "panel.float.0.move");
     let from = pos2(strip.right() - 24.0, strip.center().y);
@@ -423,4 +424,92 @@ fn failed_close_preserves_viewer_lifecycle_and_maximize_state() {
     assert_eq!(app.ui.viewers, before.viewers);
     assert_eq!(app.ui.active_viewer, before.active_viewer);
     assert_eq!(app.ui.locked_tabs, before.locked_tabs);
+}
+
+#[test]
+fn portrait_fills_viewport_without_replacing_saved_landscape_dock() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Orientation","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1024.0, 440.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let landscape = h.state().ui.dock.clone();
+    let project = h.state().session.project.clone();
+    if let Some(directory) = std::env::var_os("CRAFT_UI_RESPONSIVE_SNAPSHOT_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        h.render().unwrap().save(directory.join("landscape-v2.png")).unwrap();
+    }
+    h.set_size(vec2(1024.0, 2080.0));
+    h.run_steps(4);
+    if let Some(directory) = std::env::var_os("CRAFT_UI_RESPONSIVE_SNAPSHOT_DIR") {
+        let directory = std::path::PathBuf::from(directory);
+        h.render().unwrap().save(directory.join("portrait-v2.png")).unwrap();
+    }
+    let composition = rect(&h, "panel.Composition");
+    let timeline = rect(&h, "panel.Timeline");
+    assert!(composition.width() >= 1000.0 && composition.height() >= 1000.0, "{composition:?}");
+    assert!(timeline.width() >= 1000.0 && timeline.height() >= 700.0, "{timeline:?}");
+    assert_eq!(h.state().ui.dock, landscape);
+    let at = rect(&h, "panel.tab.Timeline").center();
+    h.event(Event::PointerMoved(at));
+    h.step();
+    for pressed in [true, false] {
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Modifiers::NONE });
+        h.step();
+    }
+    h.run_steps(3);
+    let timeline = rect(&h, "panel.Timeline");
+    assert!(timeline.width() >= 1000.0 && timeline.height() >= 700.0, "{timeline:?}");
+    h.set_size(vec2(1024.0, 440.0));
+    h.run_steps(4);
+    assert_eq!(h.state().ui.dock, landscape);
+    assert!(h.state().auto.find("panel.Project").is_some());
+    assert!(h.state().auto.find("panel.Composition").is_some());
+    assert!(std::sync::Arc::ptr_eq(&project, &h.state().session.project));
+}
+
+#[test]
+fn compact_landscape_prioritizes_composition_and_keeps_timeline_visible() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Landscape","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1024.0, 440.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let composition = rect(&h, "panel.Composition");
+    let timeline = rect(&h, "panel.Timeline");
+    let project = rect(&h, "panel.Project");
+    assert!(composition.width() > 650.0 && composition.height() > 140.0, "{composition:?}");
+    assert!(timeline.width() > 900.0 && timeline.height() > 100.0, "{timeline:?}");
+    assert!(project.width() < 320.0, "secondary panels should share a compact utility column: {project:?}");
+}
+
+#[test]
+fn tablet_landscape_uses_wide_viewer_and_preserves_desktop_layout() {
+    let mut session = Session::default();
+    session.execute("comp.new", json!({"name":"Tablet","width":320,"height":180,"duration":1})).unwrap();
+    let mut app = UnwrittenStudioApp::new(session);
+    app.ui.start_screen = false;
+    app.ui.focused = PanelKind::Composition;
+    let mut h = Harness::builder().with_size(vec2(1440.0, 900.0)).build_eframe(move |_| app);
+    h.run_steps(4);
+    let desktop = h.state().ui.dock.clone();
+    for size in [vec2(1024.0, 768.0), vec2(1180.0, 820.0), vec2(768.0, 1024.0), vec2(1024.0, 768.0)] {
+        h.set_size(size);
+        h.run_steps(4);
+        let composition = rect(&h, "panel.Composition");
+        let timeline = rect(&h, "panel.Timeline");
+        assert!(composition.width() > size.x * 0.65, "viewer is squeezed at {size:?}: {composition:?}");
+        assert!(timeline.width() > size.x * 0.9, "timeline must use the available width: {timeline:?}");
+        assert!(composition.min.y >= 0.0 && timeline.max.y <= size.y, "panels must stay inside the viewport");
+        assert_eq!(h.state().ui.dock, desktop);
+    }
+    h.set_size(vec2(1440.0, 900.0));
+    h.run_steps(4);
+    assert_eq!(h.state().ui.dock, desktop);
+    assert!(h.state().auto.find("panel.Properties").is_some());
 }

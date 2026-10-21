@@ -1,8 +1,8 @@
 //! File menu.
 
+use serde_json::{Value, json};
 use unwritten_studio_color::Label;
 use unwritten_studio_project::{FootageKind, ItemId, ItemKind, LayerSource, Project};
-use serde_json::{Value, json};
 
 use super::{CommandSpec, always, b_p, bad, str_p};
 use crate::sequence::{SequenceOptions, Source};
@@ -41,6 +41,24 @@ pub(crate) fn open(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_p(p, "path").ok_or_else(|| bad("file.open", "missing `path`"))?;
     reject_after_effects(path, "open")?;
     let bytes = s.services.read_file(path).map_err(|e| EngineError::Other(format!("cannot read {path}: {e}")))?;
+    if path.to_ascii_lowercase().ends_with(".unwae") {
+        let (mut project, warnings) = crate::ae_bridge::import_unwae(&bytes).map_err(EngineError::Other)?;
+        resolve_relative_footage(&mut project, path, s.services.as_ref());
+        // Interchange is not a native project; never let Save overwrite it.
+        s.replace_project(project, None);
+        // AE's project-bin order can put a nested precomp before the final composition.
+        // Open a root, not an arbitrary first item, so the imported edit is visible.
+        if let Some(root) = super::import_project::root_comps(&s.project).first().copied() {
+            s.open_comp(root);
+        }
+        for warning in warnings.iter().take(10) {
+            s.toast(warning.clone());
+        }
+        if s.check_footage_on_open {
+            crate::footage_check::start(s, None, false)?;
+        }
+        return Ok(json!({"path": path, "format": "unwae", "warnings": warnings}));
+    }
     let text = String::from_utf8(bytes).map_err(|_| EngineError::Other("not a text project file".into()))?;
     // XML copies (File ▸ Save a Copy As XML…) open like the JSON project.
     let text = if crate::xml_project::is_xml(&text) { crate::xml_project::from_xml(&text).map_err(EngineError::Other)? } else { text };
@@ -100,16 +118,19 @@ fn resolve_relative_footage(p: &mut Project, project_path: &str, services: &dyn 
 /// wouldn't read back.
 pub(crate) fn file_text(s: &Session, path: &str) -> Result<String> {
     reject_after_effects(path, "save")?;
+    if path.to_ascii_lowercase().ends_with(".unwae") {
+        return Err(EngineError::Other("Save native projects as .unw; .unwae is an import-only AE interchange, not a native project.".into()));
+    }
     let json = s.project.to_file_json_with_view(&s.saved_view())?;
     if crate::xml_project::is_xml_path(path) { crate::xml_project::to_xml(&json).map_err(EngineError::Other) } else { Ok(json) }
 }
 
 /// AEP/AEPX are proprietary formats; this clean-room project has no codec for them.
-fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
+pub(super) fn reject_after_effects(path: &str, operation: &str) -> Result<()> {
     let ext = std::path::Path::new(path).extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext.eq_ignore_ascii_case("aep") || ext.eq_ignore_ascii_case("aepx") {
         return Err(EngineError::Other(format!(
-            "cannot {operation} `{path}`: After Effects .aep/.aepx is not supported; use .unw (native JSON) or .uwprojx (native XML)"
+            "cannot {operation} `{path}`: direct After Effects .aep/.aepx is not supported. Use .unw (native), or File > After Effects Bridge: run its exporter in AE desktop, open the resulting .unwae here; export JSX back to AE to reconstruct supported layers and save a new .aep"
         )));
     }
     Ok(())
@@ -120,6 +141,46 @@ mod format_tests {
     use super::reject_after_effects;
     use crate::Session;
     use serde_json::json;
+
+    #[test]
+    fn ae_project_import_reports_conversion_without_touching_current_work() {
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        for path in ["missing.AEP", "missing.AePx"] {
+            let error = session.execute("file.importProject", json!({"path":path})).unwrap_err().to_string();
+            assert!(error.contains("After Effects Bridge") && error.contains(".unwae"), "{error}");
+            let result = session.execute("file.import", json!({"paths":[path]})).unwrap();
+            let errors = result["errors"].as_array().unwrap();
+            assert_eq!(errors.len(), 1, "{result}");
+            assert!(errors[0].as_str().unwrap().contains("After Effects Bridge"), "{result}");
+            assert_eq!(session.project.to_json(), before);
+            assert!(session.path.is_none());
+        }
+    }
+
+    #[test]
+    fn ae_bridge_open_activates_root_composition_instead_of_first_precomp() {
+        let dir = std::env::temp_dir().join(format!("unwritten-bridge-root-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("converted.unwae");
+        let document = json!({"format":"unwritten-after-effects","version":1,"comps":[
+            {"id":"nested","name":"Nested first","width":32,"height":24,"fps":24,"duration":1},
+            {"id":"root","name":"Final composition","width":32,"height":24,"fps":24,"duration":1,
+             "layers":[{"name":"Precomp","kind":"comp","source":"nested","width":32,"height":24,"outPoint":1}]}
+        ]});
+        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        let mut session = Session::default();
+        session.execute("file.open", json!({"path":path.to_string_lossy()})).unwrap();
+        let active = session.state.active_comp.unwrap();
+        assert_eq!(session.project.item(active).unwrap().name, "Final composition");
+        assert!(session.path.is_none(), "converted interchange must remain an untitled native project");
+        assert_eq!(std::fs::read(&path).unwrap(), serde_json::to_vec(&document).unwrap());
+        let mut destination = Session::default();
+        let result = destination.execute("file.importProject", json!({"path":path.to_string_lossy()})).unwrap();
+        assert!(result["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|w| w.contains("Experimental AE bridge"))), "{result}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn native_unw_round_trips() {
@@ -139,6 +200,48 @@ mod format_tests {
         let result = imported.execute("file.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
         assert!(result["errors"].as_array().is_none_or(Vec::is_empty), "{result}");
         assert!(imported.project.items.values().any(|i| i.name == "Canonical" && matches!(i.kind, unwritten_studio_project::ItemKind::Comp(_))));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn malformed_ae_bridge_keeps_document_and_native_save_cannot_overwrite_interchange() {
+        let dir = std::env::temp_dir().join(format!("unwritten-bridge-transaction-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("source.unwae");
+        let original = br#"{"format":"unwritten-after-effects","version":99,"comps":[]}"#;
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep my work","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        assert!(session.execute("file.open", json!({"path":path.to_string_lossy()})).is_err());
+        assert_eq!(session.project.to_json(), before);
+        assert!(session.execute("file.saveAs", json!({"path":path.to_string_lossy()})).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(session.path.is_none());
+        assert!(super::super::import_project::is_project_path("SOURCE.UNWAE"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn ae_script_exports_reject_native_aep_destinations_without_writing() {
+        let dir = std::env::temp_dir().join(format!("unwritten-ae-export-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Original.AEP");
+        let original = b"RIFX\0\0\0\x04Egg!";
+        std::fs::write(&path, original).unwrap();
+        let mut session = Session::default();
+        session.execute("comp.new", json!({"name":"Keep this edit","width":32,"height":24,"duration":1})).unwrap();
+        let before = session.project.to_json();
+        for command in ["file.exportAfterEffects", "file.exportAfterEffectsExporter"] {
+            let error = session.execute(command, json!({"path":path.to_string_lossy()})).unwrap_err().to_string();
+            assert!(error.contains(".jsx"), "{error}");
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+            assert_eq!(session.project.to_json(), before);
+            assert!(session.path.is_none());
+            let missing = dir.join("NeverCreate.aepx");
+            assert!(session.execute(command, json!({"path":missing.to_string_lossy()})).is_err());
+            assert!(!missing.exists());
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -440,6 +543,15 @@ fn prepare_import(s: &mut Session, p: &Value) -> Result<PendingImport> {
     // Unwritten Studio projects import as projects, as After Effects imports an .aep.
     let (project_paths, mut paths): (Vec<String>, Vec<String>) = paths.into_iter().partition(|x| super::import_project::is_project_path(x));
     let mut projects = vec![];
+    // AEP is a project container, never footage. Return the actionable bridge
+    // instructions even in builds without a media importer, without probing it.
+    paths.retain(|path| match reject_after_effects(path, "import") {
+        Ok(()) => true,
+        Err(error) => {
+            errors.push(error.to_string());
+            false
+        }
+    });
     for path in project_paths {
         match s.execute("file.importProject", json!({"path": path})) {
             Ok(r) => projects.push(r),
@@ -793,11 +905,42 @@ fn cycle_depth(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!(s.project.settings.bit_depth.label()))
 }
 
+fn export_after_effects(s: &mut Session, p: &Value) -> Result<Value> {
+    let path = str_p(p, "path").ok_or_else(|| bad("file.exportAfterEffects", "missing `path` (.jsx)"))?;
+    if !path.to_ascii_lowercase().ends_with(".jsx") {
+        return Err(bad("file.exportAfterEffects", "path must end in .jsx"));
+    }
+    let script = crate::ae_bridge::export_jsx(&s.project).map_err(EngineError::Other)?;
+    s.services.write_file(path, script.as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
+    Ok(json!({"path": path, "format": "jsx", "requiresAfterEffectsDesktop": true,
+        "warnings": ["Run this JSX in After Effects desktop to reconstruct supported 2D layers and optionally save a new .aep. Unsupported features are reported; preserve the source project."]}))
+}
+
+fn export_after_effects_exporter(s: &mut Session, p: &Value) -> Result<Value> {
+    let path = str_p(p, "path").ok_or_else(|| bad("file.exportAfterEffectsExporter", "missing `path` (.jsx)"))?;
+    if !path.to_ascii_lowercase().ends_with(".jsx") {
+        return Err(bad("file.exportAfterEffectsExporter", "path must end in .jsx"));
+    }
+    s.services.write_file(path, crate::ae_bridge::EXPORTER.as_bytes()).map_err(|e| EngineError::Other(format!("cannot write {path}: {e}")))?;
+    Ok(
+        json!({"path": path, "format": "jsx", "requiresAfterEffectsDesktop": true, "instructions": "Run this exporter in AE desktop with your AEP open, then open its .unwae output in Unwritten Studio. Only the documented 2D subset is supported."}),
+    )
+}
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!("file.newProject", "New Project", ["File", "New"], Some("Cmd+Alt+N"), "{}", always, new_project),
         cmd!("file.openDemoProject", "Open Demo Project", ["Help"], None, "{}", always, demo),
         cmd!("file.open", "Open Project...", ["File"], Some("Cmd+O"), "{path}", always, open),
+        cmd!(
+            "file.exportAfterEffectsExporter",
+            "Save AE Import Helper JSX...",
+            ["File", "After Effects Bridge"],
+            None,
+            "{path: .jsx}",
+            always,
+            export_after_effects_exporter
+        ),
+        cmd!("file.exportAfterEffects", "Export Project to AE JSX...", ["File", "After Effects Bridge"], None, "{path: .jsx}", always, export_after_effects),
         cmd!("file.save", "Save", ["File"], Some("Cmd+S"), "{path?}", always, save),
         cmd!("file.saveAs", "Save As...", ["File", "Save As"], Some("Cmd+Shift+S"), "{path}", always, save_as),
         cmd!("file.incrementAndSave", "Increment and Save", ["File"], Some("Cmd+Alt+Shift+S"), "{}", has_path, increment_save),

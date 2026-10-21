@@ -14,10 +14,34 @@ struct OriginalWorkspaceView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: OriginalWorkspaceController, context: Context) {}
 }
 
+private enum WorkspaceViewportGeometry {
+    static let minimumLogicalWidth: CGFloat = 1024
+    static let maximumRenderSide: CGFloat = 4096
+
+    /// Returns a finite, aspect-matched logical canvas for a safe viewport.
+    static func canvasSize(for viewport: CGSize) -> CGSize? {
+        guard viewport.width.isFinite, viewport.height.isFinite,
+              viewport.width > 0, viewport.height > 0 else { return nil }
+        var width = max(minimumLogicalWidth, viewport.width)
+        var height = width * viewport.height / viewport.width
+        let side = max(width, height)
+        if side > maximumRenderSide {
+            let factor = maximumRenderSide / side
+            width *= factor
+            height *= factor
+        }
+        guard width.isFinite, height.isFinite, width > 0, height > 0,
+              width <= maximumRenderSide, height <= maximumRenderSide else { return nil }
+        return CGSize(width: width, height: height)
+    }
+}
+
 final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UIScrollViewDelegate {
+    private let rootView = UIView()
     private let viewport = UIScrollView()
     private let canvas = OriginalWorkspaceCanvas()
     private var lastViewportSize = CGSize.zero
+    private var lastViewportSafeAreaInsets = UIEdgeInsets.zero
     private var fitZoom: CGFloat = 1
     private var hasLaidOutViewport = false
     private var userZoomed = false
@@ -28,20 +52,32 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     private var activeFolderURL: URL?
     private var activeProjectURL: URL?
     private var projectDialogIDs = Set<UInt64>()
-    private var pendingExport: (URL, String, Bool)?
+    private var saveNames: [UInt64: String] = [:]
+    private var activeExportFolders: [String: URL] = [:]
     private var lastError: String?
-    private var exportPoll: DispatchWorkItem?
     private var smokeFrames = 0
     private var smokeReady = false
 
     override func loadView() {
+        rootView.backgroundColor = .black
         viewport.backgroundColor = .black
         viewport.delegate = self
+        // The viewport is already constrained to the safe-area layout guide. Automatic
+        // adjustment would apply the notch/home-indicator inset a second time.
+        viewport.contentInsetAdjustmentBehavior = .never
         viewport.delaysContentTouches = false
         viewport.panGestureRecognizer.minimumNumberOfTouches = 2
         viewport.panGestureRecognizer.maximumNumberOfTouches = 2
         viewport.addSubview(canvas)
-        view = viewport
+        rootView.addSubview(viewport)
+        viewport.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            viewport.leadingAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.leadingAnchor),
+            viewport.trailingAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.trailingAnchor),
+            viewport.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor),
+            viewport.bottomAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.bottomAnchor)
+        ])
+        view = rootView
     }
 
     override func viewDidLoad() {
@@ -65,15 +101,42 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
     }
 
+    override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        // A rotation can briefly keep the old bounds while UIKit is animating
+        // the safe-area change. Invalidate both dimensions so the final layout
+        // is fitted to the new usable area rather than retaining old centering
+        // insets (especially visible on notched iPhones in landscape).
+        lastViewportSize = .zero
+        lastViewportSafeAreaInsets = .zero
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            self.lastViewportSize = .zero
+            self.lastViewportSafeAreaInsets = .zero
+            self.layoutViewport(preservingZoom: self.hasLaidOutViewport && self.userZoomed)
+        }
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        // A scene can receive a new safe area without changing its bounds (for
+        // example when the home indicator or a call/status bar appears). Force
+        // the canvas and its centering insets to follow that new usable area.
+        lastViewportSize = .zero
+        lastViewportSafeAreaInsets = .zero
+        layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         layoutViewport(preservingZoom: hasLaidOutViewport && userZoomed)
         _ = canvas.becomeFirstResponder()
         worker.start()
-        if let scene = view.window?.windowScene {
-            if #available(iOS 16.0, *) {
-                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscape))
-            }
+        if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape"),
+           let scene = view.window?.windowScene,
+           #available(iOS 16.0, *) {
+            let orientation: UIInterfaceOrientationMask = ProcessInfo.processInfo.arguments.contains("--smoke-portrait") ? .portrait : .landscape
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation))
         }
     }
 
@@ -87,7 +150,7 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        exportPoll?.cancel()
+        for folder in activeExportFolders.values { folder.stopAccessingSecurityScopedResource() }
         activeFolderURL?.stopAccessingSecurityScopedResource()
         activeProjectURL?.stopAccessingSecurityScopedResource()
         worker?.stopAndDestroy()
@@ -107,7 +170,11 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         if let urlString = output.openURL, let url = URL(string: urlString), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         }
+        if let error = output.recoveryError, !error.isEmpty { showErrorOnce("Local recovery: \(error). Save a .unw copy to Files; existing recovery data has not been discarded.") }
         if let error = output.error, !error.isEmpty {
+            // A failed native command must win over an old/stale staged file.
+            // Do not let the polling fallback turn that file into a false
+            // success confirmation.
             recordSmokeStatus(["ok": false, "error": error], name: "workspace-error.json")
             showErrorOnce(error)
         }
@@ -129,6 +196,11 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
 
     private func recordSmokeFrame(_ image: UIImage, audioRunning: Bool) {
         guard ProcessInfo.processInfo.arguments.contains("--ui-smoke"), !smokeReady else { return }
+        if ProcessInfo.processInfo.arguments.contains("--smoke-portrait") || ProcessInfo.processInfo.arguments.contains("--smoke-landscape") {
+            let isPortrait = viewport.bounds.height >= viewport.bounds.width
+            let wantsPortrait = ProcessInfo.processInfo.arguments.contains("--smoke-portrait")
+            guard isPortrait == wantsPortrait else { return }
+        }
         smokeFrames += 1
         guard smokeFrames >= 10, audioRunning, let cg = image.cgImage,
               let data = cg.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return }
@@ -139,16 +211,32 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         }
         guard hasVisibleContent else { return }
         smokeReady = true
-        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true, "audioEngineRunning": audioRunning], name: "workspace-ready.json")
+        recordSmokeStatus(["ok": true, "renderedFrames": smokeFrames, "width": cg.width, "height": cg.height, "nonBlack": true, "audioEngineRunning": audioRunning,
+                           "viewportWidth": viewport.bounds.width, "viewportHeight": viewport.bounds.height,
+                           "canvasWidth": canvas.bounds.width, "canvasHeight": canvas.bounds.height,
+                           "fitZoom": fitZoom, "aspectMatched": abs((canvas.bounds.width / canvas.bounds.height) - (viewport.bounds.width / viewport.bounds.height)) < 0.001], name: "workspace-ready.json")
     }
 
     private func layoutViewport(preservingZoom: Bool) {
         guard viewport.bounds.width > 0, viewport.bounds.height > 0 else { return }
-        guard !hasLaidOutViewport || lastViewportSize != viewport.bounds.size else { return }
+        let safeAreaInsets = rootView.safeAreaInsets
+        guard !hasLaidOutViewport || lastViewportSize != viewport.bounds.size ||
+                lastViewportSafeAreaInsets != safeAreaInsets else { return }
+        let oldZoom = max(viewport.zoomScale, 0.01)
+        let oldCenter = CGPoint(
+            x: (viewport.contentOffset.x + viewport.bounds.width * 0.5) / oldZoom,
+            y: (viewport.contentOffset.y + viewport.bounds.height * 0.5) / oldZoom
+        )
         lastViewportSize = viewport.bounds.size
+        lastViewportSafeAreaInsets = safeAreaInsets
         let oldFit = fitZoom
         let oldRelativeZoom = oldFit > 0 ? viewport.zoomScale / oldFit : 1
-        let canvasSize = CGSize(width: max(1024, viewport.bounds.width), height: max(640, viewport.bounds.height))
+        // Keep a desktop-friendly logical width, but derive both dimensions from
+        // the actual safe viewport aspect.  Independent minimums (1024x640)
+        // letterboxed portrait and made the lower controls unreachable.  Bound
+        // the logical canvas as well as the framebuffer: native egui rejects a
+        // side above 4096, and a very tall phone must not rely on clipping.
+        guard let canvasSize = WorkspaceViewportGeometry.canvasSize(for: viewport.bounds.size) else { return }
         fitZoom = max(0.01, min(viewport.bounds.width / canvasSize.width, viewport.bounds.height / canvasSize.height, 1))
         applyingViewportLayout = true
         viewport.setZoomScale(1, animated: false)
@@ -156,12 +244,28 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         viewport.contentSize = canvasSize
         viewport.minimumZoomScale = fitZoom
         viewport.maximumZoomScale = 2
-        viewport.zoomScale = preservingZoom ? min(max(fitZoom * oldRelativeZoom, fitZoom), 2) : fitZoom
+        let newZoom = preservingZoom ? min(max(fitZoom * oldRelativeZoom, fitZoom), 2) : fitZoom
+        viewport.zoomScale = newZoom
         updateViewportInsets()
+        if preservingZoom {
+            let newOffset = CGPoint(x: oldCenter.x * newZoom - viewport.bounds.width * 0.5,
+                                    y: oldCenter.y * newZoom - viewport.bounds.height * 0.5)
+            viewport.contentOffset = clampedContentOffset(newOffset)
+        } else {
+            viewport.contentOffset = clampedContentOffset(viewport.contentOffset)
+        }
         applyingViewportLayout = false
         hasLaidOutViewport = true
         updateGestureOwnership()
         worker?.setGeometry(canvas.bounds.size, scale: view.window?.screen.scale ?? UIScreen.main.scale)
+    }
+
+    private func clampedContentOffset(_ proposed: CGPoint) -> CGPoint {
+        let minX = -viewport.contentInset.left
+        let minY = -viewport.contentInset.top
+        let maxX = max(minX, viewport.contentSize.width - viewport.bounds.width + viewport.contentInset.right)
+        let maxY = max(minY, viewport.contentSize.height - viewport.bounds.height + viewport.contentInset.bottom)
+        return CGPoint(x: min(max(proposed.x, minX), maxX), y: min(max(proposed.y, minY), maxY))
     }
 
     private func updateViewportInsets() {
@@ -278,71 +382,60 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
     }
 
     private func presentSave(_ dialog: FileDialog) {
-        let alert = UIAlertController(title: dialog.project ? "Save Project" : "Output File", message: nil, preferredStyle: .alert)
+        let message = "Enter a name, then choose the destination folder in Files. Existing files require confirmation; rendering does not start until you press Render."
+        let alert = UIAlertController(title: dialog.project ? "Save Project" : "Output File", message: message, preferredStyle: .alert)
         alert.addTextField { field in
             field.text = dialog.defaultName ?? "Untitled.unw"
             field.placeholder = "File name"
             field.clearButtonMode = .whileEditing
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in self?.finishDialog(dialog.id, paths: []) })
-        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alert] _ in
-            guard let self, let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+        alert.addAction(UIAlertAction(title: "Choose Folder…", style: .default) { [weak self, weak alert] _ in
+            guard let self, let raw = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
                 self?.finishDialog(dialog.id, paths: []); return
             }
-            var safeName = self.safeFileName(name)
-            if URL(fileURLWithPath: safeName).pathExtension.isEmpty, let ext = dialog.extensions.first, !ext.isEmpty { safeName += "." + ext }
-            if dialog.project, ["aep", "aepx"].contains(URL(fileURLWithPath: safeName).pathExtension.lowercased()) {
+            var name = self.safeFileName(raw)
+            if URL(fileURLWithPath: name).pathExtension.isEmpty, let ext = dialog.extensions.first, !ext.isEmpty { name += "." + ext }
+            if dialog.project, ["aep", "aepx", "unwae"].contains(URL(fileURLWithPath: name).pathExtension.lowercased()) {
                 self.finishDialog(dialog.id, paths: [])
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.showErrorOnce("After Effects project export (.aep/.aepx) is not supported. Save an Unwritten Studio project as .unw instead.")
+                    self?.showErrorOnce("Save native projects as .unw. To transfer supported layers to After Effects, use File > After Effects Bridge > Export Project to AE JSX.")
                 }
                 return
             }
-            let exportDirectory = self.applicationDocuments()
-                .appendingPathComponent("Exports", isDirectory: true)
-                .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            do {
-                try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
-            } catch {
-                self.showErrorOnce("Could not prepare the export location: \(error.localizedDescription)")
-                self.finishDialog(dialog.id, paths: [])
-                return
+            self.saveNames[dialog.id] = name
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.presentFolder(dialog)
             }
-            let destination = exportDirectory.appendingPathComponent(safeName, isDirectory: false)
-            self.pendingExport = (destination, safeName, dialog.project)
-            self.finishDialog(dialog.id, paths: [destination.path])
-            self.waitForSaveFile(destination, name: safeName, project: dialog.project)
         })
         present(alert, animated: true)
     }
 
-    private func applicationDocuments() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+    private func completeSaveFolder(_ folder: URL, id: UInt64, name: String) {
+        // Keep each explicitly chosen directory scoped while queued renders use it.
+        // Selecting another folder must not revoke an earlier queue item's permission.
+        if activeExportFolders[folder.path] == nil {
+            guard activeExportFolders.count < 64 else {
+                finishDialog(id, paths: [])
+                showErrorOnce("Too many output folders are open. Reopen the app before choosing another folder.")
+                return
+            }
+            if folder.startAccessingSecurityScopedResource() { activeExportFolders[folder.path] = folder }
+        }
+        let destination = folder.appendingPathComponent(name, isDirectory: false)
+        let submit: () -> Void = { [weak self] in self?.finishDialog(id, paths: [destination.path]) }
+        guard FileManager.default.fileExists(atPath: destination.path) else { submit(); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            let alert = UIAlertController(title: "Replace existing file?", message: "\(name) already exists in this folder. Keeping it requires a different name or folder. Render outputs are checked again before rendering.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in self?.finishDialog(id, paths: []) })
+            alert.addAction(UIAlertAction(title: "Replace", style: .destructive) { _ in submit() })
+            self.present(alert, animated: true)
+        }
     }
 
-    private func waitForSaveFile(_ url: URL, name: String, project: Bool) {
-        exportPoll?.cancel()
-        let deadline = Date().addingTimeInterval(120)
-        var poll: DispatchWorkItem!
-        poll = DispatchWorkItem { [weak self] in
-            guard let self, !poll.isCancelled else { return }
-            let exists = FileManager.default.fileExists(atPath: url.path)
-            if exists || Date() >= deadline {
-                DispatchQueue.main.async {
-                    guard self.pendingExport?.0 == url else { return }
-                    self.pendingExport = nil
-                    if exists {
-                        if project { self.presentExport(url: url, name: name) }
-                    } else {
-                        self.showErrorOnce("The engine did not finish writing \(name) within 120 seconds.")
-                    }
-                }
-            } else {
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25, execute: poll)
-            }
-        }
-        exportPoll = poll
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25, execute: poll)
+    private func applicationDocuments() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
     }
 
     private func safeFileName(_ value: String) -> String {
@@ -352,25 +445,20 @@ final class OriginalWorkspaceController: UIViewController, UIDocumentPickerDeleg
         return name.isEmpty ? "Untitled.unw" : name
     }
 
-    private func presentExport(url: URL, name: String) {
-        pendingExport = nil
-        let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-        picker.delegate = self
-        picker.modalPresentationStyle = .formSheet
-        picker.view.accessibilityLabel = name
-        present(picker, animated: true)
-    }
-
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         if let id = objc_getAssociatedObject(controller, &DialogAssociation.key) as? UInt64 {
+            saveNames.removeValue(forKey: id)
             projectDialogIDs.remove(id)
             finishDialog(id, paths: [])
         }
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        guard let id = objc_getAssociatedObject(controller, &DialogAssociation.key) as? UInt64 else {
-            // Export pickers have no dialog response and their URLs are not folder selections.
+        guard let id = objc_getAssociatedObject(controller, &DialogAssociation.key) as? UInt64 else { return }
+        if let name = saveNames.removeValue(forKey: id) {
+            projectDialogIDs.remove(id)
+            guard let folder = urls.first else { finishDialog(id, paths: []); return }
+            completeSaveFolder(folder, id: id, name: name)
             return
         }
         if projectDialogIDs.remove(id) != nil, let projectURL = urls.first {
@@ -590,8 +678,15 @@ private final class OriginalWorkspaceWorker {
     func setGeometry(_ size: CGSize, scale: CGFloat) {
         queue.async { [weak self] in
             guard let self else { return }
-            self.logicalSize = CGSize(width: max(1, size.width), height: max(1, size.height))
-            self.screenScale = min(max(1, scale), 2)
+            let logicalWidth = max(1, size.width)
+            let logicalHeight = max(1, size.height)
+            self.logicalSize = CGSize(width: logicalWidth, height: logicalHeight)
+            // native_ui rejects any framebuffer dimension above 4096.  Keep
+            // portrait canvases valid instead of allowing a 2x Retina scale
+            // to make the worker fail silently on a tall device.
+            let framebufferLimit = WorkspaceViewportGeometry.maximumRenderSide / max(logicalWidth, logicalHeight)
+            let maximumScale = max(0.25, min(2, framebufferLimit))
+            self.screenScale = min(max(0.25, scale), maximumScale)
         }
     }
 
@@ -626,6 +721,7 @@ private final class OriginalWorkspaceWorker {
     }
 
     func stop() { queue.async { [weak self] in
+        if let self { self.forceCheckpoint = true; self.frame() }
         self?.timer?.suspendIfNeeded()
         self?.timer = nil
         self?.audio?.stop()
@@ -654,6 +750,7 @@ private final class OriginalWorkspaceWorker {
         let size = logicalSize
         var payload: [String: Any] = ["width": max(1, Int(size.width)), "height": max(1, Int(size.height)), "scale": screenScale, "time": ProcessInfo.processInfo.systemUptime, "events": events.map(\.json), "smoke": ProcessInfo.processInfo.arguments.contains("--ui-smoke")]
         events.removeAll(keepingCapacity: true)
+        if forceCheckpoint { payload["checkpoint"] = true; forceCheckpoint = false }
         if let response = pendingResponse { payload["dialog"] = response.json; pendingResponse = nil }
         let jsonData = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
         let json = String(decoding: jsonData, as: UTF8.self)
@@ -692,6 +789,7 @@ private final class OriginalWorkspaceWorker {
     }
 
     // Set by the controller through the next wake event; kept private to the serial worker.
+    private var forceCheckpoint = false
     private var pendingResponse: DialogResponse?
     private func readOutput(_ handle: OpaquePointer) -> UIOutput? {
         guard let ptr = unwritten_studio_ui_output_json(handle) else { return nil }
@@ -732,7 +830,7 @@ private struct FileDialog: Decodable { let id: UInt64; let kind: String; let ext
         return extensions.contains { media.contains($0.lowercased()) }
     }
 }
-private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog? }
+private struct UIOutput: Decodable { let ok: Bool?; let error: String?; let wantsKeyboard: Bool?; let copiedText: String?; let openURL: String?; let fileDialog: FileDialog?; var recoveryError: String? = nil }
 
 private enum InputEvent {
     case move(CGPoint), button(CGPoint, Bool), scroll(CGPoint, CGPoint), text(String), paste(String), key(String, Bool, UIKeyModifierFlags), wake

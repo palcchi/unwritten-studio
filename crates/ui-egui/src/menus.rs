@@ -356,6 +356,9 @@ pub fn invoke(app: &mut UnwrittenStudioApp, ctx: &egui::Context, id: &str, param
     if crate::panels::delete_items::guard(app, id, &params) {
         return Ok(json!({"dialog": "deleteItems"}));
     }
+    if crate::panels::render_overwrite::guard(app, id, &params) {
+        return Ok(json!({"dialog": "renderOverwrite"}));
+    }
     // J / K and Select All Keyframes act on what the Timeline shows (its revealed properties).
     if matches!(id, "time.nextKey" | "time.previousKey" | "keys.selectAll")
         && ["visible", "layers", "layer", "prop"].iter().all(|k| params.get(*k).is_none())
@@ -1338,6 +1341,8 @@ fn file_dialog(app: &mut UnwrittenStudioApp, id: &str, params: &Value) -> Option
         "file.open" => ("path", Ask::OpenProject),
         "file.save" if app.session.path.is_none() => ("path", Ask::Save("Untitled Project.unw")),
         "file.saveAs" | "file.saveCopy" => ("path", Ask::Save("Untitled Project.unw")),
+        "file.exportAfterEffects" => ("path", Ask::Save("Unwritten to After Effects.jsx")),
+        "file.exportAfterEffectsExporter" => ("path", Ask::Save("After Effects to Unwritten.jsx")),
         "comp.saveFrameAs" => ("path", Ask::Save("Frame.png")),
         "comp.saveFrameAsPsd" => ("path", Ask::Save("Frame.psd")),
         "comp.saveFrameAsExr" => ("path", Ask::Save("Frame.exr")),

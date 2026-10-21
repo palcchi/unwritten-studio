@@ -22,8 +22,8 @@ trips and renders, checked by tests, not against After Effects), **partial** (na
 
 | Format | After Effects | Unwritten Studio read | Write | Fidelity / notes | Tested by |
 |---|---|---|---|---|---|
-| Project `.aep` | R/W (native) | none | none | Proprietary format is explicitly rejected; no clean-room reader or writer. Use native `.unw`, or an external conversion workflow when approved. Blocks beta | — |
-| XML project `.aepx` | R/W | none | none | Proprietary format is explicitly rejected; not the native XML project format (`.uwprojx`). No reader or writer | — |
+| Project `.aep` | R/W (native) | none (direct) | none (direct) | No native binary reader or writer. Experimental desktop bridge: AE exports `.unwae` for import here; generated JSX reconstructs supported layers in AE, which can save a new `.aep`. See the bridge workflow below; not a full-fidelity round trip. Blocks native-format parity | Synthetic bridge and format-guard tests; not verified in real AE |
+| XML project `.aepx` | R/W | none (direct) | none (direct) | XML with embedded hexadecimal binary data, not the native XML project format (`.uwprojx`). AE desktop can open it for bridge conversion; no native reader or writer | Synthetic helper tests; not verified in real AE |
 | Templates `.aet` / `.aetx` | R/W | none | none | Own `.uwtemplate` (Home ▸ Templates, Save as Template) | `templates.rs` tests |
 | Motion Graphics template `.mogrt` | W (and R in Premiere) | none | none | Own `.uwtemplate` Essential Graphics templates; FilmCraft rejects our `.fcgt` export (#611) | `essential.rs` tests |
 | Animation preset `.ffx` | R/W, 621 bundled | none | none | Own JSON `.ecpreset`; `.ffx` is out of clean-room scope (AGENTS.md §2) | `animation.rs` tests |
@@ -117,3 +117,31 @@ relinking 6–12 h, `.mogrt`-compatible templates 15–30 h (partly parallel wit
 |---|---|---|
 | 2026-10-12 | minor | #324 and #514 marked closed; open `.aep` PRs #251 and #860 noted |
 | 2026-10-10 | major | First file format parity document, from the After Effects 26.5 bundle and this repository's import/export registries |
+
+## After Effects desktop bridge (experimental, partial)
+
+Direct `.aep` / `.aepx` reading and writing remain **unsupported**. Those files are never renamed to `.unw`, decoded by this bridge or overwritten. The bridge transfers a deliberately limited subset through the **public After Effects desktop scripting API**. AE desktop is required for conversion; it does not run on iOS.
+
+Adobe documents `.aep` as binary and `.aepx` as XML containing some hexadecimal-encoded binary data. An XML extension alone therefore does not make arbitrary project properties readable by this app. AE can open `.aepx` and save it as `.aep`; that does not establish a native iOS codec. See [Adobe's project-format documentation](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).
+
+The supplied `marblesoda.aep` was inspected only as a container: its 1,501,872-byte header is `RIFX … Egg!`, a native binary AEP container rather than JSON or a documented interchange stream. It is therefore a valid example for the **select-and-convert-through-After-Effects** workflow, not an input that Unwritten can decode directly. No sample bytes or proprietary decoder are included.
+
+### Bring an AE project into Unwritten Studio
+
+1. Choose **File > After Effects Bridge > Save AE Import Helper JSX…** and save the script using Files on iOS (or the native desktop save dialog).
+2. On a computer with After Effects, run that helper through **File > Scripts > Run Script File…**. It offers the current project or an existing `.aep` / `.aepx` chosen with the public AE file dialog. Selecting another project opens it only after the current project is confirmed clean; an unsaved current project is never closed or discarded. The source project is read without edits and the helper asks where to save a `.unwae` interchange.
+3. Open or import `.unwae` in Unwritten Studio. Opening creates an **untitled native project**, so Save asks for a new `.unw`; it cannot overwrite the interchange or source AEP. Transfer footage separately and relink unavailable paths.
+
+### Take a native project into AE
+
+Choose **File > After Effects Bridge > Export Project to AE JSX…**. Run the generated JSX on AE desktop. It creates compositions in the current AE project (start with an empty project for a clean reconstruction), reports warnings, and optionally asks for a new `.aep` name. It refuses to overwrite the currently opened source AEP and asks before replacing another existing destination. Cancelling the optional save keeps the imported compositions open without writing an AEP.
+
+### What transfers
+
+The v1 subset is composition dimensions/rate/duration/background, nested precomps, solids, nulls, footage references, static base text content/font/size/fill, layer order and timing, and unparented 2D anchor/position/scale/rotation/opacity with linear or hold transform keys. Key times are converted between AE composition time and native layer time, including positive time stretch. Bezier easing/spatial curves are approximated as linear with warnings.
+
+Audio, colour management, plugins/effects, masks, expressions, 3D/cameras/lights, shapes, parenting, mattes, adjustment layers, reverse stretch, time remapping, sequences, markers and advanced/mixed text styling are **not preserved**. Unsupported layers are omitted or the affected features are explicitly warned about, not silently replaced by invented content. Footage metadata/interpretation is approximate; media is not embedded. Keep the native project and original AEP; this is not a fidelity-preserving round trip. No successful conversion of an arbitrary binary AEP is claimed.
+
+Incoming `.unwae` is fully validated before replacement: version, bounded dimensions/times, positive stretch, finite values, monotonic keys, unique composition ids and an acyclic precomp graph. Limits: 32 MiB input, 512 compositions, 20,000 layers, 100,000 transform keys, 64 nesting levels. Corrupt/newer schemas fail without replacing the current document.
+
+Synthetic coverage: `cargo test -p unwritten-studio-engine ae_bridge`, native-format/overwrite guards, and `node scripts/test-ae-bridge.cjs` (a mock AE DOM without a JSON global). These are not certification against a real After Effects installation. Public API behaviour: [AE project scripting](https://ae-scripting.docsforadobe.dev/general/project/), [Adobe project formats](https://helpx.adobe.com/after-effects/desktop/work-with-projects/after-effects-projects/projects.html).

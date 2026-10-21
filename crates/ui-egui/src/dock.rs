@@ -450,7 +450,12 @@ pub fn workspace(name: &str) -> DockNode {
         _ => hsplit(
             FixedB(300.0),
             vsplit(Ratio(0.56), hsplit(FixedA(300.0), tabs(&[Project, EffectControls], 0), tabs(&[Composition, Layer], 0)), tabs(&[Timeline, RenderQueue], 0)),
-            stack(&[(Preview, true, Some(46.0)), (Properties, true, None), (Align, false, None), (Audio, false, None), (EffectsPresets, false, None)]),
+            // Keep both utility panels open on a fresh workspace. Previously
+            // Effects & Presets was only a collapsed header below Properties,
+            // which made the initial effect workflow look absent on compact
+            // touch displays. Properties and Effects & Presets share the
+            // remaining column; users can still collapse either panel.
+            stack(&[(Preview, true, Some(46.0)), (Properties, true, None), (Align, false, None), (Audio, false, None), (EffectsPresets, true, None)]),
         ),
     }
 }
@@ -865,6 +870,16 @@ pub(crate) fn portrait_profile(root: &DockNode, focused: PanelKind) -> DockNode 
 /// Short landscape windows need a composition-first arrangement rather than the desktop's
 /// three-column tree. The timeline remains visible while secondary panels share one compact tab.
 pub(crate) fn landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    landscape_profile_with_utilities(root, focused, false)
+}
+
+/// Tablets have enough vertical room to expose effects below Project instead
+/// of burying every utility panel in a single overflowing tab strip.
+pub(crate) fn tablet_landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode {
+    landscape_profile_with_utilities(root, focused, true)
+}
+
+fn landscape_profile_with_utilities(root: &DockNode, focused: PanelKind, stack_utilities: bool) -> DockNode {
     let panels = responsive_panels(root);
     let mut primary: Vec<_> = panels.iter().copied().filter(|p| matches!(p, PanelKind::Composition | PanelKind::Layer)).collect();
     if primary.is_empty()
@@ -880,7 +895,27 @@ pub(crate) fn landscape_profile(root: &DockNode, focused: PanelKind) -> DockNode
     let top = if utility.is_empty() {
         DockNode::Tabs { panels: primary, active }
     } else {
-        hsplit(SplitSize::FixedB(280.0), DockNode::Tabs { panels: primary, active }, DockNode::Tabs { panels: utility, active: 0 })
+        let utility = if stack_utilities && utility.contains(&PanelKind::Project) && utility.contains(&PanelKind::EffectsPresets) {
+            let project: Vec<_> = utility.iter().copied().filter(|p| matches!(p, PanelKind::Project | PanelKind::EffectControls)).collect();
+            let mut effects: Vec<_> = utility.iter().copied().filter(|p| !project.contains(p)).collect();
+            effects.sort_by_key(|p| match p {
+                PanelKind::EffectsPresets => 0,
+                PanelKind::Properties => 1,
+                _ => 2,
+            });
+            let project_active = project.iter().position(|p| *p == focused).unwrap_or(0);
+            let effects_active =
+                effects.iter().position(|p| *p == focused).or_else(|| effects.iter().position(|p| *p == PanelKind::EffectsPresets)).unwrap_or(0);
+            vsplit(
+                SplitSize::Ratio(0.5),
+                DockNode::Tabs { panels: project, active: project_active },
+                DockNode::Tabs { panels: effects, active: effects_active },
+            )
+        } else {
+            let active = utility.iter().position(|p| *p == focused).unwrap_or(0);
+            DockNode::Tabs { panels: utility, active }
+        };
+        hsplit(SplitSize::FixedB(280.0), DockNode::Tabs { panels: primary, active }, utility)
     };
     if let Some(timeline) = panels.iter().copied().find(|p| *p == PanelKind::Timeline) {
         vsplit(SplitSize::Ratio(0.55), top, DockNode::Tabs { panels: vec![timeline], active: 0 })
@@ -1144,22 +1179,32 @@ fn gutter(ui: &mut egui::Ui, gap: Rect, vertical: bool, path: &str, t: &Tokens, 
 
 /// Show a handle on a foreground layer so overlapping panel controls cannot steal a touch drag.
 fn show_resize_handle(ui: &mut egui::Ui, rect: Rect, id: egui::Id, handle: ResizeHandle<'static>) -> craft_ui::layout::ResizeResponse {
-    egui::Area::new(id)
+    let mut response = egui::Area::new(id)
         .order(egui::Order::Foreground)
         .fixed_pos(rect.min)
         .show(ui.ctx(), |overlay| {
             overlay.set_min_size(rect.size());
             handle.show(overlay)
         })
-        .inner
+        .inner;
+    // UIKit sends finger drags as primary-pointer input. Keep the forgiving
+    // hit target but use a slower precision gain on iPad/iPhone. Keyboard and
+    // accessibility steps retain their size when the handle is not dragged.
+    response.delta = resize_motion_delta(response.delta, response.response.dragged(), cfg!(target_os = "ios"));
+    response
 }
-
+fn resize_motion_delta(delta: f32, dragging: bool, precision: bool) -> f32 {
+    if !delta.is_finite() {
+        return 0.0;
+    }
+    if dragging && precision { delta * 0.65 } else { delta }
+}
 fn resize_handle(gap: Rect, vertical: bool, path: &str, t: &Tokens) -> ResizeHandle<'static> {
     let axis = if vertical { SplitAxis::Vertical } else { SplitAxis::Horizontal };
     let style = ResizeHandleStyle { hovered: t.focus.gamma_multiply(0.4), dragged: t.focus.gamma_multiply(0.9), focused: t.focus };
     let label = if vertical { crate::i18n::tr("Height:") } else { crate::i18n::tr("Width:") };
     // Native iPad input reports a primary pointer drag, just like a mouse, but a 4-point gutter
-    // is too easy to miss with a finger.  Expand along the movement axis without changing the
+    // is too easy to miss with a finger. Expand along the movement axis without changing the
     // divider's visual geometry; this also benefits pen and high-DPI touch devices.
     ResizeHandle::new(egui::Id::new(("dock-gutter", path.to_string())), axis, gap, label, style).hit_margin(12.0)
 }
@@ -1602,7 +1647,25 @@ mod tests {
     fn default_workspace_has_ae_right_column_stack() {
         let d = workspace("Default");
         assert!(d.is_visible(PanelKind::Properties) && d.is_visible(PanelKind::Preview));
-        assert!(d.contains(PanelKind::EffectsPresets) && !d.is_visible(PanelKind::EffectsPresets));
+        assert!(d.is_visible(PanelKind::EffectsPresets));
+    }
+
+    #[test]
+    fn tablet_landscape_keeps_project_effects_and_timeline_visible() {
+        let desktop = workspace("Default");
+        let profile = tablet_landscape_profile(&desktop, PanelKind::Composition);
+        for panel in [PanelKind::Project, PanelKind::EffectsPresets, PanelKind::Composition, PanelKind::Timeline] {
+            assert!(profile.is_visible(panel), "{panel:?} should not be buried in overflow tabs");
+        }
+        assert!(tablet_landscape_profile(&desktop, PanelKind::EffectControls).is_visible(PanelKind::EffectControls));
+        let mut expected = vec![];
+        desktop.panels(&mut expected);
+        let mut actual = vec![];
+        profile.panels(&mut actual);
+        expected.sort_by_key(|p| p.id());
+        actual.sort_by_key(|p| p.id());
+        assert_eq!(actual, expected, "no lost or duplicated panels");
+        assert_eq!(desktop, workspace("Default"), "do not rewrite the saved desktop workspace");
     }
 
     #[test]
@@ -1674,6 +1737,24 @@ mod tests {
             all.dedup();
             assert_eq!(all.len(), n, "{w} has a panel twice");
         }
+    }
+
+    #[test]
+    fn ios_resize_precision_damps_motion_without_changing_keyboard_steps() {
+        assert_eq!(resize_motion_delta(20.0, true, true), 13.0);
+        assert_eq!(resize_motion_delta(-20.0, true, true), -13.0);
+        assert_eq!(resize_motion_delta(0.0, true, true), 0.0);
+        assert_eq!(resize_motion_delta(8.0, false, true), 8.0);
+        assert_eq!(resize_motion_delta(20.0, true, false), 20.0);
+        assert_eq!(resize_motion_delta(f32::NAN, true, true), 0.0);
+    }
+
+    #[test]
+    fn default_workspace_shows_effect_presets_without_hiding_core_tabs() {
+        let d = workspace("Default");
+        assert!(d.contains(PanelKind::EffectControls));
+        assert!(d.contains(PanelKind::Layer));
+        assert!(d.is_visible(PanelKind::EffectsPresets));
     }
 
     #[test]

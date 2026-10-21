@@ -209,7 +209,11 @@ impl UnwrittenStudioApp {
         let mut dock = if maximized.is_none() && portrait {
             dock::portrait_profile(&desktop_dock, self.ui.focused)
         } else if maximized.is_none() && compact_landscape {
-            dock::landscape_profile(&desktop_dock, self.ui.focused)
+            if body.height() >= 600.0 {
+                dock::tablet_landscape_profile(&desktop_dock, self.ui.focused)
+            } else {
+                dock::landscape_profile(&desktop_dock, self.ui.focused)
+            }
         } else {
             desktop_dock.clone()
         };

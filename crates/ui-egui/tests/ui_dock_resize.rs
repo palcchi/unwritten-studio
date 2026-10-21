@@ -70,9 +70,9 @@ fn focused_dock_resize_owns_arrows_and_keeps_pointer_dragging() {
     h.run_steps(2);
     let element = h.state().auto.find("dock.gutter.").unwrap();
     let gutter_center = Rect::from_min_size(pos2(element.rect[0], element.rect[1]), vec2(element.rect[2], element.rect[3])).center();
-    // Start 8 points into the pane, outside the four-point visual gutter. Native iPad input
+    // Start 6 points into the pane, outside the four-point visual gutter. Native iPad input
     // reports this as a primary pointer drag; the enlarged hit target must still capture it.
-    let from = gutter_center + vec2(8.0, 0.0);
+    let from = gutter_center + vec2(6.0, 0.0);
     h.event(Event::PointerMoved(from));
     h.step();
     h.event(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
